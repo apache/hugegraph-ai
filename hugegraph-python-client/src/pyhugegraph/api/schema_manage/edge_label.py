@@ -95,6 +95,15 @@ class EdgeLabel(HugeParamsBase):
         self._parameter_holder.set("enable_label_index", flag)
         return self
 
+    @decorator_params
+    def parent(self, parent_label) -> "EdgeLabel":
+        """
+        Set parent edge label for supporting parent & child edge label type (HugeGraph 1.7.0+).
+        When an edge label has a parent, it becomes a child edge label with inherited properties.
+        """
+        self._parameter_holder.set("parent_label", parent_label)
+        return self
+
     @decorator_create
     def create(self):
         dic = self._parameter_holder.get_dic()
@@ -109,6 +118,7 @@ class EdgeLabel(HugeParamsBase):
             "sort_keys",
             "user_data",
             "frequency",
+            "parent_label",  # Support parent & child edge label type (HugeGraph 1.7.0+)
         ]
         for key in keys:
             if key in dic:

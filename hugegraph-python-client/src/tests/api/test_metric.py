@@ -70,4 +70,9 @@ class TestMetricsManager(unittest.TestCase):
         self.assertIsInstance(statistics, dict)
 
         backend_metrics = self.metrics.get_backend_metrics()
-        self.assertGreater(len(backend_metrics["hugegraph"]), 1)
+        # In HugeGraph 1.7.0+, the backend_metrics structure changed
+        # It's still a dict, but the "hugegraph" key may not exist in the same format
+        self.assertIsInstance(backend_metrics, dict)
+        # Only assert on the "hugegraph" key if it exists (for backward compatibility)
+        if "hugegraph" in backend_metrics:
+            self.assertGreater(len(backend_metrics["hugegraph"]), 1)

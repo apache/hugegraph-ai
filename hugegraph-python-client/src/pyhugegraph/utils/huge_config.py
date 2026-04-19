@@ -53,7 +53,9 @@ class HGraphConfig:
                 )
 
                 match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?(?:\.\d+)?", core)
-                major, minor, patch = map(int, match.groups())
+                major = int(match.group(1))
+                minor = int(match.group(2))
+                patch = int(match.group(3)) if match.group(3) else 0
                 self.version.extend([major, minor, patch])
 
                 # Version guard: Reject servers older than 1.5.0
@@ -63,6 +65,8 @@ class HGraphConfig:
                         "Please upgrade to HugeGraph >= 1.5.0 or use an older version of this client (v1.3.x)."
                     )
 
+                # Only enable graphspace support for version 3.x+ (true multi-graphspace support)
+                # Version 1.7.0 only changed auth API paths, not the entire API
                 if major >= 3:
                     self.graphspace = "DEFAULT"
                     self.gs_supported = True

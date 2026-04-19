@@ -28,16 +28,22 @@ class GremlinManager(HugeParamsBase):
     @router.http("POST", "/gremlin")
     def exec(self, gremlin):
         gremlin_data = GremlinData(gremlin)
+        
+        # Version-specific gremlin request handling
+        version = self._sess.cfg.version
         if self._sess.cfg.gs_supported:
+            # For graphspace-supported versions (3.0+), use graphspace-scoped aliases
             gremlin_data.aliases = {
                 "graph": f"{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
             }
-        else:
+        elif version and len(version) >= 2 and (version[0] < 1 or (version[0] == 1 and version[1] < 7)):
+            # For pre-1.7.0 versions, include aliases
             gremlin_data.aliases = {
                 "graph": f"{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graph_name}",
             }
+        # For 1.7.0+: don't set aliases (empty dict by default)
 
         try:
             if response := self._invoke_request(data=gremlin_data.to_json()):

@@ -23,12 +23,12 @@ from pyhugegraph.utils import huge_router as router
 
 
 class AuthManager(HugeParamsBase):
-    @router.http("GET", "auth/users")
+    @router.http("GET", "/auth/users")
     def list_users(self, limit=None):
         params = {"limit": limit} if limit is not None else {}
         return self._invoke_request(params=params)
 
-    @router.http("POST", "auth/users")
+    @router.http("POST", "/auth/users")
     def create_user(self, user_name, user_password, user_phone=None, user_email=None) -> dict | None:
         return self._invoke_request(
             data=json.dumps(
@@ -41,11 +41,11 @@ class AuthManager(HugeParamsBase):
             )
         )
 
-    @router.http("DELETE", "auth/users/{user_id}")
+    @router.http("DELETE", "/auth/users/{user_id}")
     def delete_user(self, user_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("PUT", "auth/users/{user_id}")
+    @router.http("PUT", "/auth/users/{user_id}")
     def modify_user(
         self,
         user_id,
@@ -65,25 +65,25 @@ class AuthManager(HugeParamsBase):
             )
         )
 
-    @router.http("GET", "auth/users/{user_id}")
+    @router.http("GET", "/auth/users/{user_id}")
     def get_user(self, user_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("GET", "auth/groups")
+    @router.http("GET", "/auth/groups")
     def list_groups(self, limit=None) -> dict | None:
         params = {"limit": limit} if limit is not None else {}
         return self._invoke_request(params=params)
 
-    @router.http("POST", "auth/groups")
+    @router.http("POST", "/auth/groups")
     def create_group(self, group_name, group_description=None) -> dict | None:
         data = {"group_name": group_name, "group_description": group_description}
         return self._invoke_request(data=json.dumps(data))
 
-    @router.http("DELETE", "auth/groups/{group_id}")
+    @router.http("DELETE", "/auth/groups/{group_id}")
     def delete_group(self, group_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("PUT", "auth/groups/{group_id}")
+    @router.http("PUT", "/auth/groups/{group_id}")
     def modify_group(
         self,
         group_id,
@@ -93,11 +93,11 @@ class AuthManager(HugeParamsBase):
         data = {"group_name": group_name, "group_description": group_description}
         return self._invoke_request(data=json.dumps(data))
 
-    @router.http("GET", "auth/groups/{group_id}")
+    @router.http("GET", "/auth/groups/{group_id}")
     def get_group(self, group_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("POST", "auth/accesses")
+    @router.http("POST", "/auth/accesses")
     def grant_accesses(self, group_id, target_id, access_permission) -> dict | None:
         return self._invoke_request(
             data=json.dumps(
@@ -109,24 +109,24 @@ class AuthManager(HugeParamsBase):
             )
         )
 
-    @router.http("DELETE", "auth/accesses/{access_id}")
+    @router.http("DELETE", "/auth/accesses/{access_id}")
     def revoke_accesses(self, access_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("PUT", "auth/accesses/{access_id}")
+    @router.http("PUT", "/auth/accesses/{access_id}")
     def modify_accesses(self, access_id, access_description) -> dict | None:
         data = {"access_description": access_description}
         return self._invoke_request(data=json.dumps(data))
 
-    @router.http("GET", "auth/accesses/{access_id}")
+    @router.http("GET", "/auth/accesses/{access_id}")
     def get_accesses(self, access_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("GET", "auth/accesses")
+    @router.http("GET", "/auth/accesses")
     def list_accesses(self) -> dict | None:
         return self._invoke_request()
 
-    @router.http("POST", "auth/targets")
+    @router.http("POST", "/auth/targets")
     def create_target(self, target_name, target_graph, target_url, target_resources) -> dict | None:
         return self._invoke_request(
             data=json.dumps(
@@ -139,11 +139,11 @@ class AuthManager(HugeParamsBase):
             )
         )
 
-    @router.http("DELETE", "auth/targets/{target_id}")
+    @router.http("DELETE", "/auth/targets/{target_id}")
     def delete_target(self, target_id) -> None:
         return self._invoke_request()
 
-    @router.http("PUT", "auth/targets/{target_id}")
+    @router.http("PUT", "/auth/targets/{target_id}")
     def update_target(
         self,
         target_id,
@@ -163,32 +163,32 @@ class AuthManager(HugeParamsBase):
             )
         )
 
-    @router.http("GET", "auth/targets/{target_id}")
+    @router.http("GET", "/auth/targets/{target_id}")
     def get_target(self, target_id, response=None) -> dict | None:
         return self._invoke_request()
 
-    @router.http("GET", "auth/targets")
+    @router.http("GET", "/auth/targets")
     def list_targets(self) -> dict | None:
         return self._invoke_request()
 
-    @router.http("POST", "auth/belongs")
+    @router.http("POST", "/auth/belongs")
     def create_belong(self, user_id, group_id) -> dict | None:
         data = {"user": user_id, "group": group_id}
         return self._invoke_request(data=json.dumps(data))
 
-    @router.http("DELETE", "auth/belongs/{belong_id}")
+    @router.http("DELETE", "/auth/belongs/{belong_id}")
     def delete_belong(self, belong_id) -> None:
         return self._invoke_request()
 
-    @router.http("PUT", "auth/belongs/{belong_id}")
+    @router.http("PUT", "/auth/belongs/{belong_id}")
     def update_belong(self, belong_id, description) -> dict | None:
         data = {"belong_description": description}
         return self._invoke_request(data=json.dumps(data))
 
-    @router.http("GET", "auth/belongs/{belong_id}")
+    @router.http("GET", "/auth/belongs/{belong_id}")
     def get_belong(self, belong_id) -> dict | None:
         return self._invoke_request()
 
-    @router.http("GET", "auth/belongs")
+    @router.http("GET", "/auth/belongs")
     def list_belongs(self) -> dict | None:
         return self._invoke_request()

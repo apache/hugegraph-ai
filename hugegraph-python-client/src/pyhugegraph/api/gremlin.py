@@ -43,7 +43,9 @@ class GremlinManager(HugeParamsBase):
                 "graph": f"{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graph_name}",
             }
-        # For 1.7.0+: don't set aliases (empty dict by default)
+        else:
+            # For 1.7.0+: clear aliases (set to None to exclude from JSON)
+            gremlin_data.aliases = None
 
         try:
             if response := self._invoke_request(data=gremlin_data.to_json()):

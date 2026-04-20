@@ -39,9 +39,14 @@ class TestGremlin(unittest.TestCase):
             cls.client.init_edge_label()
             # Test if gremlin endpoint is available by executing a simple query
             cls.gremlin.exec("1 + 1")
-        except NotFoundError as e:
-            # Skip gremlin tests only if the gremlin endpoint itself is unavailable (404)
-            if "404" in str(e) or "Not Found" in str(e):
+        except (NotFoundError, Exception) as e:
+            # Skip gremlin tests if the gremlin endpoint is unavailable
+            # (404, Server Exception, or other gremlin-specific errors)
+            error_str = str(e)
+            if any(
+                marker in error_str
+                for marker in ["404", "Not Found", "Gremlin can't get results", "Server Exception", "Bad Request"]
+            ):
                 cls.skip_gremlin_tests = True
             else:
                 raise

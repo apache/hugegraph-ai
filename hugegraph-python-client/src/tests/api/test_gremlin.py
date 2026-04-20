@@ -30,15 +30,23 @@ class TestGremlin(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.client = ClientUtils()
         try:
-            cls.client.clear_graph_all_data()
+            cls.client = ClientUtils()
             cls.gremlin = cls.client.gremlin
+            cls.client.clear_graph_all_data()
             cls.client.init_property_key()
             cls.client.init_vertex_label()
             cls.client.init_edge_label()
+            # Test if gremlin endpoint is available by executing a simple query
+            cls.gremlin.exec("1 + 1")
         except NotFoundError as e:
             # Skip gremlin tests if endpoint not available in server
+            if "404" in str(e) or "Not Found" in str(e):
+                cls.skip_gremlin_tests = True
+            else:
+                raise
+        except Exception as e:
+            # Also skip if any other exception occurs during setup
             if "404" in str(e) or "Not Found" in str(e):
                 cls.skip_gremlin_tests = True
             else:

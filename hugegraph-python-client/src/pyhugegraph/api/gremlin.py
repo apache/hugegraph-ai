@@ -30,22 +30,18 @@ class GremlinManager(HugeParamsBase):
         gremlin_data = GremlinData(gremlin)
         
         # Version-specific gremlin request handling
-        version = self._sess.cfg.version
         if self._sess.cfg.gs_supported:
             # For graphspace-supported versions (3.0+), use graphspace-scoped aliases
             gremlin_data.aliases = {
                 "graph": f"{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
             }
-        elif version and len(version) >= 2 and (version[0] < 1 or (version[0] == 1 and version[1] < 7)):
-            # For pre-1.7.0 versions, include aliases
+        else:
+            # For HugeGraph 1.x (including 1.7.0), always include aliases so `g` is bound
             gremlin_data.aliases = {
                 "graph": f"{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graph_name}",
             }
-        else:
-            # For 1.7.0+: clear aliases (set to None to exclude from JSON)
-            gremlin_data.aliases = None
 
         try:
             if response := self._invoke_request(data=gremlin_data.to_json()):

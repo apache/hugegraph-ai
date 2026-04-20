@@ -93,7 +93,6 @@ class VertexLabel(HugeParamsBase):
             "properties",
             "enable_label_index",
             "user_data",
-            "parent_label",  # Support parent & child vertex label type (HugeGraph 1.7.0+)
         ]
         data = {}
         for key in key_list:

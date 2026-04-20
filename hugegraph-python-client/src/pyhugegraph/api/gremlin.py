@@ -28,7 +28,7 @@ class GremlinManager(HugeParamsBase):
     @router.http("POST", "/gremlin")
     def exec(self, gremlin):
         gremlin_data = GremlinData(gremlin)
-        
+
         # Version-specific gremlin request handling
         if self._sess.cfg.gs_supported:
             # For graphspace-supported versions (3.0+), use graphspace-scoped aliases

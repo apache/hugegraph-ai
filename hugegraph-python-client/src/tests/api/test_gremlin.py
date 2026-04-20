@@ -40,17 +40,12 @@ class TestGremlin(unittest.TestCase):
             # Test if gremlin endpoint is available by executing a simple query
             cls.gremlin.exec("1 + 1")
         except NotFoundError as e:
-            # Skip gremlin tests if endpoint not available in server
+            # Skip gremlin tests only if the gremlin endpoint itself is unavailable (404)
             if "404" in str(e) or "Not Found" in str(e):
                 cls.skip_gremlin_tests = True
             else:
                 raise
-        except Exception as e:
-            # Also skip if any other exception occurs during setup
-            if "404" in str(e) or "Not Found" in str(e):
-                cls.skip_gremlin_tests = True
-            else:
-                raise
+        # Let all other setup errors (auth, schema, network) propagate as real failures
 
     @classmethod
     def tearDownClass(cls):

@@ -65,15 +65,6 @@ class VertexLabel(HugeParamsBase):
         return self
 
     @decorator_params
-    def parent(self, parent_label) -> "VertexLabel":
-        """
-        Set parent vertex label for supporting parent & child vertex label type (HugeGraph 1.7.0+).
-        When a vertex label has a parent, it becomes a child vertex label with inherited properties.
-        """
-        self._parameter_holder.set("parent_label", parent_label)
-        return self
-
-    @decorator_params
     def userdata(self, *args) -> "VertexLabel":
         if "user_data" not in self._parameter_holder.get_keys():
             self._parameter_holder.set("user_data", {})

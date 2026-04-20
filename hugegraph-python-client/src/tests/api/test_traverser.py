@@ -238,4 +238,7 @@ class TestTraverserManager(unittest.TestCase):
             "inVLabel": "software",
             "properties": {"city": "Beijing", "date": "2016-01-10 00:00:00.000"},
         }
+        # Note: Edge ID format uses the dynamic id field instead of hardcoded format.
+        # In HugeGraph 1.7.0, sub-edge labels encode both parent and child label IDs,
+        # so the format differs from regular edges. Always use edge_id.id instead of assuming format.
         self.assertEqual(edges_result["edges"], [expected_edge])

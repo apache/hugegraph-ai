@@ -70,4 +70,11 @@ class GremlinData:
 
 class GremlinDataEncoder(json.JSONEncoder):
     def default(self, o):
-        return {k.split("__")[1]: v for k, v in vars(o).items()}
+        data = {}
+        for k, v in vars(o).items():
+            # Filter out None values and empty collections
+            if v is None or (isinstance(v, (dict, list)) and not v):
+                continue
+            key = k.split("__")[1]
+            data[key] = v
+        return data

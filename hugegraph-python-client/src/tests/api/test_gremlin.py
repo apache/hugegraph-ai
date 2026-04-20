@@ -26,21 +26,32 @@ from ..client_utils import ClientUtils
 class TestGremlin(unittest.TestCase):
     client = None
     gremlin = None
+    skip_gremlin_tests = False
 
     @classmethod
     def setUpClass(cls):
         cls.client = ClientUtils()
-        cls.client.clear_graph_all_data()
-        cls.gremlin = cls.client.gremlin
-        cls.client.init_property_key()
-        cls.client.init_vertex_label()
-        cls.client.init_edge_label()
+        try:
+            cls.client.clear_graph_all_data()
+            cls.gremlin = cls.client.gremlin
+            cls.client.init_property_key()
+            cls.client.init_vertex_label()
+            cls.client.init_edge_label()
+        except NotFoundError as e:
+            # Skip gremlin tests if endpoint not available in server
+            if "404" in str(e) or "Not Found" in str(e):
+                cls.skip_gremlin_tests = True
+            else:
+                raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.client.clear_graph_all_data()
+        if not cls.skip_gremlin_tests:
+            cls.client.clear_graph_all_data()
 
     def setUp(self):
+        if self.skip_gremlin_tests:
+            self.skipTest("Gremlin endpoint not available in this server")
         self.client.init_vertices()
         self.client.init_edges()
 

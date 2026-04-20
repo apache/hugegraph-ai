@@ -43,10 +43,14 @@ class TestGremlin(unittest.TestCase):
             # Skip gremlin tests if the gremlin endpoint is unavailable
             # (404, Server Exception, or other gremlin-specific errors)
             error_str = str(e)
-            if any(
-                marker in error_str
-                for marker in ["404", "Not Found", "Gremlin can't get results", "Server Exception", "Bad Request"]
-            ):
+            skip_markers = [
+                "404",
+                "Not Found",
+                "Gremlin can't get results",
+                "Server Exception",
+                "Bad Request",
+            ]
+            if any(marker in error_str for marker in skip_markers):
                 cls.skip_gremlin_tests = True
             else:
                 raise

@@ -22,6 +22,12 @@ from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.utils import huge_router as router
 
 
+# NOTE: Auth endpoints currently use absolute paths (/auth/...) which rely on a
+# temporary PathFilter compatibility layer in HugeGraph 1.7.0. This layer will be
+# removed in future versions. When it is removed, these paths should be converted
+# to relative paths (auth/...) with proper graphspace-scoped routing for non-group
+# endpoints, similar to the Java Client's dual-path strategy.
+# See: apache/hugegraph#[issue-number] (HugeGraph 1.7.0 auth API migration)
 class AuthManager(HugeParamsBase):
     @router.http("GET", "/auth/users")
     def list_users(self, limit=None):

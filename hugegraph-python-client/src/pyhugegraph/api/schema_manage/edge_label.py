@@ -102,6 +102,7 @@ class EdgeLabel(HugeParamsBase):
         When an edge label has a parent, it becomes a child edge label with inherited properties.
         """
         self._parameter_holder.set("parent_label", parent_label)
+        self._parameter_holder.set("edgelabel_type", "SUB")
         return self
 
     @decorator_create
@@ -119,6 +120,7 @@ class EdgeLabel(HugeParamsBase):
             "user_data",
             "frequency",
             "parent_label",  # Support parent & child edge label type (HugeGraph 1.7.0+)
+            "edgelabel_type",  # Required when parent_label is set (PARENT or SUB)
         ]
         for key in keys:
             if key in dic:

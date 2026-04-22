@@ -72,8 +72,8 @@ class GremlinDataEncoder(json.JSONEncoder):
     def default(self, o):
         data = {}
         for k, v in vars(o).items():
-            # Filter out None values and empty collections
-            if v is None or (isinstance(v, (dict, list)) and not v):
+            # Filter out None values only; keep empty collections as server may expect them
+            if v is None:
                 continue
             key = k.split("__")[1]
             data[key] = v

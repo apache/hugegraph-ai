@@ -21,17 +21,14 @@ import json
 from pyhugegraph.api.common import HugeParamsBase
 
 
-# NOTE: Auth endpoints currently use absolute paths (/auth/...) which rely on a
-# temporary PathFilter compatibility layer in HugeGraph 1.7.0. This layer will be
-# removed in future versions. When it is removed, these paths should be converted
-# to relative paths (auth/...) with proper graphspace-scoped routing for non-group
-# endpoints, similar to the Java Client's dual-path strategy.
-# See: apache/hugegraph#[issue-number] (HugeGraph 1.7.0 auth API migration)
-# NOTE: Auth endpoints need special path handling because they differ by version:
-# - HugeGraph 1.x: Server-level at /auth/... (except /auth/groups is special)
-# - HugeGraph 1.7.0+ with graphspace: graphspace-scoped at graphspaces/{graphspace}/auth/...
-# This class implements the dual-path strategy used by the Java Client to handle both cases.
 class AuthManager(HugeParamsBase):
+    """
+    Auth endpoints require special path handling because they differ by version:
+    - HugeGraph 1.x: Server-level at /auth/...
+    - HugeGraph 1.7.0+ with graphspace: graphspace-scoped at graphspaces/{graphspace}/auth/...
+
+    This class implements the dual-path strategy used by the Java Client to handle both cases.
+    """
     def _get_auth_path(self, endpoint: str, is_server_level: bool = False) -> str:
         """
         Construct the correct auth endpoint path based on server version and graphspace support.

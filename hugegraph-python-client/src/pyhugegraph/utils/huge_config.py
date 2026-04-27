@@ -65,9 +65,9 @@ class HGraphConfig:
                         "Please upgrade to HugeGraph >= 1.5.0 or use an older version of this client (v1.3.x)."
                     )
 
-                # Only enable graphspace support for version 3.x+ (true multi-graphspace support)
-                # Version 1.7.0 only changed auth API paths, not the entire API
-                if major >= 3:
+                # Enable graphspace support for versions > 1.5.0
+                # HugeGraph 1.7.0+ moved auth APIs to graphspaces/{graphspace}/auth/...
+                if (major, minor, patch) > (1, 5, 0):
                     self.graphspace = "DEFAULT"
                     self.gs_supported = True
                     log.warning("graph space is not set, default value 'DEFAULT' will be used.")

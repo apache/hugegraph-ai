@@ -27,7 +27,7 @@ from pyhugegraph.utils import huge_router as router
 # removed in future versions. When it is removed, these paths should be converted
 # to relative paths (auth/...) with proper graphspace-scoped routing for non-group
 # endpoints, similar to the Java Client's dual-path strategy.
-# See: apache/hugegraph#[issue-number] (HugeGraph 1.7.0 auth API migration)
+# See: apache/hugegraph-ai#322 (HugeGraph 1.7.0 auth API migration)
 class AuthManager(HugeParamsBase):
     @router.http("GET", "/auth/users")
     def list_users(self, limit=None):

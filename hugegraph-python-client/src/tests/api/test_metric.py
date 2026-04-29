@@ -73,6 +73,7 @@ class TestMetricsManager(unittest.TestCase):
         # In HugeGraph 1.7.0+, the backend_metrics structure changed
         # It's still a dict, but the "hugegraph" key may not exist in the same format
         self.assertIsInstance(backend_metrics, dict)
+        self.assertTrue(backend_metrics, "backend metrics should not be empty")
         # Only assert on the "hugegraph" key if it exists (for backward compatibility)
         if "hugegraph" in backend_metrics:
             self.assertGreater(len(backend_metrics["hugegraph"]), 1)

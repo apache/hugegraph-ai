@@ -53,6 +53,11 @@ class HGraphConfig:
                 )
 
                 match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?(?:\.\d+)?", core)
+                if match is None:
+                    raise RuntimeError(
+                        f"Unable to parse HugeGraph server version from response: {core!r}. "
+                        "Please verify the server is compatible with this client."
+                    )
                 major = int(match.group(1))
                 minor = int(match.group(2))
                 patch = int(match.group(3)) if match.group(3) else 0

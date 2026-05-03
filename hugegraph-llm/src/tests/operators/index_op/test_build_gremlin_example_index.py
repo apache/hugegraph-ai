@@ -54,7 +54,10 @@ class TestBuildGremlinExampleIndex(unittest.TestCase):
         self.assertEqual(self.index_builder.vector_index_name, "gremlin_examples")
 
     @patch('asyncio.run')
-    @patch('hugegraph_llm.utils.embedding_utils.get_embeddings_parallel')
+    @patch(
+        'hugegraph_llm.operators.index_op.build_gremlin_example_index.get_embeddings_parallel',
+        new_callable=MagicMock,
+    )
     def test_run_with_examples(self, mock_get_embeddings_parallel, mock_asyncio_run):
         """Test run method with examples"""
         # Setup mocks
@@ -78,7 +81,10 @@ class TestBuildGremlinExampleIndex(unittest.TestCase):
         self.assertEqual(context["embed_dim"], 3)
 
     @patch('asyncio.run')
-    @patch('hugegraph_llm.utils.embedding_utils.get_embeddings_parallel')
+    @patch(
+        'hugegraph_llm.operators.index_op.build_gremlin_example_index.get_embeddings_parallel',
+        new_callable=MagicMock,
+    )
     def test_run_with_empty_examples(self, mock_get_embeddings_parallel, mock_asyncio_run):
         """Test run method with empty examples"""
         # Create new mocks for this test
@@ -98,12 +104,23 @@ class TestBuildGremlinExampleIndex(unittest.TestCase):
         # Run the method
         context = {}
 
-        # This should raise an IndexError when trying to access examples_embedding[0]
-        with self.assertRaises(IndexError):
-            empty_index_builder.run(context)
+        # Empty examples should be handled gracefully without building vector index.
+        result = empty_index_builder.run(context)
+
+        mock_asyncio_run.assert_not_called()
+        mock_get_embeddings_parallel.assert_not_called()
+        mock_vector_store_class.from_name.assert_not_called()
+        mock_vector_store_instance.add.assert_not_called()
+        mock_vector_store_instance.save_index_by_name.assert_not_called()
+
+        self.assertEqual(result["embed_dim"], 0)
+        self.assertEqual(context["embed_dim"], 0)
 
     @patch('asyncio.run')
-    @patch('hugegraph_llm.utils.embedding_utils.get_embeddings_parallel')
+    @patch(
+        'hugegraph_llm.operators.index_op.build_gremlin_example_index.get_embeddings_parallel',
+        new_callable=MagicMock,
+    )
     def test_run_single_example(self, mock_get_embeddings_parallel, mock_asyncio_run):
         """Test run method with single example"""
         # Create new mocks for this test
@@ -134,7 +151,10 @@ class TestBuildGremlinExampleIndex(unittest.TestCase):
         self.assertEqual(result["embed_dim"], 4)
 
     @patch('asyncio.run')
-    @patch('hugegraph_llm.utils.embedding_utils.get_embeddings_parallel')
+    @patch(
+        'hugegraph_llm.operators.index_op.build_gremlin_example_index.get_embeddings_parallel',
+        new_callable=MagicMock,
+    )
     def test_run_preserves_existing_context(self, mock_get_embeddings_parallel, mock_asyncio_run):
         """Test that run method preserves existing context data"""
         # Setup mocks

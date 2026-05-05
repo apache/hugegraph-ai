@@ -36,7 +36,13 @@ class GraphsManager(HugeParamsBase):
         return self._invoke_request(validator=ResponseValidation("text"))
 
     def clear_graph_all_data(self) -> dict:
-        if self._sess.cfg.gs_supported:
+        # Use PUT with an action body for HugeGraph 3.x+ (graph clear API)
+        # For HugeGraph 1.7.0 and other 1.x versions, the clear endpoint uses
+        # DELETE .../clear?confirm_message=... even when graphspace prefixes
+        # are enabled. Only use the PUT behavior when the server version is
+        # >= 3.0.0.
+        version_tuple = tuple(self._sess.cfg.version) if self._sess.cfg.version else (0, 0, 0)
+        if self._sess.cfg.gs_supported and version_tuple >= (3, 0, 0):
             response = self._sess.request(
                 "",
                 "PUT",

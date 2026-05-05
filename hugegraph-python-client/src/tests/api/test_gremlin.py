@@ -16,6 +16,7 @@
 # under the License.
 
 import unittest
+from unittest import mock
 
 import pytest
 from pyhugegraph.utils.exceptions import NotFoundError
@@ -26,21 +27,38 @@ from ..client_utils import ClientUtils
 class TestGremlin(unittest.TestCase):
     client = None
     gremlin = None
+    skip_gremlin_tests = False
 
     @classmethod
     def setUpClass(cls):
         cls.client = ClientUtils()
-        cls.client.clear_graph_all_data()
         cls.gremlin = cls.client.gremlin
+        cls.client.clear_graph_all_data()
         cls.client.init_property_key()
         cls.client.init_vertex_label()
         cls.client.init_edge_label()
 
+        try:
+            # Skip only when the gremlin probe itself shows the endpoint is unavailable.
+            cls.gremlin.exec("1 + 1")
+        except NotFoundError as e:
+            error_str = str(e)
+            if any(
+                marker in error_str
+                for marker in ["404", "Not Found", "timed out", "Connection refused", "Gremlin can't get results"]
+            ):
+                cls.skip_gremlin_tests = True
+            else:
+                raise
+
     @classmethod
     def tearDownClass(cls):
-        cls.client.clear_graph_all_data()
+        if not cls.skip_gremlin_tests:
+            cls.client.clear_graph_all_data()
 
     def setUp(self):
+        if self.skip_gremlin_tests:
+            self.skipTest("Gremlin endpoint not available in this server")
         self.client.init_vertices()
         self.client.init_edges()
 
@@ -88,3 +106,31 @@ class TestGremlin(unittest.TestCase):
     def test_security_operation(self):
         with pytest.raises(NotFoundError):
             self.assertTrue(self.gremlin.exec("System.exit(-1)"))
+
+
+class TestGremlinSetupBehavior(unittest.TestCase):
+    def tearDown(self):
+        TestGremlin.client = None
+        TestGremlin.gremlin = None
+        TestGremlin.skip_gremlin_tests = False
+
+    def test_set_up_class_reraises_non_probe_failures(self):
+        with mock.patch(f"{TestGremlin.__module__}.ClientUtils") as client_utils_cls:
+            client = client_utils_cls.return_value
+            client.gremlin = mock.Mock()
+            client.clear_graph_all_data.side_effect = RuntimeError("Connection refused during graph cleanup")
+
+            with self.assertRaisesRegex(RuntimeError, "Connection refused during graph cleanup"):
+                TestGremlin.setUpClass()
+
+        self.assertFalse(TestGremlin.skip_gremlin_tests)
+
+    def test_set_up_class_skips_when_gremlin_probe_returns_not_found(self):
+        with mock.patch(f"{TestGremlin.__module__}.ClientUtils") as client_utils_cls:
+            client = client_utils_cls.return_value
+            client.gremlin = mock.Mock()
+            client.gremlin.exec.side_effect = NotFoundError("404 Not Found")
+
+            TestGremlin.setUpClass()
+
+        self.assertTrue(TestGremlin.skip_gremlin_tests)

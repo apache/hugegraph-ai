@@ -53,15 +53,36 @@ class HGraphConfig:
                 )
 
                 match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?(?:\.\d+)?", core)
-                major, minor, patch = map(int, match.groups())
+                if match is None:
+                    raise RuntimeError(
+                        f"Unable to parse HugeGraph server version from response: {core!r}. "
+                        "Please verify the server is compatible with this client."
+                    )
+                major = int(match.group(1))
+                minor = int(match.group(2))
+                patch = int(match.group(3)) if match.group(3) else 0
                 self.version.extend([major, minor, patch])
 
-                if major >= 3:
+                # Version guard: Reject servers older than 1.5.0
+                if (major, minor, patch) < (1, 5, 0):
+                    raise RuntimeError(
+                        f"HugeGraph server version {major}.{minor}.{patch} is not supported. "
+                        "Please upgrade to HugeGraph >= 1.5.0 or use an older version of this client (v1.3.x)."
+                    )
+
+                # Enable graphspace support for versions > 1.5.0
+                # HugeGraph 1.7.0+ moved auth APIs to graphspaces/{graphspace}/auth/...
+                if (major, minor, patch) > (1, 5, 0):
                     self.graphspace = "DEFAULT"
                     self.gs_supported = True
                     log.warning("graph space is not set, default value 'DEFAULT' will be used.")
 
             except Exception as e:  # pylint: disable=broad-exception-caught
+                # Version mismatch errors must not be silently swallowed
+                if isinstance(e, RuntimeError):
+                    raise
+
+                # Handle network/parsing failures gracefully
                 try:
                     traceback.print_exception(e)
                     self.gs_supported = False

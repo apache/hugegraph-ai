@@ -226,18 +226,19 @@ class TestTraverserManager(unittest.TestCase):
 
         edge_id = self.graph.getEdgeByPage("created", josh, "BOTH")[0][0]
         edges_result = self.traverser.edges(edge_id.id)
-        self.assertEqual(
-            edges_result["edges"],
-            [
-                {
-                    "id": "S1:josh>2>>S2:lop",
-                    "label": "created",
-                    "type": "edge",
-                    "outV": "1:josh",
-                    "outVLabel": "person",
-                    "inV": "2:lop",
-                    "inVLabel": "software",
-                    "properties": {"city": "Beijing", "date": "2016-01-10 00:00:00.000"},
-                }
-            ],
-        )
+        # Use the dynamically retrieved edge ID instead of hardcoding format
+        # to ensure compatibility with different HugeGraph versions (1.3.0, 1.7.0, etc.)
+        expected_edge = {
+            "id": edge_id.id,
+            "label": "created",
+            "type": "edge",
+            "outV": "1:josh",
+            "outVLabel": "person",
+            "inV": "2:lop",
+            "inVLabel": "software",
+            "properties": {"city": "Beijing", "date": "2016-01-10 00:00:00.000"},
+        }
+        # Note: Edge ID format uses the dynamic id field instead of hardcoded format.
+        # In HugeGraph 1.7.0, sub-edge labels encode both parent and child label IDs,
+        # so the format differs from regular edges. Always use edge_id.id instead of assuming format.
+        self.assertEqual(edges_result["edges"], [expected_edge])

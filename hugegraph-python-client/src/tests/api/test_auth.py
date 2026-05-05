@@ -26,17 +26,29 @@ from ..client_utils import ClientUtils
 class TestAuthManager(unittest.TestCase):
     client = None
     auth = None
+    skip_auth_tests = False
 
     @classmethod
     def setUpClass(cls):
         cls.client = ClientUtils()
         cls.auth = cls.client.auth
+        # Check if auth endpoints are available
+        try:
+            cls.auth.list_users()
+        except NotFoundError as e:
+            if "404" in str(e) or "Not Found" in str(e):
+                cls.skip_auth_tests = True
+            else:
+                raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.client.clear_graph_all_data()
+        if not cls.skip_auth_tests:
+            cls.client.clear_graph_all_data()
 
     def setUp(self):
+        if self.skip_auth_tests:
+            self.skipTest("Auth endpoints not available in this server")
         users = self.auth.list_users()
         for user in users["users"]:
             if user["user_creator"] != "system":

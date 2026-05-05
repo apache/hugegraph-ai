@@ -20,26 +20,6 @@ import unittest
 from ..client_utils import ClientUtils
 
 
-def require_system_metrics_version(version):
-    if not version:
-        raise AssertionError("failed to detect HugeGraph server version")
-    if version < (1, 5, 0):
-        raise unittest.SkipTest("HugeGraph < 1.5.0 returns 500 for /metrics/system in CI")
-
-
-class TestSystemMetricsVersionGate(unittest.TestCase):
-    def test_rejects_missing_detected_version(self):
-        with self.assertRaisesRegex(AssertionError, "failed to detect HugeGraph server version"):
-            require_system_metrics_version(())
-
-    def test_skips_legacy_server_versions(self):
-        with self.assertRaisesRegex(unittest.SkipTest, "HugeGraph < 1.5.0 returns 500 for /metrics/system in CI"):
-            require_system_metrics_version((1, 3, 0))
-
-    def test_allows_supported_server_versions(self):
-        require_system_metrics_version((1, 5, 0))
-
-
 class TestMetricsManager(unittest.TestCase):
     client = None
     metrics = None
@@ -83,8 +63,6 @@ class TestMetricsManager(unittest.TestCase):
         timers_metrics = self.metrics.get_timers_metrics()
         self.assertIsInstance(timers_metrics, dict)
 
-        server_version = tuple(self.client.client.cfg.version)
-        require_system_metrics_version(server_version)
         system_metrics = self.metrics.get_system_metrics()
         self.assertIsInstance(system_metrics, dict)
 
@@ -92,4 +70,10 @@ class TestMetricsManager(unittest.TestCase):
         self.assertIsInstance(statistics, dict)
 
         backend_metrics = self.metrics.get_backend_metrics()
-        self.assertGreater(len(backend_metrics["hugegraph"]), 1)
+        # In HugeGraph 1.7.0+, the backend_metrics structure changed
+        # It's still a dict, but the "hugegraph" key may not exist in the same format
+        self.assertIsInstance(backend_metrics, dict)
+        self.assertTrue(backend_metrics, "backend metrics should not be empty")
+        # Only assert on the "hugegraph" key if it exists (for backward compatibility)
+        if "hugegraph" in backend_metrics:
+            self.assertGreater(len(backend_metrics["hugegraph"]), 1)

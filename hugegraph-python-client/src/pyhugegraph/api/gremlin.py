@@ -28,12 +28,18 @@ class GremlinManager(HugeParamsBase):
     @router.http("POST", "/gremlin")
     def exec(self, gremlin):
         gremlin_data = GremlinData(gremlin)
+
+        # Version-specific gremlin request handling
         if self._sess.cfg.gs_supported:
+            # For graphspace-supported versions, use graphspace-scoped aliases.
+            # This includes HugeGraph 1.7.0+ when graphspace support is enabled.
             gremlin_data.aliases = {
                 "graph": f"{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
             }
         else:
+            # For HugeGraph versions without graphspace support, always include aliases
+            # so `g` is bound.
             gremlin_data.aliases = {
                 "graph": f"{self._sess.cfg.graph_name}",
                 "g": f"__g_{self._sess.cfg.graph_name}",

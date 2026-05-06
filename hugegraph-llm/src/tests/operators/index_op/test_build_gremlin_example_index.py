@@ -109,6 +109,7 @@ class TestBuildGremlinExampleIndex(unittest.TestCase):
 
         mock_asyncio_run.assert_not_called()
         mock_get_embeddings_parallel.assert_not_called()
+        mock_vector_store_class.clean.assert_called_once_with("gremlin_examples")
         mock_vector_store_class.from_name.assert_not_called()
         mock_vector_store_instance.add.assert_not_called()
         mock_vector_store_instance.save_index_by_name.assert_not_called()

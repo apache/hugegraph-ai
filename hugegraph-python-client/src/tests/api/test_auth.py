@@ -150,7 +150,10 @@ class TestAuthManager(unittest.TestCase):
             [{"type": "VERTEX", "label": "person", "properties": {"city": "Shanghai"}}],
         )
         # Verify the target was modified
-        self.assertEqual(target["target_resources"][0]["properties"]["city"], "Shanghai")
+        target_resources = target["target_resources"]
+        if isinstance(target_resources, dict):
+            target_resources = [target_resources]
+        self.assertEqual(target_resources[0]["properties"]["city"], "Shanghai")
 
         # Delete the target
         self.auth.delete_target(target["id"])

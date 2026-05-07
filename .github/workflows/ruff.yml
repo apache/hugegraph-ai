@@ -38,13 +38,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
 
-      - name: Install dependencies
+      - name: Install dev dependencies
         run: |
-          uv sync --extra all --extra dev
-
-      - name: Check DGL version
-        run: |
-          uv run python -c "import dgl; print(dgl.__version__)"
+          uv sync --extra dev
 
       - name: Check code formatting with Ruff
         run: |

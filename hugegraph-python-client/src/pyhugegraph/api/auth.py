@@ -24,12 +24,12 @@ from pyhugegraph.utils import huge_router as router
 
 class AuthManager(HugeParamsBase):
     """Manage HugeGraph authentication and authorization.
-    
+
     This manager implements a dual-path strategy for auth endpoints:
     - Graphspace-scoped endpoints (users, accesses, belongs, targets) use
       the pattern: graphspaces/{graphspace}/auth/{endpoint}
     - Server-level endpoints (groups) use the pattern: /auth/{endpoint}
-    
+
     This strategy mirrors the Java client's AuthAPI implementation and ensures
     compatibility with HugeGraph 1.7.0+ where auth APIs are graphspace-scoped.
     """

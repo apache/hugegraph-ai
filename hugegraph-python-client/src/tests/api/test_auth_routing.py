@@ -18,7 +18,6 @@
 from urllib.parse import urljoin
 
 import pytest
-
 from pyhugegraph.api.auth import AuthManager
 
 

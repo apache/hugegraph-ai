@@ -126,7 +126,7 @@ def http(method: str, path: str) -> Callable:
                 all_kwargs = dict(bound_args.arguments)
                 # Remove 'self' from the arguments used to format the pathinfo
                 all_kwargs.pop("self")
-                
+
                 # Support graphspace-scoped paths: prefer graphspace-prefixed path
                 # but gracefully fall back to server-level /auth/... if graphspace
                 # is not configured or the server does not support graphspaces.

@@ -208,4 +208,3 @@ class AuthManager(HugeParamsBase):
     @router.http("GET", "/graphspaces/{graphspace}/auth/belongs")
     def list_belongs(self) -> dict | None:
         return self._invoke_request()
-

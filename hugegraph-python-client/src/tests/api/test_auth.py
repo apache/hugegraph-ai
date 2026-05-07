@@ -152,7 +152,7 @@ class TestAuthManager(unittest.TestCase):
         # Verify the target was modified
         target_resources = target["target_resources"]
         if isinstance(target_resources, dict):
-            target_resources = [target_resources]
+            target_resources = next(iter(target_resources.values()), [])
         self.assertEqual(target_resources[0]["properties"]["city"], "Shanghai")
 
         # Delete the target

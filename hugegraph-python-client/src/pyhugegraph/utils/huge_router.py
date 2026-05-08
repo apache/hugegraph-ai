@@ -127,11 +127,11 @@ def http(method: str, path: str) -> Callable:
                 # Remove 'self' from the arguments used to format the pathinfo
                 all_kwargs.pop("self")
 
-                # Support graphspace-scoped paths: prefer graphspace-prefixed path
-                # but gracefully fall back to server-level /auth/... if graphspace
-                # is not configured or the server does not support graphspaces.
+                # Graphspace-scoped auth paths require a graphspace: HugeGraph 1.7.0+
+                # only mounts UserAPI/AccessAPI/BelongAPI/TargetAPI under
+                # /graphspaces/{graphspace}/auth/..., so we fail fast when the
+                # session lacks one rather than producing an unreachable URL.
                 if "{graphspace}" in path:
-                    # Prefer explicit graphspace argument passed by caller.
                     graphspace_arg = all_kwargs.get("graphspace")
                     graphspace_cfg = getattr(self.session.cfg, "graphspace", None)
                     gs_supported = getattr(self.session.cfg, "gs_supported", False)
@@ -142,14 +142,12 @@ def http(method: str, path: str) -> Callable:
                             "Ensure gs_supported is True and graphspace is configured."
                         )
 
-                    all_kwargs["graphspace"] = graphspace_arg or graphspace_cfg
-
                     prefix = "/graphspaces/{graphspace}"
                     if not path.startswith(prefix + "/"):
                         raise ValueError(f"Expected graphspace-prefixed path, got: {path}")
 
-                    fallback_path = path.removeprefix(prefix)
-                    formatted_path = f"{prefix}{fallback_path}".format(**all_kwargs)
+                    all_kwargs["graphspace"] = graphspace_arg or graphspace_cfg
+                    formatted_path = path.format(**all_kwargs)
                 else:
                     formatted_path = path.format(**all_kwargs)
             else:

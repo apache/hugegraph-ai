@@ -54,7 +54,14 @@ class DummySession:
     "endpoint, method_call, args, expected_subpath",
     [
         ("users", "list_users", (), "graphspaces/GS/auth/users"),
+        ("users", "get_user", ("u1",), "graphspaces/GS/auth/users/u1"),
         ("accesses", "list_accesses", (), "graphspaces/GS/auth/accesses"),
+        (
+            "accesses",
+            "get_accesses",
+            ("a1",),
+            "graphspaces/GS/auth/accesses/a1",
+        ),
         ("targets", "list_targets", (), "graphspaces/GS/auth/targets"),
         ("belongs", "list_belongs", (), "graphspaces/GS/auth/belongs"),
     ],
@@ -69,22 +76,24 @@ def test_graphspace_scoped_endpoints_use_graphspace(endpoint, method_call, args,
 
 
 @pytest.mark.parametrize(
-    "endpoint, method_call, args, expected_subpath",
+    "endpoint, method_call, args",
     [
-        ("users", "list_users", (), "auth/users"),
-        ("accesses", "list_accesses", (), "auth/accesses"),
-        ("targets", "list_targets", (), "auth/targets"),
-        ("belongs", "list_belongs", (), "auth/belongs"),
+        ("users", "list_users", ()),
+        ("users", "get_user", ("u1",)),
+        ("accesses", "list_accesses", ()),
+        ("accesses", "get_accesses", ("a1",)),
+        ("targets", "list_targets", ()),
+        ("belongs", "list_belongs", ()),
     ],
 )
-def test_graphspace_scoped_endpoints_fallback_to_server_level(endpoint, method_call, args, expected_subpath):
-    # No graphspace support configured -> should fall back to server-level /auth/...
+def test_graphspace_scoped_endpoints_require_graphspace(endpoint, method_call, args):
+    # HugeGraph 1.7.0+ requires graphspace for these auth endpoints.
     cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
     sess = DummySession(cfg)
     auth = AuthManager(sess)
 
-    getattr(auth, method_call)(*args)
-    assert expected_subpath in sess.last
+    with pytest.raises(ValueError, match="graphspace is required for auth endpoints"):
+        getattr(auth, method_call)(*args)
 
 
 def test_groups_are_server_level():
@@ -93,11 +102,11 @@ def test_groups_are_server_level():
     sess = DummySession(cfg)
     auth = AuthManager(sess)
     auth.list_groups()
-    assert "/auth/groups" in sess.last or "auth/groups" in sess.last
+    assert "auth/groups" in sess.last
 
     # Without graphspace support
     cfg2 = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
     sess2 = DummySession(cfg2)
     auth2 = AuthManager(sess2)
     auth2.list_groups()
-    assert "/auth/groups" in sess2.last or "auth/groups" in sess2.last
+    assert "auth/groups" in sess2.last

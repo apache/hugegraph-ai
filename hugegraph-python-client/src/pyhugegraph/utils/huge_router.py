@@ -131,20 +131,25 @@ def http(method: str, path: str) -> Callable:
                 # but gracefully fall back to server-level /auth/... if graphspace
                 # is not configured or the server does not support graphspaces.
                 if "{graphspace}" in path:
-                    # Prefer explicit graphspace argument passed by caller
+                    # Prefer explicit graphspace argument passed by caller.
                     graphspace_arg = all_kwargs.get("graphspace")
                     graphspace_cfg = getattr(self.session.cfg, "graphspace", None)
                     gs_supported = getattr(self.session.cfg, "gs_supported", False)
 
-                    # Use graphspace if available and server supports it
-                    if graphspace_arg or (graphspace_cfg and gs_supported):
-                        all_kwargs.setdefault("graphspace", graphspace_arg or graphspace_cfg)
-                        formatted_path = path.format(**all_kwargs)
-                    else:
-                        # Fallback to server-level absolute auth path by removing
-                        # the leading '/graphspaces/{graphspace}' segment.
-                        fallback_path = path.replace("/graphspaces/{graphspace}", "")
-                        formatted_path = fallback_path.format(**all_kwargs)
+                    if not (graphspace_arg or (graphspace_cfg and gs_supported)):
+                        raise ValueError(
+                            "graphspace is required for auth endpoints on HugeGraph 1.7.0+. "
+                            "Ensure gs_supported is True and graphspace is configured."
+                        )
+
+                    all_kwargs["graphspace"] = graphspace_arg or graphspace_cfg
+
+                    prefix = "/graphspaces/{graphspace}"
+                    if not path.startswith(prefix + "/"):
+                        raise ValueError(f"Expected graphspace-prefixed path, got: {path}")
+
+                    fallback_path = path.removeprefix(prefix)
+                    formatted_path = f"{prefix}{fallback_path}".format(**all_kwargs)
                 else:
                     formatted_path = path.format(**all_kwargs)
             else:

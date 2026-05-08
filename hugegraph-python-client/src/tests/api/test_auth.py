@@ -18,7 +18,6 @@
 
 import unittest
 
-import requests
 from pyhugegraph.utils.exceptions import NotFoundError
 
 from ..client_utils import ClientUtils
@@ -27,32 +26,17 @@ from ..client_utils import ClientUtils
 class TestAuthManager(unittest.TestCase):
     client = None
     auth = None
-    skip_auth_tests = False
 
     @classmethod
     def setUpClass(cls):
         cls.client = ClientUtils()
         cls.auth = cls.client.auth
-        # Check if auth endpoints are available
-        try:
-            cls.auth.list_users()
-        except NotFoundError as e:
-            if "404" in str(e) or "Not Found" in str(e):
-                cls.skip_auth_tests = True
-            else:
-                raise
-        except requests.exceptions.RequestException:
-            # Could not connect to server (timeout/connection error) — skip
-            cls.skip_auth_tests = True
 
     @classmethod
     def tearDownClass(cls):
-        if not cls.skip_auth_tests:
-            cls.client.clear_graph_all_data()
+        cls.client.clear_graph_all_data()
 
     def setUp(self):
-        if self.skip_auth_tests:
-            self.skipTest("Auth endpoints not available in this server")
         users = self.auth.list_users()
         for user in users["users"]:
             if user["user_creator"] != "system":
@@ -150,10 +134,10 @@ class TestAuthManager(unittest.TestCase):
             [{"type": "VERTEX", "label": "person", "properties": {"city": "Shanghai"}}],
         )
         # Verify the target was modified
+        # HugeGraph 1.7.0+ returns target_resources as a keyed map such as
+        # {"VERTEX#person": [{...}]}; older payloads used a list shape.
         target_resources = target["target_resources"]
-        if isinstance(target_resources, dict):
-            target_resources = next(iter(target_resources.values()), [])
-        self.assertEqual(target_resources[0]["properties"]["city"], "Shanghai")
+        self.assertEqual(target_resources["VERTEX#person"][0]["properties"]["city"], "Shanghai")
 
         # Delete the target
         self.auth.delete_target(target["id"])

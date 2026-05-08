@@ -25,12 +25,12 @@ from pyhugegraph.utils import huge_router as router
 class AuthManager(HugeParamsBase):
     """Manage HugeGraph authentication and authorization.
 
-        The previous absolute /auth/... paths return 404 on HugeGraph 1.7.0+
-        because the server's JAX-RS @Path annotations only mount these endpoints
-        under /graphspaces/{graphspace}/auth/.... This change aligns the client
-        with the server's actual @Path annotations:
-        - users, accesses, belongs, targets -> graphspace-scoped
-        - groups -> server-level /auth/groups (matches GroupAPI @Path)
+    The previous absolute /auth/... paths return 404 on HugeGraph 1.7.0+
+    because the server's JAX-RS @Path annotations only mount these endpoints
+    under /graphspaces/{graphspace}/auth/.... This change aligns the client
+    with the server's actual @Path annotations:
+    - users, accesses, belongs, targets -> graphspace-scoped
+    - groups -> server-level /auth/groups (matches GroupAPI @Path)
     """
 
     # User endpoints - graphspace-scoped

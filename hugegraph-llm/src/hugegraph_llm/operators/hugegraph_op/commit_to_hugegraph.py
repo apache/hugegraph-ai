@@ -81,6 +81,7 @@ class Commit2Graph:
         vertex_label_map = {v_label["name"]: v_label for v_label in schema["vertexlabels"]}
         edge_label_map = {e_label["name"]: e_label for e_label in schema["edgelabels"]}
         property_label_map = {p_label["name"]: p_label for p_label in schema["propertykeys"]}
+        vid_mapping = {}  # mapping from LLM-generated vertex ID to actual server vertex ID
 
         for vertex in vertices:
             input_label = vertex["label"]
@@ -146,12 +147,15 @@ class Commit2Graph:
                 continue
 
             # TODO: we could try batch add vertices first, setback to single-mode if failed
+            original_id = vertex.get("id")
             vid = self._handle_graph_creation(self.client.graph().addVertex, input_label, input_properties).id
             vertex["id"] = vid
+            if original_id:
+                vid_mapping[original_id] = vid
 
         for edge in edges:
-            start = edge["outV"]
-            end = edge["inV"]
+            start = vid_mapping.get(edge.get("outV"), edge.get("outV"))
+            end = vid_mapping.get(edge.get("inV"), edge.get("inV"))
             label = edge["label"]
             properties = edge["properties"]
 

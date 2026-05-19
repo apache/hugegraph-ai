@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 from pyhugegraph.utils.exceptions import CreateError, NotFoundError
 
 from hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph import Commit2Graph
+from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
 
 
 class TestCommit2Graph(unittest.TestCase):
@@ -49,6 +50,7 @@ class TestCommit2Graph(unittest.TestCase):
             ],
             "vertexlabels": [
                 {
+                    "id": 1,
                     "name": "person",
                     "properties": ["name", "age"],
                     "primary_keys": ["name"],
@@ -56,6 +58,7 @@ class TestCommit2Graph(unittest.TestCase):
                     "id_strategy": "PRIMARY_KEY",
                 },
                 {
+                    "id": 2,
                     "name": "movie",
                     "properties": ["title", "year"],
                     "primary_keys": ["title"],
@@ -385,6 +388,131 @@ class TestCommit2Graph(unittest.TestCase):
 
         self.assertEqual(vertices[0]["id"], "1:Tom Hanks")
         self.assertEqual(vertices[1]["id"], "2:Forrest Gump")
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addEdge,
+            "acted_in",
+            "1:Tom Hanks",
+            "2:Forrest Gump",
+            {"role": "Forrest Gump"},
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_uses_explicit_customize_string_ids(self, mock_handle_graph_creation):
+        """Test custom string ids are passed to HugeGraph when schema requires them."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="Tom Hanks"),
+            MagicMock(id="Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+        schema = {
+            "propertykeys": [
+                {"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"},
+                {"name": "title", "data_type": "TEXT", "cardinality": "SINGLE"},
+            ],
+            "vertexlabels": [
+                {
+                    "id": 7,
+                    "name": "person",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["name"],
+                    "properties": ["name"],
+                    "nullable_keys": [],
+                },
+                {
+                    "id": 8,
+                    "name": "movie",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["title"],
+                    "properties": ["title"],
+                    "nullable_keys": [],
+                },
+            ],
+            "edgelabels": [{"name": "acted_in", "properties": [], "source_label": "person", "target_label": "movie"}],
+        }
+        vertices = [
+            {"id": "Tom Hanks", "label": "person", "properties": {"name": "Tom Hanks"}},
+            {"id": "Forrest Gump", "label": "movie", "properties": {"title": "Forrest Gump"}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {},
+                "outV": "Tom Hanks",
+                "inV": "Forrest Gump",
+            }
+        ]
+
+        self.commit2graph.load_into_graph(vertices, edges, schema)
+
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addVertex,
+            "person",
+            {"name": "Tom Hanks"},
+            id="Tom Hanks",
+        )
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addVertex,
+            "movie",
+            {"title": "Forrest Gump"},
+            id="Forrest Gump",
+        )
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addEdge,
+            "acted_in",
+            "Tom Hanks",
+            "Forrest Gump",
+            {},
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_accepts_normalized_extraction_without_item_type(self, mock_handle_graph_creation):
+        """Test normalized LLM output without type fields can be committed."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="1:Tom Hanks"),
+            MagicMock(id="2:Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+        llm_output = """{
+            "vertices": [
+            {
+                "id": "person:Tom Hanks",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks",
+                    "age": 67
+                }
+            },
+            {
+                "id": "movie:Forrest Gump",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump",
+                    "year": 1994
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "person:Tom Hanks",
+                "outVLabel": "person",
+                "inV": "movie:Forrest Gump",
+                "inVLabel": "movie",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        items = PropertyGraphExtract(llm=MagicMock())._extract_and_filter_label(self.schema, llm_output)
+        vertices = [item for item in items if item["type"] == "vertex"]
+        edges = [item for item in items if item["type"] == "edge"]
+        self.assertEqual(edges[0]["outV"], "1:Tom Hanks")
+        self.assertEqual(edges[0]["inV"], "2:Forrest Gump")
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
         mock_handle_graph_creation.assert_any_call(
             self.commit2graph.client.graph().addEdge,
             "acted_in",

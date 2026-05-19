@@ -62,7 +62,7 @@ def _assert_output_matches_schema_contract(schema, output):
     vertex_ids = {vertex["id"] for vertex in output["vertices"]}
     vertex_labels = {vertex["label"] for vertex in output["vertices"]}
     schema_vertices = {vertex["name"]: vertex for vertex in schema["vertexlabels"]}
-    schema_edge_labels = {edge["name"] for edge in schema["edgelabels"]}
+    schema_edges = {edge["name"]: edge for edge in schema["edgelabels"]}
 
     for vertex in output["vertices"]:
         assert set(vertex) == {"id", "label", "properties"}
@@ -75,11 +75,13 @@ def _assert_output_matches_schema_contract(schema, output):
 
     for edge in output["edges"]:
         assert set(edge) == {"label", "outV", "outVLabel", "inV", "inVLabel", "properties"}
-        assert edge["label"] in schema_edge_labels
+        assert edge["label"] in schema_edges
         assert edge["outV"] in vertex_ids
         assert edge["inV"] in vertex_ids
         assert edge["outVLabel"] in vertex_labels
         assert edge["inVLabel"] in vertex_labels
+        assert edge["outVLabel"] == schema_edges[edge["label"]]["source_label"]
+        assert edge["inVLabel"] == schema_edges[edge["label"]]["target_label"]
         assert isinstance(edge["properties"], dict)
 
     extractor = PropertyGraphExtract(llm=MagicMock(spec=BaseLLM))
@@ -120,7 +122,7 @@ def test_extract_graph_prompt_example_contract_rejects_dangling_edge_reference()
     raise AssertionError("Prompt example contract accepted an edge reference outside vertices")
 
 
-def test_prompt_examples_do_not_require_redundant_item_type():
+def test_prompt_examples_match_extraction_contract():
     examples_path = (
         Path(__file__).parents[2] / "hugegraph_llm" / "resources" / "prompt_examples" / "prompt_examples.json"
     )
@@ -130,3 +132,22 @@ def test_prompt_examples_do_not_require_redundant_item_type():
         prompt = example["prompt"]
         assert '"type":"vertex"' not in prompt
         assert '"type":"edge"' not in prompt
+        _assert_prompt_example_contract(prompt, "## Example")
+
+
+def test_prompt_examples_use_matching_domain_examples():
+    examples_path = (
+        Path(__file__).parents[2] / "hugegraph_llm" / "resources" / "prompt_examples" / "prompt_examples.json"
+    )
+    examples = json.loads(examples_path.read_text(encoding="utf-8"))
+    domain_markers = {
+        "Official Person-Relationship Extraction": ["Sarah", "James"],
+        "Traffic Accident Element Extraction": ["John Smith", "NY-88888"],
+        "Financial Event Extraction": ["Company A", "$2 billion"],
+        "Medical Diagnosis Extraction": ["Li Hua", "Gankang"],
+    }
+
+    for example in examples:
+        prompt = example["prompt"]
+        for marker in domain_markers[example["name"]]:
+            assert marker in prompt

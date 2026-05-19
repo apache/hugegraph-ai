@@ -148,7 +148,16 @@ class Commit2Graph:
 
             # TODO: we could try batch add vertices first, setback to single-mode if failed
             original_id = vertex.get("id")
-            vid = self._handle_graph_creation(self.client.graph().addVertex, input_label, input_properties).id
+            if vertex_label.get("id_strategy") == "CUSTOMIZE_STRING" and original_id:
+                result = self._handle_graph_creation(
+                    self.client.graph().addVertex,
+                    input_label,
+                    input_properties,
+                    id=original_id,
+                )
+            else:
+                result = self._handle_graph_creation(self.client.graph().addVertex, input_label, input_properties)
+            vid = result.id
             vertex["id"] = vid
             if original_id:
                 vid_mapping[original_id] = vid

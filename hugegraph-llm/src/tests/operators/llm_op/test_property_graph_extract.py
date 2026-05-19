@@ -39,19 +39,23 @@ class TestPropertyGraphExtract(unittest.TestCase):
         self.schema = {
             "vertexlabels": [
                 {
+                    "id": 1,
                     "name": "person",
                     "primary_keys": ["name"],
                     "nullable_keys": ["age"],
                     "properties": ["name", "age"],
                 },
                 {
+                    "id": 2,
                     "name": "movie",
                     "primary_keys": ["title"],
                     "nullable_keys": ["year"],
                     "properties": ["title", "year"],
                 },
             ],
-            "edgelabels": [{"name": "acted_in", "properties": ["role"]}],
+            "edgelabels": [
+                {"name": "acted_in", "properties": ["role"], "source_label": "person", "target_label": "movie"}
+            ],
         }
 
         # Sample text chunks
@@ -77,6 +81,13 @@ class TestPropertyGraphExtract(unittest.TestCase):
             }""",
             """{
                 "vertices": [
+                {
+                    "type": "vertex",
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
                 {
                     "type": "vertex",
                     "label": "movie",
@@ -194,11 +205,13 @@ class TestPropertyGraphExtract(unittest.TestCase):
 
         result = extractor._extract_and_filter_label(self.schema, text)
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 3)
         self.assertEqual(result[0]["type"], "vertex")
-        self.assertEqual(result[0]["label"], "movie")
-        self.assertEqual(result[1]["type"], "edge")
-        self.assertEqual(result[1]["label"], "acted_in")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "vertex")
+        self.assertEqual(result[1]["label"], "movie")
+        self.assertEqual(result[2]["type"], "edge")
+        self.assertEqual(result[2]["label"], "acted_in")
 
     def test_extract_and_filter_label_markdown_json(self):
         """Test _extract_and_filter_label with JSON wrapped in markdown fences."""
@@ -209,11 +222,13 @@ class TestPropertyGraphExtract(unittest.TestCase):
 
         result = extractor._extract_and_filter_label(self.schema, text)
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 3)
         self.assertEqual(result[0]["type"], "vertex")
-        self.assertEqual(result[0]["label"], "movie")
-        self.assertEqual(result[1]["type"], "edge")
-        self.assertEqual(result[1]["label"], "acted_in")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "vertex")
+        self.assertEqual(result[1]["label"], "movie")
+        self.assertEqual(result[2]["type"], "edge")
+        self.assertEqual(result[2]["label"], "acted_in")
 
     def test_extract_and_filter_label_markdown_json_with_prose(self):
         """Test fenced JSON can be parsed when the LLM adds prose."""
@@ -226,11 +241,13 @@ Hope this helps."""
 
         result = extractor._extract_and_filter_label(self.schema, text)
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 3)
         self.assertEqual(result[0]["type"], "vertex")
-        self.assertEqual(result[0]["label"], "movie")
-        self.assertEqual(result[1]["type"], "edge")
-        self.assertEqual(result[1]["label"], "acted_in")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "vertex")
+        self.assertEqual(result[1]["label"], "movie")
+        self.assertEqual(result[2]["type"], "edge")
+        self.assertEqual(result[2]["label"], "acted_in")
 
     def test_extract_and_filter_label_flat_array_json(self):
         """Test _extract_and_filter_label converts flat arrays to vertices and edges."""
@@ -242,6 +259,13 @@ Hope this helps."""
                 "label": "person",
                 "properties": {
                     "name": "Tom Hanks"
+                }
+            },
+            {
+                "type": "vertex",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
                 }
             },
             {
@@ -268,11 +292,13 @@ Hope this helps."""
 
         result = extractor._extract_and_filter_label(self.schema, text)
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 3)
         self.assertEqual(result[0]["type"], "vertex")
         self.assertEqual(result[0]["label"], "person")
-        self.assertEqual(result[1]["type"], "edge")
-        self.assertEqual(result[1]["label"], "acted_in")
+        self.assertEqual(result[1]["type"], "vertex")
+        self.assertEqual(result[1]["label"], "movie")
+        self.assertEqual(result[2]["type"], "edge")
+        self.assertEqual(result[2]["label"], "acted_in")
 
     def test_extract_and_filter_label_flat_array_filters_invalid_items(self):
         """Test flat arrays keep valid graph items and drop invalid ones."""
@@ -283,6 +309,13 @@ Hope this helps."""
                 "label": "person",
                 "properties": {
                     "name": "Tom Hanks"
+                }
+            },
+            {
+                "type": "vertex",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
                 }
             },
             {
@@ -326,11 +359,13 @@ Hope this helps."""
 
         result = extractor._extract_and_filter_label(self.schema, text)
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 3)
         self.assertEqual(result[0]["type"], "vertex")
         self.assertEqual(result[0]["label"], "person")
-        self.assertEqual(result[1]["type"], "edge")
-        self.assertEqual(result[1]["label"], "acted_in")
+        self.assertEqual(result[1]["type"], "vertex")
+        self.assertEqual(result[1]["label"], "movie")
+        self.assertEqual(result[2]["type"], "edge")
+        self.assertEqual(result[2]["label"], "acted_in")
 
     def test_extract_and_filter_label_malformed_fenced_json(self):
         """Test malformed fenced JSON returns no graph items."""
@@ -356,6 +391,251 @@ Hope this helps."""
 
     def test_extract_and_filter_label_infers_type_from_grouped_arrays(self):
         """Infer item type from vertices/edges containers when LLM omits it."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "vertex")
+        self.assertEqual(result[1]["label"], "movie")
+        self.assertEqual(result[2]["type"], "edge")
+        self.assertEqual(result[2]["label"], "acted_in")
+
+    def test_extract_and_filter_label_normalizes_primary_key_ids(self):
+        """Normalize LLM vertex ids to schema-derived primary-key ids."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "id": "person:Tom Hanks",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "id": "movie:Forrest Gump",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "person:Tom Hanks",
+                "outVLabel": "person",
+                "inV": "movie:Forrest Gump",
+                "inVLabel": "movie",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(result[0]["id"], "1:Tom Hanks")
+        self.assertEqual(result[1]["id"], "2:Forrest Gump")
+        self.assertEqual(result[2]["outV"], "1:Tom Hanks")
+        self.assertEqual(result[2]["inV"], "2:Forrest Gump")
+
+    def test_extract_and_filter_label_keeps_canonical_primary_key_ids(self):
+        """Keep already-canonical vertex and edge ids intact."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "id": "1:Tom Hanks",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "id": "2:Forrest Gump",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "1:Tom Hanks",
+                "outVLabel": "person",
+                "inV": "2:Forrest Gump",
+                "inVLabel": "movie",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(result[0]["id"], "1:Tom Hanks")
+        self.assertEqual(result[1]["id"], "2:Forrest Gump")
+        self.assertEqual(result[2]["outV"], "1:Tom Hanks")
+        self.assertEqual(result[2]["inV"], "2:Forrest Gump")
+
+    def test_extract_and_filter_label_normalizes_multiple_primary_key_ids(self):
+        """Normalize multi-primary-key vertex ids in schema primary-key order."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        schema = {
+            "vertexlabels": [
+                {
+                    "id": 3,
+                    "name": "character",
+                    "primary_keys": ["name", "universe"],
+                    "nullable_keys": [],
+                    "properties": ["name", "universe"],
+                }
+            ],
+            "edgelabels": [],
+        }
+        text = """{
+            "vertices": [
+            {
+                "id": "character:Tom!movie",
+                "label": "character",
+                "properties": {
+                    "name": "Tom",
+                    "universe": "movie"
+                }
+            }
+            ],
+            "edges": []
+        }"""
+
+        result = extractor._extract_and_filter_label(schema, text)
+
+        self.assertEqual(result[0]["id"], "3:Tom!movie")
+
+    def test_extract_and_filter_label_resolves_source_target_edge_refs(self):
+        """Resolve source/target edge endpoints to canonical outV/inV ids."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(result[0]["id"], "1:Tom Hanks")
+        self.assertEqual(result[1]["id"], "2:Forrest Gump")
+        self.assertEqual(result[2]["outV"], "1:Tom Hanks")
+        self.assertEqual(result[2]["outVLabel"], "person")
+        self.assertEqual(result[2]["inV"], "2:Forrest Gump")
+        self.assertEqual(result[2]["inVLabel"], "movie")
+
+    def test_extract_and_filter_label_drops_edges_with_unresolved_endpoints(self):
+        """Drop edges whose endpoints cannot be resolved before commit."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "person:Missing",
+                "outVLabel": "person",
+                "inV": "movie:Missing",
+                "inVLabel": "movie",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["type"], "vertex")
+
+    def test_extract_and_filter_label_drops_legacy_edges_with_missing_vertices(self):
+        """Drop legacy source/target edges unless both endpoints are emitted as vertices."""
         extractor = PropertyGraphExtract(llm=self.mock_llm)
         text = """{
             "vertices": [
@@ -390,11 +670,150 @@ Hope this helps."""
 
         result = extractor._extract_and_filter_label(self.schema, text)
 
-        self.assertEqual(len(result), 2)
+        self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["type"], "vertex")
-        self.assertEqual(result[0]["label"], "person")
-        self.assertEqual(result[1]["type"], "edge")
-        self.assertEqual(result[1]["label"], "acted_in")
+
+    def test_extract_and_filter_label_keeps_explicit_custom_ids(self):
+        """Keep self-consistent explicit ids when schema cannot derive primary-key ids."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        schema = {
+            "vertexlabels": [
+                {"name": "person", "id_strategy": "CUSTOMIZE_STRING", "properties": ["name"], "nullable_keys": []},
+                {"name": "movie", "id_strategy": "CUSTOMIZE_STRING", "properties": ["title"], "nullable_keys": []},
+            ],
+            "edgelabels": [{"name": "acted_in", "properties": [], "source_label": "person", "target_label": "movie"}],
+        }
+        text = """{
+            "vertices": [
+            {
+                "id": "Tom Hanks",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "id": "Forrest Gump",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "Tom Hanks",
+                "outVLabel": "person",
+                "inV": "Forrest Gump",
+                "inVLabel": "movie",
+                "properties": {}
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(schema, text)
+
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[2]["outV"], "Tom Hanks")
+        self.assertEqual(result[2]["inV"], "Forrest Gump")
+
+    def test_extract_and_filter_label_keeps_explicit_custom_ids_with_label_metadata(self):
+        """Do not rewrite custom ids even when schema includes ids and primary keys."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        schema = {
+            "vertexlabels": [
+                {
+                    "id": 7,
+                    "name": "person",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["name"],
+                    "properties": ["name"],
+                    "nullable_keys": [],
+                },
+                {
+                    "id": 8,
+                    "name": "movie",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["title"],
+                    "properties": ["title"],
+                    "nullable_keys": [],
+                },
+            ],
+            "edgelabels": [{"name": "acted_in", "properties": [], "source_label": "person", "target_label": "movie"}],
+        }
+        text = """{
+            "vertices": [
+            {
+                "id": "Tom Hanks",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "id": "Forrest Gump",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "Tom Hanks",
+                "outVLabel": "person",
+                "inV": "Forrest Gump",
+                "inVLabel": "movie",
+                "properties": {}
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(schema, text)
+
+        self.assertEqual(result[0]["id"], "Tom Hanks")
+        self.assertEqual(result[1]["id"], "Forrest Gump")
+        self.assertEqual(result[2]["outV"], "Tom Hanks")
+        self.assertEqual(result[2]["inV"], "Forrest Gump")
+
+    def test_extract_and_filter_label_drops_edges_with_mismatched_endpoint_labels(self):
+        """Drop edges whose endpoint labels conflict with the edge schema."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "1:Tom Hanks",
+                "outVLabel": "movie",
+                "inV": "2:Forrest Gump",
+                "inVLabel": "person",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 2)
+        self.assertTrue(all(item["type"] == "vertex" for item in result))
 
     def test_extract_and_filter_label_invalid_json(self):
         """Test the _extract_and_filter_label method with invalid JSON."""
@@ -516,13 +935,13 @@ Hope this helps."""
         self.assertEqual(extractor.extract_property_graph_by_llm.call_count, 2)
 
         # Verify the results
-        self.assertEqual(len(result["vertices"]), 2)
+        self.assertEqual(len(result["vertices"]), 3)
         self.assertEqual(len(result["edges"]), 1)
         self.assertEqual(result["call_count"], 2)
 
         # Check vertex properties
         self.assertEqual(result["vertices"][0]["properties"]["name"], "Tom Hanks")
-        self.assertEqual(result["vertices"][1]["properties"]["title"], "Forrest Gump")
+        self.assertEqual(result["vertices"][2]["properties"]["title"], "Forrest Gump")
 
         # Check edge properties
         self.assertEqual(result["edges"][0]["properties"]["role"], "Forrest Gump")
@@ -560,7 +979,7 @@ Hope this helps."""
         result = extractor.run(context)
 
         # Verify the results
-        self.assertEqual(len(result["vertices"]), 3)  # 1 existing + 2 new
+        self.assertEqual(len(result["vertices"]), 4)  # 1 existing + 3 new
         self.assertEqual(len(result["edges"]), 2)  # 1 existing + 1 new
         self.assertEqual(result["call_count"], 2)
 

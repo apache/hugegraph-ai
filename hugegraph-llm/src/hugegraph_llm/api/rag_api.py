@@ -155,7 +155,7 @@ def rag_http_api(
     @router.post("/config/graph", status_code=status.HTTP_201_CREATED)
     def graph_config_api(req: GraphConfigRequest):
         # Accept status code
-        res = apply_graph_conf(req.url, req.name, req.user, req.pwd, req.gs, origin_call="http")
+        res = apply_graph_conf(req.url, req.graph, req.user, req.pwd, req.gs, origin_call="http")
         return generate_response(RAGResponse(status_code=res, message="Missing Value"))
 
     # TODO: restructure the implement of llm to three types, like "/config/chat_llm"

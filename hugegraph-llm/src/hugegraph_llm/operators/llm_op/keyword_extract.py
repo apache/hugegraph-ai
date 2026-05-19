@@ -151,6 +151,11 @@ class KeywordExtract:
     ) -> Dict[str, float]:
         results = {}
 
+        # Strip markdown code fences before parsing
+        response = re.sub(r"```\w*\n?", "", response)
+        response = re.sub(r"```", "", response)
+        response = response.strip()
+
         # use re.escape(start_token) if start_token contains special chars like */&/^ etc.
         matches = re.findall(rf"{start_token}([^\n]+\n?)", response)
 

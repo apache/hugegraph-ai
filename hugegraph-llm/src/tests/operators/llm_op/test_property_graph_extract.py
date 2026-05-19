@@ -200,6 +200,48 @@ class TestPropertyGraphExtract(unittest.TestCase):
         self.assertEqual(result[1]["type"], "edge")
         self.assertEqual(result[1]["label"], "acted_in")
 
+    def test_extract_and_filter_label_infers_type_from_grouped_arrays(self):
+        """Infer item type from vertices/edges containers when LLM omits it."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "edge")
+        self.assertEqual(result[1]["label"], "acted_in")
+
     def test_extract_and_filter_label_invalid_json(self):
         """Test the _extract_and_filter_label method with invalid JSON."""
         extractor = PropertyGraphExtract(llm=self.mock_llm)
@@ -227,6 +269,34 @@ class TestPropertyGraphExtract(unittest.TestCase):
             }
             ],
             "edges": []
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(result, [])
+
+    def test_extract_and_filter_label_rejects_explicit_type_mismatch(self):
+        """Do not override an explicit item type that conflicts with its container."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "type": "edge",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "type": "vertex",
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
         }"""
 
         result = extractor._extract_and_filter_label(self.schema, text)

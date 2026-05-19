@@ -15,32 +15,118 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
+from pathlib import Path
+from unittest.mock import MagicMock
+
 from hugegraph_llm.config.prompt_config import PromptConfig
+from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
 
 
-def test_extract_graph_prompt_en_defines_deterministic_vertex_id_rules():
-    prompt = PromptConfig.extract_graph_prompt_EN
+def _json_objects_after_marker(prompt, marker):
+    start = prompt.index(marker) + len(marker)
+    decoder = json.JSONDecoder()
+    objects = []
+    index = start
+    while True:
+        index = prompt.find("{", index)
+        if index == -1:
+            return objects
+        try:
+            value, end = decoder.raw_decode(prompt[index:])
+        except json.JSONDecodeError:
+            index += 1
+            continue
+        objects.append(value)
+        index += end
 
-    assert "vertexlabels[].id" in prompt
-    assert "id = \"{vertexLabelID}:{properties.<primary_key>}\"" in prompt
-    assert "id = \"{vertexLabelID}:{properties.<pk1>}!{properties.<pk2>}\"" in prompt
-    assert 'Never use label names such as "person:Sarah"' in prompt
-    assert "outV and inV must exactly match the id of vertices in the same output" in prompt
-    assert 'Every vertex must include "type":"vertex"' in prompt
-    assert 'Every edge must include "type":"edge"' in prompt
-    assert "Do not translate schema field names" in prompt
-    assert '{"vertices": [...], "edges": [...]}' in prompt
+
+def _example_schema_and_output(prompt, example_marker):
+    objects = _json_objects_after_marker(prompt, example_marker)
+    schema = next(obj for obj in objects if "vertexlabels" in obj and "edgelabels" in obj)
+    output = next(obj for obj in objects if "vertices" in obj and "edges" in obj)
+    return schema, output
 
 
-def test_extract_graph_prompt_cn_matches_en_vertex_id_contract():
-    prompt = PromptConfig.extract_graph_prompt_CN
+def _assert_prompt_example_contract(prompt, example_marker):
+    schema, output = _example_schema_and_output(prompt, example_marker)
+    _assert_output_matches_schema_contract(schema, output)
 
-    assert "vertexlabels[].id" in prompt
-    assert 'id = "{vertexLabelID}:{properties.<primary_key>}"' in prompt
-    assert 'id = "{vertexLabelID}:{properties.<pk1>}!{properties.<pk2>}"' in prompt
-    assert '不要使用 "person:Sarah"' in prompt
-    assert "outV 和 inV 必须严格等于本次输出 vertices 中的 id" in prompt
-    assert '每个顶点必须包含 "type":"vertex"' in prompt
-    assert '每条边必须包含 "type":"edge"' in prompt
-    assert "不要翻译 schema 字段名" in prompt
-    assert '{"vertices": [...], "edges": [...]}' in prompt
+
+def _assert_output_matches_schema_contract(schema, output):
+    assert set(output) == {"vertices", "edges"}
+    assert output["vertices"]
+    assert output["edges"]
+
+    vertex_ids = {vertex["id"] for vertex in output["vertices"]}
+    vertex_labels = {vertex["label"] for vertex in output["vertices"]}
+    schema_vertices = {vertex["name"]: vertex for vertex in schema["vertexlabels"]}
+    schema_edge_labels = {edge["name"] for edge in schema["edgelabels"]}
+
+    for vertex in output["vertices"]:
+        assert set(vertex) == {"id", "label", "properties"}
+        schema_vertex = schema_vertices[vertex["label"]]
+        primary_values = [str(vertex["properties"][key]) for key in schema_vertex["primary_keys"]]
+        expected_id = f"{schema_vertex['id']}:{'!'.join(primary_values)}"
+        assert vertex["id"] == expected_id
+        assert not vertex["id"].startswith(f"{vertex['label']}:")
+        assert isinstance(vertex["properties"], dict)
+
+    for edge in output["edges"]:
+        assert set(edge) == {"label", "outV", "outVLabel", "inV", "inVLabel", "properties"}
+        assert edge["label"] in schema_edge_labels
+        assert edge["outV"] in vertex_ids
+        assert edge["inV"] in vertex_ids
+        assert edge["outVLabel"] in vertex_labels
+        assert edge["inVLabel"] in vertex_labels
+        assert isinstance(edge["properties"], dict)
+
+    extractor = PropertyGraphExtract(llm=MagicMock(spec=BaseLLM))
+    parsed_items = extractor._extract_and_filter_label(schema, json.dumps(output))
+    assert {item["type"] for item in parsed_items} == {"vertex", "edge"}
+    assert len(parsed_items) == len(output["vertices"]) + len(output["edges"])
+
+
+def test_extract_graph_prompt_en_example_matches_parser_contract():
+    _assert_prompt_example_contract(PromptConfig.extract_graph_prompt_EN, "## Example")
+
+
+def test_extract_graph_prompt_cn_example_matches_parser_contract():
+    _assert_prompt_example_contract(PromptConfig.extract_graph_prompt_CN, "## 示例")
+
+
+def test_extract_graph_prompt_example_contract_rejects_label_name_vertex_id():
+    schema, output = _example_schema_and_output(PromptConfig.extract_graph_prompt_EN, "## Example")
+    output["vertices"][0]["id"] = "person:Sarah"
+
+    try:
+        _assert_output_matches_schema_contract(schema, output)
+    except AssertionError:
+        return
+
+    raise AssertionError("Prompt example contract accepted a label-name vertex id")
+
+
+def test_extract_graph_prompt_example_contract_rejects_dangling_edge_reference():
+    schema, output = _example_schema_and_output(PromptConfig.extract_graph_prompt_EN, "## Example")
+    output["edges"][0]["outV"] = "1:Missing"
+
+    try:
+        _assert_output_matches_schema_contract(schema, output)
+    except AssertionError:
+        return
+
+    raise AssertionError("Prompt example contract accepted an edge reference outside vertices")
+
+
+def test_prompt_examples_do_not_require_redundant_item_type():
+    examples_path = (
+        Path(__file__).parents[2] / "hugegraph_llm" / "resources" / "prompt_examples" / "prompt_examples.json"
+    )
+    examples = json.loads(examples_path.read_text(encoding="utf-8"))
+
+    for example in examples:
+        prompt = example["prompt"]
+        assert '"type":"vertex"' not in prompt
+        assert '"type":"edge"' not in prompt

@@ -59,12 +59,10 @@ The Graph schema uses this shape:
 Return exactly one JSON object: {"vertices": [...], "edges": [...]}
 
 Vertex object:
-{"id":"vertex id","label":"vertex label","type":"vertex","properties":{"propertyName":"propertyValue", ...}}
-- Every vertex must include "type":"vertex"; do not omit it.
+{"id":"vertex id","label":"vertex label","properties":{"propertyName":"propertyValue", ...}}
 
 Edge object:
-{"label":"edge label","type":"edge","outV":"source vertex id","outVLabel":"source vertex label","inV":"target vertex id","inVLabel":"target vertex label","properties":{"propertyName":"propertyValue", ...}}
-- Every edge must include "type":"edge"; do not omit it.
+{"label":"edge label","outV":"source vertex id","outVLabel":"source vertex label","inV":"target vertex id","inVLabel":"target vertex label","properties":{"propertyName":"propertyValue", ...}}
 
 ## Deterministic Vertex ID Rules
 For every vertex, first find the schema entry where vertexlabels[].name equals the output label.
@@ -94,7 +92,7 @@ Graph schema example:
 {"vertexlabels":[{"id":1,"name":"person","primary_keys":["name"],"properties":["name","age","occupation"],"nullable_keys":["age","occupation"]}],"edgelabels":[{"name":"roommate","source_label":"person","target_label":"person","properties":["date"]}],"propertykeys":[{"name":"name","data_type":"TEXT","cardinality":"SINGLE"},{"name":"age","data_type":"INT","cardinality":"SINGLE"},{"name":"occupation","data_type":"TEXT","cardinality":"SINGLE"},{"name":"date","data_type":"TEXT","cardinality":"SINGLE"}]}
 
 Output:
-{"vertices":[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"attorney"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"journalist"}}],"edges":[{"label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}"""
+{"vertices":[{"id":"1:Sarah","label":"person","properties":{"name":"Sarah","age":30,"occupation":"attorney"}},{"id":"1:James","label":"person","properties":{"name":"James","occupation":"journalist"}}],"edges":[{"label":"roommate","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}"""
 
     graph_schema: str = """{
 "vertexlabels": [
@@ -279,12 +277,10 @@ and experiences.
 必须返回唯一 JSON 对象：{"vertices": [...], "edges": [...]}
 
 顶点对象：
-{"id":"顶点 id","label":"顶点标签","type":"vertex","properties":{"属性名":"属性值", ...}}
-- 每个顶点必须包含 "type":"vertex"，不能省略。
+{"id":"顶点 id","label":"顶点标签","properties":{"属性名":"属性值", ...}}
 
 边对象：
-{"label":"边标签","type":"edge","outV":"源顶点 id","outVLabel":"源顶点标签","inV":"目标顶点 id","inVLabel":"目标顶点标签","properties":{"属性名":"属性值", ...}}
-- 每条边必须包含 "type":"edge"，不能省略。
+{"label":"边标签","outV":"源顶点 id","outVLabel":"源顶点标签","inV":"目标顶点 id","inVLabel":"目标顶点标签","properties":{"属性名":"属性值", ...}}
 
 ## 确定性顶点 ID 规则
 对每个顶点，先找到 schema 中 vertexlabels[].name 等于输出 label 的条目。
@@ -314,7 +310,7 @@ and experiences.
 {"vertexlabels":[{"id":1,"name":"person","primary_keys":["name"],"properties":["name","age","occupation"],"nullable_keys":["age","occupation"]}],"edgelabels":[{"name":"roommate","source_label":"person","target_label":"person","properties":["date"]}],"propertykeys":[{"name":"name","data_type":"TEXT","cardinality":"SINGLE"},{"name":"age","data_type":"INT","cardinality":"SINGLE"},{"name":"occupation","data_type":"TEXT","cardinality":"SINGLE"},{"name":"date","data_type":"TEXT","cardinality":"SINGLE"}]}
 
 输出：
-{"vertices":[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"律师"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"记者"}}],"edges":[{"label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}
+{"vertices":[{"id":"1:Sarah","label":"person","properties":{"name":"Sarah","age":30,"occupation":"律师"}},{"id":"1:James","label":"person","properties":{"name":"James","occupation":"记者"}}],"edges":[{"label":"roommate","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}
 """
 
     gremlin_generate_prompt_CN: str = """

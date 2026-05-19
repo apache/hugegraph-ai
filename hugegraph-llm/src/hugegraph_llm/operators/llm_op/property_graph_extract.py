@@ -147,11 +147,14 @@ class PropertyGraphExtract:
                     if not isinstance(item, dict):
                         log.warning("Invalid property graph item type '%s'.", type(item))
                         continue
+                    item = dict(item)
+                    item_type_value = item.get("type", item_type)
+                    item["type"] = item_type_value
                     if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
                         log.warning("Invalid item keys '%s'.", item.keys())
                         continue
-                    if item["type"] != item_type:
-                        log.warning("Invalid %s type '%s' has been ignored.", item_type, item["type"])
+                    if item_type_value != item_type:
+                        log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
                         continue
                     if item["label"] not in valid_labels:
                         log.warning(

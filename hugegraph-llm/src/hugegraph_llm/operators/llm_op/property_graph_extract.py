@@ -129,9 +129,7 @@ class PropertyGraphExtract:
         # Try to extract JSON (object or array)
         json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
         if not json_match:
-            log.critical(
-                "Invalid property graph! No JSON found, please check the output format example in prompt."
-            )
+            log.critical("Invalid property graph! No JSON found, please check the output format example in prompt.")
             return []
         json_str = json_match.group(1).strip()
 

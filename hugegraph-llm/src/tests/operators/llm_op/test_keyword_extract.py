@@ -206,6 +206,17 @@ class TestKeywordExtract(unittest.TestCase):
         self.assertIn("machine learning", keywords)
         self.assertIn("neural networks", keywords)
 
+    def test_extract_keywords_from_markdown_code_block(self):
+        """Test _extract_keywords_from_response strips markdown code fences."""
+        response = """```text
+KEYWORDS: artificial intelligence:0.9, machine learning:0.8, neural networks:0.7
+```"""
+        keywords = self.extractor._extract_keywords_from_response(response, lowercase=False, start_token="KEYWORDS:")
+
+        self.assertEqual(keywords["artificial intelligence"], 0.9)
+        self.assertEqual(keywords["machine learning"], 0.8)
+        self.assertEqual(keywords["neural networks"], 0.7)
+
     def test_extract_keywords_from_response_without_start_token(self):
         """Test _extract_keywords_from_response method without start token."""
         response = "artificial intelligence:0.9, machine learning:0.8, neural networks:0.7"

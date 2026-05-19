@@ -200,6 +200,160 @@ class TestPropertyGraphExtract(unittest.TestCase):
         self.assertEqual(result[1]["type"], "edge")
         self.assertEqual(result[1]["label"], "acted_in")
 
+    def test_extract_and_filter_label_markdown_json(self):
+        """Test _extract_and_filter_label with JSON wrapped in markdown fences."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = f"""```json
+{self.llm_responses[1]}
+```"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "movie")
+        self.assertEqual(result[1]["type"], "edge")
+        self.assertEqual(result[1]["label"], "acted_in")
+
+    def test_extract_and_filter_label_markdown_json_with_prose(self):
+        """Test fenced JSON can be parsed when the LLM adds prose."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = f"""Here is the extracted graph:
+```
+{self.llm_responses[1]}
+```
+Hope this helps."""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "movie")
+        self.assertEqual(result[1]["type"], "edge")
+        self.assertEqual(result[1]["label"], "acted_in")
+
+    def test_extract_and_filter_label_flat_array_json(self):
+        """Test _extract_and_filter_label converts flat arrays to vertices and edges."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """```json
+        [
+            {
+                "type": "vertex",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "type": "edge",
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            }
+        ]
+        ```"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "edge")
+        self.assertEqual(result[1]["label"], "acted_in")
+
+    def test_extract_and_filter_label_flat_array_filters_invalid_items(self):
+        """Test flat arrays keep valid graph items and drop invalid ones."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """[
+            {
+                "type": "vertex",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "type": "vertex",
+                "label": "unknown_label",
+                "properties": {
+                    "name": "Unknown"
+                }
+            },
+            {
+                "type": "edge",
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            },
+            {
+                "type": "edge",
+                "label": "unknown_edge",
+                "properties": {}
+            },
+            {
+                "type": "note",
+                "label": "person",
+                "properties": {}
+            },
+            "not-a-dict"
+        ]"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "person")
+        self.assertEqual(result[1]["type"], "edge")
+        self.assertEqual(result[1]["label"], "acted_in")
+
+    def test_extract_and_filter_label_malformed_fenced_json(self):
+        """Test malformed fenced JSON returns no graph items."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """```json
+        {
+            "vertices": [
+                {
+                    "type": "vertex",
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                }
+            ],
+            "edges": []
+        ```
+        """
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(result, [])
+
     def test_extract_and_filter_label_infers_type_from_grouped_arrays(self):
         """Infer item type from vertices/edges containers when LLM omits it."""
         extractor = PropertyGraphExtract(llm=self.mock_llm)

@@ -121,18 +121,26 @@ class PropertyGraphExtract:
         return self.llm.generate(prompt=prompt)
 
     def _extract_and_filter_label(self, schema, text) -> List[Dict[str, Any]]:
-        # Use regex to extract a JSON object with curly braces
-        json_match = re.search(r"({.*})", text, re.DOTALL)
+        # Strip markdown code blocks (e.g. ```json ... ```)
+        text = re.sub(r"```\w*\n?", "", text)
+        text = re.sub(r"```", "", text)
+        text = text.strip()
+
+        # Try to extract JSON (object or array)
+        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
         if not json_match:
-            log.critical(
-                "Invalid property graph! No JSON object found, please check the output format example in prompt."
-            )
+            log.critical("Invalid property graph! No JSON found, please check the output format example in prompt.")
             return []
         json_str = json_match.group(1).strip()
 
         items = []
         try:
             property_graph = json.loads(json_str)
+            # Handle flat array format: convert to {"vertices": [...], "edges": [...]}
+            if isinstance(property_graph, list):
+                vertices = [item for item in property_graph if isinstance(item, dict) and item.get("type") == "vertex"]
+                edges = [item for item in property_graph if isinstance(item, dict) and item.get("type") == "edge"]
+                property_graph = {"vertices": vertices, "edges": edges}
             # Expect property_graph to be a dict with keys "vertices" and "edges"
             if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
                 log.critical("Invalid property graph format; expecting 'vertices' and 'edges'.")

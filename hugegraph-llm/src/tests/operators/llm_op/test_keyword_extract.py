@@ -206,6 +206,52 @@ class TestKeywordExtract(unittest.TestCase):
         self.assertIn("machine learning", keywords)
         self.assertIn("neural networks", keywords)
 
+    def test_extract_keywords_from_markdown_code_block(self):
+        """Test _extract_keywords_from_response strips markdown code fences."""
+        response = """```text
+KEYWORDS: artificial intelligence:0.9, machine learning:0.8, neural networks:0.7
+```"""
+        keywords = self.extractor._extract_keywords_from_response(response, lowercase=False, start_token="KEYWORDS:")
+
+        self.assertEqual(keywords["artificial intelligence"], 0.9)
+        self.assertEqual(keywords["machine learning"], 0.8)
+        self.assertEqual(keywords["neural networks"], 0.7)
+
+    def test_extract_keywords_from_common_markdown_code_fences(self):
+        """Test common fenced output variants from LLMs."""
+        responses = [
+            """```json
+KEYWORDS: artificial intelligence:0.9, machine learning:0.8
+```""",
+            """```
+KEYWORDS: artificial intelligence:0.9, machine learning:0.8
+```""",
+            "Here are the keywords:\n```text\r\nKEYWORDS: artificial intelligence:0.9, machine learning:0.8\r\n```\nDone.",
+        ]
+
+        for response in responses:
+            with self.subTest(response=response):
+                keywords = self.extractor._extract_keywords_from_response(
+                    response, lowercase=False, start_token="KEYWORDS:"
+                )
+
+                self.assertEqual(keywords["artificial intelligence"], 0.9)
+                self.assertEqual(keywords["machine learning"], 0.8)
+
+    def test_extract_keywords_from_fenced_output_skips_malformed_items(self):
+        """Test fenced output keeps valid keywords while skipping malformed items."""
+        response = """```markdown
+KEYWORDS: artificial intelligence:0.9, missing-score, bad score:not-a-number, graph:1.2, machine learning:0.8
+```"""
+
+        keywords = self.extractor._extract_keywords_from_response(response, lowercase=False, start_token="KEYWORDS:")
+
+        self.assertEqual(keywords["artificial intelligence"], 0.9)
+        self.assertEqual(keywords["graph"], 1.0)
+        self.assertEqual(keywords["machine learning"], 0.8)
+        self.assertNotIn("missing-score", keywords)
+        self.assertNotIn("bad score", keywords)
+
     def test_extract_keywords_from_response_without_start_token(self):
         """Test _extract_keywords_from_response method without start token."""
         response = "artificial intelligence:0.9, machine learning:0.8, neural networks:0.7"

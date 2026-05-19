@@ -47,62 +47,54 @@ Answer:
 
     # Note: Users should modify the prompt(examples) according to the real schema and text (property_graph_extract.py)
     extract_graph_prompt_EN: str = """## Main Task
-Given the following graph schema and a piece of text, your task is to analyze the text and extract information that fits into the schema's structure, formatting the information into vertices and edges as specified.
+Extract only the vertices and edges that are supported by the given graph schema and input text. Return valid JSON only.
 
-## Basic Rules:
-### Schema Format:
-Graph Schema:
-- "vertices": [List of vertex labels and their properties]
-- "edges": [List of edge labels, their source and target vertex labels, and properties]
+## Schema Contract
+The Graph schema uses this shape:
+- vertexlabels[]: each vertex label has "id", "name", "primary_keys", "properties", and optional "nullable_keys".
+- edgelabels[]: each edge label has "name", "source_label", "target_label", and "properties".
+- propertykeys[]: each property key has "name", "data_type", and "cardinality".
 
-### Content Rule:
-Please read the provided text carefully and identify any information that corresponds to the vertices and edges defined in the schema.
-You are not allowed to modify the schema contraints. Your task is to format the provided information into the required schema, without missing any keyword.
-For each piece of information that matches a vertex or edge, format it strictly according to the following JSON structures:
+## Output Contract
+Return exactly one JSON object: {"vertices": [...], "edges": [...]}
 
-#### Vertex Format:
-{"id":"vertexLabelID:entityName","label":"vertexLabel","type":"vertex","properties":{"propertyName":"propertyValue", ...}}
+Vertex object:
+{"id":"vertex id","label":"vertex label","type":"vertex","properties":{"propertyName":"propertyValue", ...}}
+- Every vertex must include "type":"vertex"; do not omit it.
 
-where:
-    - "vertexLabelID": int
-    - "vertexLabel": str
-    - "entityName": str
-    - "type": "vertex"
-    - "properties": dict
+Edge object:
+{"label":"edge label","type":"edge","outV":"source vertex id","outVLabel":"source vertex label","inV":"target vertex id","inVLabel":"target vertex label","properties":{"propertyName":"propertyValue", ...}}
+- Every edge must include "type":"edge"; do not omit it.
 
-#### Edge Format:
-{"id":"vertexlabelID:pk1!pk2!pk3", label":"edgeLabel","type":"edge","outV":"sourceVertexId","outVLabel":"sourceVertexLabel","inV":"targetVertexId","inVLabel":"targetVertexLabel","properties":{"propertyName":"propertyValue",...}}
+## Deterministic Vertex ID Rules
+For every vertex, first find the schema entry where vertexlabels[].name equals the output label.
+- vertexLabelID must be taken from that schema entry's vertexlabels[].id. Never invent it from the label text.
+- If primary_keys has exactly one key: id = "{vertexLabelID}:{properties.<primary_key>}".
+- If primary_keys has multiple keys: id = "{vertexLabelID}:{properties.<pk1>}!{properties.<pk2>}" in the same order as schema primary_keys.
+- Never use label names such as "person:Sarah" as vertex ids when schema gives a numeric vertex label id.
 
-where:
-    - "id": int or str (conditional) (optional)
-    - "edgeLabel": str
-    - "type": "edge"
-    - "outV": str
-    - "outVLabel": str
-    - "inV": str
-    - "inVLabel": str
-    - "properties": dict
-    - "sourceVertexId": "vertexLabelID:entityName"
-    - "targetVertexId": "vertexLabelID:entityName"
+## Edge Reference Rules
+- outV and inV must exactly match the id of vertices in the same output.
+- outVLabel/inVLabel must match the corresponding source/target vertex label.
+- Only output an edge if both endpoint vertices are also present in vertices.
+- Do not create an edge label that is not present in edgelabels[].
 
-Strictly follow these rules:
-1. Don't extract property fields or labels that doesn't exist in the given schema. Do not generate new information.
-2. Ensure the extracted property set in the same type as the given schema (like 'age' should be a number, 'select' should be a boolean).
-3. If there are multiple primary keys, the strategy for generating VID is: vertexlabelID:pk1!pk2!pk3 (pk means primary key, and '!' is the separator). This id must be generated ONLY if there are multiple primary keys. If there is only one primary key, the strategy for generating VID is: int (sequencially increasing).
-4. Output in JSON format, only include vertexes and edges & remove empty properties, extracted and formatted based on the text/rules and schema.
-5. Translate the schema fields into Chinese if the given text input is Chinese (Optional)
+## Extraction Rules
+1. Do not extract labels or properties that are absent from the schema.
+2. Do not translate schema field names, labels, or property keys. Keep schema names exactly as provided.
+3. Preserve property data types according to propertykeys[]; for example, INT stays number and BOOLEAN stays boolean.
+4. Remove empty properties. Do not invent missing facts.
+5. Output JSON only; no Markdown fences, prose, comments, or trailing text.
 
-Refer to the following baseline example to understand the output generation requirements:
-## Example:
-### Input example:
-#### text:
-Meet Sarah, a 30-year-old attorney, and her roommate, James, whom she's shared a home with since 2010. James, in his professional life, works as a journalist.
+## Example
+Input text:
+Meet Sarah, a 30-year-old attorney, and her roommate, James, whom she's shared a home with since 2010. James works as a journalist.
 
-#### graph schema example:
-{"vertices":[{"vertex_label":"person","properties":["name","age","occupation"]}], "edges":[{"edge_label":"roommate", "source_vertex_label":"person","target_vertex_label":"person","properties":["date"]]}
+Graph schema example:
+{"vertexlabels":[{"id":1,"name":"person","primary_keys":["name"],"properties":["name","age","occupation"],"nullable_keys":["age","occupation"]}],"edgelabels":[{"name":"roommate","source_label":"person","target_label":"person","properties":["date"]}],"propertykeys":[{"name":"name","data_type":"TEXT","cardinality":"SINGLE"},{"name":"age","data_type":"INT","cardinality":"SINGLE"},{"name":"occupation","data_type":"TEXT","cardinality":"SINGLE"},{"name":"date","data_type":"TEXT","cardinality":"SINGLE"}]}
 
-### Output example:
-{"vertices":[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"attorney"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"journalist"}}], "edges":[{"id": 1, "label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}"""
+Output:
+{"vertices":[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"attorney"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"journalist"}}],"edges":[{"label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}"""
 
     graph_schema: str = """{
 "vertexlabels": [
@@ -275,40 +267,54 @@ and experiences.
 """
 
     extract_graph_prompt_CN: str = """## 主要任务
-根据以下图谱和一段文本，你的任务是分析文本并提取符合模式结构的信息，将信息格式化为顶点和边。
+只抽取输入文本和给定图谱 schema 共同支持的顶点与边。只返回合法 JSON。
 
-## 基本规则
-### 模式格式
-图谱模式：
-- 顶点：[顶点标签及其属性列表]
-- 边：[边标签、源顶点标签、目标顶点标签及其属性列表]
+## Schema 契约
+图谱 schema 使用以下结构：
+- vertexlabels[]：每个顶点标签包含 "id"、"name"、"primary_keys"、"properties"，以及可选的 "nullable_keys"。
+- edgelabels[]：每个边标签包含 "name"、"source_label"、"target_label"、"properties"。
+- propertykeys[]：每个属性包含 "name"、"data_type"、"cardinality"。
 
-### 内容规则
-请仔细阅读提供的文本，识别与模式中定义的顶点和边相对应的信息。对于每一条匹配顶点或边的信息，按以下 JSON 结构格式化：
+## 输出契约
+必须返回唯一 JSON 对象：{"vertices": [...], "edges": [...]}
 
-#### 顶点格式：
-{"id":"顶点标签 ID:实体名称","label":"顶点标签","type":"vertex","properties":{"属性名":"属性值", ...}}
+顶点对象：
+{"id":"顶点 id","label":"顶点标签","type":"vertex","properties":{"属性名":"属性值", ...}}
+- 每个顶点必须包含 "type":"vertex"，不能省略。
 
-#### 边格式：
-{"label":"边标签","type":"edge","outV":"源顶点 ID","outVLabel":"源顶点标签","inV":"目标顶点 ID","inVLabel":"目标顶点标签","properties":{"属性名":"属性值",...}}
+边对象：
+{"label":"边标签","type":"edge","outV":"源顶点 id","outVLabel":"源顶点标签","inV":"目标顶点 id","inVLabel":"目标顶点标签","properties":{"属性名":"属性值", ...}}
+- 每条边必须包含 "type":"edge"，不能省略。
 
-同时遵循以下规则：
-1. 不要提取给定模式中不存在的属性字段或标签
-2. 确保提取的属性集与给定模式类型一致（如'age'应为数字，'select'应为布尔值）
-3. 如果有多个主键，生成 VID 的策略是：顶点标签 ID:pk1!pk2!pk3（pk 表示主键，'!'是分隔符）
-4. 以 JSON 格式输出，仅包含顶点和边，移除空属性，基于文本/规则和模式提取和格式化
-5. 如果给定文本为中文但模式为英文，则将模式字段翻译成中文（可选）
+## 确定性顶点 ID 规则
+对每个顶点，先找到 schema 中 vertexlabels[].name 等于输出 label 的条目。
+- vertexLabelID 必须取自该 schema 条目的 vertexlabels[].id，不能从标签文本猜测。
+- 如果 primary_keys 只有一个字段：id = "{vertexLabelID}:{properties.<primary_key>}"。
+- 如果 primary_keys 有多个字段：id = "{vertexLabelID}:{properties.<pk1>}!{properties.<pk2>}"，顺序必须与 schema primary_keys 一致。
+- 当 schema 提供数字顶点标签 id 时，不要使用 "person:Sarah" 这样的标签名作为顶点 id。
+
+## 边引用规则
+- outV 和 inV 必须严格等于本次输出 vertices 中的 id。
+- outVLabel/inVLabel 必须分别匹配对应源/目标顶点标签。
+- 只有当两个端点顶点都出现在 vertices 中时，才输出该边。
+- 不要输出 edgelabels[] 中不存在的边标签。
+
+## 抽取规则
+1. 不要抽取 schema 中不存在的标签或属性。
+2. 不要翻译 schema 字段名、标签名或属性 key，必须与 schema 原文完全一致。
+3. 根据 propertykeys[] 保持属性类型，例如 INT 保持数字，BOOLEAN 保持布尔值。
+4. 移除空属性。不要编造缺失事实。
+5. 只输出 JSON；不要输出 Markdown 代码块、解释文本、注释或尾随文本。
 
 ## 示例
-### 输入示例：
-#### 文本
-认识 Sarah，一位 30 岁的律师，和她的室友 James，他们从 2010 年开始合住。James 在职业生活中是一名记者。
+输入文本：
+认识 Sarah，一位 30 岁的律师，和她的室友 James，他们从 2010 年开始合住。James 是一名记者。
 
-#### 图谱模式
-{"vertices":[{"vertex_label":"person","properties":["name","age","occupation"]}], "edges":[{"edge_label":"roommate", "source_vertex_label":"person","target_vertex_label":"person","properties":["date"]]}
+图谱 schema 示例：
+{"vertexlabels":[{"id":1,"name":"person","primary_keys":["name"],"properties":["name","age","occupation"],"nullable_keys":["age","occupation"]}],"edgelabels":[{"name":"roommate","source_label":"person","target_label":"person","properties":["date"]}],"propertykeys":[{"name":"name","data_type":"TEXT","cardinality":"SINGLE"},{"name":"age","data_type":"INT","cardinality":"SINGLE"},{"name":"occupation","data_type":"TEXT","cardinality":"SINGLE"},{"name":"date","data_type":"TEXT","cardinality":"SINGLE"}]}
 
-### 输出示例：
-[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"律师"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"记者"}},{"label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]
+输出：
+{"vertices":[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"律师"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"记者"}}],"edges":[{"label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}
 """
 
     gremlin_generate_prompt_CN: str = """

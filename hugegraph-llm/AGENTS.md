@@ -1,93 +1,56 @@
-# Basic Introduction
+# hugegraph-llm AGENTS.md
 
-This file provides guidance to AI coding tools and developers when working with code in this repository.
+Module-specific guidance for AI agents. Root `../AGENTS.md` still applies; this file only adds rules that matter inside `hugegraph-llm`.
 
-## Project Overview
+## Module Focus
 
-HugeGraph-LLM is a comprehensive toolkit that bridges graph databases and large language models,
-part of the Apache HugeGraph AI ecosystem. It enables seamless integration between HugeGraph and LLMs for building
-intelligent applications with three main capabilities: Knowledge Graph Construction, Graph-Enhanced RAG,
-and Text2Gremlin query generation.
+- This module owns GraphRAG, knowledge graph construction, and Text2Gremlin behavior.
+- Prefer changes in the owning layer first. If a fix crosses API, flow, node, operator, model, prompt, or index boundaries, preserve the existing contract or update tests for the new contract explicitly.
+- `hugegraph-python-client` is the HugeGraph access boundary. Prefer adapting LLM-side code unless the client contract is actually wrong.
 
-## Tech Stack
+## Testing Expectations
 
-- **Language**: Python 3.10+ (uv package manager required)
-- **Framework**: FastAPI + Gradio for web interfaces
-- **Graph Database**: HugeGraph Server 1.5+
-- **LLM Integration**: LiteLLM (supports OpenAI, Ollama, Qianfan, etc.)
-- **Vector Operations**: FAISS, NumPy, and will support multiple Vector DB soon
-- **Code style**: ruff & mypy (on the way, soon)
-- **Key Dependencies**: hugegraph-python-client
+- Any code change must add or update tests that exercise the changed behavior, regression risk, or failure path.
+- For pipeline changes, cover the relevant flow, node, or operator contract instead of only testing a helper in isolation.
+- For API or request/response changes, cover the public model or endpoint behavior.
+- For prompt or Text2Gremlin changes, preserve and test the expected output contract, especially Gremlin-only fenced output when callers depend on it.
+- External-service tests may be skipped only through explicit, traceable skip controls. Do not hide failures by silently swallowing HugeGraph, LLM provider, or vector DB connection errors.
 
-## Essential Commands
+## Code Search Anchors
 
-### Running the Application
+- `src/hugegraph_llm/api/` and `src/hugegraph_llm/api/models/` - FastAPI endpoints and request/response models.
+- `src/hugegraph_llm/flows/`, `src/hugegraph_llm/nodes/`, and `src/hugegraph_llm/operators/` - pipeline orchestration and executable units.
+- `src/hugegraph_llm/config/` and `src/hugegraph_llm/resources/` - runtime config and prompt resources.
+- `src/hugegraph_llm/indices/` - vector index implementations and backends.
+- `src/tests/` - unit, integration, and contract tests for this module.
+
+## Build & Test
+
+From the repository root:
+
 ```bash
-# Install dependencies and create virtual environment (uv already installed)
-uv sync
-# Activate virtual environment
-source .venv/bin/activate
-# Launch main RAG demo application
-python -m hugegraph_llm.demo.rag_demo.app
-# Custom host/port
-python -m hugegraph_llm.demo.rag_demo.app --host 127.0.0.1 --port 18001
+uv sync --extra llm --extra dev
 ```
 
-### Testing
+From `hugegraph-llm/`, these commands mirror the CI split:
+
 ```bash
-pytest src/tests/
-# Or using unittest
-python -m unittest discover src/tests/
+SKIP_EXTERNAL_SERVICES=true uv run pytest src/tests/config/ src/tests/document/ src/tests/middleware/ src/tests/operators/ src/tests/models/ src/tests/indices/ src/tests/test_utils.py -v --tb=short
+SKIP_EXTERNAL_SERVICES=true uv run pytest src/tests/integration/test_graph_rag_pipeline.py src/tests/integration/test_kg_construction.py src/tests/integration/test_rag_pipeline.py -v --tb=short
 ```
-PS: we skip Docker Deployment details here.
 
-## Architecture Overview
+- Use narrower `pytest` targets while iterating, but finish with coverage that matches the touched behavior.
+- For Python code changes, run root `uv run ruff format --check .` and `uv run ruff check .` before handoff.
 
-### Core Directory Structure
-- `src/hugegraph_llm/api/` - FastAPI endpoints (rag_api.py, admin_api.py)
-- `src/hugegraph_llm/demo/rag_demo/` - Main Gradio UI application
-- `src/hugegraph_llm/operators/` - Core processing pipelines
-- `src/hugegraph_llm/models/` - LLM, embedding, reranker implementations
-- `src/hugegraph_llm/indices/` - Vector and graph indexing
-- `src/hugegraph_llm/config/` - Configuration management
-- `src/hugegraph_llm/utils/` - Utilities, logging, decorators
+## LLM-specific Rules
 
-### Key Processing Pipelines
+- Preserve Text2Gremlin prompt/output contracts unless the task explicitly changes them.
+- Keep GraphRAG retrieval, KG construction, and Text2Gremlin paths behaviorally separate; shared helpers should not blur pipeline semantics.
+- Do not introduce a new LLM, embedding, reranker, or vector DB dependency without wiring it through existing config patterns.
+- Treat HugeGraph Server, LLM providers, and vector databases as external services with explicit configuration and explicit test skip behavior.
 
-1. **KG Construction** (`operators/kg_construction_task.py`)
-   - Text chunking and vectorization pipeline
-   - Schema management and validation
-   - Information extraction using LLMs
-   - Graph data commitment to HugeGraph
+## Style
 
-2. **Graph RAG** (`operators/graph_rag_task.py`)
-   - Multi-modal retrieval (vector, graph, hybrid)
-   - Keyword extraction and entity matching
-   - Graph traversal and Gremlin query generation
-   - Result merging and reranking
-
-3. **Text2Gremlin** (`operators/gremlin_generate_task.py`)
-   - Natural language to Gremlin query conversion
-   - Template-based and few-shot learning approaches
-
-### Configuration Management
-
-- Main config: `.env` file (generate with `config.generate` module)
-- Prompt config: `src/hugegraph_llm/resources/demo/config_prompt.yaml`
-- HugeGraph connection settings in environment variables
-- LLM provider configuration through `LiteLLM` & `openai/ollama` client
-
-## Development Workflow
-
-1. **Prerequisites**: Ensure HugeGraph Server is running and LLM provider is configured
-2. **Environment Setup**: Use UV for dependency management, activate virtual environment
-3. **Configuration**: Generate configs and set up .env file with proper credentials
-4. **Development**: Use Gradio demo for interactive testing, FastAPI for programmatic access
-5. **Testing**: Unit tests use standard unittest framework in src/tests/
-
-## Important Notes
-
-- Always use `uv` package manager instead of `pip` for dependency management
-- HugeGraph Server must be accessible while running the app
-- The system supports multiple LLM providers through `LiteLLM` abstraction
-- Each file should be better < 600 lines for maintainability
+- Python is `>=3.10,<3.12` for this module.
+- Use `uv` for dependency management; do not document or rely on ad hoc `pip install` workflows.
+- Ruff and mypy behavior comes from `pyproject.toml`; do not duplicate their rule sets here.

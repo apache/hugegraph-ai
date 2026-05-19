@@ -352,6 +352,48 @@ class TestCommit2Graph(unittest.TestCase):
         self.assertEqual(mock_handle_graph_creation.call_count, 3)  # 2 vertices + 1 edge
 
     @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_maps_llm_vertex_ids_to_created_vertex_ids(self, mock_handle_graph_creation):
+        """Test edges use server-created vertex ids when LLM ids differ."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="1:Tom Hanks"),
+            MagicMock(id="2:Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+
+        vertices = [
+            {
+                "id": "person:Tom Hanks",
+                "label": "person",
+                "properties": {"name": "Tom Hanks", "age": 67},
+            },
+            {
+                "id": "movie:Forrest Gump",
+                "label": "movie",
+                "properties": {"title": "Forrest Gump", "year": 1994},
+            },
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        self.assertEqual(vertices[0]["id"], "1:Tom Hanks")
+        self.assertEqual(vertices[1]["id"], "2:Forrest Gump")
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addEdge,
+            "acted_in",
+            "1:Tom Hanks",
+            "2:Forrest Gump",
+            {"role": "Forrest Gump"},
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
     def test_load_into_graph_with_data_type_validation_failure(self, mock_handle_graph_creation):
         """Test load_into_graph method with data type validation failure."""
         # Setup mocks

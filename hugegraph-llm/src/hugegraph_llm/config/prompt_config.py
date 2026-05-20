@@ -308,7 +308,7 @@ and experiences.
 {"vertices":[{"vertex_label":"person","properties":["name","age","occupation"]}], "edges":[{"edge_label":"roommate", "source_vertex_label":"person","target_vertex_label":"person","properties":["date"]]}
 
 ### 输出示例：
-[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"律师"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"记者"}},{"label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]
+{"vertices":[{"id":"1:Sarah","label":"person","type":"vertex","properties":{"name":"Sarah","age":30,"occupation":"律师"}},{"id":"1:James","label":"person","type":"vertex","properties":{"name":"James","occupation":"记者"}}], "edges":[{"id": 1, "label":"roommate","type":"edge","outV":"1:Sarah","outVLabel":"person","inV":"1:James","inVLabel":"person","properties":{"date":"2010"}}]}
 """
 
     gremlin_generate_prompt_CN: str = """

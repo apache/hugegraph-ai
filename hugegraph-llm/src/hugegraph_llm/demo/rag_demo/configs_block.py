@@ -16,13 +16,11 @@
 # under the License.
 
 import json
-import os
 from functools import partial
 from typing import Optional
 
 import gradio as gr
 import requests
-from dotenv import dotenv_values
 from requests.auth import HTTPBasicAuth
 
 from hugegraph_llm.config import huge_settings, index_settings, llm_settings
@@ -108,7 +106,7 @@ def apply_vector_engine(engine: str):
     # Persist the vector engine selection
     setattr(index_settings, "cur_vector_index", engine)
     try:
-        index_settings.update_env()
+        index_settings.update_config()
     except Exception:  # pylint: disable=W0718
         pass
     gr.Info("Configured!")
@@ -172,7 +170,7 @@ def apply_vector_engine_backend(  # pylint: disable=too-many-branches
         index_settings.qdrant_api_key = api_key or None
 
     try:
-        index_settings.update_env()
+        index_settings.update_config()
     except Exception:  # pylint: disable=W0718
         pass
     gr.Info("Configured!")
@@ -200,7 +198,7 @@ def apply_embedding_config(arg1, arg2, arg3, origin_call=None) -> int:
         llm_settings.litellm_embedding_api_base = arg2
         llm_settings.litellm_embedding_model = arg3
         status_code = test_litellm_embedding(arg1, arg2, arg3)
-    llm_settings.update_env()
+    llm_settings.update_config()
     gr.Info("Configured!")
     return status_code
 
@@ -238,7 +236,7 @@ def apply_reranker_config(
             headers=headers,
             origin_call=origin_call,
         )
-    llm_settings.update_env()
+    llm_settings.update_config()
     gr.Info("Configured!")
     return status_code
 
@@ -261,7 +259,7 @@ def apply_graph_config(url, name, user, pwd, gs, origin_call=None) -> int:
     auth = HTTPBasicAuth(user, pwd)
     # for http api return status
     response = test_api_connection(test_url, auth=auth, origin_call=origin_call)
-    huge_settings.update_env()
+    huge_settings.update_config()
     return response
 
 
@@ -308,7 +306,7 @@ def apply_llm_config(
         status_code = test_litellm_chat(api_key_or_host, api_base_or_port, model_name, int(max_tokens))
 
     gr.Info("Configured!")
-    llm_settings.update_env()
+    llm_settings.update_config()
     return status_code
 
 
@@ -428,11 +426,9 @@ def create_configs_block() -> list:
                     llm_config_input = [gr.Textbox(value="", visible=False) for _ in range(4)]
                 llm_config_button = gr.Button("Apply configuration")
                 llm_config_button.click(apply_llm_config_with_chat_op, inputs=llm_config_input)
-                # Determine whether there are Settings in the.env file
-                env_path = os.path.join(os.getcwd(), ".env")  # Load .env from the current working directory
-                env_vars = dotenv_values(env_path)
-                api_extract_key = env_vars.get("OPENAI_EXTRACT_API_KEY")
-                api_text2sql_key = env_vars.get("OPENAI_TEXT2GQL_API_KEY")
+                # Determine whether API keys are set in config
+                api_extract_key = llm_settings.openai_extract_api_key
+                api_text2sql_key = llm_settings.openai_text2gql_api_key
                 if not api_extract_key:
                     llm_config_button.click(apply_llm_config_with_text2gql_op, inputs=llm_config_input)
                 if not api_text2sql_key:

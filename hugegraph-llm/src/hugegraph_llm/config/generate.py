@@ -31,8 +31,8 @@ if __name__ == "__main__":
     parser.add_argument("-U", "--update", default=True, action="store_true", help="Update the config file")
     args = parser.parse_args()
     if args.update:
-        huge_settings.generate_env()
-        admin_settings.generate_env()
-        llm_settings.generate_env()
-        index_settings.generate_env()
+        huge_settings.generate_yaml()
+        admin_settings.generate_yaml()
+        llm_settings.generate_yaml()
+        index_settings.generate_yaml()
         PromptConfig(llm_settings).generate_yaml_file()

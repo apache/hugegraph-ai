@@ -2,14 +2,14 @@
 
 本文档详细说明了 HugeGraph LLM 项目中所有的配置选项。配置分为以下几类：
 
-1. **基础配置**：通过 `.env` 文件管理
+1. **基础配置**：通过 `config.yaml` 文件管理（使用 OmegaConf）
 2. **Prompt 配置**：通过 `config_prompt.yaml` 文件管理
 3. **Docker 配置**：通过 Docker 和 Helm 配置文件管理
 4. **项目配置**：通过 `pyproject.toml` 和 `JSON` 文件管理
 
 ## 目录
 
-- [.env 配置文件](#env-配置文件)
+- [config.yaml 配置文件](#configyaml-配置文件)
   - [基础配置](#基础配置)
   - [OpenAI 配置](#openai-配置)
   - [Ollama 配置](#ollama-配置)
@@ -18,188 +18,223 @@
   - [HugeGraph 数据库配置](#hugegraph-数据库配置)
   - [向量数据库配置](#向量数据库配置)
   - [管理员配置](#管理员配置)
+- [配置优先级](#配置优先级)
+- [运行时热加载](#运行时热加载)
 - [配置使用示例](#配置使用示例)
 - [配置文件位置](#配置文件位置)
 
-## .env 配置文件
+## config.yaml 配置文件
 
-`.env` 文件位于 `hugegraph-llm/` 目录下，包含了系统运行所需的所有配置项。
+`config.yaml` 文件位于当前工作目录（通常是 `hugegraph-llm/`）下，使用结构化 YAML 格式存储所有配置项。配置被分为四个顶层 section：`llm`、`hugegraph`、`admin`、`index`。
 
 ### 基础配置
 
-| 配置项                    | 类型                                                     | 默认值    | 说明                                    |
-|------------------------|--------------------------------------------------------|--------|---------------------------------------|
-| `LANGUAGE`             | Literal["EN", "CN"]                                    | EN     | prompt语言，支持 EN（英文）和 CN（中文）            |
-| `CHAT_LLM_TYPE`        | Literal["openai", "litellm", "ollama/local"]           | openai | 聊天 LLM 类型：openai/litellm/ollama/local |
-| `EXTRACT_LLM_TYPE`     | Literal["openai", "litellm", "ollama/local"]           | openai | 信息提取 LLM 类型                           |
-| `TEXT2GQL_LLM_TYPE`    | Literal["openai", "litellm", "ollama/local"]           | openai | 文本转 GQL LLM 类型                        |
-| `EMBEDDING_TYPE`       | Optional[Literal["openai", "litellm", "ollama/local"]] | openai | 嵌入模型类型                                |
-| `RERANKER_TYPE`        | Optional[Literal["cohere", "siliconflow"]]             | None   | 重排序模型类型：cohere/siliconflow            |
-| `KEYWORD_EXTRACT_TYPE` | Literal["llm", "textrank", "hybrid"]                   | llm    | 关键词提取模型类型：llm/textrank/hybrid         |
-| `WINDOW_SIZE`          | Optional[Integer] | 3 | TextRank 滑窗大小 (范围: 1-10),较大的窗口可以捕获更长距离的词语关系,但会增加计算复杂度 |
-| `HYBRID_LLM_WEIGHTS`   | Optional[Float] | 0.5 | 混合模式中 LLM 结果的权重 (范围: 0.0-1.0),TextRank 权重 = 1 - 该值。推荐 0.5 以平衡两种方法 |
+```yaml
+llm:
+  language: EN                        # prompt语言，支持 EN（英文）和 CN（中文）
+  chat_llm_type: openai               # 聊天 LLM 类型：openai/litellm/ollama/local
+  extract_llm_type: openai            # 信息提取 LLM 类型
+  text2gql_llm_type: openai           # 文本转 GQL LLM 类型
+  embedding_type: openai              # 嵌入模型类型
+  reranker_type: null                 # 重排序模型类型：cohere/siliconflow
+  keyword_extract_type: llm           # 关键词提取模型类型：llm/textrank/hybrid
+  window_size: 3                      # TextRank 滑窗大小 (范围: 1-10)
+  hybrid_llm_weights: 0.5             # 混合模式中 LLM 结果的权重 (范围: 0.0-1.0)
+```
 
 ### OpenAI 配置
 
-| 配置项                              | 类型               | 默认值                       | 说明                        |
-|----------------------------------|------------------|---------------------------|---------------------------|
-| `OPENAI_CHAT_API_BASE`           | Optional[String] | https://api.openai.com/v1 | OpenAI 聊天 API 基础 URL      |
-| `OPENAI_CHAT_API_KEY`            | Optional[String] | -                         | OpenAI 聊天 API 密钥          |
-| `OPENAI_CHAT_LANGUAGE_MODEL`     | Optional[String] | gpt-4.1-mini              | 聊天模型名称                    |
-| `OPENAI_CHAT_TOKENS`             | Integer          | 8192                      | 聊天最大令牌数                   |
-| `OPENAI_EXTRACT_API_BASE`        | Optional[String] | https://api.openai.com/v1 | OpenAI 提取 API 基础 URL      |
-| `OPENAI_EXTRACT_API_KEY`         | Optional[String] | -                         | OpenAI 提取 API 密钥          |
-| `OPENAI_EXTRACT_LANGUAGE_MODEL`  | Optional[String] | gpt-4.1-mini              | 提取模型名称                    |
-| `OPENAI_EXTRACT_TOKENS`          | Integer          | 256                       | 提取最大令牌数                   |
-| `OPENAI_TEXT2GQL_API_BASE`       | Optional[String] | https://api.openai.com/v1 | OpenAI 文本转 GQL API 基础 URL |
-| `OPENAI_TEXT2GQL_API_KEY`        | Optional[String] | -                         | OpenAI 文本转 GQL API 密钥     |
-| `OPENAI_TEXT2GQL_LANGUAGE_MODEL` | Optional[String] | gpt-4.1-mini              | 文本转 GQL 模型名称              |
-| `OPENAI_TEXT2GQL_TOKENS`         | Integer          | 4096                      | 文本转 GQL 最大令牌数             |
-| `OPENAI_EMBEDDING_API_BASE`      | Optional[String] | https://api.openai.com/v1 | OpenAI 嵌入 API 基础 URL      |
-| `OPENAI_EMBEDDING_API_KEY`       | Optional[String] | -                         | OpenAI 嵌入 API 密钥          |
-| `OPENAI_EMBEDDING_MODEL`         | Optional[String] | text-embedding-3-small    | 嵌入模型名称                    |
+```yaml
+llm:
+  openai_chat_api_base: https://api.openai.com/v1
+  openai_chat_api_key: null           # 建议通过环境变量 OPENAI_API_KEY 设置
+  openai_chat_language_model: gpt-4.1-mini
+  openai_chat_tokens: 8192
+  openai_extract_api_base: https://api.openai.com/v1
+  openai_extract_api_key: null
+  openai_extract_language_model: gpt-4.1-mini
+  openai_extract_tokens: 256
+  openai_text2gql_api_base: https://api.openai.com/v1
+  openai_text2gql_api_key: null
+  openai_text2gql_language_model: gpt-4.1-mini
+  openai_text2gql_tokens: 4096
+  openai_embedding_api_base: https://api.openai.com/v1
+  openai_embedding_api_key: null
+  openai_embedding_model: text-embedding-3-small
+```
 
-#### OpenAI 环境变量
+#### OpenAI 环境变量覆盖
 
-| 环境变量                        | 对应配置项                     | 说明                            |
-|-----------------------------|---------------------------|-------------------------------|
-| `OPENAI_BASE_URL`           | 所有 OpenAI API_BASE        | 通用 OpenAI API 基础 URL          |
-| `OPENAI_API_KEY`            | 所有 OpenAI API_KEY         | 通用 OpenAI API 密钥              |
-| `OPENAI_EMBEDDING_BASE_URL` | OPENAI_EMBEDDING_API_BASE | OpenAI 嵌入 API 基础 URL          |
-| `OPENAI_EMBEDDING_API_KEY`  | OPENAI_EMBEDDING_API_KEY  | OpenAI 嵌入 API 密钥              |
-| `CO_API_URL`                | COHERE_BASE_URL           | Cohere API URL（环境变量 fallback） |
+| 环境变量 | 覆盖的配置字段 | 说明 |
+|---------|--------------|------|
+| `OPENAI_BASE_URL` | `openai_chat_api_base`, `openai_extract_api_base`, `openai_text2gql_api_base` | 通用 OpenAI API 基础 URL |
+| `OPENAI_API_KEY` | `openai_chat_api_key`, `openai_extract_api_key`, `openai_text2gql_api_key` | 通用 OpenAI API 密钥 |
+| `OPENAI_EMBEDDING_BASE_URL` | `openai_embedding_api_base` | OpenAI 嵌入 API 基础 URL |
+| `OPENAI_EMBEDDING_API_KEY` | `openai_embedding_api_key` | OpenAI 嵌入 API 密钥 |
 
 ### Ollama 配置
 
-| 配置项                              | 类型                | 默认值       | 说明                  |
-|----------------------------------|-------------------|-----------|---------------------|
-| `OLLAMA_CHAT_HOST`               | Optional[String]  | 127.0.0.1 | Ollama 聊天服务主机       |
-| `OLLAMA_CHAT_PORT`               | Optional[Integer] | 11434     | Ollama 聊天服务端口       |
-| `OLLAMA_CHAT_LANGUAGE_MODEL`     | Optional[String]  | -         | Ollama 聊天模型名称       |
-| `OLLAMA_EXTRACT_HOST`            | Optional[String]  | 127.0.0.1 | Ollama 提取服务主机       |
-| `OLLAMA_EXTRACT_PORT`            | Optional[Integer] | 11434     | Ollama 提取服务端口       |
-| `OLLAMA_EXTRACT_LANGUAGE_MODEL`  | Optional[String]  | -         | Ollama 提取模型名称       |
-| `OLLAMA_TEXT2GQL_HOST`           | Optional[String]  | 127.0.0.1 | Ollama 文本转 GQL 服务主机 |
-| `OLLAMA_TEXT2GQL_PORT`           | Optional[Integer] | 11434     | Ollama 文本转 GQL 服务端口 |
-| `OLLAMA_TEXT2GQL_LANGUAGE_MODEL` | Optional[String]  | -         | Ollama 文本转 GQL 模型名称 |
-| `OLLAMA_EMBEDDING_HOST`          | Optional[String]  | 127.0.0.1 | Ollama 嵌入服务主机       |
-| `OLLAMA_EMBEDDING_PORT`          | Optional[Integer] | 11434     | Ollama 嵌入服务端口       |
-| `OLLAMA_EMBEDDING_MODEL`         | Optional[String]  | -         | Ollama 嵌入模型名称       |
+```yaml
+llm:
+  ollama_chat_host: 127.0.0.1
+  ollama_chat_port: 11434
+  ollama_chat_language_model: null
+  ollama_extract_host: 127.0.0.1
+  ollama_extract_port: 11434
+  ollama_extract_language_model: null
+  ollama_text2gql_host: 127.0.0.1
+  ollama_text2gql_port: 11434
+  ollama_text2gql_language_model: null
+  ollama_embedding_host: 127.0.0.1
+  ollama_embedding_port: 11434
+  ollama_embedding_model: null
+```
 
 ### LiteLLM 配置
 
-| 配置项                               | 类型               | 默认值                           | 说明                         |
-|-----------------------------------|------------------|-------------------------------|----------------------------|
-| `LITELLM_CHAT_API_KEY`            | Optional[String] | -                             | LiteLLM 聊天 API 密钥          |
-| `LITELLM_CHAT_API_BASE`           | Optional[String] | -                             | LiteLLM 聊天 API 基础 URL      |
-| `LITELLM_CHAT_LANGUAGE_MODEL`     | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 聊天模型名称             |
-| `LITELLM_CHAT_TOKENS`             | Integer          | 8192                          | 聊天最大令牌数                    |
-| `LITELLM_EXTRACT_API_KEY`         | Optional[String] | -                             | LiteLLM 提取 API 密钥          |
-| `LITELLM_EXTRACT_API_BASE`        | Optional[String] | -                             | LiteLLM 提取 API 基础 URL      |
-| `LITELLM_EXTRACT_LANGUAGE_MODEL`  | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 提取模型名称             |
-| `LITELLM_EXTRACT_TOKENS`          | Integer          | 256                           | 提取最大令牌数                    |
-| `LITELLM_TEXT2GQL_API_KEY`        | Optional[String] | -                             | LiteLLM 文本转 GQL API 密钥     |
-| `LITELLM_TEXT2GQL_API_BASE`       | Optional[String] | -                             | LiteLLM 文本转 GQL API 基础 URL |
-| `LITELLM_TEXT2GQL_LANGUAGE_MODEL` | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 文本转 GQL 模型名称       |
-| `LITELLM_TEXT2GQL_TOKENS`         | Integer          | 4096                          | 文本转 GQL 最大令牌数              |
-| `LITELLM_EMBEDDING_API_KEY`       | Optional[String] | -                             | LiteLLM 嵌入 API 密钥          |
-| `LITELLM_EMBEDDING_API_BASE`      | Optional[String] | -                             | LiteLLM 嵌入 API 基础 URL      |
-| `LITELLM_EMBEDDING_MODEL`         | Optional[String] | openai/text-embedding-3-small | LiteLLM 嵌入模型名称             |
+```yaml
+llm:
+  litellm_chat_api_key: null
+  litellm_chat_api_base: null
+  litellm_chat_language_model: openai/gpt-4.1-mini
+  litellm_chat_tokens: 8192
+  litellm_extract_api_key: null
+  litellm_extract_api_base: null
+  litellm_extract_language_model: openai/gpt-4.1-mini
+  litellm_extract_tokens: 256
+  litellm_text2gql_api_key: null
+  litellm_text2gql_api_base: null
+  litellm_text2gql_language_model: openai/gpt-4.1-mini
+  litellm_text2gql_tokens: 4096
+  litellm_embedding_api_key: null
+  litellm_embedding_api_base: null
+  litellm_embedding_model: openai/text-embedding-3-small
+```
 
 ### 重排序配置
 
-| 配置项                | 类型               | 默认值                              | 说明                 |
-|--------------------|------------------|----------------------------------|--------------------|
-| `COHERE_BASE_URL`  | Optional[String] | https://api.cohere.com/v1/rerank | Cohere 重排序 API URL |
-| `RERANKER_API_KEY` | Optional[String] | -                                | 重排序 API 密钥         |
-| `RERANKER_MODEL`   | Optional[String] | -                                | 重排序模型名称            |
+```yaml
+llm:
+  cohere_base_url: https://api.cohere.com/v1/rerank
+  reranker_api_key: null
+  reranker_model: null
+```
+
+#### 重排序环境变量覆盖
+
+| 环境变量 | 覆盖的配置字段 | 说明 |
+|---------|--------------|------|
+| `CO_API_URL` | `cohere_base_url` | Cohere API URL |
 
 ### HugeGraph 数据库配置
 
-| 配置项                    | 类型                | 默认值            | 说明                 |
-|------------------------|-------------------|----------------|--------------------|
-| `GRAPH_URL`            | Optional[String]  | 127.0.0.1:8080 | HugeGraph 服务器地址    |
-| `GRAPH_NAME`           | Optional[String]  | hugegraph      | 图数据库名称             |
-| `GRAPH_USER`           | Optional[String]  | admin          | 数据库用户名             |
-| `GRAPH_PWD`            | Optional[String]  | xxx            | 数据库密码              |
-| `GRAPH_SPACE`          | Optional[String]  | -              | 图空间名称（可选）          |
-| `LIMIT_PROPERTY`       | Optional[String]  | "False"        | 是否限制属性（注意：这是字符串类型） |
-| `MAX_GRAPH_PATH`       | Optional[Integer] | 10             | 最大图路径长度            |
-| `MAX_GRAPH_ITEMS`      | Optional[Integer] | 30             | 最大图项目数             |
-| `EDGE_LIMIT_PRE_LABEL` | Optional[Integer] | 8              | 每个标签的边数限制          |
-| `VECTOR_DIS_THRESHOLD` | Optional[Float]   | 0.9            | 向量距离阈值             |
-| `TOPK_PER_KEYWORD`     | Optional[Integer] | 1              | 每个关键词返回的 TopK 数量   |
-| `TOPK_RETURN_RESULTS`  | Optional[Integer] | 20             | 返回结果数量             |
+```yaml
+hugegraph:
+  graph_url: 127.0.0.1:8080
+  graph_name: hugegraph
+  graph_user: admin
+  graph_pwd: xxx
+  graph_space: null
+  limit_property: "False"             # 注意：这是字符串类型，不是布尔
+  max_graph_path: 10
+  max_graph_items: 30
+  edge_limit_pre_label: 8
+  vector_dis_threshold: 0.9
+  topk_per_keyword: 1
+  topk_return_results: 20
+```
 
 ### 向量数据库配置
 
-| 配置项              | 类型               | 默认值  | 说明                     |
-|------------------|------------------|-------|------------------------|
-| `QDRANT_HOST`    | Optional[String] | None  | Qdrant 服务器主机地址         |
-| `QDRANT_PORT`    | Integer          | 6333  | Qdrant 服务器端口           |
-| `QDRANT_API_KEY` | Optional[String] | None  | Qdrant API 密钥（如果设置了的话） |
-| `MILVUS_HOST`    | Optional[String] | None  | Milvus 服务器主机地址         |
-| `MILVUS_PORT`    | Integer          | 19530 | Milvus 服务器端口           |
-| `MILVUS_USER`    | String           | ""    | Milvus 用户名              |
-| `MILVUS_PASSWORD`| String           | ""    | Milvus 密码               |
+```yaml
+index:
+  qdrant_host: null
+  qdrant_port: 6333
+  qdrant_api_key: null
+  milvus_host: null
+  milvus_port: 19530
+  milvus_user: ""
+  milvus_password: ""
+  cur_vector_index: Faiss
+```
+
+#### 向量数据库环境变量覆盖
+
+| 环境变量 | 覆盖的配置字段 | 说明 |
+|---------|--------------|------|
+| `QDRANT_HOST` | `qdrant_host` | Qdrant 服务器主机 |
+| `QDRANT_PORT` | `qdrant_port` | Qdrant 服务器端口 |
+| `QDRANT_API_KEY` | `qdrant_api_key` | Qdrant API 密钥 |
+| `MILVUS_HOST` | `milvus_host` | Milvus 服务器主机 |
+| `MILVUS_PORT` | `milvus_port` | Milvus 服务器端口 |
+| `MILVUS_USER` | `milvus_user` | Milvus 用户名 |
+| `MILVUS_PASSWORD` | `milvus_password` | Milvus 密码 |
+| `CUR_VECTOR_INDEX` | `cur_vector_index` | 当前向量索引类型 |
 
 ### 管理员配置
 
-| 配置项            | 类型               | 默认值     | 说明                 |
-|----------------|------------------|---------|--------------------|
-| `ENABLE_LOGIN` | Optional[String] | "False" | 是否启用登录（注意：这是字符串类型） |
-| `USER_TOKEN`   | Optional[String] | 4321    | 用户令牌               |
-| `ADMIN_TOKEN`  | Optional[String] | xxxx    | 管理员令牌              |
+```yaml
+admin:
+  enable_login: "False"               # 注意：这是字符串类型，不是布尔
+  user_token: "4321"
+  admin_token: "xxxx"
+  config_reload_interval: 5           # 热加载检测间隔（秒），0 或负数禁用
+```
+
+## 配置优先级
+
+配置值按以下优先级加载（高到低）：
+
+1. **环境变量 (`os.environ`)** — 最高优先级，适用于容器/K8s 部署注入敏感信息
+2. **`config.yaml` 文件** — 持久化配置存储，通过 UI 或 CLI 修改后写入
+3. **pydantic 模型默认值** — 代码中定义的 fallback 值
+
+`.env` 文件（如存在）会在启动时被加载到 `os.environ` 中，因此 `.env` 中的值优先级高于 `config.yaml`。如需从旧版 `.env` 迁移，首次启动时会自动生成 `config.yaml` 并保留原 `.env` 作为备份。
+
+## 运行时热加载
+
+系统在后台运行文件监控线程，定期检查 `config.yaml` 是否被外部修改：
+
+- **检测间隔**：由 `admin.config_reload_interval` 控制（默认 5 秒）
+- **设为 0 或负数**：禁用热加载检测
+- **检测到变更时**：自动重新加载 `config.yaml`，验证配置合法性，同步到内存中的配置对象
+- **配置文件不合法时**：记录错误日志，**保留当前内存中的有效配置**，不中断运行
+- **配置文件被删除时**：回退到 pydantic 模型默认值并记录警告
 
 ## 配置使用示例
 
-### 1. 基础配置示例
+### 1. 基础配置示例 (config.yaml)
 
-```properties
-# 基础设置
-LANGUAGE=EN
-CHAT_LLM_TYPE=openai
-EXTRACT_LLM_TYPE=openai
-TEXT2GQL_LLM_TYPE=openai
-EMBEDDING_TYPE=openai
+```yaml
+llm:
+  language: EN
+  chat_llm_type: openai
+  extract_llm_type: openai
+  text2gql_llm_type: openai
+  embedding_type: openai
+  openai_chat_api_key: your-openai-api-key
+  openai_chat_language_model: gpt-4.1-mini
+  openai_embedding_model: text-embedding-3-small
 
-# OpenAI 配置
-OPENAI_CHAT_API_KEY=your-openai-api-key
-OPENAI_CHAT_LANGUAGE_MODEL=gpt-4.1-mini
-OPENAI_EMBEDDING_API_KEY=your-openai-embedding-key
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-
-# HugeGraph 配置
-GRAPH_URL=127.0.0.1:8080
-GRAPH_NAME=hugegraph
-GRAPH_USER=admin
-GRAPH_PWD=your-password
+hugegraph:
+  graph_url: 127.0.0.1:8080
+  graph_name: hugegraph
+  graph_user: admin
+  graph_pwd: your-password
 ```
 
 ### 2. 使用 Ollama 的配置示例
 
-```properties
-# 使用 Ollama
-CHAT_LLM_TYPE=ollama/local
-EXTRACT_LLM_TYPE=ollama/local
-TEXT2GQL_LLM_TYPE=ollama/local
-EMBEDDING_TYPE=ollama/local
-
-# Ollama 模型配置
-OLLAMA_CHAT_LANGUAGE_MODEL=llama2
-OLLAMA_EXTRACT_LANGUAGE_MODEL=llama2
-OLLAMA_TEXT2GQL_LANGUAGE_MODEL=llama2
-OLLAMA_EMBEDDING_MODEL=nomic-embed-text
-
-# Ollama 服务配置（如果需要自定义）
-OLLAMA_CHAT_HOST=127.0.0.1
-OLLAMA_CHAT_PORT=11434
-OLLAMA_EXTRACT_HOST=127.0.0.1
-OLLAMA_EXTRACT_PORT=11434
-OLLAMA_TEXT2GQL_HOST=127.0.0.1
-OLLAMA_TEXT2GQL_PORT=11434
-OLLAMA_EMBEDDING_HOST=127.0.0.1
-OLLAMA_EMBEDDING_PORT=11434
+```yaml
+llm:
+  chat_llm_type: ollama/local
+  extract_llm_type: ollama/local
+  text2gql_llm_type: ollama/local
+  embedding_type: ollama/local
+  ollama_chat_language_model: llama2
+  ollama_extract_language_model: llama2
+  ollama_text2gql_language_model: llama2
+  ollama_embedding_model: nomic-embed-text
 ```
 
 ### 3. 代码中使用配置
@@ -232,48 +267,59 @@ print(f"图数据库地址: {graph_config.graph_url}")
 print(f"数据库名称: {graph_config.graph_name}")
 ```
 
+### 4. 生成配置文件
+
+```bash
+# 生成包含所有默认值的 config.yaml 和 config_prompt.yaml
+python -m hugegraph_llm.config.generate -U
+```
+
 ## 注意事项
 
-1. **安全性**：`.env` 文件包含敏感信息（如 API 密钥），请勿将其提交到版本控制系统
-2. **配置同步**：修改配置后，系统会自动同步到 `.env` 文件
-3. **语言切换**：修改 `LANGUAGE` 配置后需要重启应用程序才能生效
-4. **模型兼容性**：确保所选的模型与你的使用场景兼容
-5. **资源限制**：根据你的硬件资源调整 `MAX_GRAPH_ITEMS`、`EDGE_LIMIT_PRE_LABEL` 等参数
-6. **类型注意**：
-   - `LIMIT_PROPERTY` 和 `ENABLE_LOGIN` 是字符串类型（\"False\"/\"True\"），不是布尔类型
-   - `LANGUAGE`、`CHAT_LLM_TYPE` 等字段使用 Literal 类型限制可选值
-   - 大部分字段都是 Optional 类型，支持 None 值，表示未设置
-7. **环境变量 Fallback**：
-   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 环境变量作为 fallback
-   - OpenAI Embedding 支持独立的环境变量 `OPENAI_EMBEDDING_BASE_URL` 和 `OPENAI_EMBEDDING_API_KEY`
+1. **安全性**：`config.yaml` 文件包含敏感信息（如 API 密钥），已加入 `.gitignore`，请勿将其提交到版本控制系统
+2. **配置持久化**：通过 Gradio UI 点击 "Apply Configuration" 后，修改会自动写入 `config.yaml`
+3. **环境变量优先**：容器/K8s 部署时，通过环境变量注入密钥（如 `OPENAI_API_KEY`），环境变量值优先于 `config.yaml` 中的设置
+4. **语言切换**：修改 `language` 配置后需要重启应用程序才能生效
+5. **模型兼容性**：确保所选的模型与你的使用场景兼容
+6. **类型保留**：YAML 格式保留正确的原始类型（整数、浮点数、布尔值、null、字符串），不再是全字符串
+7. **热加载**：手动编辑 `config.yaml` 后，运行中的应用会在 `config_reload_interval` 秒内自动加载新配置，无需重启
+8. **环境变量 Fallback**：
+   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 等环境变量覆盖
    - Cohere 支持 `CO_API_URL` 环境变量
-8. **Ollama 配置完整性**：
+   - 向量数据库支持对应环境变量（`QDRANT_HOST`、`MILVUS_HOST` 等）
+9. **Ollama 配置完整性**：
    - 每个 LLM 类型（chat、extract、text2gql）都有对应的 `*_LANGUAGE_MODEL` 配置项
    - 每个服务类型都有独立的 host 和 port 配置，支持分布式部署
 
 ## 配置文件位置
 
-### 系统配置（.env 文件）
+### 系统配置（config.yaml 文件）
 
-- **主配置文件**：`hugegraph-llm/.env`
+- **主配置文件**：`hugegraph-llm/config.yaml`
 - **管理范围**：
-  - LLMConfig：语言、LLM 提供商配置、API 密钥等
-  - HugeGraphConfig：数据库连接、查询限制等
-  - AdminConfig：登录设置、令牌等
+  - `llm` section：语言、LLM 提供商配置、API 密钥等
+  - `hugegraph` section：数据库连接、查询限制等
+  - `admin` section：登录设置、令牌、热加载间隔等
+  - `index` section：向量数据库连接参数
+
+### 旧版 .env 兼容
+
+- **旧版文件**：`hugegraph-llm/.env`
+- **迁移行为**：首次启动时若 `config.yaml` 不存在而 `.env` 存在，系统会自动将 `.env` 内容迁移到 `config.yaml`，并保留原 `.env` 作为备份
 
 ### 提示词配置（YAML 文件）
 
 - **配置文件**：`src/hugegraph_llm/resources/demo/config_prompt.yaml`
 - **管理范围**：
   - PromptConfig：所有提示词模板、图谱模式等
-  - **注意**：这些配置不存储在 .env 文件中
 
 ### 配置类定义
 
 - **位置**：`hugegraph-llm/src/hugegraph_llm/config/`
 - **基类**：
-  - BaseConfig：用于 .env 文件管理的配置类
-  - BasePromptConfig：用于 YAML 文件管理的提示词配置类
+  - BaseConfig：用于 YAML 文件管理的配置类（基于 OmegaConf + pydantic BaseModel）
+  - BasePromptConfig：用于提示词 YAML 文件管理的配置类
+  - ConfigManager：OmegaConf 单例管理器，负责 YAML 读写、环境变量覆盖、热加载
 - **UI 配置管理**：`src/hugegraph_llm/demo/rag_demo/configs_block.py`
   - Gradio 界面的配置管理组件
 

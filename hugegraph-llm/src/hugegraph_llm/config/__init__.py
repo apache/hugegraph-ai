@@ -24,7 +24,18 @@ from .admin_config import AdminConfig
 from .hugegraph_config import HugeGraphConfig
 from .index_config import IndexConfig
 from .llm_config import LLMConfig
+from .models.base_config import ConfigManager
 from .prompt_config import PromptConfig
+
+# ConfigManager must be initialized before any config objects
+cfg_mgr = ConfigManager(
+    sections={
+        "llm": LLMConfig,
+        "hugegraph": HugeGraphConfig,
+        "admin": AdminConfig,
+        "index": IndexConfig,
+    }
+)
 
 llm_settings = LLMConfig()
 prompt = PromptConfig(llm_settings)

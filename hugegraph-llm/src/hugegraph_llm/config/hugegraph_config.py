@@ -15,13 +15,30 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Optional
+from typing import ClassVar, Optional
 
 from .models import BaseConfig
 
 
 class HugeGraphConfig(BaseConfig):
     """HugeGraph settings"""
+
+    _config_section: ClassVar[str] = "hugegraph"
+
+    _flat_to_nested_mapping: ClassVar[dict] = {
+        "graph_url": "graph.url",
+        "graph_name": "graph.name",
+        "graph_user": "graph.user",
+        "graph_pwd": "graph.pwd",
+        "graph_space": "graph.space",
+        "limit_property": "query.limit_property",
+        "max_graph_path": "query.max_graph_path",
+        "max_graph_items": "query.max_graph_items",
+        "edge_limit_pre_label": "query.edge_limit_pre_label",
+        "vector_dis_threshold": "vector.dis_threshold",
+        "topk_per_keyword": "vector.topk_per_keyword",
+        "topk_return_results": "rerank.topk_return_results",
+    }
 
     # graph server config
     graph_url: str = "127.0.0.1:8080"

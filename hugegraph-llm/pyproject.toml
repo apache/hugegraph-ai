@@ -61,6 +61,7 @@ dependencies = [
     "pydantic-settings",
     "apscheduler",
     "litellm",
+    "omegaconf~=2.3",
     "hugegraph-python-client",
     "pycgraph==3.2.2",
 ]

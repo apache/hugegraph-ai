@@ -74,7 +74,7 @@ class BasePromptConfig:
                 for key, value in data.items():
                     setattr(self, key, value)
 
-            # Check if the language in the .env file matches the language in the YAML file
+            # Check if the language in config.yaml matches the language in the YAML file
             env_lang = (
                 self.llm_settings.language.lower()
                 if hasattr(self, "llm_settings") and self.llm_settings.language
@@ -83,7 +83,7 @@ class BasePromptConfig:
             yaml_lang = data.get("_language_generated", "en").lower()
             if env_lang.strip() != yaml_lang.strip():
                 log.warning(
-                    "Prompt was changed '.env' language is '%s', "
+                    "Prompt was changed 'config.yaml' language is '%s', "
                     "but '%s' was generated for '%s'. "
                     "Regenerating the prompt file...",
                     env_lang,

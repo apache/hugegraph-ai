@@ -169,6 +169,8 @@ codeium-instructions.md
 # Environments
 .env
 .env.bak
+config.yaml
+config.yaml.bak
 .venv
 .vscode
 .cursor

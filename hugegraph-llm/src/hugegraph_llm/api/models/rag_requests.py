@@ -194,14 +194,24 @@ class GraphExtractRequest(BaseModel):
     @field_validator("graph_schema")
     @classmethod
     def normalize_schema(cls, v):
+        def validate_schema_obj(schema_obj):
+            if not isinstance(schema_obj, dict):
+                raise ValueError("schema JSON must be an object.")
+            if "vertexlabels" not in schema_obj or "edgelabels" not in schema_obj:
+                raise ValueError("schema must contain 'vertexlabels' and 'edgelabels'.")
+            if not isinstance(schema_obj["vertexlabels"], list) or not isinstance(schema_obj["edgelabels"], list):
+                raise ValueError("'vertexlabels' and 'edgelabels' must be lists.")
+
         if isinstance(v, dict):
+            validate_schema_obj(v)
             return json.dumps(v, ensure_ascii=False)
         v = v.strip()
         if not v:
             raise ValueError("schema must not be empty.")
         if v.startswith("{"):
             try:
-                json.loads(v)
+                validate_schema_obj(json.loads(v))
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON schema: {e}") from e
+            return v
         return v

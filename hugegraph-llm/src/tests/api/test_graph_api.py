@@ -45,7 +45,7 @@ def test_graph_extract_returns_arrays(mock_singleton):
 
     response = _graph_client().post(
         "/graph/extract",
-        json={"texts": "张三在北京工作。", "schema": {"vertexlabels": []}, "include_meta": True},
+        json={"texts": "张三在北京工作。", "schema": {"vertexlabels": [], "edgelabels": []}, "include_meta": True},
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -56,7 +56,7 @@ def test_graph_extract_returns_arrays(mock_singleton):
 
     args, kwargs = scheduler.schedule_flow.call_args
     assert args[0] == FlowName.GRAPH_EXTRACT
-    assert args[1] == json.dumps({"vertexlabels": []}, ensure_ascii=False)
+    assert args[1] == json.dumps({"vertexlabels": [], "edgelabels": []}, ensure_ascii=False)
     assert args[2] == ["张三在北京工作。"]
     assert kwargs["split_type"] == "document"
 
@@ -68,6 +68,11 @@ def test_graph_extract_rejects_empty_texts():
 
 def test_graph_extract_rejects_invalid_schema():
     response = _graph_client().post("/graph/extract", json={"texts": "x", "schema": "{bad"})
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_graph_extract_rejects_incomplete_schema():
+    response = _graph_client().post("/graph/extract", json={"texts": "x", "schema": {"vertexlabels": []}})
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
@@ -90,9 +95,9 @@ def test_graph_extract_scheduler_error_returns_500(mock_singleton):
 
 
 def test_graph_extract_request_model_validation():
-    req = GraphExtractRequest(texts="hello", schema={"vertexlabels": []})
+    req = GraphExtractRequest(texts="hello", schema={"vertexlabels": [], "edgelabels": []})
     assert req.texts == ["hello"]
-    assert req.graph_schema == json.dumps({"vertexlabels": []}, ensure_ascii=False)
+    assert req.graph_schema == json.dumps({"vertexlabels": [], "edgelabels": []}, ensure_ascii=False)
 
     with pytest.raises(ValidationError):
         GraphExtractRequest(texts=[], schema="hugegraph")

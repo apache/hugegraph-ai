@@ -15,11 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi import Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hugegraph_llm.config import prompt
 
@@ -163,4 +164,44 @@ class GremlinGenerateRequest(BaseModel):
             missing = [p for p in required_placeholders if p not in v]
             if missing:
                 raise ValueError(f"Prompt template is missing required placeholders: {', '.join(missing)}")
+        return v
+
+
+class GraphExtractRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    texts: Union[str, List[str]] = Field(..., description="Text or list of texts to extract a graph from.")
+    graph_schema: Union[str, Dict[str, Any]] = Field(
+        ...,
+        alias="schema",
+        description="Graph schema as a JSON string/object, or an existing graph name.",
+    )
+    example_prompt: Optional[str] = Query(None, description="Optional graph extraction prompt header.")
+    extract_type: str = Query("property_graph", description="Extraction type.")
+    language: Literal["zh", "en"] = Query("zh", description="Language for chunk splitting.")
+    split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
+    include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")
+
+    @field_validator("texts")
+    @classmethod
+    def normalize_texts(cls, v):
+        items = [v] if isinstance(v, str) else list(v)
+        items = [t for t in items if t and t.strip()]
+        if not items:
+            raise ValueError("texts must not be empty.")
+        return items
+
+    @field_validator("graph_schema")
+    @classmethod
+    def normalize_schema(cls, v):
+        if isinstance(v, dict):
+            return json.dumps(v, ensure_ascii=False)
+        v = v.strip()
+        if not v:
+            raise ValueError("schema must not be empty.")
+        if v.startswith("{"):
+            try:
+                json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON schema: {e}") from e
         return v

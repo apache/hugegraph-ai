@@ -43,7 +43,7 @@ class GraphExtractFlow(BaseFlow):
         # prepare input data
         prepared_input.texts = texts
         prepared_input.language = language
-        prepared_input.split_type = "document"
+        prepared_input.split_type = kwargs.get("split_type", "document")
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
@@ -52,7 +52,7 @@ class GraphExtractFlow(BaseFlow):
         pipeline = GPipeline()
         prepared_input = WkFlowInput()
         # prepare input data
-        self.prepare(prepared_input, schema, texts, example_prompt, extract_type, language)
+        self.prepare(prepared_input, schema, texts, example_prompt, extract_type, language, **kwargs)
 
         pipeline.createGParam(prepared_input, "wkflow_input")
         pipeline.createGParam(WkFlowState(), "wkflow_state")

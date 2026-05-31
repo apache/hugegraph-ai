@@ -177,7 +177,7 @@ class GraphExtractRequest(BaseModel):
         description="Graph schema as a JSON string/object, or an existing graph name.",
     )
     example_prompt: Optional[str] = Query(None, description="Optional graph extraction prompt header.")
-    extract_type: str = Query("property_graph", description="Extraction type.")
+    extract_type: Literal["triples", "property_graph"] = Query("property_graph", description="Extraction type.")
     language: Literal["zh", "en"] = Query("zh", description="Language for chunk splitting.")
     split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
     include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")

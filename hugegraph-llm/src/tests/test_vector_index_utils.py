@@ -2,7 +2,9 @@ from types import SimpleNamespace
 
 import gradio as gr
 import pytest
+from docx import Document
 
+from hugegraph_llm.utils import vector_index_utils
 from hugegraph_llm.utils.vector_index_utils import read_documents
 
 
@@ -70,3 +72,30 @@ def test_read_documents_rejects_pdf_without_extractable_text(tmp_path):
 
     with pytest.raises(gr.Error, match="No extractable text"):
         read_documents([SimpleNamespace(name=str(pdf_path))], "")
+
+
+class BrokenPdfReader:
+    def __init__(self, _):
+        raise ValueError("broken pdf")
+
+
+def test_read_documents_reads_docx_file(tmp_path):
+    docx_path = tmp_path / "sample.docx"
+    document = Document()
+    document.add_paragraph("hello docx")
+    document.save(docx_path)
+
+    result = read_documents([SimpleNamespace(name=str(docx_path))], "")
+
+    assert "hello docx" in result[0]
+
+
+def test_read_documents_returns_clear_error_for_unreadable_pdf(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "broken.pdf"
+    pdf_path.write_bytes(b"not a valid pdf")
+
+    monkeypatch.setattr(vector_index_utils, "PdfReader", BrokenPdfReader)
+
+    with pytest.raises(gr.Error, match="Failed to read PDF file"):
+        read_documents([SimpleNamespace(name=str(pdf_path))], "")
+

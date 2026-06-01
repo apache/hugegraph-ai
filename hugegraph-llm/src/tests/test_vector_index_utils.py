@@ -99,3 +99,28 @@ def test_read_documents_returns_clear_error_for_unreadable_pdf(monkeypatch, tmp_
     with pytest.raises(gr.Error, match="Failed to read PDF file"):
         read_documents([SimpleNamespace(name=str(pdf_path))], "")
 
+
+class EncryptedPdfReader:
+    is_encrypted = True
+
+    def __init__(self, _):
+        self.pages = []
+
+
+def test_read_documents_returns_clear_error_for_encrypted_pdf(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "encrypted.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    monkeypatch.setattr(vector_index_utils, "PdfReader", EncryptedPdfReader)
+
+    with pytest.raises(gr.Error, match="Encrypted PDF files are not supported"):
+        read_documents([SimpleNamespace(name=str(pdf_path))], "")
+
+
+def test_read_documents_rejects_unsupported_file_type(tmp_path):
+    markdown_path = tmp_path / "sample.md"
+    markdown_path.write_text("hello markdown", encoding="utf-8")
+
+    with pytest.raises(gr.Error, match="Please input txt, docx, or pdf file"):
+        read_documents([SimpleNamespace(name=str(markdown_path))], "")
+

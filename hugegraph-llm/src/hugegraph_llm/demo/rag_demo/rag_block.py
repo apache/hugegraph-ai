@@ -50,7 +50,7 @@ def rag_answer(
     vector_dis_threshold=0.9,
     topk_per_keyword=1,
     include_trace: bool = False,
-) -> Tuple:
+) -> tuple[str, str, str, str] | dict[str, object]:
     """
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request

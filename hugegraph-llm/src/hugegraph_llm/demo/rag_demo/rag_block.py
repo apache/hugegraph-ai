@@ -49,7 +49,8 @@ def rag_answer(
     topk_return_results=20,
     vector_dis_threshold=0.9,
     topk_per_keyword=1,
-) -> Tuple:
+    include_trace: bool = False,
+) -> tuple[str, str, str, str] | dict[str, object]:
     """
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
@@ -103,9 +104,12 @@ def rag_answer(
             topk_return_results=topk_return_results,
             vector_dis_threshold=vector_dis_threshold,
             topk_per_keyword=topk_per_keyword,
+            include_trace=include_trace,
         )
         if res.get("switch_to_bleu"):
             gr.Warning("Online reranker fails, automatically switches to local bleu rerank.")
+        if include_trace:
+            return res
         return (
             res.get("raw_answer", ""),
             res.get("vector_only_answer", ""),

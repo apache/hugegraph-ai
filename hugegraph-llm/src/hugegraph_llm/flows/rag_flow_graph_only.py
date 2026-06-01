@@ -19,7 +19,7 @@ from typing import Literal, Optional, cast
 from pycgraph import GCondition, GPipeline, GRegion
 
 from hugegraph_llm.config import huge_settings, prompt
-from hugegraph_llm.flows.common import BaseFlow
+from hugegraph_llm.flows.common import BaseFlow, graph_trace_payload, rag_answer_payload
 from hugegraph_llm.nodes.common_node.merge_rerank_node import MergeRerankNode
 from hugegraph_llm.nodes.hugegraph_node.graph_query_node import GraphQueryNode
 from hugegraph_llm.nodes.hugegraph_node.schema import SchemaNode
@@ -95,6 +95,7 @@ class RAGGraphOnlyFlow(BaseFlow):
 
         prepared_input.is_graph_rag_recall = is_graph_rag_recall
         prepared_input.is_vector_only = is_vector_only
+        prepared_input.include_trace = kwargs.get("include_trace", False)
         prepared_input.data_json = {
             "query": query,
             "vector_search": vector_search,
@@ -141,13 +142,9 @@ class RAGGraphOnlyFlow(BaseFlow):
             return {"error": "No pipeline provided"}
         res = pipeline.getGParamWithNoEmpty("wkflow_state").to_json()
         log.info("RAGGraphOnlyFlow post processing success")
-        return (
-            {
-                "raw_answer": res.get("raw_answer", ""),
-                "vector_only_answer": res.get("vector_only_answer", ""),
-                "graph_only_answer": res.get("graph_only_answer", ""),
-                "graph_vector_answer": res.get("graph_vector_answer", ""),
-            }
-            if not res.get("is_graph_rag_recall", False)
-            else res
-        )
+        if res.get("is_graph_rag_recall", False):
+            return res
+        out = rag_answer_payload(res)
+        if pipeline.getGParamWithNoEmpty("wkflow_input").include_trace:
+            out["trace"] = graph_trace_payload(res)
+        return out

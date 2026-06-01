@@ -76,6 +76,7 @@ class WkFlowInput(GParam):
     # used for rag_recall api
     is_graph_rag_recall: bool = False
     is_vector_only: bool = False
+    include_trace: bool = False
 
     # used for build text2gremin index
     examples: Optional[List[Dict[str, str]]] = None
@@ -132,6 +133,7 @@ class WkFlowInput(GParam):
         self.examples = None
         self.is_graph_rag_recall = False
         self.is_vector_only = False
+        self.include_trace = False
 
 
 class WkFlowState(GParam):

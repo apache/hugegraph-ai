@@ -19,17 +19,27 @@ import json
 
 from fastapi import APIRouter, HTTPException, status
 
-from hugegraph_llm.api.models.rag_requests import GraphExtractRequest
-from hugegraph_llm.config import prompt
+from hugegraph_llm.api.models.rag_requests import GraphConfigRequest, GraphExtractRequest
+from hugegraph_llm.config import huge_settings, prompt
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.log import log
+
+
+def _apply_graph_config(client_config: GraphConfigRequest | None) -> None:
+    if client_config:
+        huge_settings.graph_url = client_config.url
+        huge_settings.graph_name = client_config.graph
+        huge_settings.graph_user = client_config.user
+        huge_settings.graph_pwd = client_config.pwd
+        huge_settings.graph_space = client_config.gs
 
 
 def graph_http_api(router: APIRouter):
     @router.post("/graph/extract", status_code=status.HTTP_200_OK)
     def graph_extract_api(req: GraphExtractRequest):
         try:
+            _apply_graph_config(req.client_config)
             scheduler = SchedulerSingleton.get_instance()
             result_str = scheduler.schedule_flow(
                 FlowName.GRAPH_EXTRACT,

@@ -23,9 +23,10 @@ from fastapi import APIRouter, FastAPI, status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from hugegraph_llm.api.graph_api import graph_http_api
+from hugegraph_llm.api.graph_api import _apply_graph_config, graph_http_api
 from hugegraph_llm.api.models.rag_requests import GraphExtractRequest
 from hugegraph_llm.api.rag_api import rag_http_api
+from hugegraph_llm.config import huge_settings
 from hugegraph_llm.flows import FlowName
 
 
@@ -98,9 +99,81 @@ def test_graph_extract_request_model_validation():
     req = GraphExtractRequest(texts="hello", schema={"vertexlabels": [], "edgelabels": []})
     assert req.texts == ["hello"]
     assert req.graph_schema == json.dumps({"vertexlabels": [], "edgelabels": []}, ensure_ascii=False)
+    assert req.client_config is None
 
     with pytest.raises(ValidationError):
         GraphExtractRequest(texts=[], schema="hugegraph")
+
+
+@patch("hugegraph_llm.api.graph_api.SchedulerSingleton")
+def test_graph_extract_applies_client_config_for_named_schema(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    original = (
+        huge_settings.graph_url,
+        huge_settings.graph_name,
+        huge_settings.graph_user,
+        huge_settings.graph_pwd,
+        huge_settings.graph_space,
+    )
+    try:
+        response = _graph_client().post(
+            "/graph/extract",
+            json={
+                "texts": "x",
+                "schema": "custom_graph",
+                "client_config": {
+                    "url": "10.0.0.1:8080",
+                    "graph": "custom_graph",
+                    "user": "admin",
+                    "pwd": "secret",
+                    "gs": "space_a",
+                },
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert huge_settings.graph_url == "10.0.0.1:8080"
+        assert huge_settings.graph_name == "custom_graph"
+        assert huge_settings.graph_user == "admin"
+        assert huge_settings.graph_pwd == "secret"
+        assert huge_settings.graph_space == "space_a"
+    finally:
+        (
+            huge_settings.graph_url,
+            huge_settings.graph_name,
+            huge_settings.graph_user,
+            huge_settings.graph_pwd,
+            huge_settings.graph_space,
+        ) = original
+
+
+def test_apply_graph_config_noop_when_missing():
+    original = (
+        huge_settings.graph_url,
+        huge_settings.graph_name,
+        huge_settings.graph_user,
+        huge_settings.graph_pwd,
+        huge_settings.graph_space,
+    )
+    try:
+        _apply_graph_config(None)
+        assert (
+            huge_settings.graph_url,
+            huge_settings.graph_name,
+            huge_settings.graph_user,
+            huge_settings.graph_pwd,
+            huge_settings.graph_space,
+        ) == original
+    finally:
+        (
+            huge_settings.graph_url,
+            huge_settings.graph_name,
+            huge_settings.graph_user,
+            huge_settings.graph_pwd,
+            huge_settings.graph_space,
+        ) = original
 
 
 def test_existing_routes_still_register():

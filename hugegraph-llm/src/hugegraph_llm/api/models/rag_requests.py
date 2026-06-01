@@ -181,6 +181,7 @@ class GraphExtractRequest(BaseModel):
     language: Literal["zh", "en"] = Query("zh", description="Language for chunk splitting.")
     split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
     include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")
+    client_config: Optional[GraphConfigRequest] = Field(None, description="hugegraph server config.")
 
     @field_validator("texts")
     @classmethod

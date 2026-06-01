@@ -20,12 +20,43 @@ from typing import Type
 
 import docx
 import gradio as gr
+from pypdf import PdfReader
 
 from hugegraph_llm.config import huge_settings, index_settings
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
 from hugegraph_llm.indices.vector_index.faiss_vector_store import FaissVectorIndex
 from hugegraph_llm.models.embeddings.init_embedding import Embeddings
+
+
+def read_pdf_text(full_path: str) -> str:
+    try:
+        reader = PdfReader(full_path)
+
+        if reader.is_encrypted:
+            raise gr.Error(
+                "Encrypted PDF files are not supported. "
+                "Please upload an unencrypted PDF."
+            )
+
+        page_texts = []
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                page_texts.append(page_text)
+
+        text = "\n".join(page_texts).strip()
+        if not text:
+            raise gr.Error(
+                "No extractable text was found in this PDF. "
+                "Scanned-image PDFs are not supported without OCR."
+            )
+
+        return text
+    except gr.Error:
+        raise
+    except Exception as exc:
+        raise gr.Error(f"Failed to read PDF file: {exc}") from exc
 
 
 def read_documents(input_file, input_text):
@@ -46,10 +77,9 @@ def read_documents(input_file, input_text):
                     text += "\n"
                 texts.append(text)
             elif full_path.endswith(".pdf"):
-                # TODO: support PDF file
-                raise gr.Error("PDF will be supported later! Try to upload text/docx now")
+                texts.append(read_pdf_text(full_path))
             else:
-                raise gr.Error("Please input txt or docx file.")
+                raise gr.Error("Please input txt, docx, or pdf file.")
     else:
         raise gr.Error("Please input text or upload file.")
     return texts

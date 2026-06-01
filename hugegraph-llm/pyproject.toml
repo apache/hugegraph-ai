@@ -53,6 +53,7 @@ dependencies = [
     "gradio",
     "jieba",
     "python-docx",
+    "pypdf",
     "langchain-text-splitters",
     "faiss-cpu",
     "python-dotenv",

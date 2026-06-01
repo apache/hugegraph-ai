@@ -19,6 +19,30 @@ from typing import Any, AsyncGenerator, Dict
 from hugegraph_llm.state.ai_state import WkFlowInput
 from hugegraph_llm.utils.log import log
 
+GRAPH_RECALL_TRACE_KEYS = (
+    "keywords",
+    "match_vids",
+    "graph_result_flag",
+    "gremlin",
+    "graph_result",
+    "vertex_degree_list",
+)
+
+GRAPH_TRACE_KEYS = ("query",) + GRAPH_RECALL_TRACE_KEYS
+
+
+def rag_answer_payload(res: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "raw_answer": res.get("raw_answer", ""),
+        "vector_only_answer": res.get("vector_only_answer", ""),
+        "graph_only_answer": res.get("graph_only_answer", ""),
+        "graph_vector_answer": res.get("graph_vector_answer", ""),
+    }
+
+
+def graph_trace_payload(res: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: res[key] for key in GRAPH_RECALL_TRACE_KEYS if key in res}
+
 
 class BaseFlow(ABC):
     """

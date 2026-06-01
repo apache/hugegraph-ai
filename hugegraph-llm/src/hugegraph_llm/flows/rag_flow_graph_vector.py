@@ -19,7 +19,7 @@ from typing import Literal, Optional
 from pycgraph import GPipeline
 
 from hugegraph_llm.config import huge_settings, prompt
-from hugegraph_llm.flows.common import BaseFlow
+from hugegraph_llm.flows.common import BaseFlow, graph_trace_payload, rag_answer_payload
 from hugegraph_llm.nodes.common_node.merge_rerank_node import MergeRerankNode
 from hugegraph_llm.nodes.hugegraph_node.graph_query_node import GraphQueryNode
 from hugegraph_llm.nodes.hugegraph_node.schema import SchemaNode
@@ -81,6 +81,7 @@ class RAGGraphVectorFlow(BaseFlow):
         prepared_input.answer_prompt = answer_prompt or prompt.answer_prompt
         prepared_input.custom_related_information = custom_related_information
         prepared_input.schema = huge_settings.graph_name
+        prepared_input.include_trace = kwargs.get("include_trace", False)
 
         prepared_input.data_json = {
             "query": query,
@@ -121,9 +122,7 @@ class RAGGraphVectorFlow(BaseFlow):
             return {"error": "No pipeline provided"}
         res = pipeline.getGParamWithNoEmpty("wkflow_state").to_json()
         log.info("RAGGraphVectorFlow post processing success")
-        return {
-            "raw_answer": res.get("raw_answer", ""),
-            "vector_only_answer": res.get("vector_only_answer", ""),
-            "graph_only_answer": res.get("graph_only_answer", ""),
-            "graph_vector_answer": res.get("graph_vector_answer", ""),
-        }
+        out = rag_answer_payload(res)
+        if pipeline.getGParamWithNoEmpty("wkflow_input").include_trace:
+            out["trace"] = graph_trace_payload(res)
+        return out

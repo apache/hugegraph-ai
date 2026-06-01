@@ -56,6 +56,7 @@ class RAGRequest(BaseModel):
                                    extracted from the query, by default only the most similar one is returned.",
     )
     client_config: Optional[GraphConfigRequest] = Query(None, description="hugegraph server config.")
+    include_trace: bool = Query(False, description="Include retrieval trace/debug info in the response.")
 
     # Keep prompt params in the end
     answer_prompt: Optional[str] = Query(prompt.answer_prompt, description="Prompt to guide the answer generation.")

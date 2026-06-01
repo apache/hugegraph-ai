@@ -28,10 +28,37 @@ from hugegraph_llm.api.models.rag_requests import (
     RAGRequest,
     RerankerConfigRequest,
 )
-from hugegraph_llm.api.models.rag_response import RAGResponse
+from hugegraph_llm.api.models.rag_response import RAGResponse, serialize_rag_trace
 from hugegraph_llm.config import huge_settings, llm_settings, prompt
+from hugegraph_llm.flows.common import GRAPH_TRACE_KEYS
 from hugegraph_llm.utils.graph_index_utils import get_vertex_details
 from hugegraph_llm.utils.log import log
+
+RAG_ANSWER_FIELDS = (
+    ("raw_answer", "raw_answer"),
+    ("vector_only", "vector_only_answer"),
+    ("graph_only", "graph_only_answer"),
+    ("graph_vector_answer", "graph_vector_answer"),
+)
+
+
+def build_rag_api_response(req: RAGRequest, result):
+    response = {"query": req.query}
+    if isinstance(result, dict):
+        for req_key, res_key in RAG_ANSWER_FIELDS:
+            if getattr(req, req_key):
+                response[req_key] = result.get(res_key, "")
+    else:
+        for (req_key, _), value in zip(RAG_ANSWER_FIELDS, result):
+            if getattr(req, req_key):
+                response[req_key] = value
+    if req.include_trace and (req.graph_only or req.graph_vector_answer):
+        raw_trace = result.get("trace") if isinstance(result, dict) else None
+        if raw_trace:
+            trace = serialize_rag_trace(raw_trace)
+            if trace:
+                response["trace"] = trace
+    return response
 
 
 # pylint: disable=too-many-statements
@@ -75,19 +102,9 @@ def rag_http_api(
             answer_prompt=req.answer_prompt or prompt.answer_prompt,
             keywords_extract_prompt=req.keywords_extract_prompt or prompt.keywords_extract_prompt,
             gremlin_prompt=req.gremlin_prompt or prompt.gremlin_generate_prompt,
+            include_trace=req.include_trace,
         )
-        # TODO: we need more info in the response for users to understand the query logic
-        return {
-            "query": req.query,
-            **{
-                key: value
-                for key, value in zip(
-                    ["raw_answer", "vector_only", "graph_only", "graph_vector_answer"],
-                    result,
-                )
-                if getattr(req, key)
-            },
-        }
+        return build_rag_api_response(req, result)
 
     def set_graph_config(req):
         if req.client_config:
@@ -129,16 +146,7 @@ def rag_http_api(
                     result["match_vids"] = vertex_details
 
             if isinstance(result, dict):
-                params = [
-                    "query",
-                    "keywords",
-                    "match_vids",
-                    "graph_result_flag",
-                    "gremlin",
-                    "graph_result",
-                    "vertex_degree_list",
-                ]
-                user_result = {key: result[key] for key in params if key in result}
+                user_result = {key: result[key] for key in GRAPH_TRACE_KEYS if key in result}
                 return {"graph_recall": user_result}
             return {"graph_recall": json.dumps(result)}
 

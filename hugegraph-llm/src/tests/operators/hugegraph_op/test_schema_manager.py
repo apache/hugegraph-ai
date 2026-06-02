@@ -97,10 +97,12 @@ class TestSchemaManager(unittest.TestCase):
 
         SchemaManager(
             "custom_graph",
-            graph_url="10.0.0.1:8080",
-            graph_user="admin",
-            graph_pwd="secret",
-            graph_space="space_a",
+            connection={
+                "url": "10.0.0.1:8080",
+                "user": "admin",
+                "pwd": "secret",
+                "graphspace": "space_a",
+            },
         )
 
         mock_client_class.assert_called_once_with(
@@ -109,6 +111,46 @@ class TestSchemaManager(unittest.TestCase):
             user="admin",
             pwd="secret",
             graphspace="space_a",
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.PyHugeClient")
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.huge_settings")
+    def test_init_request_config_does_not_inherit_global_graphspace(self, mock_settings, mock_client_class):
+        mock_settings.graph_url = "default:8080"
+        mock_settings.graph_user = "default_user"
+        mock_settings.graph_pwd = "default_pwd"
+        mock_settings.graph_space = "global_space"
+
+        SchemaManager(
+            "custom_graph",
+            connection={
+                "url": "10.0.0.1:8080",
+                "user": "admin",
+                "pwd": "secret",
+                "graphspace": None,
+            },
+        )
+
+        _, kwargs = mock_client_class.call_args
+        assert kwargs["graphspace"] is None
+        assert kwargs["url"] == "10.0.0.1:8080"
+
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.PyHugeClient")
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.huge_settings")
+    def test_init_falls_back_to_globals_without_connection(self, mock_settings, mock_client_class):
+        mock_settings.graph_url = "default:8080"
+        mock_settings.graph_user = "default_user"
+        mock_settings.graph_pwd = "default_pwd"
+        mock_settings.graph_space = "global_space"
+
+        SchemaManager("custom_graph")
+
+        mock_client_class.assert_called_once_with(
+            url="default:8080",
+            graph="custom_graph",
+            user="default_user",
+            pwd="default_pwd",
+            graphspace="global_space",
         )
 
     def test_simple_schema_with_full_schema(self):

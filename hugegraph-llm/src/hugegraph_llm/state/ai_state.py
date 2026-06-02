@@ -26,10 +26,8 @@ class WkFlowInput(GParam):
     split_type: Optional[str] = None  # split type used by ChunkSplit Node
     example_prompt: Optional[str] = None  # need by graph information extract
     schema: Optional[str] = None  # Schema information requeired by SchemaNode
-    graph_url: Optional[str] = None  # Request-scoped HugeGraph connection settings
-    graph_user: Optional[str] = None
-    graph_pwd: Optional[str] = None
-    graph_space: Optional[str] = None
+    # Request-scoped HugeGraph connection; None falls back to global huge_settings.
+    graph_client_config: Optional[Dict[str, Any]] = None
     data_json: Optional[Dict[str, Any]] = None
     extract_type: Optional[str] = None
     query_examples: Optional[Any] = None

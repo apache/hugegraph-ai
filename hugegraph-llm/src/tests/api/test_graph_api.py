@@ -294,26 +294,44 @@ def test_graph_extract_flow_prepare_sets_request_local_graph_config():
         client_config=client_config,
     )
 
-    assert prepared_input.graph_url == "10.0.0.1:8080"
-    assert prepared_input.graph_user == "admin"
-    assert prepared_input.graph_pwd == "secret"
-    assert prepared_input.graph_space == "space_a"
+    assert prepared_input.graph_client_config == {
+        "url": "10.0.0.1:8080",
+        "user": "admin",
+        "pwd": "secret",
+        "graphspace": "space_a",
+    }
+
+
+def test_graph_extract_flow_prepare_keeps_omitted_graphspace_none():
+    flow = GraphExtractFlow()
+    prepared_input = WkFlowInput()
+    client_config = GraphConfigRequest(
+        url="10.0.0.1:8080",
+        graph="custom_graph",
+        user="admin",
+        pwd="secret",
+    )
+
+    flow.prepare(
+        prepared_input,
+        "custom_graph",
+        ["text"],
+        "prompt",
+        "property_graph",
+        client_config=client_config,
+    )
+
+    assert prepared_input.graph_client_config["graphspace"] is None
 
 
 def test_graph_extract_flow_prepare_clears_graph_config_when_missing():
     flow = GraphExtractFlow()
     prepared_input = WkFlowInput()
-    prepared_input.graph_url = "stale"
-    prepared_input.graph_user = "stale"
-    prepared_input.graph_pwd = "stale"
-    prepared_input.graph_space = "stale"
+    prepared_input.graph_client_config = {"url": "stale"}
 
     flow.prepare(prepared_input, "custom_graph", ["text"], "prompt", "property_graph")
 
-    assert prepared_input.graph_url is None
-    assert prepared_input.graph_user is None
-    assert prepared_input.graph_pwd is None
-    assert prepared_input.graph_space is None
+    assert prepared_input.graph_client_config is None
 
 
 def test_graph_extract_flow_prepare_does_not_leak_config_across_runs():
@@ -338,14 +356,11 @@ def test_graph_extract_flow_prepare_does_not_leak_config_across_runs():
         "property_graph",
         client_config=client_config,
     )
-    assert prepared_input.graph_url == "10.0.0.1:8080"
+    assert prepared_input.graph_client_config is not None
 
     flow.prepare(prepared_input, "custom_graph", ["text"], "prompt", "property_graph")
 
-    assert prepared_input.graph_url is None
-    assert prepared_input.graph_user is None
-    assert prepared_input.graph_pwd is None
-    assert prepared_input.graph_space is None
+    assert prepared_input.graph_client_config is None
 
 
 def test_existing_routes_still_register():

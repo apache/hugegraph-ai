@@ -49,7 +49,7 @@ jobs:
 
       - name: Run unit and contract tests
         run: |
-          uv run pytest hugegraph-python-client/src/tests -m "unit or contract" --cov=pyhugegraph --cov-fail-under=45 --cov-report=term --cov-report=xml:client-unit-contract.xml -q
+          uv run pytest hugegraph-python-client/src/tests -m "unit or contract" --cov=pyhugegraph --cov-fail-under=45 --cov-report=term --cov-report=xml:client-unit-contract.xml -v --tb=short --durations=20
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7

@@ -71,7 +71,7 @@ jobs:
       env:
         SKIP_EXTERNAL_SERVICES: true
       run: |
-        uv run pytest hugegraph-llm/src/tests -m "unit or contract" --cov=hugegraph_llm --cov-fail-under=34 --cov-report=term --cov-report=xml:llm-unit-contract.xml -q
+        uv run pytest hugegraph-llm/src/tests -m "unit or contract" --cov=hugegraph_llm --cov-fail-under=34 --cov-report=term --cov-report=xml:llm-unit-contract.xml -v --tb=short --durations=20
 
     - name: Upload coverage artifact
       uses: actions/upload-artifact@v7

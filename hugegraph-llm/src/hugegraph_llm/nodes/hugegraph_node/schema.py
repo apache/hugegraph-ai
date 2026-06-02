@@ -39,7 +39,13 @@ class SchemaNode(BaseNode):
         from_user_defined=None,
     ):
         if from_hugegraph:
-            return SchemaManager(from_hugegraph)
+            return SchemaManager(
+                from_hugegraph,
+                graph_url=self.wk_input.graph_url,
+                graph_user=self.wk_input.graph_user,
+                graph_pwd=self.wk_input.graph_pwd,
+                graph_space=self.wk_input.graph_space,
+            )
         if from_user_defined:
             return CheckSchema(from_user_defined)
         if from_extraction:

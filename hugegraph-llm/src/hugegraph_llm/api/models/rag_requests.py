@@ -20,7 +20,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from hugegraph_llm.config import prompt
 
@@ -216,3 +216,16 @@ class GraphExtractRequest(BaseModel):
                 raise ValueError(f"Invalid JSON schema: {e}") from e
             return v
         return v
+
+    @model_validator(mode="after")
+    def require_client_config_for_named_schema(self):
+        # A named-graph schema needs request-scoped connection settings; inline JSON
+        # schemas (starting with "{") are self-contained and never hit HugeGraph.
+        schema = self.graph_schema
+        is_named_schema = isinstance(schema, str) and not schema.strip().startswith("{")
+        if is_named_schema and self.client_config is None:
+            raise ValueError(
+                "client_config is required when 'schema' refers to an existing graph name; "
+                "provide inline schema JSON instead to extract without a HugeGraph connection."
+            )
+        return self

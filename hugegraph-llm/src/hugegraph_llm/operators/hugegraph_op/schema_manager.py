@@ -23,14 +23,22 @@ from hugegraph_llm.config import huge_settings
 
 
 class SchemaManager:
-    def __init__(self, graph_name: str):
+    def __init__(
+        self,
+        graph_name: str,
+        *,
+        graph_url: Optional[str] = None,
+        graph_user: Optional[str] = None,
+        graph_pwd: Optional[str] = None,
+        graph_space: Optional[str] = None,
+    ):
         self.graph_name = graph_name
         self.client = PyHugeClient(
-            url=huge_settings.graph_url,
+            url=graph_url if graph_url is not None else huge_settings.graph_url,
             graph=self.graph_name,
-            user=huge_settings.graph_user,
-            pwd=huge_settings.graph_pwd,
-            graphspace=huge_settings.graph_space,
+            user=graph_user if graph_user is not None else huge_settings.graph_user,
+            pwd=graph_pwd if graph_pwd is not None else huge_settings.graph_pwd,
+            graphspace=graph_space if graph_space is not None else huge_settings.graph_space,
         )
         self.schema = self.client.schema()
 

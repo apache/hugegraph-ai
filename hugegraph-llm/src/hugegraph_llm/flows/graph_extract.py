@@ -47,6 +47,17 @@ class GraphExtractFlow(BaseFlow):
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
+        client_config = kwargs.get("client_config")
+        if client_config:
+            prepared_input.graph_url = client_config.url
+            prepared_input.graph_user = client_config.user
+            prepared_input.graph_pwd = client_config.pwd
+            prepared_input.graph_space = client_config.gs
+        else:
+            prepared_input.graph_url = None
+            prepared_input.graph_user = None
+            prepared_input.graph_pwd = None
+            prepared_input.graph_space = None
 
     def build_flow(self, schema, texts, example_prompt, extract_type, language="zh", **kwargs):
         pipeline = GPipeline()

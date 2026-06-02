@@ -87,6 +87,30 @@ class TestSchemaManager(unittest.TestCase):
         self.assertEqual(self.schema_manager.client, self.mock_client)
         self.assertEqual(self.schema_manager.schema, self.mock_schema)
 
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.PyHugeClient")
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.huge_settings")
+    def test_init_uses_request_local_connection_settings(self, mock_settings, mock_client_class):
+        mock_settings.graph_url = "default:8080"
+        mock_settings.graph_user = "default_user"
+        mock_settings.graph_pwd = "default_pwd"
+        mock_settings.graph_space = "default_space"
+
+        SchemaManager(
+            "custom_graph",
+            graph_url="10.0.0.1:8080",
+            graph_user="admin",
+            graph_pwd="secret",
+            graph_space="space_a",
+        )
+
+        mock_client_class.assert_called_once_with(
+            url="10.0.0.1:8080",
+            graph="custom_graph",
+            user="admin",
+            pwd="secret",
+            graphspace="space_a",
+        )
+
     def test_simple_schema_with_full_schema(self):
         """Test simple_schema method with a full schema."""
         # Call the method

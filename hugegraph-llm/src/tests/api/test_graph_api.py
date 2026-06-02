@@ -23,11 +23,13 @@ from fastapi import APIRouter, FastAPI, status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from hugegraph_llm.api.graph_api import _apply_graph_config, graph_http_api
-from hugegraph_llm.api.models.rag_requests import GraphExtractRequest
+from hugegraph_llm.api.graph_api import graph_http_api
+from hugegraph_llm.api.models.rag_requests import GraphConfigRequest, GraphExtractRequest
 from hugegraph_llm.api.rag_api import rag_http_api
 from hugegraph_llm.config import huge_settings
 from hugegraph_llm.flows import FlowName
+from hugegraph_llm.flows.graph_extract import GraphExtractFlow
+from hugegraph_llm.state.ai_state import WkFlowInput
 
 
 def _graph_client():
@@ -80,8 +82,13 @@ def test_graph_extract_rejects_incomplete_schema():
 def test_graph_extract_rejects_invalid_split_type():
     response = _graph_client().post(
         "/graph/extract",
-        json={"texts": "x", "schema": "hugegraph", "split_type": "doc"},
+        json={"texts": "x", "schema": {"vertexlabels": [], "edgelabels": []}, "split_type": "doc"},
     )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_graph_extract_rejects_named_schema_without_client_config():
+    response = _graph_client().post("/graph/extract", json={"texts": "x", "schema": "hugegraph"})
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
@@ -91,7 +98,10 @@ def test_graph_extract_scheduler_error_returns_500(mock_singleton):
     scheduler.schedule_flow.side_effect = RuntimeError("Error in flow init")
     mock_singleton.get_instance.return_value = scheduler
 
-    response = _graph_client().post("/graph/extract", json={"texts": "x", "schema": "hugegraph"})
+    response = _graph_client().post(
+        "/graph/extract",
+        json={"texts": "x", "schema": {"vertexlabels": [], "edgelabels": []}},
+    )
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
@@ -105,8 +115,26 @@ def test_graph_extract_request_model_validation():
         GraphExtractRequest(texts=[], schema="hugegraph")
 
 
+def test_graph_extract_request_named_schema_requires_client_config():
+    with pytest.raises(ValidationError):
+        GraphExtractRequest(texts="hello", schema="hugegraph")
+
+    req = GraphExtractRequest(
+        texts="hello",
+        schema="hugegraph",
+        client_config=GraphConfigRequest(
+            url="10.0.0.1:8080",
+            graph="hugegraph",
+            user="admin",
+            pwd="secret",
+            gs="space_a",
+        ),
+    )
+    assert req.client_config is not None
+
+
 @patch("hugegraph_llm.api.graph_api.SchedulerSingleton")
-def test_graph_extract_applies_client_config_for_named_schema(mock_singleton):
+def test_graph_extract_passes_client_config_to_scheduler(mock_singleton):
     scheduler = MagicMock()
     scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
     mock_singleton.get_instance.return_value = scheduler
@@ -134,31 +162,6 @@ def test_graph_extract_applies_client_config_for_named_schema(mock_singleton):
             },
         )
         assert response.status_code == status.HTTP_200_OK
-        assert huge_settings.graph_url == "10.0.0.1:8080"
-        assert huge_settings.graph_name == "custom_graph"
-        assert huge_settings.graph_user == "admin"
-        assert huge_settings.graph_pwd == "secret"
-        assert huge_settings.graph_space == "space_a"
-    finally:
-        (
-            huge_settings.graph_url,
-            huge_settings.graph_name,
-            huge_settings.graph_user,
-            huge_settings.graph_pwd,
-            huge_settings.graph_space,
-        ) = original
-
-
-def test_apply_graph_config_noop_when_missing():
-    original = (
-        huge_settings.graph_url,
-        huge_settings.graph_name,
-        huge_settings.graph_user,
-        huge_settings.graph_pwd,
-        huge_settings.graph_space,
-    )
-    try:
-        _apply_graph_config(None)
         assert (
             huge_settings.graph_url,
             huge_settings.graph_name,
@@ -166,6 +169,14 @@ def test_apply_graph_config_noop_when_missing():
             huge_settings.graph_pwd,
             huge_settings.graph_space,
         ) == original
+
+        _, kwargs = scheduler.schedule_flow.call_args
+        client_config = kwargs["client_config"]
+        assert client_config.url == "10.0.0.1:8080"
+        assert client_config.graph == "custom_graph"
+        assert client_config.user == "admin"
+        assert client_config.pwd == "secret"
+        assert client_config.gs == "space_a"
     finally:
         (
             huge_settings.graph_url,
@@ -174,6 +185,80 @@ def test_apply_graph_config_noop_when_missing():
             huge_settings.graph_pwd,
             huge_settings.graph_space,
         ) = original
+
+
+def test_graph_extract_flow_prepare_sets_request_local_graph_config():
+    flow = GraphExtractFlow()
+    prepared_input = WkFlowInput()
+    client_config = GraphConfigRequest(
+        url="10.0.0.1:8080",
+        graph="custom_graph",
+        user="admin",
+        pwd="secret",
+        gs="space_a",
+    )
+
+    flow.prepare(
+        prepared_input,
+        "custom_graph",
+        ["text"],
+        "prompt",
+        "property_graph",
+        client_config=client_config,
+    )
+
+    assert prepared_input.graph_url == "10.0.0.1:8080"
+    assert prepared_input.graph_user == "admin"
+    assert prepared_input.graph_pwd == "secret"
+    assert prepared_input.graph_space == "space_a"
+
+
+def test_graph_extract_flow_prepare_clears_graph_config_when_missing():
+    flow = GraphExtractFlow()
+    prepared_input = WkFlowInput()
+    prepared_input.graph_url = "stale"
+    prepared_input.graph_user = "stale"
+    prepared_input.graph_pwd = "stale"
+    prepared_input.graph_space = "stale"
+
+    flow.prepare(prepared_input, "custom_graph", ["text"], "prompt", "property_graph")
+
+    assert prepared_input.graph_url is None
+    assert prepared_input.graph_user is None
+    assert prepared_input.graph_pwd is None
+    assert prepared_input.graph_space is None
+
+
+def test_graph_extract_flow_prepare_does_not_leak_config_across_runs():
+    # A pooled pipeline is reused across requests, so prepare() must not let a
+    # configured request's connection settings leak into a later request that
+    # omits client_config.
+    flow = GraphExtractFlow()
+    prepared_input = WkFlowInput()
+    client_config = GraphConfigRequest(
+        url="10.0.0.1:8080",
+        graph="custom_graph",
+        user="admin",
+        pwd="secret",
+        gs="space_a",
+    )
+
+    flow.prepare(
+        prepared_input,
+        "custom_graph",
+        ["text"],
+        "prompt",
+        "property_graph",
+        client_config=client_config,
+    )
+    assert prepared_input.graph_url == "10.0.0.1:8080"
+
+    flow.prepare(prepared_input, "custom_graph", ["text"], "prompt", "property_graph")
+
+    assert prepared_input.graph_url is None
+    assert prepared_input.graph_user is None
+    assert prepared_input.graph_pwd is None
+    assert prepared_input.graph_space is None
 
 
 def test_existing_routes_still_register():

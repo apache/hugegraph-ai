@@ -48,9 +48,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v8.1.0
-      with:
-        version: "0.9.22"
+      run: |
+        curl -LsSf https://astral.sh/uv/0.9.22/install.sh | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Cache dependencies
       uses: actions/cache@v5
@@ -71,13 +71,13 @@ jobs:
       env:
         SKIP_EXTERNAL_SERVICES: true
       run: |
-        uv run pytest hugegraph-llm/src/tests -m "unit or contract" --cov=hugegraph_llm --cov-fail-under=34 --cov-report=term --cov-report=xml:.workflow/quality-program/coverage/llm-unit-contract.xml -q
+        uv run pytest hugegraph-llm/src/tests -m "unit or contract" --cov=hugegraph_llm --cov-fail-under=34 --cov-report=term --cov-report=xml:llm-unit-contract.xml -q
 
     - name: Upload coverage artifact
       uses: actions/upload-artifact@v7
       with:
         name: llm-unit-contract-coverage-${{ matrix.python-version }}
-        path: .workflow/quality-program/coverage/llm-unit-contract.xml
+        path: llm-unit-contract.xml
         if-no-files-found: error
 
   llm-hugegraph-boundary:
@@ -107,9 +107,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v8.1.0
-      with:
-        version: "0.9.22"
+      run: |
+        curl -LsSf https://astral.sh/uv/0.9.22/install.sh | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Cache dependencies
       uses: actions/cache@v5
@@ -164,9 +164,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v8.1.0
-      with:
-        version: "0.9.22"
+      run: |
+        curl -LsSf https://astral.sh/uv/0.9.22/install.sh | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Cache dependencies
       uses: actions/cache@v5

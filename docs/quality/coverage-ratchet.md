@@ -19,12 +19,6 @@
 
 ## Baseline
 
-The combined unit/contract baseline is stored at:
-
-```text
-.workflow/quality-program/coverage/combined-baseline.json
-```
-
 Current combined baseline:
 
 | Scope | Covered lines | Statements | Missing lines | Coverage |
@@ -35,7 +29,7 @@ The original combined command hits a pytest import-path collision because both w
 
 ## CI Gates
 
-The default unit/contract jobs enforce module-level floors from the initial baseline artifacts:
+The default unit/contract jobs enforce module-level floors from the initial local baseline runs:
 
 | Workflow | Scope | Gate |
 |---|---|---:|
@@ -61,7 +55,7 @@ uv run pytest --import-mode=importlib hugegraph-python-client/src/tests hugegrap
   --cov=pyhugegraph \
   --cov=hugegraph_llm \
   --cov-report=term \
-  --cov-report=json:.workflow/quality-program/coverage/combined-baseline.json
+  --cov-report=json:combined-baseline.json
 ```
 
 ## Ratchet Rules

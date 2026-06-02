@@ -46,8 +46,7 @@ def read_pdf_text(full_path: str) -> str:
                 if page_text.strip():
                     page_texts.append(page_text)
 
-            text = "
-".join(page_texts).strip()
+            text = "\n".join(page_texts).strip()
             if not text:
                 raise gr.Error(
                     "No extractable text was found in this PDF. "
@@ -59,8 +58,6 @@ def read_pdf_text(full_path: str) -> str:
         raise
     except Exception as exc:
         raise gr.Error(f"Failed to read PDF file: {exc}") from exc
-
-
 
 def read_documents(input_file, input_text):
     if input_text:

@@ -16,7 +16,6 @@
 # under the License.
 
 import os
-from importlib import resources
 from pathlib import Path
 
 import yaml
@@ -25,14 +24,34 @@ from hugegraph_llm.utils.log import log
 
 dir_name = os.path.dirname
 F_NAME = "config_prompt.yaml"
+PROMPT_CONFIG_PATH_ENV_VAR = "HUGEGRAPH_LLM_PROMPT_CONFIG_PATH"
+
+
+def _source_prompt_yaml_path() -> Path | None:
+    package_root = Path(__file__).resolve().parents[2]
+    if package_root.parent.name != "src":
+        return None
+    project_root = package_root.parent.parent
+    if (project_root / "pyproject.toml").exists():
+        return package_root / "resources" / "demo" / F_NAME
+    return None
+
+
+def _user_prompt_yaml_path() -> Path:
+    config_home = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+    return config_home / "hugegraph-llm" / F_NAME
 
 
 def resolve_prompt_yaml_path() -> str:
-    try:
-        return str(resources.files("hugegraph_llm.resources.demo").joinpath(F_NAME))
-    except (ModuleNotFoundError, TypeError):
-        package_root = Path(__file__).resolve().parents[2]
-        return str(package_root / "resources" / "demo" / F_NAME)
+    explicit_prompt_path = os.getenv(PROMPT_CONFIG_PATH_ENV_VAR)
+    if explicit_prompt_path:
+        return str(Path(explicit_prompt_path).expanduser())
+
+    source_prompt_path = _source_prompt_yaml_path()
+    if source_prompt_path is not None:
+        return str(source_prompt_path)
+
+    return str(_user_prompt_yaml_path())
 
 
 yaml_file_path = resolve_prompt_yaml_path()
@@ -120,6 +139,7 @@ class BasePromptConfig:
             "_language_generated": str(self.llm_settings.language).lower().strip(),
             "generate_extract_prompt_template": to_literal(self.generate_extract_prompt_template),
         }
+        Path(yaml_file_path).parent.mkdir(parents=True, exist_ok=True)
         with open(yaml_file_path, "w", encoding="utf-8") as file:
             yaml.dump(data, file, allow_unicode=True, sort_keys=False, default_flow_style=False)
 

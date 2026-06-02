@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_VERSION: "0.9.22"
+
 jobs:
   client-unit-contract:
     runs-on: ubuntu-latest
@@ -30,8 +33,9 @@ jobs:
 
       - name: Install uv
         run: |
-          curl -LsSf https://astral.sh/uv/0.9.22/install.sh | sh
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/uv" --version
 
       - name: Cache dependencies
         id: cache-deps
@@ -86,8 +90,9 @@ jobs:
 
       - name: Install uv
         run: |
-          curl -LsSf https://astral.sh/uv/0.9.22/install.sh | sh
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/uv" --version
 
       - name: Cache dependencies
         id: cache-deps
@@ -112,3 +117,12 @@ jobs:
           HUGEGRAPH_PASSWORD: admin
         run: |
           uv run pytest hugegraph-python-client/src/tests -m "integration and hugegraph" -v --tb=short
+
+      - name: Dump HugeGraph diagnostics
+        if: failure()
+        run: |
+          docker ps -a
+          container_id=$(docker ps -aq --filter ancestor=hugegraph/hugegraph:1.7.0 | head -n 1)
+          if [ -n "$container_id" ]; then
+            docker logs "$container_id"
+          fi

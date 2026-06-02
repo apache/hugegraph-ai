@@ -28,6 +28,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Add review comment
+        # This workflow is only enabled in fork repositories to request AI review.
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}

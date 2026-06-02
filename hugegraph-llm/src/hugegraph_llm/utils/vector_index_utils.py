@@ -31,32 +31,35 @@ from hugegraph_llm.models.embeddings.init_embedding import Embeddings
 
 def read_pdf_text(full_path: str) -> str:
     try:
-        reader = PdfReader(full_path)
+        with open(full_path, "rb") as pdf_file:
+            reader = PdfReader(pdf_file)
 
-        if reader.is_encrypted:
-            raise gr.Error(
-                "Encrypted PDF files are not supported. "
-                "Please upload an unencrypted PDF."
-            )
+            if reader.is_encrypted:
+                raise gr.Error(
+                    "Encrypted PDF files are not supported. "
+                    "Please upload an unencrypted PDF."
+                )
 
-        page_texts = []
-        for page in reader.pages:
-            page_text = page.extract_text() or ""
-            if page_text.strip():
-                page_texts.append(page_text)
+            page_texts = []
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    page_texts.append(page_text)
 
-        text = "\n".join(page_texts).strip()
-        if not text:
-            raise gr.Error(
-                "No extractable text was found in this PDF. "
-                "Scanned-image PDFs are not supported without OCR."
-            )
+            text = "
+".join(page_texts).strip()
+            if not text:
+                raise gr.Error(
+                    "No extractable text was found in this PDF. "
+                    "Scanned-image PDFs are not supported without OCR."
+                )
 
-        return text
+            return text
     except gr.Error:
         raise
     except Exception as exc:
         raise gr.Error(f"Failed to read PDF file: {exc}") from exc
+
 
 
 def read_documents(input_file, input_text):

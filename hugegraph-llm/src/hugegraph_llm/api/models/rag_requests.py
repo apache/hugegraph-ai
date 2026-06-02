@@ -30,7 +30,7 @@ class GraphConfigRequest(BaseModel):
     graph: str = Query("hugegraph", description="hugegraph client name.")
     user: str = Query("", description="hugegraph client user.")
     pwd: str = Query("", description="hugegraph client pwd.")
-    gs: str = None
+    gs: Optional[str] = None
 
 
 class RAGRequest(BaseModel):
@@ -218,14 +218,28 @@ class GraphExtractRequest(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def require_client_config_for_named_schema(self):
-        # A named-graph schema needs request-scoped connection settings; inline JSON
-        # schemas (starting with "{") are self-contained and never hit HugeGraph.
+    def validate_schema_and_client_config(self):
+        # An inline JSON schema is self-contained and never hits HugeGraph, so a
+        # client_config would be silently ignored: reject it to keep the contract clear.
+        # A named-graph schema, by contrast, requires request-scoped connection settings
+        # and the connection's graph name must match the schema being fetched.
         schema = self.graph_schema
         is_named_schema = isinstance(schema, str) and not schema.strip().startswith("{")
-        if is_named_schema and self.client_config is None:
+        if not is_named_schema:
+            if self.client_config is not None:
+                raise ValueError(
+                    "client_config is not allowed when 'schema' is inline JSON; graph extraction "
+                    "from an inline schema does not connect to HugeGraph."
+                )
+            return self
+        if self.client_config is None:
             raise ValueError(
                 "client_config is required when 'schema' refers to an existing graph name; "
                 "provide inline schema JSON instead to extract without a HugeGraph connection."
+            )
+        if self.client_config.graph != schema:
+            raise ValueError(
+                "When 'schema' is a graph name, client_config.graph must match it "
+                f"(got schema='{schema}', client_config.graph='{self.client_config.graph}')."
             )
         return self

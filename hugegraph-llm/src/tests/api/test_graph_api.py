@@ -64,6 +64,27 @@ def test_graph_extract_returns_arrays(mock_singleton):
     assert kwargs["split_type"] == "document"
 
 
+@patch("hugegraph_llm.api.graph_api.SchedulerSingleton")
+def test_graph_extract_forwards_triples_extract_type(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": {"vertexlabels": [], "edgelabels": []},
+            "extract_type": "triples",
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    args, _ = scheduler.schedule_flow.call_args
+    assert args[0] == FlowName.GRAPH_EXTRACT
+    assert args[4] == "triples"
+
+
 def test_graph_extract_rejects_empty_texts():
     response = _graph_client().post("/graph/extract", json={"texts": "  ", "schema": "hugegraph"})
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -131,6 +152,72 @@ def test_graph_extract_request_named_schema_requires_client_config():
         ),
     )
     assert req.client_config is not None
+
+
+def test_graph_extract_request_rejects_client_config_with_inline_schema():
+    with pytest.raises(ValidationError):
+        GraphExtractRequest(
+            texts="hello",
+            schema={"vertexlabels": [], "edgelabels": []},
+            client_config=GraphConfigRequest(
+                url="10.0.0.1:8080",
+                graph="hugegraph",
+                user="admin",
+                pwd="secret",
+                gs="space_a",
+            ),
+        )
+
+
+def test_graph_extract_rejects_client_config_with_inline_schema():
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": {"vertexlabels": [], "edgelabels": []},
+            "client_config": {
+                "url": "10.0.0.1:8080",
+                "graph": "hugegraph",
+                "user": "admin",
+                "pwd": "secret",
+                "gs": "space_a",
+            },
+        },
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_graph_extract_request_rejects_mismatched_schema_and_client_config_graph():
+    with pytest.raises(ValidationError):
+        GraphExtractRequest(
+            texts="hello",
+            schema="custom_graph",
+            client_config=GraphConfigRequest(
+                url="10.0.0.1:8080",
+                graph="other_graph",
+                user="admin",
+                pwd="secret",
+                gs="space_a",
+            ),
+        )
+
+
+def test_graph_extract_rejects_mismatched_schema_and_client_config_graph():
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": "custom_graph",
+            "client_config": {
+                "url": "10.0.0.1:8080",
+                "graph": "other_graph",
+                "user": "admin",
+                "pwd": "secret",
+                "gs": "space_a",
+            },
+        },
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 @patch("hugegraph_llm.api.graph_api.SchedulerSingleton")

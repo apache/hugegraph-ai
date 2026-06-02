@@ -32,13 +32,7 @@ def _build_pdf(content_stream: bytes) -> bytes:
             b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
         ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        (
-            b"<< /Length "
-            + str(len(content_stream)).encode()
-            + b" >>\nstream\n"
-            + content_stream
-            + b"\nendstream"
-        ),
+        (b"<< /Length " + str(len(content_stream)).encode() + b" >>\nstream\n" + content_stream + b"\nendstream"),
     ]
 
     pdf = b"%PDF-1.4\n"
@@ -54,10 +48,7 @@ def _build_pdf(content_stream: bytes) -> bytes:
     for offset in offsets:
         pdf += f"{offset:010d} 00000 n \n".encode()
 
-    pdf += (
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-        f"startxref\n{xref_offset}\n%%EOF\n"
-    ).encode()
+    pdf += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n").encode()
     return pdf
 
 
@@ -72,9 +63,7 @@ def test_read_documents_reads_txt_file(tmp_path):
 
 def test_read_documents_reads_pdf_file(tmp_path):
     pdf_path = tmp_path / "sample.pdf"
-    pdf_path.write_bytes(
-        _build_pdf(b"BT /F1 24 Tf 100 700 Td (Hello HugeGraph PDF) Tj ET")
-    )
+    pdf_path.write_bytes(_build_pdf(b"BT /F1 24 Tf 100 700 Td (Hello HugeGraph PDF) Tj ET"))
 
     result = read_documents([SimpleNamespace(name=str(pdf_path))], "")
 

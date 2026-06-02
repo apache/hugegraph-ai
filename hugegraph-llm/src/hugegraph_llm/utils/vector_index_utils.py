@@ -35,10 +35,7 @@ def read_pdf_text(full_path: str) -> str:
             reader = PdfReader(pdf_file)
 
             if reader.is_encrypted:
-                raise gr.Error(
-                    "Encrypted PDF files are not supported. "
-                    "Please upload an unencrypted PDF."
-                )
+                raise gr.Error("Encrypted PDF files are not supported. Please upload an unencrypted PDF.")
 
             page_texts = []
             for page in reader.pages:
@@ -49,8 +46,7 @@ def read_pdf_text(full_path: str) -> str:
             text = "\n".join(page_texts).strip()
             if not text:
                 raise gr.Error(
-                    "No extractable text was found in this PDF. "
-                    "Scanned-image PDFs are not supported without OCR."
+                    "No extractable text was found in this PDF. Scanned-image PDFs are not supported without OCR."
                 )
 
             return text
@@ -58,6 +54,7 @@ def read_pdf_text(full_path: str) -> str:
         raise
     except Exception as exc:
         raise gr.Error(f"Failed to read PDF file: {exc}") from exc
+
 
 def read_documents(input_file, input_text):
     if input_text:

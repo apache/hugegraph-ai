@@ -178,6 +178,14 @@ class TestPropertyGraphExtract(unittest.TestCase):
                     "ignored": "not in schema",
                 },
             },
+            {
+                "type": "edge",
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump",
+                    "ignored": "not in schema",
+                },
+            },
         ]
 
         filtered_items = filter_item(self.schema, items)
@@ -189,6 +197,8 @@ class TestPropertyGraphExtract(unittest.TestCase):
         # Check that schema-typed values are preserved for Commit2Graph
         self.assertEqual(filtered_items[1]["properties"]["year"], 1994)
         self.assertNotIn("ignored", filtered_items[1]["properties"])
+        self.assertEqual(filtered_items[2]["properties"]["role"], "Forrest Gump")
+        self.assertNotIn("ignored", filtered_items[2]["properties"])
 
     def test_extract_property_graph_by_llm(self):
         """Test the extract_property_graph_by_llm method."""

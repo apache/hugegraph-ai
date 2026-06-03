@@ -42,8 +42,59 @@ _GRAPH_CONFIG_FIELD_MAP = {
     "gs": "graph_space",
 }
 _LLM_TYPE_FIELDS = ("chat_llm_type", "extract_llm_type", "text2gql_llm_type")
-_EMBEDDING_TYPE_FIELDS = ("embedding_type",)
-_RERANKER_TYPE_FIELDS = ("reranker_type",)
+_LLM_CONFIG_FIELDS = _LLM_TYPE_FIELDS + (
+    "openai_chat_api_key",
+    "openai_chat_api_base",
+    "openai_chat_language_model",
+    "openai_chat_tokens",
+    "openai_extract_api_key",
+    "openai_extract_api_base",
+    "openai_extract_language_model",
+    "openai_extract_tokens",
+    "openai_text2gql_api_key",
+    "openai_text2gql_api_base",
+    "openai_text2gql_language_model",
+    "openai_text2gql_tokens",
+    "ollama_chat_host",
+    "ollama_chat_port",
+    "ollama_chat_language_model",
+    "ollama_extract_host",
+    "ollama_extract_port",
+    "ollama_extract_language_model",
+    "ollama_text2gql_host",
+    "ollama_text2gql_port",
+    "ollama_text2gql_language_model",
+    "litellm_chat_api_key",
+    "litellm_chat_api_base",
+    "litellm_chat_language_model",
+    "litellm_chat_tokens",
+    "litellm_extract_api_key",
+    "litellm_extract_api_base",
+    "litellm_extract_language_model",
+    "litellm_extract_tokens",
+    "litellm_text2gql_api_key",
+    "litellm_text2gql_api_base",
+    "litellm_text2gql_language_model",
+    "litellm_text2gql_tokens",
+)
+_EMBEDDING_CONFIG_FIELDS = (
+    "embedding_type",
+    "openai_embedding_api_key",
+    "openai_embedding_api_base",
+    "openai_embedding_model",
+    "ollama_embedding_host",
+    "ollama_embedding_port",
+    "ollama_embedding_model",
+    "litellm_embedding_api_key",
+    "litellm_embedding_api_base",
+    "litellm_embedding_model",
+)
+_RERANKER_CONFIG_FIELDS = (
+    "reranker_type",
+    "reranker_api_key",
+    "reranker_model",
+    "cohere_base_url",
+)
 
 
 def _snapshot_settings(settings, fields):
@@ -190,7 +241,7 @@ def rag_http_api(
     # TODO: restructure the implement of llm to three types, like "/config/chat_llm"
     @router.post("/config/llm", status_code=status.HTTP_201_CREATED)
     def llm_config_api(req: LLMConfigRequest):
-        original_values = _snapshot_settings(llm_settings, _LLM_TYPE_FIELDS)
+        original_values = _snapshot_settings(llm_settings, _LLM_CONFIG_FIELDS)
         try:
             llm_settings.chat_llm_type = req.llm_type
             llm_settings.extract_llm_type = req.llm_type
@@ -213,7 +264,7 @@ def rag_http_api(
 
     @router.post("/config/embedding", status_code=status.HTTP_201_CREATED)
     def embedding_config_api(req: LLMConfigRequest):
-        original_values = _snapshot_settings(llm_settings, _EMBEDDING_TYPE_FIELDS)
+        original_values = _snapshot_settings(llm_settings, _EMBEDDING_CONFIG_FIELDS)
         try:
             llm_settings.embedding_type = req.llm_type
 
@@ -228,7 +279,7 @@ def rag_http_api(
 
     @router.post("/config/rerank", status_code=status.HTTP_201_CREATED)
     def rerank_config_api(req: RerankerConfigRequest):
-        original_values = _snapshot_settings(llm_settings, _RERANKER_TYPE_FIELDS)
+        original_values = _snapshot_settings(llm_settings, _RERANKER_CONFIG_FIELDS)
         try:
             llm_settings.reranker_type = req.reranker_type
 

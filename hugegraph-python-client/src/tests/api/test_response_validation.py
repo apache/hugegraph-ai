@@ -21,7 +21,7 @@ from unittest.mock import Mock
 import pytest
 import requests
 from pyhugegraph.utils.exceptions import NotAuthorizedError, NotFoundError, ResponseParseError, ServerError
-from pyhugegraph.utils.util import ResponseValidation, redact_sensitive_data
+from pyhugegraph.utils.util import ResponseValidation, check_if_success, redact_sensitive_data
 
 pytestmark = pytest.mark.contract
 
@@ -148,6 +148,20 @@ class TestResponseValidation(unittest.TestCase):
 
         logged_args = str(log_error.call_args)
         assert "super-secret" not in logged_args
+        assert "***REDACTED***" in logged_args
+
+    def test_check_if_success_redacts_sensitive_response_body(self):
+        response = self._mock_error_response(
+            {"message": "bad request"},
+            '{"message":"token=server-secret"}',
+        )
+        response.request.body = '{"query":"g.V()"}'
+
+        with pytest.raises(NotFoundError), unittest.mock.patch("pyhugegraph.utils.util.log.error") as log_error:
+            check_if_success(response)
+
+        logged_args = str(log_error.call_args)
+        assert "server-secret" not in logged_args
         assert "***REDACTED***" in logged_args
 
     def test_redact_sensitive_data_returns_non_sensitive_string_unchanged(self):

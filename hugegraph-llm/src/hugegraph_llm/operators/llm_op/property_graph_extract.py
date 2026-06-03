@@ -65,7 +65,7 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
     log.info("properties_map: %s", properties_map)
     for item in items:
         item_type = item["type"]
-        if item_type == "vertex":
+        if item_type in properties_map:
             label = item["label"]
             item["properties"] = {
                 key: value

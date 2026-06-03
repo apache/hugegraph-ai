@@ -52,6 +52,10 @@ def _make_test_client(**overrides):
     return TestClient(app), callbacks
 
 
+def _snapshot_llm_fields(fields):
+    return {field: getattr(llm_settings, field) for field in fields}
+
+
 def test_graph_config_api_passes_graph_field_to_apply_graph_conf():
     apply_graph_conf = Mock(return_value=status.HTTP_200_OK)
     router = APIRouter()
@@ -148,7 +152,52 @@ def test_llm_config_api_rolls_back_provider_type_on_apply_failure(monkeypatch):
     monkeypatch.setattr(llm_settings, "chat_llm_type", "ollama/local")
     monkeypatch.setattr(llm_settings, "extract_llm_type", "ollama/local")
     monkeypatch.setattr(llm_settings, "text2gql_llm_type", "ollama/local")
-    client, callbacks = _make_test_client(apply_llm_conf=Mock(return_value=status.HTTP_500_INTERNAL_SERVER_ERROR))
+    rollback_fields = (
+        "chat_llm_type",
+        "extract_llm_type",
+        "text2gql_llm_type",
+        "openai_chat_api_key",
+        "openai_chat_api_base",
+        "openai_chat_language_model",
+        "openai_chat_tokens",
+        "openai_extract_api_key",
+        "openai_extract_api_base",
+        "openai_extract_language_model",
+        "openai_extract_tokens",
+        "openai_text2gql_api_key",
+        "openai_text2gql_api_base",
+        "openai_text2gql_language_model",
+        "openai_text2gql_tokens",
+    )
+    original_values = {
+        "chat_llm_type": "ollama/local",
+        "extract_llm_type": "ollama/local",
+        "text2gql_llm_type": "ollama/local",
+        "openai_chat_api_key": "old-chat-key",
+        "openai_chat_api_base": "https://old-chat.example",
+        "openai_chat_language_model": "old-chat-model",
+        "openai_chat_tokens": 11,
+        "openai_extract_api_key": "old-extract-key",
+        "openai_extract_api_base": "https://old-extract.example",
+        "openai_extract_language_model": "old-extract-model",
+        "openai_extract_tokens": 12,
+        "openai_text2gql_api_key": "old-text2gql-key",
+        "openai_text2gql_api_base": "https://old-text2gql.example",
+        "openai_text2gql_language_model": "old-text2gql-model",
+        "openai_text2gql_tokens": 13,
+    }
+    for field, value in original_values.items():
+        monkeypatch.setattr(llm_settings, field, value)
+
+    def failed_apply_llm_conf(api_key, api_base, language_model, max_tokens, **_kwargs):
+        for config_name in ("chat", "extract", "text2gql"):
+            monkeypatch.setattr(llm_settings, f"openai_{config_name}_api_key", api_key)
+            monkeypatch.setattr(llm_settings, f"openai_{config_name}_api_base", api_base)
+            monkeypatch.setattr(llm_settings, f"openai_{config_name}_language_model", language_model)
+            monkeypatch.setattr(llm_settings, f"openai_{config_name}_tokens", int(max_tokens))
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    client, callbacks = _make_test_client(apply_llm_conf=Mock(side_effect=failed_apply_llm_conf))
 
     response = client.post(
         "/config/llm",
@@ -162,15 +211,34 @@ def test_llm_config_api_rolls_back_provider_type_on_apply_failure(monkeypatch):
     )
 
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert llm_settings.chat_llm_type == "ollama/local"
-    assert llm_settings.extract_llm_type == "ollama/local"
-    assert llm_settings.text2gql_llm_type == "ollama/local"
+    assert _snapshot_llm_fields(rollback_fields) == original_values
     callbacks["apply_llm_conf"].assert_called_once()
 
 
 def test_embedding_config_api_rolls_back_provider_type_on_apply_failure(monkeypatch):
     monkeypatch.setattr(llm_settings, "embedding_type", "ollama/local")
-    client, callbacks = _make_test_client(apply_embedding_conf=Mock(return_value=status.HTTP_500_INTERNAL_SERVER_ERROR))
+    rollback_fields = (
+        "embedding_type",
+        "openai_embedding_api_key",
+        "openai_embedding_api_base",
+        "openai_embedding_model",
+    )
+    original_values = {
+        "embedding_type": "ollama/local",
+        "openai_embedding_api_key": "old-embedding-key",
+        "openai_embedding_api_base": "https://old-embedding.example",
+        "openai_embedding_model": "old-embedding-model",
+    }
+    for field, value in original_values.items():
+        monkeypatch.setattr(llm_settings, field, value)
+
+    def failed_apply_embedding_conf(api_key, api_base, language_model, **_kwargs):
+        monkeypatch.setattr(llm_settings, "openai_embedding_api_key", api_key)
+        monkeypatch.setattr(llm_settings, "openai_embedding_api_base", api_base)
+        monkeypatch.setattr(llm_settings, "openai_embedding_model", language_model)
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    client, callbacks = _make_test_client(apply_embedding_conf=Mock(side_effect=failed_apply_embedding_conf))
 
     response = client.post(
         "/config/embedding",
@@ -183,7 +251,7 @@ def test_embedding_config_api_rolls_back_provider_type_on_apply_failure(monkeypa
     )
 
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert llm_settings.embedding_type == "ollama/local"
+    assert _snapshot_llm_fields(rollback_fields) == original_values
     callbacks["apply_embedding_conf"].assert_called_once()
 
 
@@ -302,7 +370,28 @@ def test_rerank_config_rejects_unsupported_provider_without_mutating(monkeypatch
 
 def test_rerank_config_rolls_back_provider_type_on_apply_failure(monkeypatch):
     monkeypatch.setattr(llm_settings, "reranker_type", "siliconflow")
-    client, callbacks = _make_test_client(apply_reranker_conf=Mock(return_value=status.HTTP_500_INTERNAL_SERVER_ERROR))
+    rollback_fields = (
+        "reranker_type",
+        "reranker_api_key",
+        "reranker_model",
+        "cohere_base_url",
+    )
+    original_values = {
+        "reranker_type": "siliconflow",
+        "reranker_api_key": "old-reranker-key",
+        "reranker_model": "old-reranker-model",
+        "cohere_base_url": "https://old-cohere.example",
+    }
+    for field, value in original_values.items():
+        monkeypatch.setattr(llm_settings, field, value)
+
+    def failed_apply_reranker_conf(api_key, reranker_model, cohere_base_url, **_kwargs):
+        monkeypatch.setattr(llm_settings, "reranker_api_key", api_key)
+        monkeypatch.setattr(llm_settings, "reranker_model", reranker_model)
+        monkeypatch.setattr(llm_settings, "cohere_base_url", cohere_base_url)
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    client, callbacks = _make_test_client(apply_reranker_conf=Mock(side_effect=failed_apply_reranker_conf))
 
     response = client.post(
         "/config/rerank",
@@ -315,7 +404,7 @@ def test_rerank_config_rolls_back_provider_type_on_apply_failure(monkeypatch):
     )
 
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert llm_settings.reranker_type == "siliconflow"
+    assert _snapshot_llm_fields(rollback_fields) == original_values
     callbacks["apply_reranker_conf"].assert_called_once()
 
 

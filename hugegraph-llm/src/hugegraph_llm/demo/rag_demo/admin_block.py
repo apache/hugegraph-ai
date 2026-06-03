@@ -20,6 +20,7 @@ from collections import deque
 
 import gradio as gr
 
+from hugegraph_llm.api.admin_api import _is_configured_admin_token
 from hugegraph_llm.config import admin_settings
 from hugegraph_llm.utils.log import log
 
@@ -73,6 +74,16 @@ def check_password(password, request: gr.Request | None = None):
     client_ip = request.client.host if request else "Unknown IP"
     admin_token = admin_settings.admin_token
 
+    if not _is_configured_admin_token(admin_token):
+        log.error("Rejected admin log access with insecure token from IP: %s", client_ip)
+        return (
+            "",
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(value="Admin token is not configured securely.", visible=True),
+        )
+
     if password == admin_token:
         # Return logs and update visibility
         llm_log = read_llm_server_log()
@@ -120,7 +131,7 @@ def create_admin_block():
                 llm_server_log_output = gr.Code(
                     label="LLM Server Log (llm-server.log)",
                     lines=20,
-                    value=f"```\n{read_llm_server_log()}\n```",  # Initial value using the function
+                    value="",
                     elem_classes="code-container-edit",
                     every=60,  # Refresh every 60 second
                 )

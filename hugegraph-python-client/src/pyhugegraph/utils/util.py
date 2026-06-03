@@ -120,7 +120,7 @@ def check_if_success(response, error=None):
 
         req = response.request
         req_body = redact_sensitive_data(req.body) if req.body else "Empty body"
-        response_body = response.text if response.text else "Empty body"
+        response_body = redact_sensitive_data(response.text) if response.text else "Empty body"
         log.error(
             "Error-Client: Request URL: %s, Request Body: %s, Response Body: %s",
             req.url,

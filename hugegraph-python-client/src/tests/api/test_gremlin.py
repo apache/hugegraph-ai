@@ -21,7 +21,7 @@ from unittest import mock
 
 import pytest
 from pyhugegraph.api.gremlin import GremlinManager
-from pyhugegraph.utils.exceptions import NotAuthorizedError, ServerError
+from pyhugegraph.utils.exceptions import NotAuthorizedError, ResponseParseError, ServerError
 
 from ..client_utils import ClientUtils
 
@@ -142,6 +142,10 @@ class TestGremlinSetupBehavior(unittest.TestCase):
                 TestGremlin.setUpClass()
 
 
+@pytest.mark.skipif(
+    os.environ.get("SKIP_GREMLIN_TESTS", "").lower() == "true",
+    reason="Skipping Gremlin tests: SKIP_GREMLIN_TESTS=true",
+)
 def test_gremlin_error_surface_is_explicit(client_utils):
     with pytest.raises(ServerError) as exc_info:
         client_utils.gremlin.exec("g.V2()")
@@ -173,5 +177,5 @@ def test_gremlin_exec_does_not_silently_drop_empty_payload(monkeypatch):
     gremlin = GremlinManager(_FailingGremlinSession())
     monkeypatch.setattr(gremlin, "_invoke_request", mock.Mock(return_value={}))
 
-    with pytest.raises(ValueError, match="Invalid Gremlin response payload"):
+    with pytest.raises(ResponseParseError, match="Invalid Gremlin response payload"):
         gremlin.exec("g.V()")

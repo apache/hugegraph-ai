@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from hugegraph_llm.api.admin_api import admin_http_api
 from hugegraph_llm.config import admin_settings
+from hugegraph_llm.demo.rag_demo import admin_block
 
 pytestmark = pytest.mark.contract
 
@@ -93,6 +94,29 @@ def test_logs_rejects_default_admin_token(monkeypatch):
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert response.json()["detail"] == "Admin token is not configured securely."
     log_stream.assert_not_called()
+
+
+def test_admin_block_rejects_default_admin_token(monkeypatch):
+    monkeypatch.setattr(admin_settings, "admin_token", "xxxx")
+    read_log = Mock(return_value="sensitive logs")
+    monkeypatch.setattr(admin_block, "read_llm_server_log", read_log)
+
+    output = admin_block.check_password("xxxx")
+
+    assert output[0] == ""
+    assert output[-1]["value"] == "Admin token is not configured securely."
+    read_log.assert_not_called()
+
+
+def test_admin_block_reads_logs_with_secure_admin_token(monkeypatch):
+    monkeypatch.setattr(admin_settings, "admin_token", "secure-admin-token")
+    read_log = Mock(return_value="safe logs")
+    monkeypatch.setattr(admin_block, "read_llm_server_log", read_log)
+
+    output = admin_block.check_password("secure-admin-token")
+
+    assert output[0] == "safe logs"
+    read_log.assert_called_once_with()
 
 
 def test_logs_streams_valid_log_file_under_logs_dir(monkeypatch):

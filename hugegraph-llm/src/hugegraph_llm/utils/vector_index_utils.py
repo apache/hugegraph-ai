@@ -16,6 +16,7 @@
 # under the License.
 
 import json
+from pathlib import Path
 from typing import Type
 
 import docx
@@ -63,17 +64,18 @@ def read_documents(input_file, input_text):
         texts = []
         for file in input_file:
             full_path = file.name
-            if full_path.endswith(".txt"):
+            suffix = Path(full_path).suffix.lower()
+            if suffix == ".txt":
                 with open(full_path, "r", encoding="utf-8") as f:
                     texts.append(f.read())
-            elif full_path.endswith(".docx"):
+            elif suffix == ".docx":
                 text = ""
                 doc = docx.Document(full_path)
                 for para in doc.paragraphs:
                     text += para.text
                     text += "\n"
                 texts.append(text)
-            elif full_path.endswith(".pdf"):
+            elif suffix == ".pdf":
                 texts.append(read_pdf_text(full_path))
             else:
                 raise gr.Error("Please input txt, docx, or pdf file.")

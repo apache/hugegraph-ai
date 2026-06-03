@@ -70,6 +70,15 @@ def test_read_documents_reads_pdf_file(tmp_path):
     assert "Hello HugeGraph PDF" in result[0]
 
 
+def test_read_documents_reads_mixed_case_pdf_file(tmp_path):
+    pdf_path = tmp_path / "sample.PDF"
+    pdf_path.write_bytes(_build_pdf(b"BT /F1 24 Tf 100 700 Td (Mixed Case PDF) Tj ET"))
+
+    result = read_documents([SimpleNamespace(name=str(pdf_path))], "")
+
+    assert "Mixed Case PDF" in result[0]
+
+
 def test_read_documents_rejects_pdf_without_extractable_text(tmp_path):
     pdf_path = tmp_path / "empty.pdf"
     pdf_path.write_bytes(_build_pdf(b""))

@@ -72,7 +72,7 @@ jobs:
       env:
         SKIP_EXTERNAL_SERVICES: true
       run: |
-        uv run pytest src/tests/config/ src/tests/document/ src/tests/middleware/ src/tests/operators/ src/tests/models/ src/tests/indices/ src/tests/test_utils.py -v --tb=short
+        uv run pytest src/tests/config/ src/tests/document/ src/tests/middleware/ src/tests/operators/ src/tests/models/ src/tests/indices/ src/tests/test_utils.py src/tests/test_vector_index_utils.py -v --tb=short
 
     - name: Run integration tests
       working-directory: hugegraph-llm

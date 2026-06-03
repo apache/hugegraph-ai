@@ -68,8 +68,9 @@ def rag_http_api(
 ):
     @contextmanager
     def request_graph_config(req):
-        # TODO: pass graph config through request-scoped flow/operator context
-        # instead of temporarily mutating process-global huge_settings.
+        # FIXME: per-request graph overrides still mutate process-global huge_settings.
+        # A global lock would serialize long RAG/Text2Gremlin requests, so the real
+        # fix is passing graph config through request-scoped flow/operator context.
         original_values = _snapshot_settings(huge_settings, _GRAPH_CONFIG_FIELD_MAP.values())
         try:
             client_config = getattr(req, "client_config", None)

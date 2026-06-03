@@ -19,15 +19,16 @@ import json
 
 from fastapi import APIRouter, HTTPException, status
 
-from hugegraph_llm.api.models.rag_requests import GraphExtractRequest
+from hugegraph_llm.api.models.graph_extract_requests import GraphExtractRequest
+from hugegraph_llm.api.models.graph_extract_responses import GraphExtractResponse
 from hugegraph_llm.config import prompt
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.log import log
 
 
-def graph_http_api(router: APIRouter):
-    @router.post("/graph/extract", status_code=status.HTTP_200_OK)
+def graph_extract_http_api(router: APIRouter):
+    @router.post("/graph/extract", status_code=status.HTTP_200_OK, response_model=GraphExtractResponse)
     def graph_extract_api(req: GraphExtractRequest):
         try:
             scheduler = SchedulerSingleton.get_instance()
@@ -41,14 +42,17 @@ def graph_http_api(router: APIRouter):
                 split_type=req.split_type,
                 client_config=req.client_config,
             )
-            result = json.loads(result_str)
+            raw = json.loads(result_str)
+            warnings = [raw.pop("warning")] if "warning" in raw else []
+            result = {"vertices": raw.get("vertices", []), "edges": raw.get("edges", [])}
+            meta = {}
             if req.include_meta:
-                result["meta"] = {
-                    "vertex_count": len(result.get("vertices", [])),
-                    "edge_count": len(result.get("edges", [])),
+                meta = {
+                    "vertex_count": len(result["vertices"]),
+                    "edge_count": len(result["edges"]),
                     "text_count": len(req.texts),
                 }
-            return result
+            return GraphExtractResponse(result=result, warnings=warnings, meta=meta)
         except HTTPException:
             raise
         except Exception as e:

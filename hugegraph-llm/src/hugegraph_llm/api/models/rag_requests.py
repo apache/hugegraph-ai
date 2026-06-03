@@ -15,12 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import json
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import List, Literal, Optional
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator
 
 from hugegraph_llm.config import prompt
 
@@ -165,81 +164,3 @@ class GremlinGenerateRequest(BaseModel):
             if missing:
                 raise ValueError(f"Prompt template is missing required placeholders: {', '.join(missing)}")
         return v
-
-
-class GraphExtractRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    texts: Union[str, List[str]] = Field(..., description="Text or list of texts to extract a graph from.")
-    graph_schema: Union[str, Dict[str, Any]] = Field(
-        ...,
-        alias="schema",
-        description="Graph schema as a JSON string/object, or an existing graph name.",
-    )
-    example_prompt: Optional[str] = Query(None, description="Optional graph extraction prompt header.")
-    extract_type: Literal["triples", "property_graph"] = Query("property_graph", description="Extraction type.")
-    language: Literal["zh", "en"] = Query("zh", description="Language for chunk splitting.")
-    split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
-    include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")
-    client_config: Optional[GraphConfigRequest] = Field(None, description="hugegraph server config.")
-
-    @field_validator("texts")
-    @classmethod
-    def normalize_texts(cls, v):
-        items = [v] if isinstance(v, str) else list(v)
-        items = [t for t in items if t and t.strip()]
-        if not items:
-            raise ValueError("texts must not be empty.")
-        return items
-
-    @field_validator("graph_schema")
-    @classmethod
-    def normalize_schema(cls, v):
-        def validate_schema_obj(schema_obj):
-            if not isinstance(schema_obj, dict):
-                raise ValueError("schema JSON must be an object.")
-            if "vertexlabels" not in schema_obj or "edgelabels" not in schema_obj:
-                raise ValueError("schema must contain 'vertexlabels' and 'edgelabels'.")
-            if not isinstance(schema_obj["vertexlabels"], list) or not isinstance(schema_obj["edgelabels"], list):
-                raise ValueError("'vertexlabels' and 'edgelabels' must be lists.")
-
-        if isinstance(v, dict):
-            validate_schema_obj(v)
-            return json.dumps(v, ensure_ascii=False)
-        v = v.strip()
-        if not v:
-            raise ValueError("schema must not be empty.")
-        if v.startswith("{"):
-            try:
-                validate_schema_obj(json.loads(v))
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON schema: {e}") from e
-            return v
-        return v
-
-    @model_validator(mode="after")
-    def validate_schema_and_client_config(self):
-        # An inline JSON schema is self-contained and never hits HugeGraph, so a
-        # client_config would be silently ignored: reject it to keep the contract clear.
-        # A named-graph schema, by contrast, requires request-scoped connection settings
-        # and the connection's graph name must match the schema being fetched.
-        schema = self.graph_schema
-        is_named_schema = isinstance(schema, str) and not schema.strip().startswith("{")
-        if not is_named_schema:
-            if self.client_config is not None:
-                raise ValueError(
-                    "client_config is not allowed when 'schema' is inline JSON; graph extraction "
-                    "from an inline schema does not connect to HugeGraph."
-                )
-            return self
-        if self.client_config is None:
-            raise ValueError(
-                "client_config is required when 'schema' refers to an existing graph name; "
-                "provide inline schema JSON instead to extract without a HugeGraph connection."
-            )
-        if self.client_config.graph != schema:
-            raise ValueError(
-                "When 'schema' is a graph name, client_config.graph must match it "
-                f"(got schema='{schema}', client_config.graph='{self.client_config.graph}')."
-            )
-        return self

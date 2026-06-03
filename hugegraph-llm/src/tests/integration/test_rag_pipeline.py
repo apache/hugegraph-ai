@@ -19,6 +19,8 @@ import os
 import tempfile
 import unittest
 
+import pytest
+
 # 导入测试工具
 from src.tests.test_utils import (
     create_test_document,
@@ -27,6 +29,8 @@ from src.tests.test_utils import (
     with_mock_openai_embedding,
 )
 from tests.utils.mock import VectorIndex
+
+pytestmark = [pytest.mark.external, pytest.mark.slow]
 
 
 # 创建模拟类，替代缺失的模块

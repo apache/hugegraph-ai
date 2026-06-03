@@ -17,7 +17,11 @@
 
 import unittest
 
+import pytest
+
 from hugegraph_llm.operators.llm_op.disambiguate_data import DisambiguateData
+
+pytestmark = pytest.mark.contract
 
 
 class TestDisambiguateData(unittest.TestCase):

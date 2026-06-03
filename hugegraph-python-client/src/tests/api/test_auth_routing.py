@@ -20,6 +20,8 @@ from urllib.parse import urljoin
 import pytest
 from pyhugegraph.api.auth import AuthManager
 
+pytestmark = pytest.mark.contract
+
 
 class DummyCfg:
     def __init__(self, url, graphspace, gs_supported, graph_name):

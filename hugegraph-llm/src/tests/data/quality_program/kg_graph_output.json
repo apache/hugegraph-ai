@@ -1,0 +1,14 @@
+{
+  "vertices": [
+    {"label": "quality_person", "properties": {"name": "marko", "age": 29}},
+    {"label": "quality_software", "properties": {"name": "lop", "lang": "java"}}
+  ],
+  "edges": [
+    {
+      "label": "quality_created",
+      "outV": "quality_person:marko",
+      "inV": "quality_software:lop",
+      "properties": {"date": "2026-05-31"}
+    }
+  ]
+}

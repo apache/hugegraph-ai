@@ -100,14 +100,17 @@ class ResponseValidation:
             if not self._strict and response.status_code == 404:
                 log.info("Resource %s not found (404)", path)
             else:
+                if response.status_code == 401:
+                    check_if_authorized(response)
+
                 try:
                     body = response.json()
                     if isinstance(body, dict):
                         status = body.get("status")
                         status_message = status.get("message") if isinstance(status, dict) else None
                         details = (
-                            body.get("exception")
-                            or body.get("message")
+                            body.get("message")
+                            or body.get("exception")
                             or status_message
                             or response.text
                             or "unknown error"
@@ -129,9 +132,7 @@ class ResponseValidation:
 
                 if response.status_code == 404:
                     raise NotFoundError(response.content) from e
-                if response.status_code == 400:
-                    raise Exception(f"Server Exception: {details}") from e
-                raise e
+                raise Exception(f"Server Exception: {details}") from e
 
         except Exception:  # pylint: disable=broad-exception-caught
             log.error("Unhandled exception occurred: %s", traceback.format_exc())

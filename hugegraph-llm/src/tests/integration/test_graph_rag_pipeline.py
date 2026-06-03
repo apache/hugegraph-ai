@@ -21,7 +21,11 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
 from tests.utils.mock import MockEmbedding
+
+pytestmark = [pytest.mark.external, pytest.mark.slow]
 
 
 class BaseLLM:

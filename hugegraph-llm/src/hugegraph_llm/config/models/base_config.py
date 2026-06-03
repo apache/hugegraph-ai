@@ -17,6 +17,7 @@
 
 
 import os
+from pathlib import Path
 
 from dotenv import dotenv_values, set_key
 from pydantic_settings import BaseSettings
@@ -24,7 +25,32 @@ from pydantic_settings import BaseSettings
 from hugegraph_llm.utils.log import log
 
 dir_name = os.path.dirname
-env_path = os.path.join(os.getcwd(), ".env")  # Load .env from the current working directory
+ENV_PATH_ENV_VAR = "HUGEGRAPH_LLM_ENV_PATH"
+
+
+def _source_project_root() -> Path | None:
+    package_root = Path(__file__).resolve().parents[2]
+    if package_root.parent.name != "src":
+        return None
+    project_root = package_root.parent.parent
+    if (project_root / "pyproject.toml").exists():
+        return project_root
+    return None
+
+
+def resolve_env_path() -> str:
+    explicit_env_path = os.getenv(ENV_PATH_ENV_VAR)
+    if explicit_env_path:
+        return str(Path(explicit_env_path).expanduser())
+
+    project_root = _source_project_root()
+    if project_root is not None:
+        return str(project_root / ".env")
+
+    return str(Path.cwd() / ".env")
+
+
+env_path = resolve_env_path()
 
 
 class BaseConfig(BaseSettings):

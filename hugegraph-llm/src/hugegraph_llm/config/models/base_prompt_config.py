@@ -16,17 +16,45 @@
 # under the License.
 
 import os
-import sys
 from pathlib import Path
 
 import yaml
 
-from hugegraph_llm.utils.anchor import get_project_root
 from hugegraph_llm.utils.log import log
 
 dir_name = os.path.dirname
 F_NAME = "config_prompt.yaml"
-yaml_file_path = os.path.join(os.getcwd(), "src/hugegraph_llm/resources/demo", F_NAME)
+PROMPT_CONFIG_PATH_ENV_VAR = "HUGEGRAPH_LLM_PROMPT_CONFIG_PATH"
+
+
+def _source_prompt_yaml_path() -> Path | None:
+    package_root = Path(__file__).resolve().parents[2]
+    if package_root.parent.name != "src":
+        return None
+    project_root = package_root.parent.parent
+    if (project_root / "pyproject.toml").exists():
+        return package_root / "resources" / "demo" / F_NAME
+    return None
+
+
+def _user_prompt_yaml_path() -> Path:
+    config_home = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+    return config_home / "hugegraph-llm" / F_NAME
+
+
+def resolve_prompt_yaml_path() -> str:
+    explicit_prompt_path = os.getenv(PROMPT_CONFIG_PATH_ENV_VAR)
+    if explicit_prompt_path:
+        return str(Path(explicit_prompt_path).expanduser())
+
+    source_prompt_path = _source_prompt_yaml_path()
+    if source_prompt_path is not None:
+        return str(source_prompt_path)
+
+    return str(_user_prompt_yaml_path())
+
+
+yaml_file_path = resolve_prompt_yaml_path()
 
 
 class LiteralStr(str):
@@ -54,18 +82,6 @@ class BasePromptConfig:
     generate_extract_prompt_template: str = ""
 
     def ensure_yaml_file_exists(self):
-        current_dir = Path.cwd().resolve()
-        project_root = get_project_root()
-        if current_dir == project_root:
-            log.info("Current working directory is the project root, proceeding to run the app.")
-        else:
-            error_msg = (
-                f"Current working directory is not the project root. "
-                f"Please run this script from the project root directory: {project_root}\n"
-                f"Current directory: {current_dir}"
-            )
-            log.error(error_msg)
-            sys.exit(1)
         if os.path.exists(yaml_file_path):
             log.info("Loading prompt file '%s' successfully.", F_NAME)
             with open(yaml_file_path, "r", encoding="utf-8") as file:
@@ -123,6 +139,7 @@ class BasePromptConfig:
             "_language_generated": str(self.llm_settings.language).lower().strip(),
             "generate_extract_prompt_template": to_literal(self.generate_extract_prompt_template),
         }
+        Path(yaml_file_path).parent.mkdir(parents=True, exist_ok=True)
         with open(yaml_file_path, "w", encoding="utf-8") as file:
             yaml.dump(data, file, allow_unicode=True, sort_keys=False, default_flow_style=False)
 

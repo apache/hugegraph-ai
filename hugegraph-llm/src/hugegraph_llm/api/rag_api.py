@@ -161,7 +161,9 @@ def rag_http_api(
     # TODO: restructure the implement of llm to three types, like "/config/chat_llm"
     @router.post("/config/llm", status_code=status.HTTP_201_CREATED)
     def llm_config_api(req: LLMConfigRequest):
-        llm_settings.llm_type = req.llm_type
+        llm_settings.chat_llm_type = req.llm_type
+        llm_settings.extract_llm_type = req.llm_type
+        llm_settings.text2gql_llm_type = req.llm_type
 
         if req.llm_type == "openai":
             res = apply_llm_conf(

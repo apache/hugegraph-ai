@@ -18,9 +18,12 @@
 
 import unittest
 
+import pytest
 from pyhugegraph.utils.exceptions import NotFoundError
 
 from ..client_utils import ClientUtils
+
+pytestmark = [pytest.mark.integration, pytest.mark.hugegraph]
 
 
 class TestAuthManager(unittest.TestCase):

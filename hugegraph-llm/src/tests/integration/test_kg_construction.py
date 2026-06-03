@@ -22,12 +22,16 @@ import os
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 # 导入测试工具
 from src.tests.test_utils import (
     create_test_document,
     should_skip_external,
     with_mock_openai_client,
 )
+
+pytestmark = [pytest.mark.external, pytest.mark.slow]
 
 
 # Create mock classes to replace missing modules

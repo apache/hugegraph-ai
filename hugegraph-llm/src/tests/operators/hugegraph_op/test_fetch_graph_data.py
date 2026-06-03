@@ -18,7 +18,11 @@
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
 from hugegraph_llm.operators.hugegraph_op.fetch_graph_data import FetchGraphData
+
+pytestmark = [pytest.mark.unit]
 
 
 class TestFetchGraphData(unittest.TestCase):

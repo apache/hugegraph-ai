@@ -17,14 +17,36 @@
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from litellm.exceptions import APIError, BudgetExceededError
 
 from hugegraph_llm.models.llms.litellm import LiteLLMClient
 
+pytestmark = pytest.mark.contract
+
 
 class TestLiteLLMClient(unittest.TestCase):
+    def test_generate_returns_message_content(self):
+        client = LiteLLMClient(model_name="openai/gpt-4.1-mini")
+        response = MagicMock()
+        response.usage = {"prompt_tokens": 1}
+        response.choices = [MagicMock(message=MagicMock(content="hello"))]
+
+        with patch("hugegraph_llm.models.llms.litellm.completion", return_value=response) as mock_completion:
+            result = client.generate(prompt="hello")
+
+        self.assertEqual(result, "hello")
+        mock_completion.assert_called_once()
+
+    def test_generate_malformed_sdk_response_raises_attribute_error(self):
+        client = LiteLLMClient(model_name="openai/gpt-4.1-mini")
+
+        with patch("hugegraph_llm.models.llms.litellm.completion", return_value=object()):
+            with self.assertRaises(AttributeError):
+                client.generate(prompt="hello")
+
     def test_budget_exceeded_error_is_not_retried(self):
         client = LiteLLMClient(model_name="openai/gpt-4.1-mini")
         error = BudgetExceededError(current_cost=2.0, max_budget=1.0)

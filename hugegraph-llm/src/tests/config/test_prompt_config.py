@@ -19,9 +19,13 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from hugegraph_llm.config.prompt_config import PromptConfig
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
+
+pytestmark = pytest.mark.contract
 
 
 def _json_objects_after_marker(prompt, marker):

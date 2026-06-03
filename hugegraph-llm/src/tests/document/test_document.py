@@ -17,7 +17,11 @@
 
 import unittest
 
+import pytest
+
 from hugegraph_llm.document import Document, Metadata
+
+pytestmark = pytest.mark.unit
 
 
 class TestDocument(unittest.TestCase):

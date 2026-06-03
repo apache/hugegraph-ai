@@ -20,8 +20,13 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.operators.llm_op.keyword_extract import KeywordExtract
+from tests.fixtures.fake_llm import FakeLLM
+
+pytestmark = pytest.mark.contract
 
 
 class TestKeywordExtract(unittest.TestCase):
@@ -251,6 +256,32 @@ KEYWORDS: artificial intelligence:0.9, missing-score, bad score:not-a-number, gr
         self.assertEqual(keywords["machine learning"], 0.8)
         self.assertNotIn("missing-score", keywords)
         self.assertNotIn("bad score", keywords)
+
+    def test_run_with_fake_llm_empty_output_returns_empty_keywords(self):
+        """Test empty provider output follows the public empty-list fallback."""
+        extractor = KeywordExtract(text=self.query, llm=FakeLLM([""]), max_keywords=5)
+
+        result = extractor.run({})
+
+        self.assertEqual(result["keywords"], [])
+        self.assertEqual(result["call_count"], 1)
+
+    def test_extract_keywords_from_response_deduplicates_by_last_score(self):
+        """Test duplicate keyword entries are normalized by dict semantics."""
+        response = "KEYWORDS: graph:0.3, vector:0.4, graph:0.9"
+
+        keywords = self.extractor._extract_keywords_from_response(response, lowercase=False, start_token="KEYWORDS:")
+
+        self.assertEqual(keywords["graph"], 0.9)
+        self.assertEqual(keywords["vector"], 0.4)
+
+    def test_extract_keywords_from_non_list_provider_text_returns_empty_mapping(self):
+        """Test non keyword-list provider text does not leak as a keyword."""
+        response = "The answer is probably graph databases."
+
+        keywords = self.extractor._extract_keywords_from_response(response, lowercase=False, start_token="KEYWORDS:")
+
+        self.assertEqual(keywords, {})
 
     def test_extract_keywords_from_response_without_start_token(self):
         """Test _extract_keywords_from_response method without start token."""

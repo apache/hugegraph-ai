@@ -49,6 +49,17 @@ class DummyPipeline:
         return DummyPipelineState()
 
 
+class CapturePipeline:
+    def __init__(self):
+        self.params = {}
+
+    def createGParam(self, value, name):
+        self.params[name] = value
+
+    def registerGElement(self, *args):
+        return None
+
+
 def test_graph_extract_prepare_preserves_default_document_split_type():
     prepared_input = WkFlowInput()
 
@@ -90,6 +101,25 @@ def test_graph_extract_prepare_rejects_invalid_split_type():
             "property_graph",
             "invalid",
         )
+
+
+def test_graph_extract_build_flow_passes_non_default_split_type_to_workflow_input(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "hugegraph_llm.flows.graph_extract.GPipeline",
+        CapturePipeline,
+    )
+
+    pipeline = GraphExtractFlow().build_flow(
+        "{}",
+        ["first paragraph\n\nsecond paragraph"],
+        "extract prompt",
+        "property_graph",
+        "paragraph",
+    )
+
+    assert pipeline.params["wkflow_input"].split_type == "paragraph"
 
 
 def test_chunk_split_non_default_types_produce_multiple_chunks():

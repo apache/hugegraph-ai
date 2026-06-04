@@ -19,7 +19,7 @@ import gradio as gr
 import pytest
 from docx import Document
 
-from hugegraph_llm.utils import vector_index_utils
+from hugegraph_llm.utils import graph_index_utils, vector_index_utils
 from hugegraph_llm.utils.vector_index_utils import read_documents
 
 
@@ -136,3 +136,67 @@ def test_read_documents_rejects_unsupported_file_type(tmp_path):
 
     with pytest.raises(gr.Error, match="Please input txt, docx, or pdf file"):
         read_documents([SimpleNamespace(name=str(markdown_path))], "")
+
+
+class DummyScheduler:
+    def __init__(self):
+        self.calls = []
+
+    def schedule_flow(self, *args):
+        self.calls.append(args)
+        return "scheduled"
+
+
+def test_build_vector_index_accepts_pdf_upload_and_forwards_text(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "entrypoint.pdf"
+    pdf_path.write_bytes(_build_pdf(b"BT /F1 24 Tf 100 700 Td (Build Vector Entrypoint PDF) Tj ET"))
+    scheduler = DummyScheduler()
+
+    monkeypatch.setattr(
+        vector_index_utils.SchedulerSingleton,
+        "get_instance",
+        lambda: scheduler,
+    )
+
+    result = vector_index_utils.build_vector_index(
+        [SimpleNamespace(name=str(pdf_path))],
+        "",
+    )
+
+    assert result == "scheduled"
+    assert len(scheduler.calls) == 1
+
+    flow_name, texts = scheduler.calls[0]
+    assert flow_name == "build_vector_index"
+    assert "Build Vector Entrypoint PDF" in texts[0]
+
+
+def test_extract_graph_accepts_pdf_upload_and_forwards_text(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "graph_entrypoint.pdf"
+    pdf_path.write_bytes(_build_pdf(b"BT /F1 24 Tf 100 700 Td (Extract Graph Entrypoint PDF) Tj ET"))
+    schema = '{"vertices": [], "edges": []}'
+    example_prompt = "Extract graph data."
+    scheduler = DummyScheduler()
+
+    monkeypatch.setattr(
+        graph_index_utils.SchedulerSingleton,
+        "get_instance",
+        lambda: scheduler,
+    )
+
+    result = graph_index_utils.extract_graph(
+        [SimpleNamespace(name=str(pdf_path))],
+        "",
+        schema,
+        example_prompt,
+    )
+
+    assert result == "scheduled"
+    assert len(scheduler.calls) == 1
+
+    flow_name, forwarded_schema, texts, forwarded_prompt, graph_mode = scheduler.calls[0]
+    assert flow_name == graph_index_utils.FlowName.GRAPH_EXTRACT
+    assert forwarded_schema == schema
+    assert "Extract Graph Entrypoint PDF" in texts[0]
+    assert forwarded_prompt == example_prompt
+    assert graph_mode == "property_graph"

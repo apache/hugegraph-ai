@@ -59,13 +59,34 @@ class GraphExtractRequest(BaseModel):
     @field_validator("graph_schema")
     @classmethod
     def normalize_schema(cls, v):
-        def validate_schema_obj(schema_obj):
+        def validate_schema_obj(schema_obj: Any) -> None:
             if not isinstance(schema_obj, dict):
                 raise ValueError("schema JSON must be an object.")
             if "vertexlabels" not in schema_obj or "edgelabels" not in schema_obj:
                 raise ValueError("schema must contain 'vertexlabels' and 'edgelabels'.")
             if not isinstance(schema_obj["vertexlabels"], list) or not isinstance(schema_obj["edgelabels"], list):
                 raise ValueError("'vertexlabels' and 'edgelabels' must be lists.")
+
+            for vlabel in schema_obj["vertexlabels"]:
+                if not isinstance(vlabel, dict):
+                    raise ValueError("Each item in 'vertexlabels' must be an object.")
+                if not isinstance(vlabel.get("name"), str) or not vlabel["name"].strip():
+                    raise ValueError("Each vertex label must have a non-empty string 'name'.")
+                props = vlabel.get("properties")
+                if not isinstance(props, list) or len(props) == 0:
+                    raise ValueError("Each vertex label must have a non-empty 'properties' list.")
+
+            for elabel in schema_obj["edgelabels"]:
+                if not isinstance(elabel, dict):
+                    raise ValueError("Each item in 'edgelabels' must be an object.")
+                for key in ("name", "source_label", "target_label"):
+                    if not isinstance(elabel.get(key), str) or not elabel[key].strip():
+                        raise ValueError(f"Each edge label must have a non-empty string '{key}'.")
+                if "properties" in elabel and not isinstance(elabel["properties"], list):
+                    raise ValueError("'properties' in edge labels must be a list when provided.")
+
+            if "propertykeys" in schema_obj and not isinstance(schema_obj["propertykeys"], list):
+                raise ValueError("'propertykeys' must be a list when provided.")
 
         if isinstance(v, dict):
             validate_schema_obj(v)

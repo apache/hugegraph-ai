@@ -270,6 +270,12 @@ def create_vector_graph_block():
                     graph_data_btn0 = gr.Button("Clear Graph Data", size="sm")
 
             vector_import_bt = gr.Button("Import into Vector", variant="primary")
+            graph_split_type = gr.Dropdown(
+                choices=["document", "paragraph", "sentence"],
+                value="document",
+                label="Graph Extraction Split Type",
+                info=("document keeps the current behavior; paragraph/sentence split long docs before extraction."),
+            )
             graph_extract_bt = gr.Button("Extract Graph Data (1)", variant="primary")
             graph_loading_bt = gr.Button("Load into GraphDB (2)", interactive=True)
             graph_index_rebuild_bt = gr.Button("Update Vid Embedding")
@@ -330,7 +336,13 @@ def create_vector_graph_block():
         # origin_out = gr.Textbox(visible=False)
         graph_extract_bt.click(
             extract_graph,
-            inputs=[input_file, input_text, input_schema, info_extract_template],
+            inputs=[
+                input_file,
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+            ],
             outputs=[out],
         ).then(
             store_prompt,

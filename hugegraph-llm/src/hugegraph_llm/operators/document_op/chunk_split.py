@@ -26,6 +26,11 @@ LANGUAGE_EN = "en"
 SPLIT_TYPE_DOCUMENT = "document"
 SPLIT_TYPE_PARAGRAPH = "paragraph"
 SPLIT_TYPE_SENTENCE = "sentence"
+VALID_SPLIT_TYPES = (
+    SPLIT_TYPE_DOCUMENT,
+    SPLIT_TYPE_PARAGRAPH,
+    SPLIT_TYPE_SENTENCE,
+)
 
 
 class ChunkSplit:
@@ -57,7 +62,7 @@ class ChunkSplit:
             ).split_text
         if split_type == SPLIT_TYPE_SENTENCE:
             return RecursiveCharacterTextSplitter(chunk_size=50, chunk_overlap=0, separators=self.separators).split_text
-        raise ValueError("Type must be paragraph, sentence, html or markdown")
+        raise ValueError("split_type must be document, paragraph, or sentence")
 
     def run(self, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         all_chunks = []

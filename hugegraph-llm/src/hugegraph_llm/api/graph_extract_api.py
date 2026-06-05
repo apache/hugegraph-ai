@@ -27,9 +27,9 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.log import log
 
 
-def graph_extract_http_api(router: APIRouter):
-    @router.post("/graph/extract", status_code=status.HTTP_200_OK, response_model=GraphExtractResponse)
-    def graph_extract_api(req: GraphExtractRequest):
+class GraphExtractService:
+    @staticmethod
+    def extract_sync(req: GraphExtractRequest) -> GraphExtractResponse:
         try:
             scheduler = SchedulerSingleton.get_instance()
             result_str = scheduler.schedule_flow(
@@ -61,3 +61,9 @@ def graph_extract_http_api(router: APIRouter):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred during graph extraction.",
             ) from e
+
+
+def graph_extract_http_api(router: APIRouter):
+    @router.post("/graph/extract", status_code=status.HTTP_200_OK, response_model=GraphExtractResponse)
+    def graph_extract_api(req: GraphExtractRequest):
+        return GraphExtractService.extract_sync(req)

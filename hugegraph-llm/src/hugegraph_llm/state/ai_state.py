@@ -88,6 +88,7 @@ class WkFlowInput(GParam):
         self.split_type = None
         self.example_prompt = None
         self.schema = None
+        self.graph_client_config = None
         self.data_json = None
         self.extract_type = None
         self.query_examples = None

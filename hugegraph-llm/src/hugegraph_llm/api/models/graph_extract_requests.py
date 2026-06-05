@@ -96,9 +96,10 @@ class GraphExtractRequest(BaseModel):
             raise ValueError("schema must not be empty.")
         if v.startswith("{"):
             try:
-                validate_schema_obj(json.loads(v))
+                schema_obj = json.loads(v)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON schema: {e}") from e
+            validate_schema_obj(schema_obj)
             return v
         return v
 

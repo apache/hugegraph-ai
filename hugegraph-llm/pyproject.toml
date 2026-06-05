@@ -63,7 +63,7 @@ dependencies = [
     "apscheduler",
     "litellm",
     "hugegraph-python-client",
-    "pycgraph==3.2.4",
+    "pycgraph==3.2.2",
 ]
 
 [project.optional-dependencies]
@@ -98,7 +98,7 @@ allow-direct-references = true
 
 [tool.uv.sources]
 hugegraph-python-client = { workspace = true }
-pycgraph = { git = "https://github.com/ChunelFeng/CGraph.git", subdirectory = "python", tag = "v3.2.4", marker = "platform_machine == 'aarch64'" }
+pycgraph = { git = "https://github.com/ChunelFeng/CGraph.git", subdirectory = "python", tag = "v3.2.2", marker = "platform_machine == 'aarch64'" }
 
 [tool.mypy]
 disable_error_code = ["import-untyped"]

@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import gradio as gr
 import pytest
+from pypdf import PdfWriter
 from docx import Document
 
 from hugegraph_llm.utils import graph_index_utils, vector_index_utils
@@ -59,6 +60,56 @@ def test_read_documents_reads_txt_file(tmp_path):
     result = read_documents([SimpleNamespace(name=str(txt_path))], "")
 
     assert result == ["hello hugegraph"]
+
+
+def _escape_pdf_text(text):
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _build_multi_page_pdf(page_texts):
+    page_count = len(page_texts)
+    page_object_start = 4
+    content_object_start = page_object_start + page_count
+    kids = " ".join(f"{page_object_start + index} 0 R" for index in range(page_count))
+
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {page_count} >>".encode(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+
+    for index in range(page_count):
+        content_ref = content_object_start + index
+        objects.append(
+            (
+                "<< /Type /Page /Parent 2 0 R "
+                "/Resources << /Font << /F1 3 0 R >> >> "
+                f"/Contents {content_ref} 0 R "
+                "/MediaBox [0 0 612 792] >>"
+            ).encode()
+        )
+
+    for page_text in page_texts:
+        content_stream = (f"BT /F1 24 Tf 72 720 Td ({_escape_pdf_text(page_text)}) Tj ET").encode()
+        objects.append(
+            b"<< /Length " + str(len(content_stream)).encode() + b" >>\nstream\n" + content_stream + b"\nendstream"
+        )
+
+    pdf = b"%PDF-1.4\n"
+    offsets = []
+    for object_id, pdf_object in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf += f"{object_id} 0 obj\n".encode()
+        pdf += pdf_object + b"\nendobj\n"
+
+    xref_offset = len(pdf)
+    pdf += f"xref\n0 {len(objects) + 1}\n".encode()
+    pdf += b"0000000000 65535 f \n"
+    for offset in offsets:
+        pdf += f"{offset:010d} 00000 n \n".encode()
+
+    pdf += (f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n").encode()
+    return pdf
 
 
 def test_read_documents_reads_pdf_file(tmp_path):
@@ -200,3 +251,38 @@ def test_extract_graph_accepts_pdf_upload_and_forwards_text(monkeypatch, tmp_pat
     assert "Extract Graph Entrypoint PDF" in texts[0]
     assert forwarded_prompt == example_prompt
     assert graph_mode == "property_graph"
+
+
+def test_read_documents_rejects_encrypted_pdf(tmp_path):
+    pdf_path = tmp_path / "encrypted.pdf"
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.encrypt("secret")
+    with pdf_path.open("wb") as pdf_file:
+        writer.write(pdf_file)
+
+    with pytest.raises(gr.Error) as exc_info:
+        vector_index_utils.read_documents([SimpleNamespace(name=str(pdf_path))], "")
+
+    assert "PDF" in str(exc_info.value)
+
+
+def test_read_documents_preserves_multi_page_pdf_order(tmp_path):
+    pdf_path = tmp_path / "multi_page.pdf"
+    pdf_path.write_bytes(
+        _build_multi_page_pdf(
+            [
+                "First page PDF text",
+                "Second page PDF text",
+                "Third page PDF text",
+            ]
+        )
+    )
+
+    result = vector_index_utils.read_documents([SimpleNamespace(name=str(pdf_path))], "")
+
+    assert len(result) == 1
+    extracted_text = result[0]
+    assert extracted_text.index("First page PDF text") < extracted_text.index("Second page PDF text")
+    assert extracted_text.index("Second page PDF text") < extracted_text.index("Third page PDF text")

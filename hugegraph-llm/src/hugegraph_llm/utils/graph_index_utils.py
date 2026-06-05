@@ -101,7 +101,7 @@ def extract_graph(
             texts,
             example_prompt,
             "property_graph",
-            split_type,
+            split_type=split_type,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.error(e)

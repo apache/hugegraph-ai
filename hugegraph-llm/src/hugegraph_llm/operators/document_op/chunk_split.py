@@ -16,6 +16,7 @@
 # under the License.
 
 
+import re
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -31,6 +32,11 @@ VALID_SPLIT_TYPES = (
     SPLIT_TYPE_PARAGRAPH,
     SPLIT_TYPE_SENTENCE,
 )
+
+
+def _split_sentence_boundaries(text: str) -> list[str]:
+    sentence_pattern = re.compile(r"[^.!?\u3002\uff01\uff1f\uff1b;]+[.!?\u3002\uff01\uff1f\uff1b;]*")
+    return [sentence.strip() for sentence in sentence_pattern.findall(text) if sentence.strip()]
 
 
 class ChunkSplit:
@@ -61,7 +67,7 @@ class ChunkSplit:
                 chunk_size=500, chunk_overlap=30, separators=self.separators
             ).split_text
         if split_type == SPLIT_TYPE_SENTENCE:
-            return RecursiveCharacterTextSplitter(chunk_size=50, chunk_overlap=0, separators=self.separators).split_text
+            return _split_sentence_boundaries
         raise ValueError("split_type must be document, paragraph, or sentence")
 
     def run(self, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:

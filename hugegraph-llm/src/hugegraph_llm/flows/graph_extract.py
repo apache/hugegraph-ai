@@ -19,12 +19,12 @@ from pycgraph import GPipeline
 
 from hugegraph_llm.flows.common import BaseFlow
 from hugegraph_llm.nodes.document_node.chunk_split import ChunkSplitNode
+from hugegraph_llm.nodes.hugegraph_node.schema import SchemaNode
+from hugegraph_llm.nodes.llm_node.extract_info import ExtractNode
 from hugegraph_llm.operators.document_op.chunk_split import (
     SPLIT_TYPE_DOCUMENT,
     VALID_SPLIT_TYPES,
 )
-from hugegraph_llm.nodes.hugegraph_node.schema import SchemaNode
-from hugegraph_llm.nodes.llm_node.extract_info import ExtractNode
 from hugegraph_llm.state.ai_state import WkFlowInput, WkFlowState
 from hugegraph_llm.utils.log import log
 

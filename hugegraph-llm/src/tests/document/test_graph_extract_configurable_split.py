@@ -14,10 +14,13 @@
 # limitations under the License.
 
 import json
+from types import SimpleNamespace
 
 import gradio as gr
 import pytest
 
+from hugegraph_llm.config.models import base_prompt_config
+from hugegraph_llm.config.models.base_prompt_config import BasePromptConfig
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.graph_extract import GraphExtractFlow
 from hugegraph_llm.operators.document_op.chunk_split import ChunkSplit
@@ -28,9 +31,11 @@ from hugegraph_llm.utils import graph_index_utils
 class DummyScheduler:
     def __init__(self):
         self.calls = []
+        self.kwargs = []
 
-    def schedule_flow(self, *args):
+    def schedule_flow(self, *args, **kwargs):
         self.calls.append(args)
+        self.kwargs.append(kwargs)
         return "scheduled"
 
 
@@ -162,9 +167,9 @@ def test_extract_graph_helper_forwards_selected_split_type(monkeypatch):
             ["graph extraction text"],
             "extract prompt",
             "property_graph",
-            "sentence",
         )
     ]
+    assert scheduler.kwargs == [{"split_type": "sentence"}]
 
 
 def test_extract_graph_helper_rejects_invalid_split_type(monkeypatch):
@@ -201,3 +206,33 @@ def test_graph_extract_post_deal_logs_chunk_count(monkeypatch):
 
     assert result_data["vertices"] == [{"id": "person:alice"}]
     assert any(message == "Graph extraction chunk_count: %s" and args == (2,) for message, args in log_calls)
+
+
+def test_sentence_split_returns_punctuation_delimited_sentences():
+    chunks = ChunkSplit(
+        "Alpha sentence one. Beta sentence two? Gamma sentence three!",
+        "sentence",
+        "en",
+    ).run(None)["chunks"]
+
+    assert chunks == [
+        "Alpha sentence one.",
+        "Beta sentence two?",
+        "Gamma sentence three!",
+    ]
+
+
+def test_prompt_config_round_trips_graph_extract_split_type(monkeypatch, tmp_path):
+    prompt_path = tmp_path / "config_prompt.yaml"
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(prompt_path))
+
+    config = BasePromptConfig()
+    config.llm_settings = SimpleNamespace(language="en")
+    config.graph_extract_split_type = "sentence"
+    config.save_to_yaml()
+
+    reloaded = BasePromptConfig()
+    reloaded.llm_settings = SimpleNamespace(language="en")
+    reloaded.ensure_yaml_file_exists()
+
+    assert reloaded.graph_extract_split_type == "sentence"

@@ -78,6 +78,7 @@ class BasePromptConfig:
     text2gql_graph_schema: str = ""
     gremlin_generate_prompt: str = ""
     doc_input_text: str = ""
+    graph_extract_split_type: str = "document"
     _language_generated: str = ""
     generate_extract_prompt_template: str = ""
 
@@ -136,6 +137,7 @@ class BasePromptConfig:
             "keywords_extract_prompt": to_literal(self.keywords_extract_prompt),
             "gremlin_generate_prompt": to_literal(self.gremlin_generate_prompt),
             "doc_input_text": to_literal(self.doc_input_text),
+            "graph_extract_split_type": to_literal(self.graph_extract_split_type),
             "_language_generated": str(self.llm_settings.language).lower().strip(),
             "generate_extract_prompt_template": to_literal(self.generate_extract_prompt_template),
         }

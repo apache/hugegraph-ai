@@ -17,8 +17,8 @@ from types import SimpleNamespace
 
 import gradio as gr
 import pytest
-from pypdf import PdfWriter
 from docx import Document
+from pypdf import PdfWriter
 
 from hugegraph_llm.utils import graph_index_utils, vector_index_utils
 from hugegraph_llm.utils.vector_index_utils import read_documents

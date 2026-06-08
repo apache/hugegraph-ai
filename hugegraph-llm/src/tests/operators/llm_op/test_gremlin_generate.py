@@ -21,8 +21,13 @@ import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.operators.llm_op.gremlin_generate import GremlinGenerateSynthesize
+from tests.fixtures.fake_llm import FakeLLM
+
+pytestmark = pytest.mark.contract
 
 
 class TestGremlinGenerateSynthesize(unittest.TestCase):
@@ -121,6 +126,30 @@ class TestGremlinGenerateSynthesize(unittest.TestCase):
         # Test with invalid response - should return the original response stripped
         result = generator._extract_response("No gremlin code block here")
         self.assertEqual(result, "No gremlin code block here")
+
+    def test_extract_gremlin_from_explanation_plus_block(self):
+        """Test explanation text is stripped when a Gremlin block exists."""
+        generator = GremlinGenerateSynthesize(llm=self.mock_llm)
+        response = "Use this query:\n```gremlin\ng.V().hasLabel('person')\n```\nIt returns people."
+
+        self.assertEqual(generator._extract_response(response), "g.V().hasLabel('person')")
+
+    def test_extract_gremlin_uses_first_candidate_block(self):
+        """Test multiple candidate blocks resolve to the first public result."""
+        generator = GremlinGenerateSynthesize(llm=self.mock_llm)
+        response = "```gremlin\ng.V().limit(1)\n```\n```gremlin\ng.E().limit(1)\n```"
+
+        self.assertEqual(generator._extract_response(response), "g.V().limit(1)")
+
+    def test_run_with_fake_llm_empty_output_returns_empty_gremlin(self):
+        """Test empty LLM output is exposed as an empty Gremlin string."""
+        generator = GremlinGenerateSynthesize(llm=FakeLLM(["", ""]))
+
+        result = generator.run({"query": self.query})
+
+        self.assertEqual(result["result"], "")
+        self.assertEqual(result["raw_result"], "")
+        self.assertEqual(result["call_count"], 2)
 
     def test_format_examples(self):
         """Test the _format_examples method."""

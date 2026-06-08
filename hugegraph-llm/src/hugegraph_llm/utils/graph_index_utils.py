@@ -24,6 +24,10 @@ from pyhugegraph.client import PyHugeClient
 
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
+from hugegraph_llm.operators.document_op.chunk_split import (
+    SPLIT_TYPE_DOCUMENT,
+    VALID_SPLIT_TYPES,
+)
 
 from ..config import huge_settings
 from .hugegraph_utils import clean_hg_data
@@ -77,14 +81,28 @@ def clean_all_graph_data():
     gr.Info("Clear graph data successfully!")
 
 
-def extract_graph(input_file, input_text, schema, example_prompt) -> str:
+def extract_graph(
+    input_file,
+    input_text,
+    schema,
+    example_prompt,
+    split_type=SPLIT_TYPE_DOCUMENT,
+) -> str:
     texts = read_documents(input_file, input_text)
     scheduler = SchedulerSingleton.get_instance()
     if not schema:
         return "ERROR: please input with correct schema/format."
-
+    if split_type not in VALID_SPLIT_TYPES:
+        raise gr.Error("split_type must be document, paragraph, or sentence")
     try:
-        return scheduler.schedule_flow(FlowName.GRAPH_EXTRACT, schema, texts, example_prompt, "property_graph")
+        return scheduler.schedule_flow(
+            FlowName.GRAPH_EXTRACT,
+            schema,
+            texts,
+            example_prompt,
+            "property_graph",
+            split_type=split_type,
+        )
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.error(e)
         raise gr.Error(str(e))

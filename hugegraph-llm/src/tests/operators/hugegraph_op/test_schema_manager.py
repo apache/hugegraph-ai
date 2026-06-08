@@ -18,7 +18,11 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from hugegraph_llm.operators.hugegraph_op.schema_manager import SchemaManager
+
+pytestmark = [pytest.mark.unit]
 
 
 class TestSchemaManager(unittest.TestCase):

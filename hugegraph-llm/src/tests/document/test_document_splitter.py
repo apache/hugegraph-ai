@@ -17,7 +17,11 @@
 
 import unittest
 
+import pytest
+
 from hugegraph_llm.document.chunk_split import ChunkSplitter
+
+pytestmark = pytest.mark.unit
 
 
 class TestChunkSplitter(unittest.TestCase):

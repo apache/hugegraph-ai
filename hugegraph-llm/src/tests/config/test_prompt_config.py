@@ -19,9 +19,18 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from hugegraph_llm.config.prompt_config import PromptConfig
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
+
+pytestmark = pytest.mark.contract
+
+# FIXME: add contract coverage for runtime-loaded config_prompt.yaml, not only
+# PromptConfig class constants and prompt_examples.json fixtures.
+# FIXME: verify omitted API prompt fields resolve the current PromptConfig
+# object instead of import-time default prompt strings.
 
 
 def _json_objects_after_marker(prompt, marker):

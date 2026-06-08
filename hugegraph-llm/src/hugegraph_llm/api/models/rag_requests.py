@@ -23,6 +23,9 @@ from pydantic import BaseModel, field_validator
 
 from hugegraph_llm.config import prompt
 
+LLMProviderType = Literal["openai", "ollama/local", "litellm"]
+RerankerProviderType = Literal["cohere", "siliconflow"]
+
 
 class GraphConfigRequest(BaseModel):
     url: str = Query("127.0.0.1:8080", description="hugegraph client url.")
@@ -104,7 +107,7 @@ class GraphRAGRequest(BaseModel):
 
 
 class LLMConfigRequest(BaseModel):
-    llm_type: str
+    llm_type: LLMProviderType
     # The common parameters shared by OpenAI, LiteLLM,
     # and OLLAMA platforms.
     api_key: str
@@ -120,7 +123,7 @@ class LLMConfigRequest(BaseModel):
 
 class RerankerConfigRequest(BaseModel):
     reranker_model: str
-    reranker_type: str
+    reranker_type: RerankerProviderType
     api_key: str
     cohere_base_url: Optional[str] = None
 

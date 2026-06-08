@@ -21,6 +21,8 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.operators.llm_op.property_graph_extract import (
     PropertyGraphExtract,
@@ -28,6 +30,9 @@ from hugegraph_llm.operators.llm_op.property_graph_extract import (
     generate_extract_property_graph_prompt,
     split_text,
 )
+from tests.fixtures.fake_llm import FakeLLM
+
+pytestmark = pytest.mark.contract
 
 
 class TestPropertyGraphExtract(unittest.TestCase):
@@ -169,22 +174,31 @@ class TestPropertyGraphExtract(unittest.TestCase):
                 "label": "movie",
                 "properties": {
                     # Missing 'title' which is non-nullable
-                    "year": 1994  # Non-string value
+                    "year": 1994,  # Non-string value
+                    "ignored": "not in schema",
+                },
+            },
+            {
+                "type": "edge",
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump",
+                    "ignored": "not in schema",
                 },
             },
         ]
 
         filtered_items = filter_item(self.schema, items)
 
-        # Check that non-nullable keys are added with NULL value
-        # Note: 'age' is nullable, so it won't be added automatically
+        # Missing properties stay absent so Commit2Graph can apply schema-typed defaults.
         self.assertNotIn("age", filtered_items[0]["properties"])
+        self.assertNotIn("title", filtered_items[1]["properties"])
 
-        # Check that title (non-nullable) was added with NULL value
-        self.assertEqual(filtered_items[1]["properties"]["title"], "NULL")
-
-        # Check that year was converted to string
-        self.assertEqual(filtered_items[1]["properties"]["year"], "1994")
+        # Check that schema-typed values are preserved for Commit2Graph
+        self.assertEqual(filtered_items[1]["properties"]["year"], 1994)
+        self.assertNotIn("ignored", filtered_items[1]["properties"])
+        self.assertEqual(filtered_items[2]["properties"]["role"], "Forrest Gump")
+        self.assertNotIn("ignored", filtered_items[2]["properties"])
 
     def test_extract_property_graph_by_llm(self):
         """Test the extract_property_graph_by_llm method."""
@@ -388,6 +402,127 @@ Hope this helps."""
         result = extractor._extract_and_filter_label(self.schema, text)
 
         self.assertEqual(result, [])
+
+    def test_property_graph_extract_strips_fenced_json_with_fake_llm(self):
+        """Test fake LLM fixture drives fenced JSON parser behavior."""
+        llm = FakeLLM(['```json\n{"vertices": [], "edges": []}\n```'])
+        extractor = PropertyGraphExtract(llm=llm)
+
+        result = extractor._extract_and_filter_label({"vertexlabels": [], "edgelabels": []}, llm.generate())
+
+        self.assertEqual(result, [])
+        self.assertEqual(len(llm.calls), 1)
+
+    def test_extract_and_filter_label_resolves_numeric_vertex_ids(self):
+        """Test numeric LLM vertex ids can be resolved before commit."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "id": 101,
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "id": 202,
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": 101,
+                "outVLabel": "person",
+                "inV": 202,
+                "inVLabel": "movie",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(result[0]["id"], "1:Tom Hanks")
+        self.assertEqual(result[1]["id"], "2:Forrest Gump")
+        self.assertEqual(result[2]["outV"], "1:Tom Hanks")
+        self.assertEqual(result[2]["inV"], "2:Forrest Gump")
+
+    def test_extract_and_filter_label_preserves_duplicate_items_deterministically(self):
+        """Test duplicate vertices and edges are parsed in stable order."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks"
+                }
+            },
+            {
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            },
+            {
+                "label": "acted_in",
+                "properties": {
+                    "role": "Forrest Gump"
+                },
+                "source": {
+                    "label": "person",
+                    "properties": {
+                        "name": "Tom Hanks"
+                    }
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual([item["type"] for item in result], ["vertex", "vertex", "vertex", "edge", "edge"])
+        self.assertEqual(result[0]["id"], "1:Tom Hanks")
+        self.assertEqual(result[1]["id"], "1:Tom Hanks")
 
     def test_extract_and_filter_label_infers_type_from_grouped_arrays(self):
         """Infer item type from vertices/edges containers when LLM omits it."""

@@ -19,7 +19,14 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from hugegraph_llm.models.llms.openai import OpenAIClient
+
+pytestmark = pytest.mark.contract
+
+# FIXME: replace tests that accept provider errors as model text with sync,
+# async, and streaming failure-propagation contract tests.
 
 
 class TestOpenAIClient(unittest.TestCase):
@@ -107,6 +114,18 @@ class TestOpenAIClient(unittest.TestCase):
         openai_client = OpenAIClient(model_name="gpt-3.5-turbo")
 
         with self.assertRaisesRegex(RuntimeError, "Empty choices in LLM response"):
+            openai_client.generate(prompt="What is the capital of France?")
+
+    @patch("hugegraph_llm.models.llms.openai.OpenAI")
+    def test_generate_malformed_sdk_response_raises_attribute_error(self, mock_openai_class):
+        """Test malformed SDK responses surface the missing contract."""
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = object()
+        mock_openai_class.return_value = mock_client
+
+        openai_client = OpenAIClient(model_name="gpt-3.5-turbo")
+
+        with self.assertRaises(AttributeError):
             openai_client.generate(prompt="What is the capital of France?")
 
     @patch("hugegraph_llm.models.llms.openai.AsyncOpenAI")

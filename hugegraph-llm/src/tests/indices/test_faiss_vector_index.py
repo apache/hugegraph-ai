@@ -25,6 +25,9 @@ from pprint import pprint
 from hugegraph_llm.indices.vector_index.faiss_vector_store import FaissVectorIndex
 from hugegraph_llm.models.embeddings.ollama import OllamaEmbedding
 
+# FIXME: add cross-backend vector-store contract tests for Qdrant/Milvus/Faiss
+# threshold semantics instead of covering only the Faiss implementation.
+
 
 class TestVectorIndex(unittest.TestCase):
     def setUp(self):

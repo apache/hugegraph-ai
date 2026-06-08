@@ -19,6 +19,10 @@ import os
 import tempfile
 import unittest
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 
 class TextLoader:
     """Simple text file loader for testing."""

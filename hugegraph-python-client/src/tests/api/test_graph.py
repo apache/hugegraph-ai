@@ -17,9 +17,15 @@
 
 import unittest
 
+import pytest
 from pyhugegraph.utils.exceptions import NotFoundError
 
 from ..client_utils import ClientUtils
+
+pytestmark = [pytest.mark.integration, pytest.mark.hugegraph]
+
+# FIXME: isolate graph state per test case; current fixed primary-key fixtures
+# and class-level cleanup make exact-count assertions order-dependent.
 
 
 class TestGraphManager(unittest.TestCase):
@@ -71,6 +77,8 @@ class TestGraphManager(unittest.TestCase):
     def test_get_vertex_by_page(self):
         self.graph.addVertex("person", {"name": "Alice", "age": 20})
         self.graph.addVertex("person", {"name": "Bob", "age": 23})
+        # FIXME: destructure (items, next_page) and assert vertex contents;
+        # len(tuple) only proves the method returned two values.
         vertices = self.graph.getVertexByPage("person", 1)
         self.assertEqual(len(vertices), 2)
 
@@ -160,3 +168,15 @@ class TestGraphManager(unittest.TestCase):
         edge2 = self.graph.addEdge("knows", vertex2.id, vertex1.id, {"date": "2012-01-10"})
         edges = self.graph.getEdgesById([edge1.id, edge2.id])
         self.assertEqual(len(edges), 2)
+
+
+def test_graph_supports_primary_key_and_custom_string_id(client_utils):
+    graph = client_utils.graph
+    graph.addVertex("person", {"name": "quality_marko", "age": 29, "city": "Beijing"})
+    person = graph.getVertexByCondition(label="person", properties={"name": "quality_marko"}, limit=1)[0]
+    assert person.id is not None
+
+    graph.addVertex("book", {"name": "Quality Book", "price": 100}, id="quality-book-1")
+    book = graph.getVertexById("quality-book-1")
+    assert book.id == "quality-book-1"
+    assert book.properties["name"] == "Quality Book"

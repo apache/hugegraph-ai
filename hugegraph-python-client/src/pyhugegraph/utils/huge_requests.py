@@ -16,6 +16,7 @@
 # under the License.
 
 
+import logging
 from typing import Any
 from urllib.parse import urljoin
 
@@ -26,7 +27,7 @@ from urllib3.util.retry import Retry
 from pyhugegraph.utils.constants import Constants
 from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.log import log
-from pyhugegraph.utils.util import ResponseValidation
+from pyhugegraph.utils.util import ResponseValidation, redact_sensitive_data
 
 
 class HGraphSession:
@@ -149,7 +150,13 @@ class HGraphSession:
             timeout=self._timeout,
             **kwargs,
         )
-        log.debug(  # pylint: disable=logging-fstring-interpolation
-            f"Request: {method} {url} validator={validator} kwargs={kwargs} {response}"
-        )
+        if log.isEnabledFor(logging.DEBUG):
+            log.debug(
+                "Request: %s %s validator=%s kwargs=%s %s",
+                method,
+                url,
+                validator,
+                redact_sensitive_data(kwargs),
+                response,
+            )
         return validator(response, method=method, path=path)

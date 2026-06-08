@@ -20,8 +20,10 @@ from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.structure.gremlin_data import GremlinData
 from pyhugegraph.structure.response_data import ResponseData
 from pyhugegraph.utils import huge_router as router
-from pyhugegraph.utils.exceptions import NotFoundError
+from pyhugegraph.utils.exceptions import ResponseParseError
 from pyhugegraph.utils.log import log
+
+_REQUIRED_RESPONSE_FIELDS = {"requestId", "status", "result"}
 
 
 class GremlinManager(HugeParamsBase):
@@ -45,10 +47,10 @@ class GremlinManager(HugeParamsBase):
                 "g": f"__g_{self._sess.cfg.graph_name}",
             }
 
-        try:
-            if response := self._invoke_request(data=gremlin_data.to_json()):
-                return ResponseData(response).result
-            log.error("Gremlin can't get results: %s", str(response))
-            return None
-        except Exception as e:
-            raise NotFoundError(f"Gremlin can't get results: {e}") from e
+        response = self._invoke_request(data=gremlin_data.to_json())
+        if response is not None:
+            if not isinstance(response, dict) or not _REQUIRED_RESPONSE_FIELDS.issubset(response):
+                raise ResponseParseError(f"Invalid Gremlin response payload: {response}")
+            return ResponseData(response).result
+        log.error("Gremlin can't get results: %s", str(response))
+        return None

@@ -22,6 +22,9 @@ from unittest.mock import MagicMock, patch
 
 from hugegraph_llm.operators.index_op.vector_index_query import VectorIndexQuery
 
+# FIXME: add a flow-to-operator contract test proving topk and
+# vector_dis_threshold are passed through instead of hard-coded.
+
 
 class TestVectorIndexQuery(unittest.TestCase):
     def setUp(self):

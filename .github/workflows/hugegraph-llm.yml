@@ -26,8 +26,14 @@ on:
       - 'release-*'
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.22"
+
 jobs:
-  build:
+  llm-unit-contract:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,25 +41,23 @@ jobs:
         python-version: ["3.10", "3.11"]
 
     steps:
-    - name: Prepare HugeGraph Server Environment
-      run: |
-        docker run -d --name=graph -p 8080:8080 -e PASSWORD=admin hugegraph/hugegraph:1.5.0
-        sleep 10
-
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
 
     - name: Install uv
       run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/uv" --version
 
     - name: Cache dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cache/uv
@@ -68,15 +72,148 @@ jobs:
         uv run python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
 
     - name: Run unit tests
-      working-directory: hugegraph-llm
       env:
         SKIP_EXTERNAL_SERVICES: true
       run: |
-        uv run pytest src/tests/config/ src/tests/document/ src/tests/middleware/ src/tests/operators/ src/tests/models/ src/tests/indices/ src/tests/test_utils.py -v --tb=short
+        uv run pytest hugegraph-llm/src/tests -m "not integration and not hugegraph and not smoke and not external" --cov=hugegraph_llm --cov-fail-under=34 --cov-report=term --cov-report=xml:llm-unit-contract.xml -v --tb=short --durations=20
 
-    - name: Run integration tests
-      working-directory: hugegraph-llm
-      env:
-        SKIP_EXTERNAL_SERVICES: true
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: llm-unit-contract-coverage-${{ matrix.python-version }}
+        path: llm-unit-contract.xml
+        if-no-files-found: error
+
+  llm-hugegraph-boundary:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    services:
+      hugegraph:
+        image: hugegraph/hugegraph:1.7.0
+        env:
+          PASSWORD: admin
+        options: --health-cmd="curl -f http://localhost:8080/versions || exit 1" --health-interval=10s --health-timeout=5s --health-retries=8
+        ports:
+          - 8080:8080
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
       run: |
-        uv run pytest src/tests/integration/test_graph_rag_pipeline.py src/tests/integration/test_kg_construction.py src/tests/integration/test_rag_pipeline.py -v --tb=short
+        curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/uv" --version
+
+    - name: Cache dependencies
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/uv
+          ~/nltk_data
+        key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', 'uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-${{ matrix.python-version }}-
+
+    - name: Install dependencies
+      run: |
+        uv sync --extra llm --extra dev
+        uv run python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
+
+    - name: Run HugeGraph boundary tests
+      env:
+        HUGEGRAPH_REQUIRED: true
+        HUGEGRAPH_URL: http://127.0.0.1:8080
+        HUGEGRAPH_GRAPH: hugegraph
+        HUGEGRAPH_USER: admin
+        HUGEGRAPH_PASSWORD: admin
+        SKIP_EXTERNAL_SERVICES: false
+      run: |
+        uv run pytest hugegraph-llm/src/tests -m "integration and hugegraph" -v --tb=short
+
+    - name: Dump HugeGraph diagnostics
+      if: failure()
+      run: |
+        docker ps -a
+        container_id=$(docker ps -aq --filter ancestor=hugegraph/hugegraph:1.7.0 | head -n 1)
+        if [ -n "$container_id" ]; then
+          docker logs "$container_id"
+        fi
+
+  llm-core-smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    services:
+      hugegraph:
+        image: hugegraph/hugegraph:1.7.0
+        env:
+          PASSWORD: admin
+        options: --health-cmd="curl -f http://localhost:8080/versions || exit 1" --health-interval=10s --health-timeout=5s --health-retries=8
+        ports:
+          - 8080:8080
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        persist-credentials: false
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      run: |
+        curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/uv" --version
+
+    - name: Cache dependencies
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/uv
+          ~/nltk_data
+        key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', 'uv.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-uv-${{ matrix.python-version }}-
+
+    - name: Install dependencies
+      run: |
+        uv sync --extra llm --extra dev
+        uv run python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
+
+    - name: Run deterministic core smoke tests
+      env:
+        HUGEGRAPH_REQUIRED: true
+        HUGEGRAPH_URL: http://127.0.0.1:8080
+        HUGEGRAPH_GRAPH: hugegraph
+        HUGEGRAPH_USER: admin
+        HUGEGRAPH_PASSWORD: admin
+        SKIP_EXTERNAL_SERVICES: false
+      run: |
+        uv run pytest hugegraph-llm/src/tests/integration -m "smoke" -v --tb=short
+
+    - name: Dump HugeGraph diagnostics
+      if: failure()
+      run: |
+        docker ps -a
+        container_id=$(docker ps -aq --filter ancestor=hugegraph/hugegraph:1.7.0 | head -n 1)
+        if [ -n "$container_id" ]; then
+          docker logs "$container_id"
+        fi

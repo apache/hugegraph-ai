@@ -20,9 +20,15 @@ import unittest
 from unittest import mock
 
 import pytest
-from pyhugegraph.utils.exceptions import NotFoundError
+from pyhugegraph.api.gremlin import GremlinManager
+from pyhugegraph.utils.exceptions import NotAuthorizedError, ResponseParseError, ServerError
 
 from ..client_utils import ClientUtils
+
+pytestmark = [pytest.mark.integration, pytest.mark.hugegraph]
+
+# FIXME: clear graph state per test case; setUp() repopulates fixed primary-key
+# fixtures and currently depends on prior tests to clean up.
 
 
 class TestGremlin(unittest.TestCase):
@@ -95,11 +101,11 @@ class TestGremlin(unittest.TestCase):
         self.assertEqual(0, len(lst))
 
     def test_invalid_gremlin(self):
-        with pytest.raises(NotFoundError):
+        with pytest.raises(ServerError):
             self.assertTrue(self.gremlin.exec("g.V2()"))
 
     def test_security_operation(self):
-        with pytest.raises(NotFoundError):
+        with pytest.raises(ServerError):
             self.assertTrue(self.gremlin.exec("System.exit(-1)"))
 
 
@@ -134,3 +140,42 @@ class TestGremlinSetupBehavior(unittest.TestCase):
             client.gremlin = mock.Mock()
             with mock.patch.dict(os.environ, {"SKIP_GREMLIN_TESTS": "true"}), self.assertRaises(unittest.SkipTest):
                 TestGremlin.setUpClass()
+
+
+@pytest.mark.skipif(
+    os.environ.get("SKIP_GREMLIN_TESTS", "").lower() == "true",
+    reason="Skipping Gremlin tests: SKIP_GREMLIN_TESTS=true",
+)
+def test_gremlin_error_surface_is_explicit(client_utils):
+    with pytest.raises(ServerError) as exc_info:
+        client_utils.gremlin.exec("g.V2()")
+
+    message = str(exc_info.value)
+    assert "g.V2" in message or "No signature" in message or "NotFound" in message
+
+
+class _FailingGremlinSession:
+    class Cfg:
+        gs_supported = False
+        graph_name = "hugegraph"
+        graphspace = None
+
+    cfg = Cfg()
+
+    def request(self, *_args, **_kwargs):
+        raise NotAuthorizedError("bad credentials")
+
+
+def test_gremlin_exec_preserves_auth_exception_type():
+    gremlin = GremlinManager(_FailingGremlinSession())
+
+    with pytest.raises(NotAuthorizedError, match="bad credentials"):
+        gremlin.exec("g.V()")
+
+
+def test_gremlin_exec_does_not_silently_drop_empty_payload(monkeypatch):
+    gremlin = GremlinManager(_FailingGremlinSession())
+    monkeypatch.setattr(gremlin, "_invoke_request", mock.Mock(return_value={}))
+
+    with pytest.raises(ResponseParseError, match="Invalid Gremlin response payload"):
+        gremlin.exec("g.V()")

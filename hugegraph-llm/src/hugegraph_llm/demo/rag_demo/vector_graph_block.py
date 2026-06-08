@@ -44,12 +44,17 @@ from hugegraph_llm.utils.vector_index_utils import (
 )
 
 
-def store_prompt(doc, schema, example_prompt):
-    # update env variables: doc, schema and example_prompt
-    if prompt.doc_input_text != doc or prompt.graph_schema != schema or prompt.extract_graph_prompt != example_prompt:
+def store_prompt(doc, schema, example_prompt, graph_extract_split_type="document"):
+    if (
+        prompt.doc_input_text != doc
+        or prompt.graph_schema != schema
+        or prompt.extract_graph_prompt != example_prompt
+        or prompt.graph_extract_split_type != graph_extract_split_type
+    ):
         prompt.doc_input_text = doc
         prompt.graph_schema = schema
         prompt.extract_graph_prompt = example_prompt
+        prompt.graph_extract_split_type = graph_extract_split_type
         prompt.update_yaml_file()
 
 
@@ -216,7 +221,7 @@ def create_vector_graph_block():
             """## Build Vector/Graph Index & Extract Knowledge Graph
     - Docs:
         - text: Build rag index from plain text
-        - file: Upload file(s) which should be <u>TXT</u> or <u>.docx</u> (Multiple files can be selected together)
+        - file: Upload file(s) which should be <u>TXT</u>, <u>DOCX</u>, or <u>PDF</u> (Multiple files can be selected together)
     - [Schema](https://hugegraph.apache.org/docs/clients/restful-api/schema/): (Accept **2 types**)
         - User-defined Schema (JSON format, follow the [template](https://github.com/apache/hugegraph-ai/blob/aff3bbe25fa91c3414947a196131be812c20ef11/hugegraph-llm/src/hugegraph_llm/config/config_data.py#L125)
         to modify it)
@@ -270,6 +275,12 @@ def create_vector_graph_block():
                     graph_data_btn0 = gr.Button("Clear Graph Data", size="sm")
 
             vector_import_bt = gr.Button("Import into Vector", variant="primary")
+            graph_split_type = gr.Dropdown(
+                choices=["document", "paragraph", "sentence"],
+                value=prompt.graph_extract_split_type,
+                label="Graph Extraction Split Type",
+                info=("document keeps the current behavior; paragraph/sentence split long docs before extraction."),
+            )
             graph_extract_bt = gr.Button("Extract Graph Data (1)", variant="primary")
             graph_loading_bt = gr.Button("Load into GraphDB (2)", interactive=True)
             graph_index_rebuild_bt = gr.Button("Update Vid Embedding")
@@ -300,48 +311,54 @@ def create_vector_graph_block():
 
         vector_index_btn0.click(get_vector_index_info, outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
         vector_index_btn1.click(clean_vector_index).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
         vector_import_bt.click(build_vector_index, inputs=[input_file, input_text], outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
         graph_index_btn0.click(get_graph_index_info, outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
         graph_index_btn1.click(clean_all_graph_index).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
         graph_data_btn0.click(clean_all_graph_data).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
         graph_index_rebuild_bt.click(update_vid_embedding, outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
 
         # origin_out = gr.Textbox(visible=False)
         graph_extract_bt.click(
             extract_graph,
-            inputs=[input_file, input_text, input_schema, info_extract_template],
+            inputs=[
+                input_file,
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+            ],
             outputs=[out],
         ).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
 
         graph_loading_bt.click(import_graph_data, inputs=[out, input_schema], outputs=[out]).then(
             update_vid_embedding
         ).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template],
+            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
         )
 
         # TODO: we should store the examples after the user changed them.
@@ -355,6 +372,7 @@ def create_vector_graph_block():
                 input_text,
                 input_schema,
                 info_extract_template,
+                graph_split_type,
             ],  # TODO: Store the updated examples
         )
 

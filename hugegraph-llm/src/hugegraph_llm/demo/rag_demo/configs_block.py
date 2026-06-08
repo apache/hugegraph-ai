@@ -16,7 +16,6 @@
 # under the License.
 
 import json
-import os
 from functools import partial
 from typing import Optional
 
@@ -26,6 +25,7 @@ from dotenv import dotenv_values
 from requests.auth import HTTPBasicAuth
 
 from hugegraph_llm.config import huge_settings, index_settings, llm_settings
+from hugegraph_llm.config.models.base_config import env_path
 from hugegraph_llm.models.embeddings.litellm import LiteLLMEmbedding
 from hugegraph_llm.models.llms.litellm import LiteLLMClient
 from hugegraph_llm.utils.log import log
@@ -429,7 +429,6 @@ def create_configs_block() -> list:
                 llm_config_button = gr.Button("Apply configuration")
                 llm_config_button.click(apply_llm_config_with_chat_op, inputs=llm_config_input)
                 # Determine whether there are Settings in the.env file
-                env_path = os.path.join(os.getcwd(), ".env")  # Load .env from the current working directory
                 env_vars = dotenv_values(env_path)
                 api_extract_key = env_vars.get("OPENAI_EXTRACT_API_KEY")
                 api_text2sql_key = env_vars.get("OPENAI_TEXT2GQL_API_KEY")

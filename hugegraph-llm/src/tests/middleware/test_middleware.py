@@ -18,9 +18,12 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 
 from hugegraph_llm.middleware.middleware import UseTimeMiddleware
+
+pytestmark = pytest.mark.unit
 
 
 class TestUseTimeMiddlewareInit(unittest.TestCase):

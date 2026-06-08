@@ -34,6 +34,17 @@ from hugegraph_llm.state.ai_state import WkFlowInput
 INLINE_SCHEMA = {"vertexlabels": [], "edgelabels": []}
 
 
+class CapturePipeline:
+    def __init__(self):
+        self.params = {}
+
+    def createGParam(self, value, name):
+        self.params[name] = value
+
+    def registerGElement(self, *args):
+        return None
+
+
 def _graph_client():
     router = APIRouter()
     graph_extract_http_api(router)
@@ -325,6 +336,32 @@ def test_flow_prepare_does_not_leak_config_across_runs():
 
     flow.prepare(prepared_input, "custom_graph", ["text"], "prompt", "property_graph")
     assert prepared_input.graph_client_config is None
+
+
+def test_flow_build_flow_preserves_split_type_and_client_config(monkeypatch):
+    monkeypatch.setattr(
+        "hugegraph_llm.flows.graph_extract.GPipeline",
+        CapturePipeline,
+    )
+    client_config = GraphExtractClientConfig(graph="custom_graph", user="admin", pwd="secret", gs="space_a")
+
+    pipeline = GraphExtractFlow().build_flow(
+        "custom_graph",
+        ["text"],
+        "prompt",
+        "property_graph",
+        split_type="paragraph",
+        client_config=client_config,
+    )
+
+    prepared_input = pipeline.params["wkflow_input"]
+    assert prepared_input.split_type == "paragraph"
+    assert prepared_input.graph_client_config == {
+        "url": huge_settings.graph_url,
+        "user": "admin",
+        "pwd": "secret",
+        "graphspace": "space_a",
+    }
 
 
 def test_wkflow_input_reset_clears_graph_client_config():

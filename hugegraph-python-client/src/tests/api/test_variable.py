@@ -22,6 +22,8 @@ from pyhugegraph.utils.exceptions import NotFoundError
 
 from ..client_utils import ClientUtils
 
+pytestmark = [pytest.mark.integration, pytest.mark.hugegraph]
+
 
 class TestVariable(unittest.TestCase):
     client = None

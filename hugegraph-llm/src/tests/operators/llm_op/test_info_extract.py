@@ -17,11 +17,15 @@
 
 import unittest
 
+import pytest
+
 from hugegraph_llm.operators.llm_op.info_extract import (
     InfoExtract,
     extract_triples_by_regex,
     extract_triples_by_regex_with_schema,
 )
+
+pytestmark = pytest.mark.contract
 
 
 class TestInfoExtract(unittest.TestCase):

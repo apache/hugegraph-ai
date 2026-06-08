@@ -62,3 +62,15 @@ class ServiceUnavailableError(Exception):
     """
     The server is too busy to be available
     """
+
+
+class ResponseParseError(Exception):
+    """
+    Failed to parse a successful server response
+    """
+
+
+class ServerError(Exception):
+    """
+    Server returned an error response
+    """

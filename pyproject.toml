@@ -119,6 +119,7 @@ constraint-dependencies = [
     "gradio~=5.20.0",
     "jieba~=0.42.1",
     "python-docx~=1.1.2",
+    "pypdf~=6.12.0",
     "langchain-text-splitters~=0.2.2",
     "faiss-cpu~=1.8.0",
     "python-dotenv~=1.0.1",
@@ -143,6 +144,18 @@ constraint-dependencies = [
     # Other dependencies
     "python-dateutil~=2.9.0",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast deterministic tests without network or Docker",
+    "contract: public contract tests; may use mocks but verify stable behavior",
+    "integration: tests requiring a real local service such as HugeGraph",
+    "hugegraph: tests requiring HugeGraph Server",
+    "smoke: end-to-end-ish high-value smoke over production pipeline boundaries",
+    "external: tests requiring external provider credentials or non-HugeGraph services",
+    "slow: long-running tests excluded from default local loops",
+]
+addopts = "--strict-markers --strict-config"
 
 # for code format
 [tool.ruff]

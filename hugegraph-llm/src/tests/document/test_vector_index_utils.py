@@ -192,9 +192,11 @@ def test_read_documents_rejects_unsupported_file_type(tmp_path):
 class DummyScheduler:
     def __init__(self):
         self.calls = []
+        self.kwargs = []
 
-    def schedule_flow(self, *args):
+    def schedule_flow(self, *args, **kwargs):
         self.calls.append(args)
+        self.kwargs.append(kwargs)
         return "scheduled"
 
 
@@ -251,6 +253,7 @@ def test_extract_graph_accepts_pdf_upload_and_forwards_text(monkeypatch, tmp_pat
     assert "Extract Graph Entrypoint PDF" in texts[0]
     assert forwarded_prompt == example_prompt
     assert graph_mode == "property_graph"
+    assert scheduler.kwargs[0] == {"split_type": "document"}
 
 
 def test_read_documents_rejects_encrypted_pdf(tmp_path):

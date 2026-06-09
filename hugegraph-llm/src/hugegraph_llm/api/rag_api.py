@@ -82,6 +82,11 @@ def rag_http_api(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Query must not be empty.",
             )
+        if req.include_trace and not (req.graph_only or req.graph_vector_answer):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="include_trace is only supported for graph_only or graph_vector_answer.",
+            )
 
         result = rag_answer_func(
             text=req.query,

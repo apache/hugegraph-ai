@@ -148,15 +148,16 @@ def test_rag_include_trace_returns_graph_debug_fields_for_graph_vector_answer():
     assert body["trace"]["gremlin"] == "g.V()"
 
 
-def test_rag_include_trace_skipped_for_vector_only():
+def test_rag_include_trace_rejects_vector_only():
     rag_answer = Mock(return_value=("", "vector answer", "", ""))
     response = _rag_client(rag_answer).post(
         "/rag",
         json={"query": "hello", "graph_only": False, "vector_only": True, "include_trace": True},
     )
 
-    assert response.status_code == status.HTTP_200_OK
-    assert "trace" not in response.json()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "include_trace" in response.json()["detail"]
+    rag_answer.assert_not_called()
 
 
 def test_graph_trace_payload_excludes_prompts_and_secrets():
@@ -183,12 +184,18 @@ def test_build_rag_api_response_supports_legacy_tuple():
     assert response == {"query": "hello", "graph_only": "graph answer"}
 
 
+def test_wkflow_state_assign_from_json_preserves_gremlin():
+    state = WkFlowState()
+    state.assign_from_json({"gremlin": "g.V()"})
+    assert state.gremlin == "g.V()"
+    assert graph_trace_payload(state.to_json())["gremlin"] == "g.V()"
+
+
 def test_rag_graph_only_post_deal_include_trace():
     pipeline = Mock()
     state = WkFlowState()
     state.graph_only_answer = "answer"
-    state.keywords = ["kw"]
-    state.gremlin = "g.V()"
+    state.assign_from_json({"keywords": ["kw"], "gremlin": "g.V()"})
     wk_input = WkFlowInput()
     wk_input.include_trace = True
 

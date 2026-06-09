@@ -187,6 +187,7 @@ class WkFlowState(GParam):
     stream_generator: Optional[AsyncGenerator] = None
 
     graph_result_flag: Optional[int] = None
+    gremlin: Optional[str] = None
     vertex_degree_list: Optional[List] = None
     knowledge_with_degree: Optional[Dict] = None
     graph_context_head: Optional[str] = None
@@ -245,6 +246,7 @@ class WkFlowState(GParam):
 
         self.stream_generator = None
         self.graph_result_flag = None
+        self.gremlin = None
         self.vertex_degree_list = None
         self.knowledge_with_degree = None
         self.graph_context_head = None

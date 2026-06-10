@@ -44,13 +44,59 @@ from hugegraph_llm.utils.vector_index_utils import (
 )
 
 
-def store_prompt(doc, schema, example_prompt, graph_extract_split_type="document"):
-    if (
+def _validate_schema_generator_examples(examples, label):
+    if examples is None:
+        return None
+    try:
+        json.loads(examples)
+    except json.JSONDecodeError as exc:
+        raise gr.Error(f"{label} must be valid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}") from exc
+    return examples
+
+
+def _load_persisted_json_examples(examples, label):
+    examples = (examples or "").strip()
+    if not examples:
+        return ""
+    try:
+        json.loads(examples)
+    except json.JSONDecodeError as exc:
+        log.warning("Ignoring invalid persisted %s: %s", label, exc)
+        return ""
+    return examples
+
+
+def store_prompt(
+    doc,
+    schema,
+    example_prompt,
+    graph_extract_split_type="document",
+    query_examples=None,
+    few_shot_examples=None,
+):
+    validated_query_examples = _validate_schema_generator_examples(query_examples, "Query examples")
+    validated_few_shot_examples = _validate_schema_generator_examples(few_shot_examples, "Few-shot schema examples")
+
+    changed = (
         prompt.doc_input_text != doc
         or prompt.graph_schema != schema
         or prompt.extract_graph_prompt != example_prompt
         or prompt.graph_extract_split_type != graph_extract_split_type
+    )
+
+    if validated_query_examples is not None and (
+        getattr(prompt, "schema_generator_query_examples", "") != validated_query_examples
     ):
+        prompt.schema_generator_query_examples = validated_query_examples
+        changed = True
+
+    if validated_few_shot_examples is not None and (
+        getattr(prompt, "schema_generator_few_shot_examples", "") != validated_few_shot_examples
+    ):
+        prompt.schema_generator_few_shot_examples = validated_few_shot_examples
+        changed = True
+
+    if changed:
         prompt.doc_input_text = doc
         prompt.graph_schema = schema
         prompt.extract_graph_prompt = example_prompt
@@ -89,6 +135,13 @@ def load_example_names():
 
 def load_query_examples():
     """Load query examples from JSON file based on the prompt language setting"""
+    persisted_examples = _load_persisted_json_examples(
+        getattr(prompt, "schema_generator_query_examples", ""),
+        "schema generator query examples",
+    )
+    if persisted_examples:
+        return persisted_examples
+
     try:
         language = getattr(
             prompt,
@@ -115,6 +168,13 @@ def load_query_examples():
 
 def load_schema_fewshot_examples():
     """Load few-shot examples from a JSON file"""
+    persisted_examples = _load_persisted_json_examples(
+        getattr(prompt, "schema_generator_few_shot_examples", ""),
+        "schema generator few-shot examples",
+    )
+    if persisted_examples:
+        return persisted_examples
+
     try:
         examples_path = os.path.join(resource_path, "prompt_examples", "schema_examples.json")
         with open(examples_path, "r", encoding="utf-8") as f:
@@ -205,6 +265,8 @@ def _create_prompt_helper_block(demo, input_text, info_extract_template):
 
 
 def _build_schema_and_provide_feedback(input_text, query_example, few_shot):
+    _validate_schema_generator_examples(query_example, "Query examples")
+    _validate_schema_generator_examples(few_shot, "Few-shot schema examples")
     gr.Info("Generating schema, please wait...")
     # Call the original build_schema function
     generated_schema = build_schema(input_text, query_example, few_shot)
@@ -311,31 +373,80 @@ def create_vector_graph_block():
 
         vector_index_btn0.click(get_vector_index_info, outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
         vector_index_btn1.click(clean_vector_index).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
         vector_import_bt.click(build_vector_index, inputs=[input_file, input_text], outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
         graph_index_btn0.click(get_graph_index_info, outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
         graph_index_btn1.click(clean_all_graph_index).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
         graph_data_btn0.click(clean_all_graph_data).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
         graph_index_rebuild_bt.click(update_vid_embedding, outputs=out).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
 
         # origin_out = gr.Textbox(visible=False)
@@ -351,14 +462,28 @@ def create_vector_graph_block():
             outputs=[out],
         ).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
 
         graph_loading_bt.click(import_graph_data, inputs=[out, input_schema], outputs=[out]).then(
             update_vid_embedding
         ).then(
             store_prompt,
-            inputs=[input_text, input_schema, info_extract_template, graph_split_type],
+            inputs=[
+                input_text,
+                input_schema,
+                info_extract_template,
+                graph_split_type,
+                query_example,
+                few_shot,
+            ],
         )
 
         # TODO: we should store the examples after the user changed them.
@@ -373,7 +498,9 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-            ],  # TODO: Store the updated examples
+                query_example,
+                few_shot,
+            ],  # Persist the updated schema-generator examples
         )
 
         def on_tab_select(input_f, input_t, evt: gr.SelectData):

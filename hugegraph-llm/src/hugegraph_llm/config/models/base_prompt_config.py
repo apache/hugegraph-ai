@@ -79,6 +79,8 @@ class BasePromptConfig:
     gremlin_generate_prompt: str = ""
     doc_input_text: str = ""
     graph_extract_split_type: str = "document"
+    schema_generator_query_examples: str = ""
+    schema_generator_few_shot_examples: str = ""
     _language_generated: str = ""
     generate_extract_prompt_template: str = ""
 
@@ -138,6 +140,8 @@ class BasePromptConfig:
             "gremlin_generate_prompt": to_literal(self.gremlin_generate_prompt),
             "doc_input_text": to_literal(self.doc_input_text),
             "graph_extract_split_type": to_literal(self.graph_extract_split_type),
+            "schema_generator_query_examples": to_literal(self.schema_generator_query_examples),
+            "schema_generator_few_shot_examples": to_literal(self.schema_generator_few_shot_examples),
             "_language_generated": str(self.llm_settings.language).lower().strip(),
             "generate_extract_prompt_template": to_literal(self.generate_extract_prompt_template),
         }

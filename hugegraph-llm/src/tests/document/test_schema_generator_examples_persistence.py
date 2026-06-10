@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import json
 from types import SimpleNamespace
 
@@ -182,3 +183,13 @@ def test_old_prompt_config_without_schema_generator_examples_still_loads(
 
     assert config.schema_generator_query_examples == ""
     assert config.schema_generator_few_shot_examples == ""
+
+
+def test_demo_save_chains_pass_schema_generator_examples_to_store_prompt():
+    source = inspect.getsource(vector_graph_block)
+
+    assert "store_prompt" in source
+    assert "query_example" in source
+    assert "few_shot" in source
+    assert "schema_generator_query_examples" in source
+    assert "schema_generator_few_shot_examples" in source

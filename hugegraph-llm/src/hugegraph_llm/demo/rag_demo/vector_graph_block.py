@@ -45,8 +45,9 @@ from hugegraph_llm.utils.vector_index_utils import (
 
 
 def _validate_schema_generator_examples(examples, label):
-    if examples is None:
-        return None
+    examples = (examples or "").strip()
+    if not examples:
+        return ""
     try:
         json.loads(examples)
     except json.JSONDecodeError as exc:
@@ -66,37 +67,39 @@ def _load_persisted_json_examples(examples, label):
     return examples
 
 
+def _persist_schema_generator_examples(query_examples, few_shot_examples):
+    validated_query_examples = _validate_schema_generator_examples(query_examples, "Query examples")
+    validated_few_shot_examples = _validate_schema_generator_examples(few_shot_examples, "Few-shot schema examples")
+
+    changed = False
+    if getattr(prompt, "schema_generator_query_examples", "") != validated_query_examples:
+        prompt.schema_generator_query_examples = validated_query_examples
+        changed = True
+
+    if getattr(prompt, "schema_generator_few_shot_examples", "") != validated_few_shot_examples:
+        prompt.schema_generator_few_shot_examples = validated_few_shot_examples
+        changed = True
+
+    if changed:
+        prompt.update_yaml_file()
+
+    effective_query_examples = validated_query_examples or load_query_examples()
+    effective_few_shot_examples = validated_few_shot_examples or load_schema_fewshot_examples()
+    return effective_query_examples, effective_few_shot_examples
+
+
 def store_prompt(
     doc,
     schema,
     example_prompt,
     graph_extract_split_type="document",
-    query_examples=None,
-    few_shot_examples=None,
 ):
-    validated_query_examples = _validate_schema_generator_examples(query_examples, "Query examples")
-    validated_few_shot_examples = _validate_schema_generator_examples(few_shot_examples, "Few-shot schema examples")
-
-    changed = (
+    if (
         prompt.doc_input_text != doc
         or prompt.graph_schema != schema
         or prompt.extract_graph_prompt != example_prompt
         or prompt.graph_extract_split_type != graph_extract_split_type
-    )
-
-    if validated_query_examples is not None and (
-        getattr(prompt, "schema_generator_query_examples", "") != validated_query_examples
     ):
-        prompt.schema_generator_query_examples = validated_query_examples
-        changed = True
-
-    if validated_few_shot_examples is not None and (
-        getattr(prompt, "schema_generator_few_shot_examples", "") != validated_few_shot_examples
-    ):
-        prompt.schema_generator_few_shot_examples = validated_few_shot_examples
-        changed = True
-
-    if changed:
         prompt.doc_input_text = doc
         prompt.graph_schema = schema
         prompt.extract_graph_prompt = example_prompt
@@ -265,8 +268,7 @@ def _create_prompt_helper_block(demo, input_text, info_extract_template):
 
 
 def _build_schema_and_provide_feedback(input_text, query_example, few_shot):
-    _validate_schema_generator_examples(query_example, "Query examples")
-    _validate_schema_generator_examples(few_shot, "Few-shot schema examples")
+    query_example, few_shot = _persist_schema_generator_examples(query_example, few_shot)
     gr.Info("Generating schema, please wait...")
     # Call the original build_schema function
     generated_schema = build_schema(input_text, query_example, few_shot)
@@ -378,8 +380,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
         vector_index_btn1.click(clean_vector_index).then(
@@ -389,8 +389,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
         vector_import_bt.click(build_vector_index, inputs=[input_file, input_text], outputs=out).then(
@@ -400,8 +398,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
         graph_index_btn0.click(get_graph_index_info, outputs=out).then(
@@ -411,8 +407,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
         graph_index_btn1.click(clean_all_graph_index).then(
@@ -422,8 +416,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
         graph_data_btn0.click(clean_all_graph_data).then(
@@ -433,8 +425,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
         graph_index_rebuild_bt.click(update_vid_embedding, outputs=out).then(
@@ -444,8 +434,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
 
@@ -467,8 +455,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
 
@@ -481,8 +467,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],
         )
 
@@ -498,8 +482,6 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
-                query_example,
-                few_shot,
             ],  # Persist the updated schema-generator examples
         )
 

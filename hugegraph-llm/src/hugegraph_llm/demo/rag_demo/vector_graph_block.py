@@ -44,15 +44,75 @@ from hugegraph_llm.utils.vector_index_utils import (
 )
 
 
-def _validate_schema_generator_examples(examples, label):
+def _dump_json_examples(value):
+    return json.dumps(value, indent=2, ensure_ascii=False)
+
+
+def _normalize_schema_generator_query_examples(examples):
     examples = (examples or "").strip()
     if not examples:
         return ""
+
     try:
-        json.loads(examples)
+        parsed_examples = json.loads(examples)
     except json.JSONDecodeError as exc:
-        raise gr.Error(f"{label} must be valid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}") from exc
-    return examples
+        raise gr.Error(
+            f"Query examples must be valid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+
+    if not isinstance(parsed_examples, list):
+        raise gr.Error("Query examples must be a JSON list.")
+
+    normalized_examples = []
+    for index, item in enumerate(parsed_examples):
+        if isinstance(item, str):
+            description = item.strip()
+            if not description:
+                raise gr.Error(f"Query examples[{index}] must be a non-empty string.")
+            normalized_examples.append(
+                {
+                    "description": description,
+                    "gremlin": "",
+                }
+            )
+            continue
+
+        if isinstance(item, dict):
+            description = item.get("description")
+            gremlin = item.get("gremlin")
+            if not isinstance(description, str) or not description.strip():
+                raise gr.Error("Each query example object must contain a non-empty `description` string.")
+            if not isinstance(gremlin, str):
+                raise gr.Error("Each query example object must contain a `gremlin` string.")
+            normalized_examples.append(
+                {
+                    "description": description.strip(),
+                    "gremlin": gremlin.strip(),
+                }
+            )
+            continue
+
+        raise gr.Error("Query examples must contain strings or objects with `description` and `gremlin` fields.")
+
+    return _dump_json_examples(normalized_examples)
+
+
+def _validate_schema_generator_few_shot_examples(examples):
+    examples = (examples or "").strip()
+    if not examples:
+        return ""
+
+    try:
+        parsed_examples = json.loads(examples)
+    except json.JSONDecodeError as exc:
+        raise gr.Error(
+            f"Few-shot schema examples must be valid JSON: {exc.msg} at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+
+    if not isinstance(parsed_examples, dict):
+        raise gr.Error("Few-shot schema examples must be a JSON object.")
+
+    return _dump_json_examples(parsed_examples)
 
 
 def _load_persisted_json_examples(examples, label):
@@ -68,8 +128,8 @@ def _load_persisted_json_examples(examples, label):
 
 
 def _persist_schema_generator_examples(query_examples, few_shot_examples):
-    validated_query_examples = _validate_schema_generator_examples(query_examples, "Query examples")
-    validated_few_shot_examples = _validate_schema_generator_examples(few_shot_examples, "Few-shot schema examples")
+    validated_query_examples = _normalize_schema_generator_query_examples(query_examples)
+    validated_few_shot_examples = _validate_schema_generator_few_shot_examples(few_shot_examples)
 
     changed = False
     if getattr(prompt, "schema_generator_query_examples", "") != validated_query_examples:
@@ -143,7 +203,7 @@ def load_query_examples():
         "schema generator query examples",
     )
     if persisted_examples:
-        return persisted_examples
+        return _normalize_schema_generator_query_examples(persisted_examples)
 
     try:
         language = getattr(
@@ -158,13 +218,13 @@ def load_query_examples():
 
         with open(examples_path, "r", encoding="utf-8") as f:
             examples = json.load(f)
-        return json.dumps(examples, indent=2, ensure_ascii=False)
+        return _normalize_schema_generator_query_examples(json.dumps(examples, ensure_ascii=False))
     except (FileNotFoundError, json.JSONDecodeError):
         try:
             examples_path = os.path.join(resource_path, "prompt_examples", "query_examples.json")
             with open(examples_path, "r", encoding="utf-8") as f:
                 examples = json.load(f)
-            return json.dumps(examples, indent=2, ensure_ascii=False)
+            return _normalize_schema_generator_query_examples(json.dumps(examples, ensure_ascii=False))
         except (FileNotFoundError, json.JSONDecodeError):
             return "[]"
 
@@ -176,13 +236,13 @@ def load_schema_fewshot_examples():
         "schema generator few-shot examples",
     )
     if persisted_examples:
-        return persisted_examples
+        return _validate_schema_generator_few_shot_examples(persisted_examples)
 
     try:
         examples_path = os.path.join(resource_path, "prompt_examples", "schema_examples.json")
         with open(examples_path, "r", encoding="utf-8") as f:
             examples = json.load(f)
-        return json.dumps(examples, indent=2, ensure_ascii=False)
+        return _validate_schema_generator_few_shot_examples(json.dumps(examples, ensure_ascii=False))
     except (FileNotFoundError, json.JSONDecodeError):
         return "[]"
 

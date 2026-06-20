@@ -39,7 +39,6 @@ class BuildGremlinExampleIndex:
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         if not self.examples:
-            self.vector_index.clean(self.vector_index_name)
             context["embed_dim"] = 0
             return context
 
@@ -48,9 +47,7 @@ class BuildGremlinExampleIndex:
         examples_embedding = asyncio.run(get_embeddings_parallel(self.embedding, queries))
 
         if not examples_embedding:
-            self.vector_index.clean(self.vector_index_name)
-            context["embed_dim"] = 0
-            return context
+            raise ValueError(f"Embedding service returned empty result for {len(self.examples)} gremlin examples")
 
         embed_dim = len(examples_embedding[0])
         vector_index = self.vector_index.from_name(embed_dim, self.vector_index_name)

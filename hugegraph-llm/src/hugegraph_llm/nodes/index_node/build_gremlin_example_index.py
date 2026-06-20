@@ -34,7 +34,7 @@ class BuildGremlinExampleIndexNode(BaseNode):
         # pylint: disable=import-outside-toplevel
         from hugegraph_llm.utils.vector_index_utils import get_vector_index_class
 
-        if self.wk_input.examples is None:
+        if not self.wk_input.examples:
             return CStatus(-1, "examples is required in BuildGremlinExampleIndexNode")
         examples = self.wk_input.examples
         vector_index = get_vector_index_class(index_settings.cur_vector_index)

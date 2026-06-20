@@ -164,6 +164,13 @@ class Scheduler:
             async for res in flow.post_deal_stream(pipeline):
                 yield res
             manager.add(pipeline)
+            # Stop here: the build/run/stream path is complete. Without this
+            # return, execution falls through into the reuse `try` block below
+            # and runs the same pipeline a second time (duplicate LLM calls /
+            # double streaming). A bare `return` is required in an async
+            # generator; `return <value>` is not allowed. Mirrors the explicit
+            # `return res` in the synchronous `schedule_flow`.
+            return
         try:
             # fetch pipeline & prepare input for flow
             prepared_input: WkFlowInput = pipeline.getGParamWithNoEmpty("wkflow_input")

@@ -389,7 +389,7 @@ def test_existing_routes_still_register():
     app = FastAPI()
     app.include_router(router)
 
-    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    paths = set(app.openapi()["paths"])
     assert "/rag" in paths
     assert "/text2gremlin" in paths
     assert "/config/graph" in paths

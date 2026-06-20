@@ -63,14 +63,30 @@ class TestGraphManager(unittest.TestCase):
         appended_vertex = self.graph.appendVertex(vertex.id, {"city": "Beijing"})
         self.assertEqual(appended_vertex.properties["city"], "Beijing")
 
+    def test_append_vertex_with_number_id(self):
+        vertex = self.graph.addVertex("department", {"name": "DepartmentA", "headcount": 10, "floor": 1})
+        appended_vertex = self.graph.appendVertex(vertex.id, {"headcount": 15})
+        self.assertEqual(appended_vertex.properties["headcount"], 15)
+
     def test_eliminate_vertex(self):
         vertex = self.graph.addVertex("person", {"name": "marko", "age": 29, "city": "Beijing"})
         self.graph.eliminateVertex(vertex.id, {"city": "Beijing"})
         eliminated_vertex = self.graph.getVertexById(vertex.id)
         self.assertIsNone(eliminated_vertex.properties.get("city"))
 
+    def test_eliminate_vertex_with_number_id(self):
+        vertex = self.graph.addVertex("department", {"name": "DepartmentA", "headcount": 10, "floor": 1})
+        self.graph.eliminateVertex(vertex.id, {"floor": 1})
+        eliminated_vertex = self.graph.getVertexById(vertex.id)
+        self.assertIsNone(eliminated_vertex.properties.get("floor"))
+
     def test_get_vertex_by_id(self):
         vertex = self.graph.addVertex("person", {"name": "Alice", "age": 20})
+        retrieved_vertex = self.graph.getVertexById(vertex.id)
+        self.assertEqual(retrieved_vertex.id, vertex.id)
+
+    def test_get_vertex_by_number_id(self):
+        vertex = self.graph.addVertex("department", {"name": "DepartmentA", "headcount": 10, "floor": 1})
         retrieved_vertex = self.graph.getVertexById(vertex.id)
         self.assertEqual(retrieved_vertex.id, vertex.id)
 
@@ -96,6 +112,17 @@ class TestGraphManager(unittest.TestCase):
             self.graph.getVertexById(vertex.id)
         except NotFoundError as e:
             self.assertTrue("Alice\\' does not exist" in str(e))
+
+    def test_remove_vertex_by_number_id(self):
+        vertex = self.graph.addVertex("department", {"name": "DepartmentA", "headcount": 10, "floor": 1})
+        self.graph.removeVertexById(vertex.id)
+        try:
+            self.graph.getVertexById(vertex.id)
+        except NotFoundError as e:
+            msg = f"\\'{vertex.id}\\' does not exist"
+            self.assertTrue(msg in str(e))
+        else:
+            self.fail("Expected NotFoundError after removing numeric-id vertex")
 
     def test_add_edge(self):
         vertex1 = self.graph.addVertex("person", {"name": "Alice", "age": 20})
@@ -160,6 +187,25 @@ class TestGraphManager(unittest.TestCase):
         vertex2 = self.graph.addVertex("person", {"name": "Bob", "age": 23})
         vertices = self.graph.getVerticesById([vertex1.id, vertex2.id])
         self.assertEqual(len(vertices), 2)
+
+    def test_number_id_query_and_traverser_paths(self):
+        department1 = self.graph.addVertex("department", {"name": "DepartmentA", "headcount": 10, "floor": 1})
+        department2 = self.graph.addVertex("department", {"name": "DepartmentB", "headcount": 20, "floor": 2})
+        self.graph.addEdge("reports_to", department1.id, department2.id, {"date": "2026-06-20"})
+
+        edges, _ = self.graph.getEdgeByPage("reports_to", department1.id, "OUT")
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(edges[0].outV, department1.id)
+        self.assertEqual(edges[0].inV, department2.id)
+
+        vertices = self.graph.getVerticesById([department1.id, department2.id])
+        self.assertEqual({vertex.id for vertex in vertices}, {department1.id, department2.id})
+
+        traverser_vertex = self.client.traverser.vertices(department1.id)
+        self.assertEqual(traverser_vertex["vertices"][0]["id"], department1.id)
+
+        k_out_result = self.client.traverser.k_out(department1.id, 1)
+        self.assertIn(department2.id, k_out_result["vertices"])
 
     def test_get_edges_by_id(self):
         vertex1 = self.graph.addVertex("person", {"name": "Alice", "age": 20})

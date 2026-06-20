@@ -58,7 +58,12 @@ class TestSchemaManager(unittest.TestCase):
 
     def test_get_property_keys(self):
         property_keys = self.schema.getPropertyKeys()
-        self.assertEqual(7, len(property_keys))
+        property_key_names = {property_key.name for property_key in property_keys}
+        self.assertTrue(
+            {"name", "age", "city", "lang", "date", "price", "weight", "headcount", "floor"}.issubset(
+                property_key_names
+            )
+        )
 
     def test_get_property_key(self):
         property_key = self.schema.getPropertyKey("name")
@@ -66,7 +71,8 @@ class TestSchemaManager(unittest.TestCase):
 
     def test_get_vertex_labels(self):
         vertex_labels = self.schema.getVertexLabels()
-        self.assertEqual(3, len(vertex_labels))
+        vertex_label_names = {vertex_label.name for vertex_label in vertex_labels}
+        self.assertTrue({"person", "software", "book", "department"}.issubset(vertex_label_names))
 
     def test_get_vertex_label(self):
         vertex_label = self.schema.getVertexLabel("person")
@@ -74,7 +80,8 @@ class TestSchemaManager(unittest.TestCase):
 
     def test_get_edge_labels(self):
         edge_labels = self.schema.getEdgeLabels()
-        self.assertEqual(2, len(edge_labels))
+        edge_label_names = {edge_label.name for edge_label in edge_labels}
+        self.assertTrue({"knows", "created", "reports_to"}.issubset(edge_label_names))
 
     def test_get_edge_label(self):
         edge_label = self.schema.getEdgeLabel("knows")

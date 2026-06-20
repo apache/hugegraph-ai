@@ -70,6 +70,8 @@ class ClientUtils:
         schema.propertyKey("date").asDate().ifNotExist().create()
         schema.propertyKey("price").asInt().ifNotExist().create()
         schema.propertyKey("weight").asDouble().ifNotExist().create()
+        schema.propertyKey("headcount").asInt().ifNotExist().create()
+        schema.propertyKey("floor").asInt().ifNotExist().create()
 
     def init_vertex_label(self):
         schema = self.schema
@@ -82,6 +84,9 @@ class ClientUtils:
         schema.vertexLabel("book").useCustomizeStringId().properties("name", "price").nullableKeys(
             "price"
         ).ifNotExist().create()
+        schema.vertexLabel("department").properties("name", "headcount", "floor").nullableKeys(
+            "floor"
+        ).ifNotExist().create()
 
     def init_edge_label(self):
         schema = self.schema
@@ -91,6 +96,9 @@ class ClientUtils:
         schema.edgeLabel("created").sourceLabel("person").targetLabel("software").properties(
             "date", "city"
         ).nullableKeys("city").ifNotExist().create()
+        schema.edgeLabel("reports_to").sourceLabel("department").targetLabel("department").properties(
+            "date"
+        ).ifNotExist().create()
 
     def init_index_label(self):
         schema = self.schema

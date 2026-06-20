@@ -16,12 +16,14 @@
 # under the License.
 
 import json
+from urllib.parse import urlencode
 
 from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.structure.edge_data import EdgeData
 from pyhugegraph.structure.vertex_data import VertexData
 from pyhugegraph.utils import huge_router as router
 from pyhugegraph.utils.exceptions import NotFoundError
+from pyhugegraph.utils.id_format import format_vertex_id, format_vertex_id_path
 
 
 class GraphManager(HugeParamsBase):
@@ -45,23 +47,23 @@ class GraphManager(HugeParamsBase):
             return [VertexData({"id": item}) for item in response]
         return None
 
-    @router.http("PUT", 'graph/vertices/"{vertex_id}"?action=append')
-    def appendVertex(self, vertex_id, properties):  # pylint: disable=unused-argument
+    def appendVertex(self, vertex_id, properties):
         data = {"properties": properties}
-        if response := self._invoke_request(data=json.dumps(data)):
+        path = f"graph/vertices/{format_vertex_id_path(vertex_id)}?action=append"
+        if response := self._sess.request(path, "PUT", data=json.dumps(data)):
             return VertexData(response)
         return None
 
-    @router.http("PUT", 'graph/vertices/"{vertex_id}"?action=eliminate')
-    def eliminateVertex(self, vertex_id, properties):  # pylint: disable=unused-argument
+    def eliminateVertex(self, vertex_id, properties):
         data = {"properties": properties}
-        if response := self._invoke_request(data=json.dumps(data)):
+        path = f"graph/vertices/{format_vertex_id_path(vertex_id)}?action=eliminate"
+        if response := self._sess.request(path, "PUT", data=json.dumps(data)):
             return VertexData(response)
         return None
 
-    @router.http("GET", 'graph/vertices/"{vertex_id}"')
-    def getVertexById(self, vertex_id):  # pylint: disable=unused-argument
-        if response := self._invoke_request():
+    def getVertexById(self, vertex_id):
+        path = f"graph/vertices/{format_vertex_id_path(vertex_id)}"
+        if response := self._sess.request(path):
             return VertexData(response)
         return None
 
@@ -101,9 +103,9 @@ class GraphManager(HugeParamsBase):
             return [VertexData(item) for item in response["vertices"]]
         return None
 
-    @router.http("DELETE", 'graph/vertices/"{vertex_id}"')
-    def removeVertexById(self, vertex_id):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def removeVertexById(self, vertex_id):
+        path = f"graph/vertices/{format_vertex_id_path(vertex_id)}"
+        return self._sess.request(path, "DELETE")
 
     @router.http("POST", "graph/edges")
     def addEdge(self, edge_label, out_id, in_id, properties) -> EdgeData | None:
@@ -172,9 +174,10 @@ class GraphManager(HugeParamsBase):
     ):
         path = "graph/edges?"
         para = ""
-        if vertex_id:
+        if vertex_id is not None:
             if direction:
-                para = para + '&vertex_id="' + vertex_id + '"&direction=' + direction
+                vertex_query = urlencode({"vertex_id": format_vertex_id(vertex_id)})
+                para = para + "&" + vertex_query + "&direction=" + direction
             else:
                 raise NotFoundError("Direction can not be empty.")
         if label:
@@ -200,9 +203,8 @@ class GraphManager(HugeParamsBase):
         if not vertex_ids:
             return []
         path = "traversers/vertices?"
-        for vertex_id in vertex_ids:
-            path += f'ids="{vertex_id}"&'  # pylint: disable=consider-using-join
-        path = path.rstrip("&")
+        query = urlencode([("ids", format_vertex_id(vertex_id)) for vertex_id in vertex_ids])
+        path += query
         if response := self._sess.request(path):
             return [VertexData(item) for item in response["vertices"]]
         return None

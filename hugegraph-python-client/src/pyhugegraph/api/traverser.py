@@ -15,56 +15,66 @@
 # specific language governing permissions and limitations
 # under the License.
 import json
+from urllib.parse import urlencode
 
 from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.utils import huge_router as router
+from pyhugegraph.utils.id_format import format_vertex_id
 
 
 class TraverserManager(HugeParamsBase):
-    @router.http("GET", 'traversers/kout?source="{source_id}"&max_depth={max_depth}')
-    def k_out(self, source_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def _get_with_vertex_ids(self, endpoint, vertex_params, query_params):
+        params = [(name, format_vertex_id(value)) for name, value in vertex_params]
+        params.extend(query_params)
+        return self._sess.request(f"{endpoint}?{urlencode(params)}")
 
-    @router.http("GET", 'traversers/kneighbor?source="{source_id}"&max_depth={max_depth}')
-    def k_neighbor(self, source_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def k_out(self, source_id, max_depth):
+        return self._get_with_vertex_ids("traversers/kout", [("source", source_id)], [("max_depth", max_depth)])
 
-    @router.http("GET", 'traversers/sameneighbors?vertex="{vertex_id}"&other="{other_id}"')
-    def same_neighbors(self, vertex_id, other_id):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def k_neighbor(self, source_id, max_depth):
+        return self._get_with_vertex_ids("traversers/kneighbor", [("source", source_id)], [("max_depth", max_depth)])
 
-    @router.http("GET", 'traversers/jaccardsimilarity?vertex="{vertex_id}"&other="{other_id}"')
-    def jaccard_similarity(self, vertex_id, other_id):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def same_neighbors(self, vertex_id, other_id):
+        return self._get_with_vertex_ids(
+            "traversers/sameneighbors",
+            [("vertex", vertex_id), ("other", other_id)],
+            [],
+        )
 
-    @router.http(
-        "GET",
-        'traversers/shortestpath?source="{source_id}"&target="{target_id}"&max_depth={max_depth}',
-    )
-    def shortest_path(self, source_id, target_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def jaccard_similarity(self, vertex_id, other_id):
+        return self._get_with_vertex_ids(
+            "traversers/jaccardsimilarity",
+            [("vertex", vertex_id), ("other", other_id)],
+            [],
+        )
 
-    @router.http(
-        "GET",
-        'traversers/allshortestpaths?source="{source_id}"&target="{target_id}"&max_depth={max_depth}',
-    )
-    def all_shortest_paths(self, source_id, target_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def shortest_path(self, source_id, target_id, max_depth):
+        return self._get_with_vertex_ids(
+            "traversers/shortestpath",
+            [("source", source_id), ("target", target_id)],
+            [("max_depth", max_depth)],
+        )
 
-    @router.http(
-        "GET",
-        'traversers/weightedshortestpath?source="{source_id}"&target="{target_id}"'
-        "&weight={weight}&max_depth={max_depth}",
-    )
-    def weighted_shortest_path(self, source_id, target_id, weight, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def all_shortest_paths(self, source_id, target_id, max_depth):
+        return self._get_with_vertex_ids(
+            "traversers/allshortestpaths",
+            [("source", source_id), ("target", target_id)],
+            [("max_depth", max_depth)],
+        )
 
-    @router.http(
-        "GET",
-        'traversers/singlesourceshortestpath?source="{source_id}"&max_depth={max_depth}',
-    )
-    def single_source_shortest_path(self, source_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def weighted_shortest_path(self, source_id, target_id, weight, max_depth):
+        return self._get_with_vertex_ids(
+            "traversers/weightedshortestpath",
+            [("source", source_id), ("target", target_id)],
+            [("weight", weight), ("max_depth", max_depth)],
+        )
+
+    def single_source_shortest_path(self, source_id, max_depth):
+        return self._get_with_vertex_ids(
+            "traversers/singlesourceshortestpath",
+            [("source", source_id)],
+            [("max_depth", max_depth)],
+        )
 
     @router.http("POST", "traversers/multinodeshortestpath")
     def multi_node_shortest_path(
@@ -90,12 +100,12 @@ class TraverserManager(HugeParamsBase):
             )
         )
 
-    @router.http(
-        "GET",
-        'traversers/paths?source="{source_id}"&target="{target_id}"&max_depth={max_depth}',
-    )
-    def paths(self, source_id, target_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def paths(self, source_id, target_id, max_depth):
+        return self._get_with_vertex_ids(
+            "traversers/paths",
+            [("source", source_id), ("target", target_id)],
+            [("max_depth", max_depth)],
+        )
 
     @router.http("POST", "traversers/paths")
     def advanced_paths(
@@ -154,12 +164,12 @@ class TraverserManager(HugeParamsBase):
             )
         )
 
-    @router.http(
-        "GET",
-        'traversers/crosspoints?source="{source_id}"&target="{target_id}"&max_depth={max_depth}',
-    )
-    def crosspoints(self, source_id, target_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def crosspoints(self, source_id, target_id, max_depth):
+        return self._get_with_vertex_ids(
+            "traversers/crosspoints",
+            [("source", source_id), ("target", target_id)],
+            [("max_depth", max_depth)],
+        )
 
     @router.http("POST", "traversers/customizedcrosspoints")
     def customized_crosspoints(
@@ -184,13 +194,11 @@ class TraverserManager(HugeParamsBase):
             )
         )
 
-    @router.http("GET", 'traversers/rings?source="{source_id}"&max_depth={max_depth}')
-    def rings(self, source_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def rings(self, source_id, max_depth):
+        return self._get_with_vertex_ids("traversers/rings", [("source", source_id)], [("max_depth", max_depth)])
 
-    @router.http("GET", 'traversers/rays?source="{source_id}"&max_depth={max_depth}')
-    def rays(self, source_id, max_depth):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def rays(self, source_id, max_depth):
+        return self._get_with_vertex_ids("traversers/rays", [("source", source_id)], [("max_depth", max_depth)])
 
     @router.http("POST", "traversers/fusiformsimilarity")
     def fusiform_similarity(
@@ -233,7 +241,7 @@ class TraverserManager(HugeParamsBase):
 
     @router.http("GET", "traversers/vertices")
     def vertices(self, ids):
-        params = {"ids": f'"{ids}"'}
+        params = {"ids": format_vertex_id(ids)}
         return self._invoke_request(params=params)
 
     @router.http("GET", "traversers/edges")

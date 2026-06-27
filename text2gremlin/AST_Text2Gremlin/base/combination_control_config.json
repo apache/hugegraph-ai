@@ -1,0 +1,279 @@
+{
+  "description": "组合爆炸控制配置 - 用于控制Gremlin查询生成的数量和多样性",
+  "version": "2.0",
+  "last_updated": "2025-10-25",
+  "chain_thresholds": {
+    "description": "链长度分类阈值",
+    "short": 4,
+    "medium": 6,
+    "long": 8,
+    "comment": "short: ≤4步, medium: 5-6步, long: 7-8步, ultra: ≥9步"
+  },
+  "random_enhancement": {
+    "description": "随机增强控制策略",
+    "middle_step_probability": 0.05,
+    "terminal_step_probability": 0.20,
+    "max_enhancements_per_query": 3,
+    "comment": "中间步骤5%概率，末尾步骤20%概率，每个查询路径最多累计3次随机增强"
+  },
+  "value_fill_strategy": {
+    "description": "数据值填充策略 - 控制具体值的实例化数量",
+    "middle_step": {
+      "count": 1,
+      "description": "中间步骤（除最后一步外）只填充1个值",
+      "examples": [
+        "has('name', ?) → 只随机选1个name值",
+        "has('born', ?) → 只随机选1个born年份"
+      ]
+    },
+    "terminal_step": {
+      "min": 2,
+      "max": 3,
+      "description": "终端步骤（配方的最后一步）随机填充2-3个值",
+      "fallback": "如果CSV数据不足，以实际数据量为准",
+      "examples": [
+        "配置要求3个，CSV只有2个 → 填充2个",
+        "配置要求2个，CSV有10个 → 随机选2个"
+      ]
+    },
+    "notes": [
+      "这个策略适用于所有需要填充具体值的场景",
+      "包括：has()的值、out()的边标签、hasLabel()的顶点标签等"
+    ]
+  },
+  "property_generalization": {
+    "description": "通用的同级属性泛化策略 - 适用于所有需要选择同级选项的场景",
+    "applicable_to": [
+      "顶点标签选择: hasLabel('person') → 遍历其他顶点标签",
+      "边标签选择: out('acted_in') → 遍历其他边标签",
+      "顶点属性选择: has('name', ?) → 遍历其他顶点属性",
+      "边属性选择: has('role', ?) → 遍历其他边属性",
+      "所有步骤: values(), properties(), where(), filter() 等",
+      "所有谓词: P.eq(), P.neq(), P.gt() 等",
+      "任何具有平级关系的选项"
+    ],
+    "strategy_principle": [
+      "1. 配方指定的属性/标签必须包含",
+      "2. 根据链长度和同级总数决定是否全部遍历",
+      "3. 如果不全部遍历，则随机选择额外的同级属性",
+      "4. 使用random.sample()确保每次随机性"
+    ],
+    "short": {
+      "description": "短链（≤4步）：较高的泛化程度",
+      "full_coverage_threshold": 5,
+      "additional_random_min": 2,
+      "additional_random_max": 4,
+      "logic": "如果同级总数≤5，全部遍历；否则：配方属性 + 随机2-4个",
+      "examples": [
+        "5个顶点标签 → 全部遍历（5≤5）",
+        "10个属性 → 配方属性 + 随机2-4个（10>5）"
+      ]
+    },
+    "medium": {
+      "description": "中链（5-6步）：适度的泛化程度",
+      "full_coverage_threshold": 4,
+      "additional_random_min": 1,
+      "additional_random_max": 3,
+      "logic": "如果同级总数≤4，全部遍历；否则：配方属性 + 随机1-3个",
+      "examples": [
+        "4个边标签 → 全部遍历（4≤4）",
+        "8个属性 → 配方属性 + 随机1-3个（8>4）"
+      ]
+    },
+    "long": {
+      "description": "长链（7-8步）：较低的泛化程度",
+      "full_coverage_threshold": 3,
+      "additional_random_min": 1,
+      "additional_random_max": 2,
+      "logic": "如果同级总数≤3，全部遍历；否则：配方属性 + 随机1-2个",
+      "examples": [
+        "3个属性 → 全部遍历（3≤3）",
+        "6个属性 → 配方属性 + 随机1-2个（6>3）"
+      ]
+    },
+    "ultra": {
+      "description": "超长链（≥9步）：最低的泛化程度",
+      "full_coverage_threshold": 2,
+      "additional_random_min": 0,
+      "additional_random_max": 1,
+      "logic": "如果同级总数≤2，全部遍历；否则：配方属性 + 随机0-1个",
+      "examples": [
+        "2个属性 → 全部遍历（2≤2）",
+        "5个属性 → 配方属性 + 随机0-1个（5>2）"
+      ]
+    }
+  },
+  "max_total_combinations": {
+    "description": "总查询数量限制",
+    "short": null,
+    "medium": 100,
+    "long": 500,
+    "ultra": 50,
+    "comment": "null表示不限制"
+  },
+  "max_per_step_choices": {
+    "description": "单步选项数量限制（可选，用于进一步控制）",
+    "short": null,
+    "medium": 8,
+    "long": 5,
+    "ultra": 3,
+    "comment": "限制每个步骤生成的选项数量"
+  },
+  "multi_param_strategy": {
+    "description": "多参数泛化控制策略 - 保持参数数量一致性",
+    "principle": [
+      "1. 参数数量一致性: 配方是多少个参数，泛化也必须是多少个参数",
+      "2. 支持任意参数个数: 不限于2个参数，支持3个、4个等任意数量",
+      "3. 语义一致性: 保持多参数的OR语义"
+    ],
+    "schema_fill": {
+      "description": "Schema填充策略 - 适用于标签、属性名等从schema获取的参数",
+      "applicable_to": [
+        "hasLabel('person', 'movie') - 顶点标签",
+        "hasKey('name', 'age') - 属性键",
+        "out('acted_in', 'directed') - 边标签",
+        "values('name', 'age') - 属性名"
+      ],
+      "short": {
+        "max_combinations": 4,
+        "description": "短链最多生成4个多参数组合"
+      },
+      "medium": {
+        "max_combinations": 3,
+        "description": "中链最多生成3个多参数组合"
+      },
+      "long": {
+        "max_combinations": 2,
+        "description": "长链最多生成2个多参数组合"
+      },
+      "ultra": {
+        "max_combinations": 1,
+        "description": "超长链只保留原配方组合"
+      }
+    },
+    "value_fill": {
+      "description": "数据值填充策略 - 适用于需要从实际数据中获取值的参数",
+      "applicable_to": [
+        "hasValue('Tom', 'Jerry') - 属性值",
+        "has('name', 'Tom', 'Jerry') - 多值属性过滤"
+      ],
+      "middle_step": {
+        "fill_times": 1,
+        "description": "中间步骤只填充1次，每次随机选x个值（x=参数个数）"
+      },
+      "terminal_step": {
+        "fill_times_min": 2,
+        "fill_times_max": 3,
+        "description": "终端步骤填充2-3次，每次随机选x个值（x=参数个数）"
+      }
+    }
+  },
+  "nested_traversal_strategy": {
+    "description": "嵌套遍历泛化控制策略 - 用于where/not等包含AnonymousTraversal的步骤",
+    "principle": [
+      "1. 递归泛化: 嵌套内部的每个步骤都应该被泛化",
+      "2. 深度限制: 防止无限递归，设置最大嵌套深度",
+      "3. 数量控制: 每层嵌套的每个步骤限制泛化数量",
+      "4. 组合控制: 嵌套内部的组合数量受外层链长度影响",
+      "5. 区分策略: Schema属性泛化，数据值不泛化"
+    ],
+    "max_nesting_depth": 3,
+    "max_variants_per_nested_step": 2,
+    "schema_generalization": {
+      "description": "Schema 属性泛化策略（嵌套内部）",
+      "enabled": true,
+      "max_variants": 2,
+      "applicable_to": [
+        "hasLabel('person') - 顶点标签",
+        "out('knows') - 边标签",
+        "in('acted_in') - 边标签"
+      ],
+      "note": "嵌套内部的 Schema 属性固定泛化 2 个变体"
+    },
+    "value_generalization": {
+      "description": "数据值泛化策略（嵌套内部）",
+      "enabled": false,
+      "note": "嵌套内部的数据值不泛化，只保留原值",
+      "applicable_to": [
+        "has('age', 30) - 保留原值 30",
+        "hasValue('Tom') - 保留原值 'Tom'"
+      ]
+    },
+    "description_detail": {
+      "max_nesting_depth": "最大支持的嵌套深度，超过此深度不再递归泛化",
+      "max_variants_per_nested_step": "嵌套内部每个步骤最多生成2个变体（避免组合爆炸）"
+    },
+    "examples": [
+      {
+        "query": "g.V().where(__.out('knows').has('age', 30))",
+        "nesting_depth": 1,
+        "generalization": [
+          "__.out('knows').has('age', 30) - 原样",
+          "__.out('created').has('age', 30) - 泛化out的边标签",
+          "__.in('knows').has('age', 30) - 泛化out为in",
+          "__.out('knows').has('name', 'Tom') - 泛化has的属性"
+        ],
+        "note": "每个嵌套步骤最多2个变体，总共约4个嵌套变体"
+      },
+      {
+        "query": "g.V().where(__.out('knows').where(__.has('age')))",
+        "nesting_depth": 2,
+        "generalization": [
+          "第一层: out('knows').where(...) - 泛化out",
+          "第二层: __.has('age') - 泛化has",
+          "组合: 2 × 2 = 4个嵌套变体"
+        ],
+        "note": "多层嵌套时，每层独立泛化，最终组合"
+      }
+    ]
+  },
+  "implementation_notes": [
+    "1. 通用处理器: 创建select_sibling_options()函数供所有步骤使用",
+    "2. 特殊处理: 某些步骤如有特殊需求，可在调用通用处理器后再调整",
+    "3. 随机性: 使用random.sample()确保每次运行选择不同的属性",
+    "4. 数据驱动: 所有阈值和参数都从此配置文件读取",
+    "5. 可扩展性: 新增步骤和谓词都应使用这套通用策略",
+    "6. 多参数支持: 使用multi_param_strategy配置控制多参数泛化",
+    "7. 嵌套遍历: 使用nested_traversal_strategy配置控制嵌套遍历泛化"
+  ],
+  "usage_examples": [
+    {
+      "scenario": "hasLabel('person') - 顶点标签泛化",
+      "sibling_options": [
+        "person",
+        "movie",
+        "genre",
+        "keyword",
+        "user"
+      ],
+      "total_count": 5,
+      "short_chain": "5≤5 → 全部遍历 → 5个变体",
+      "medium_chain": "5>4 → 配方('person') + 随机1-3个 → 2-4个变体"
+    },
+    {
+      "scenario": "has('name', 'john') - 属性泛化",
+      "current_label": "person",
+      "sibling_options": [
+        "name",
+        "born",
+        "bio",
+        "poster_image"
+      ],
+      "total_count": 4,
+      "short_chain": "4≤5 → 全部遍历 → 4个属性都生成变体",
+      "long_chain": "4>3 → 配方('name') + 随机1-2个 → 2-3个属性生成变体"
+    },
+    {
+      "scenario": "out('acted_in') - 边标签泛化",
+      "sibling_options": [
+        "acted_in",
+        "directed",
+        "produced",
+        "wrote"
+      ],
+      "total_count": 4,
+      "medium_chain": "4≤4 → 全部遍历 → 4个变体",
+      "ultra_chain": "4>2 → 配方('acted_in') + 随机0-1个 → 1-2个变体"
+    }
+  ]
+}

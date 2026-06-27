@@ -82,6 +82,9 @@ header: # `header` section is configurations for source codes license header.
     - '**/poetry.lock'
     - '.github/**/*'
     - 'docker/**/*'
+    - '**/*.interp'
+    - '**/*.tokens'
+    - '**/*.csv'
 
   comment: on-failure
   # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.

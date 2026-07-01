@@ -45,6 +45,7 @@ class DummyPipelineState:
             "chunks": ["chunk one", "chunk two"],
             "vertices": [{"id": "person:alice"}],
             "edges": [],
+            "max_parallel_chunks": 2,
         }
 
 
@@ -205,6 +206,7 @@ def test_graph_extract_post_deal_logs_chunk_count(monkeypatch):
     result_data = json.loads(result)
 
     assert result_data["vertices"] == [{"id": "person:alice"}]
+    assert result_data["max_parallel_chunks"] == 2
     assert any(message == "Graph extraction chunk_count: %s" and args == (2,) for message, args in log_calls)
 
 

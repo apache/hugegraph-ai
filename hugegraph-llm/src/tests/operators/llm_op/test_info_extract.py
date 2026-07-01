@@ -120,6 +120,39 @@ class TestInfoExtract(unittest.TestCase):
         self.assertEqual(actual_edges, expected_edges)
         self.assertEqual(graph["schema"], self.schema)
 
+    def test_extract_by_regex_with_check_schema_shape(self):
+        schema = {
+            "vertexlabels": [
+                {"name": "person", "properties": ["name", "age", "occupation"]},
+                {"name": "webpage", "properties": ["name", "url"]},
+            ],
+            "edgelabels": [
+                {
+                    "name": "roommate",
+                    "source_label": "person",
+                    "target_label": "person",
+                    "properties": [],
+                }
+            ],
+        }
+        graph = {"triples": [], "vertices": [], "edges": [], "schema": schema}
+
+        extract_triples_by_regex_with_schema(schema, self.llm_output, graph)
+
+        self.assertEqual(
+            graph["edges"],
+            [{"start": "person-Alice", "end": "person-Bob", "type": "roommate", "properties": {}}],
+        )
+        self.assertIn(
+            {
+                "id": "person-Alice",
+                "name": "Alice",
+                "label": "person",
+                "properties": {"name": "Alice", "age": "25", "occupation": "lawyer"},
+            },
+            graph["vertices"],
+        )
+
     def test_extract_by_regex(self):
         graph = {"triples": []}
         extract_triples_by_regex(self.llm_output, graph)

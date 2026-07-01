@@ -99,6 +99,15 @@ class TestChunkSplit(unittest.TestCase):
         self.assertIn("Second paragraph", all_text)
         self.assertIn("Third paragraph", all_text)
 
+    def test_run_paragraph_split_keeps_short_paragraph_boundaries(self):
+        """Test paragraph split keeps explicit short paragraph boundaries."""
+        text_with_short_paragraphs = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+        chunk_split = ChunkSplit(text_with_short_paragraphs, split_type="paragraph", language="en")
+
+        result = chunk_split.run({})
+
+        self.assertEqual(result["chunks"], ["First paragraph.", "Second paragraph.", "Third paragraph."])
+
     def test_run_sentence_split(self):
         """Test running sentence split."""
         # Use a text with more distinct sentences to ensure splitting

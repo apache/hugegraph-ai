@@ -39,6 +39,10 @@ def _split_sentence_boundaries(text: str) -> list[str]:
     return [sentence.strip() for sentence in sentence_pattern.findall(text) if sentence.strip()]
 
 
+def _split_paragraph_boundaries(text: str) -> list[str]:
+    return [paragraph.strip() for paragraph in re.split(r"\n\s*\n+", text) if paragraph.strip()]
+
+
 class ChunkSplit:
     def __init__(
         self,
@@ -63,9 +67,16 @@ class ChunkSplit:
         if split_type == SPLIT_TYPE_DOCUMENT:
             return lambda text: [text]
         if split_type == SPLIT_TYPE_PARAGRAPH:
-            return RecursiveCharacterTextSplitter(
-                chunk_size=500, chunk_overlap=30, separators=self.separators
-            ).split_text
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=30, separators=self.separators)
+
+            def split_paragraphs(text: str) -> list[str]:
+                chunks = []
+                paragraphs = _split_paragraph_boundaries(text) or [text]
+                for paragraph in paragraphs:
+                    chunks.extend(text_splitter.split_text(paragraph))
+                return chunks
+
+            return split_paragraphs
         if split_type == SPLIT_TYPE_SENTENCE:
             return _split_sentence_boundaries
         raise ValueError("split_type must be document, paragraph, or sentence")

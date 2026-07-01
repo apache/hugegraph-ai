@@ -28,10 +28,12 @@ from hugegraph_llm.utils.log import log
 
 
 class BuildSemanticIndex:
-    def __init__(self, embedding: BaseEmbedding, vector_index: type[VectorStoreBase]):
-        self.vid_index = vector_index.from_name(embedding.get_embedding_dim(), huge_settings.graph_name, "graph_vids")
+    def __init__(self, embedding: BaseEmbedding, vector_index: type[VectorStoreBase], graph_config=None):
+        graph_config = graph_config or {}
+        self.graph_name = graph_config.get("graph") or huge_settings.graph_name
+        self.vid_index = vector_index.from_name(embedding.get_embedding_dim(), self.graph_name, "graph_vids")
         self.embedding = embedding
-        self.sm = SchemaManager(huge_settings.graph_name)
+        self.sm = SchemaManager(self.graph_name, graph_config=graph_config)
 
     def _extract_names(self, vertices: list[str]) -> list[str]:
         return [v.split(":")[1] for v in vertices]
@@ -72,7 +74,7 @@ class BuildSemanticIndex:
             added_embeddings = asyncio.run(self._get_embeddings_parallel(vids_to_process))
             log.info("Building vector index for %s vertices...", len(added_vids))
             self.vid_index.add(added_embeddings, added_vids)
-            self.vid_index.save_index_by_name(huge_settings.graph_name, "graph_vids")
+            self.vid_index.save_index_by_name(self.graph_name, "graph_vids")
         else:
             log.debug("No update vertices to build vector index.")
         context.update(

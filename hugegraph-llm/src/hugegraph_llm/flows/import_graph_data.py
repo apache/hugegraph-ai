@@ -30,7 +30,7 @@ class ImportGraphDataFlow(BaseFlow):
     def __init__(self):
         pass
 
-    def prepare(self, prepared_input: WkFlowInput, data, schema, **kwargs):
+    def prepare(self, prepared_input: WkFlowInput, data, schema, graph_config=None, **kwargs):
         try:
             data_json = json.loads(data.strip()) if isinstance(data, str) else data
         except json.JSONDecodeError as e:
@@ -45,12 +45,13 @@ class ImportGraphDataFlow(BaseFlow):
         )
         prepared_input.data_json = data_json
         prepared_input.schema = schema
+        prepared_input.graph_config = graph_config
 
-    def build_flow(self, data, schema, **kwargs):
+    def build_flow(self, data, schema, graph_config=None, **kwargs):
         pipeline = GPipeline()
         prepared_input = WkFlowInput()
         # prepare input data
-        self.prepare(prepared_input, data, schema)
+        self.prepare(prepared_input, data, schema, graph_config=graph_config)
 
         pipeline.createGParam(prepared_input, "wkflow_input")
         pipeline.createGParam(WkFlowState(), "wkflow_state")

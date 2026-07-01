@@ -119,7 +119,7 @@ class TestSchemaManager(unittest.TestCase):
 
     @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.PyHugeClient")
     @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.huge_settings")
-    def test_init_request_config_does_not_inherit_global_graphspace(self, mock_settings, mock_client_class):
+    def test_init_request_config_falls_back_for_none_graphspace(self, mock_settings, mock_client_class):
         mock_settings.graph_url = "default:8080"
         mock_settings.graph_user = "default_user"
         mock_settings.graph_pwd = "default_pwd"
@@ -136,7 +136,29 @@ class TestSchemaManager(unittest.TestCase):
         )
 
         _, kwargs = mock_client_class.call_args
-        assert kwargs["graphspace"] is None
+        assert kwargs["graphspace"] == "global_space"
+        assert kwargs["url"] == "10.0.0.1:8080"
+
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.PyHugeClient")
+    @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.huge_settings")
+    def test_init_request_config_preserves_explicit_empty_graphspace(self, mock_settings, mock_client_class):
+        mock_settings.graph_url = "default:8080"
+        mock_settings.graph_user = "default_user"
+        mock_settings.graph_pwd = "default_pwd"
+        mock_settings.graph_space = "global_space"
+
+        SchemaManager(
+            "custom_graph",
+            connection={
+                "url": "10.0.0.1:8080",
+                "user": "admin",
+                "pwd": "secret",
+                "graphspace": "",
+            },
+        )
+
+        _, kwargs = mock_client_class.call_args
+        assert kwargs["graphspace"] == ""
         assert kwargs["url"] == "10.0.0.1:8080"
 
     @patch("hugegraph_llm.operators.hugegraph_op.schema_manager.PyHugeClient")

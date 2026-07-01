@@ -33,8 +33,16 @@ class ChunkSplitNode(BaseNode):
         split_type = self.wk_input.split_type
         if isinstance(texts, str):
             texts = [texts]
+        if self.wk_input.content_type == "chunks":
+            self.chunk_split_op = None
+            return super().node_init()
         self.chunk_split_op = ChunkSplit(texts, split_type, language)
         return super().node_init()
 
     def operator_schedule(self, data_json):
+        if self.wk_input.content_type == "chunks":
+            context = data_json or {}
+            texts = self.wk_input.texts
+            context["chunks"] = texts if isinstance(texts, list) else [texts]
+            return context
         return self.chunk_split_op.run(data_json)

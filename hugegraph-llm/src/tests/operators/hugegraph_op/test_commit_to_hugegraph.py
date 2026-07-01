@@ -23,6 +23,7 @@ import pytest
 from pyhugegraph.utils.exceptions import CreateError, NotFoundError
 
 from hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph import Commit2Graph
+from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
 
 pytestmark = [pytest.mark.unit]
 
@@ -147,16 +148,33 @@ class TestCommit2Graph(unittest.TestCase):
         mock_schema_free_mode.return_value = None
 
         # Create input data
-        data = {"vertices": self.vertices, "edges": self.edges, "triples": []}
+        data = {"triples": [["Tom Hanks", "acted_in", "Forrest Gump"]]}
 
         # Run the method
         result = self.commit2graph.run(data)
 
         # Verify that schema_free_mode was called
-        mock_schema_free_mode.assert_called_once_with([])
+        mock_schema_free_mode.assert_called_once_with([["Tom Hanks", "acted_in", "Forrest Gump"]])
 
         # Verify the results
         self.assertEqual(result, data)
+
+    def test_run_without_schema_rejects_property_graph_input(self):
+        """Test schema-free mode rejects vertices/edges to avoid silent data loss."""
+        with self.assertRaisesRegex(ValueError, "Schema-free mode only supports triples"):
+            self.commit2graph.run({"vertices": self.vertices, "edges": self.edges, "triples": []})
+
+    def test_run_with_schema_rejects_triples_input(self):
+        """Test schema mode rejects triples to avoid silently dropping them."""
+        with self.assertRaisesRegex(ValueError, "Triples input is not supported"):
+            self.commit2graph.run(
+                {
+                    "schema": self.schema,
+                    "vertices": self.vertices,
+                    "edges": self.edges,
+                    "triples": [["Tom Hanks", "acted_in", "Forrest Gump"]],
+                }
+            )
 
     @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._check_property_data_type")
     def test_set_default_property(self, mock_check_property_data_type):
@@ -303,6 +321,328 @@ class TestCommit2Graph(unittest.TestCase):
         # Verify that edgeLabel was called for each edge label
         self.assertEqual(schema_mocks["edge_label"].call_count, 1)  # 1 edge label
 
+    def test_run_initializes_customize_string_schema_with_custom_id_strategy(self):
+        """Test run creates custom string id vertex labels for CUSTOMIZE_STRING schema."""
+        schema_mocks = self._setup_schema_mocks()
+        schema = {
+            "propertykeys": [{"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"}],
+            "vertexlabels": [
+                {
+                    "name": "person",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["name"],
+                    "properties": ["name"],
+                    "nullable_keys": [],
+                }
+            ],
+            "edgelabels": [],
+        }
+        vertices = [{"id": "marko", "label": "person", "properties": {"name": "marko"}}]
+
+        with (
+            patch.object(self.commit2graph, "_create_property"),
+            patch.object(self.commit2graph, "_handle_graph_creation", return_value=MagicMock(id="marko")),
+        ):
+            self.commit2graph.run({"schema": schema, "vertices": vertices, "edges": []})
+
+        vertex_builder = schema_mocks["vertex_label"].return_value
+        vertex_builder.useCustomizeStringId.assert_called_once()
+        vertex_builder.usePrimaryKeyId.assert_not_called()
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._check_property_data_type")
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph(self, mock_handle_graph_creation, mock_check_property_data_type):
+        """Test load_into_graph method."""
+        # Setup mocks
+        mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
+        mock_check_property_data_type.return_value = True
+
+        # Create vertices with proper data types according to schema
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": 67}},
+            {"label": "movie", "properties": {"title": "Forrest Gump", "year": 1994}},
+        ]
+
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",  # Use the format expected by the implementation
+                "inV": "movie:Forrest Gump",  # Use the format expected by the implementation
+            }
+        ]
+
+        # Call the method
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        # Verify that _handle_graph_creation was called for each vertex and edge
+        self.assertEqual(mock_handle_graph_creation.call_count, 3)  # 2 vertices + 1 edge
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._check_property_data_type")
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_returns_actual_created_and_skipped_counts(
+        self, mock_handle_graph_creation, mock_check_property_data_type
+    ):
+        """Test import stats reflect actual created and skipped graph elements."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="person:Tom Hanks"),
+            None,
+        ]
+        mock_check_property_data_type.return_value = True
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": 67}},
+            {"label": "unknown", "properties": {"name": "Ignored"}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        result = self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        self.assertEqual(result["vertices_attempted"], 2)
+        self.assertEqual(result["vertices_created"], 1)
+        self.assertEqual(result["vertices_skipped"], 1)
+        self.assertEqual(result["edges_attempted"], 1)
+        self.assertEqual(result["edges_created"], 0)
+        self.assertEqual(result["edges_skipped"], 1)
+        self.assertIn(
+            {"kind": "vertex", "index": 1, "reason": "vertex_label_not_found", "label": "unknown"},
+            result["errors"],
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_with_data_type_validation_success(self, mock_handle_graph_creation):
+        """Test load_into_graph method with successful data type validation."""
+        # Setup mocks
+        mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
+
+        # Create vertices with correct data types matching schema expectations
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": 67}},  # age: INT -> int
+            {"label": "movie", "properties": {"title": "Forrest Gump", "year": 1994}},  # year: INT -> int
+        ]
+
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},  # role: TEXT -> str
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        # Call the method - should succeed with correct data types
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        # Verify that _handle_graph_creation was called for each vertex and edge
+        self.assertEqual(mock_handle_graph_creation.call_count, 3)  # 2 vertices + 1 edge
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_maps_llm_vertex_ids_to_created_vertex_ids(self, mock_handle_graph_creation):
+        """Test edges use server-created vertex ids when LLM ids differ."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="1:Tom Hanks"),
+            MagicMock(id="2:Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+
+        vertices = [
+            {
+                "id": "person:Tom Hanks",
+                "label": "person",
+                "properties": {"name": "Tom Hanks", "age": 67},
+            },
+            {
+                "id": "movie:Forrest Gump",
+                "label": "movie",
+                "properties": {"title": "Forrest Gump", "year": 1994},
+            },
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        self.assertEqual(vertices[0]["id"], "1:Tom Hanks")
+        self.assertEqual(vertices[1]["id"], "2:Forrest Gump")
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addEdge,
+            "acted_in",
+            "1:Tom Hanks",
+            "2:Forrest Gump",
+            {"role": "Forrest Gump"},
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_uses_explicit_customize_string_ids(self, mock_handle_graph_creation):
+        """Test custom string ids are passed to HugeGraph when schema requires them."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="Tom Hanks"),
+            MagicMock(id="Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+        schema = {
+            "propertykeys": [
+                {"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"},
+                {"name": "title", "data_type": "TEXT", "cardinality": "SINGLE"},
+            ],
+            "vertexlabels": [
+                {
+                    "id": 7,
+                    "name": "person",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["name"],
+                    "properties": ["name"],
+                    "nullable_keys": [],
+                },
+                {
+                    "id": 8,
+                    "name": "movie",
+                    "id_strategy": "CUSTOMIZE_STRING",
+                    "primary_keys": ["title"],
+                    "properties": ["title"],
+                    "nullable_keys": [],
+                },
+            ],
+            "edgelabels": [{"name": "acted_in", "properties": [], "source_label": "person", "target_label": "movie"}],
+        }
+        vertices = [
+            {"id": "Tom Hanks", "label": "person", "properties": {"name": "Tom Hanks"}},
+            {"id": "Forrest Gump", "label": "movie", "properties": {"title": "Forrest Gump"}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {},
+                "outV": "Tom Hanks",
+                "inV": "Forrest Gump",
+            }
+        ]
+
+        self.commit2graph.load_into_graph(vertices, edges, schema)
+
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addVertex,
+            "person",
+            {"name": "Tom Hanks"},
+            id="Tom Hanks",
+        )
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addVertex,
+            "movie",
+            {"title": "Forrest Gump"},
+            id="Forrest Gump",
+        )
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addEdge,
+            "acted_in",
+            "Tom Hanks",
+            "Forrest Gump",
+            {},
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_accepts_normalized_extraction_without_item_type(self, mock_handle_graph_creation):
+        """Test normalized LLM output without type fields can be committed."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="1:Tom Hanks"),
+            MagicMock(id="2:Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+        llm_output = """{
+            "vertices": [
+            {
+                "id": "person:Tom Hanks",
+                "label": "person",
+                "properties": {
+                    "name": "Tom Hanks",
+                    "age": 67
+                }
+            },
+            {
+                "id": "movie:Forrest Gump",
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump",
+                    "year": 1994
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "outV": "person:Tom Hanks",
+                "outVLabel": "person",
+                "inV": "movie:Forrest Gump",
+                "inVLabel": "movie",
+                "properties": {
+                    "role": "Forrest Gump"
+                }
+            }
+            ]
+        }"""
+
+        items = PropertyGraphExtract(llm=MagicMock())._extract_and_filter_label(self.schema, llm_output)
+        vertices = [item for item in items if item["type"] == "vertex"]
+        edges = [item for item in items if item["type"] == "edge"]
+        self.assertEqual(edges[0]["outV"], "1:Tom Hanks")
+        self.assertEqual(edges[0]["inV"], "2:Forrest Gump")
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().addEdge,
+            "acted_in",
+            "1:Tom Hanks",
+            "2:Forrest Gump",
+            {"role": "Forrest Gump"},
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_with_data_type_validation_failure(self, mock_handle_graph_creation):
+        """Test load_into_graph method with data type validation failure."""
+        # Setup mocks
+        mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
+
+        # Create vertices with incorrect data types (strings for INT fields)
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": "67"}},  # age should be int, not str
+            {"label": "movie", "properties": {"title": "Forrest Gump", "year": "1994"}},  # year should be int, not str
+        ]
+
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        # Call the method - should skip vertices and edges whose batch endpoints failed.
+        result = self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        self.assertEqual(result["vertices_created"], 0)
+        self.assertEqual(result["vertices_skipped"], 2)
+        self.assertEqual(result["edges_created"], 0)
+        self.assertEqual(result["edges_skipped"], 1)
+        self.assertEqual(
+            result["errors"][-1],
+            {"kind": "edge", "index": 0, "reason": "endpoint_vertex_failed", "label": "acted_in", "key": "outV"},
+        )
+        mock_handle_graph_creation.assert_not_called()
+
     def test_check_property_data_type_success(self):
         """Test _check_property_data_type method with valid data types."""
         # Test TEXT type
@@ -310,6 +650,7 @@ class TestCommit2Graph(unittest.TestCase):
 
         # Test INT type
         self.assertTrue(self.commit2graph._check_property_data_type("INT", "SINGLE", 67))
+        self.assertFalse(self.commit2graph._check_property_data_type("INT", "SINGLE", True))
 
         # Test LIST type with valid items
         self.assertTrue(self.commit2graph._check_property_data_type("TEXT", "LIST", ["hobby1", "hobby2"]))
@@ -337,6 +678,7 @@ class TestCommit2Graph(unittest.TestCase):
         # Test FLOAT/DOUBLE type
         self.assertTrue(self.commit2graph._check_property_data_type("FLOAT", "SINGLE", 3.14))
         self.assertTrue(self.commit2graph._check_property_data_type("DOUBLE", "SINGLE", 3.14))
+        self.assertTrue(self.commit2graph._check_property_data_type("DOUBLE", "SINGLE", 1))
         self.assertFalse(self.commit2graph._check_property_data_type("FLOAT", "SINGLE", "3.14"))
 
         # Test DATE type (format: yyyy-MM-dd)

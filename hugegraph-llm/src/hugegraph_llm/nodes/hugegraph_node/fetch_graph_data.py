@@ -27,7 +27,7 @@ class FetchGraphDataNode(BaseNode):
     wk_input: Optional[WkFlowInput] = None
 
     def node_init(self):
-        client = get_hg_client()
+        client = get_hg_client(self.wk_input.graph_config if self.wk_input else None)
         self.fetch_graph_data_op = FetchGraphData(client)
         return super().node_init()
 

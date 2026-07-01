@@ -34,6 +34,8 @@ class LLMConfig(BaseConfig):
     keyword_extract_type: Literal["llm", "textrank", "hybrid"] = "llm"
     window_size: Optional[int] = 3
     hybrid_llm_weights: Optional[float] = 0.5
+    graph_extract_max_parallel_chunks: int = 2
+    graph_extract_max_parallel_chunks_limit: int = 8
     # TODO: divide RAG part if necessary
     # 1. OpenAI settings
     openai_chat_api_base: Optional[str] = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")

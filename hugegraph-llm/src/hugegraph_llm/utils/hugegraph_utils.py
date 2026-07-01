@@ -19,6 +19,7 @@ import json
 import os
 import shutil
 from datetime import datetime
+from typing import Any, Mapping, Optional
 
 import requests
 from pyhugegraph.client import PyHugeClient
@@ -38,13 +39,19 @@ def run_gremlin_query(query, fmt=True):
     return json.dumps(res, indent=4, ensure_ascii=False) if fmt else res
 
 
-def get_hg_client():
+def get_hg_client(graph_config: Optional[Mapping[str, Any]] = None) -> PyHugeClient:
+    graph_config = graph_config or {}
+
+    def pick(key, default):
+        value = graph_config[key] if key in graph_config else default
+        return default if value is None else value
+
     return PyHugeClient(
-        url=huge_settings.graph_url,
-        graph=huge_settings.graph_name,
-        user=huge_settings.graph_user,
-        pwd=huge_settings.graph_pwd,
-        graphspace=huge_settings.graph_space,
+        url=pick("url", huge_settings.graph_url),
+        graph=pick("graph", huge_settings.graph_name),
+        user=pick("user", huge_settings.graph_user),
+        pwd=pick("pwd", huge_settings.graph_pwd),
+        graphspace=pick("gs", huge_settings.graph_space),
     )
 
 

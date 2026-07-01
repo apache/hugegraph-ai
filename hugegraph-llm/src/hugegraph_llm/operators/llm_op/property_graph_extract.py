@@ -19,6 +19,7 @@
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
 from hugegraph_llm.config import prompt
@@ -61,7 +62,7 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
             "properties": vertex["properties"],
         }
     for edge in schema["edgelabels"]:
-        properties_map["edge"][edge["name"]] = {"properties": edge["properties"]}
+        properties_map["edge"][edge["name"]] = {"properties": edge.get("properties", [])}
     log.info("properties_map: %s", properties_map)
     for item in items:
         item_type = item["type"]
@@ -78,9 +79,15 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
 
 
 class PropertyGraphExtract:
-    def __init__(self, llm: BaseLLM, example_prompt: str = prompt.extract_graph_prompt) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        example_prompt: str = prompt.extract_graph_prompt,
+        max_parallel_chunks: int = 1,
+    ) -> None:
         self.llm = llm
         self.example_prompt = example_prompt
+        self.max_parallel_chunks = max(1, max_parallel_chunks)
         self.NECESSARY_ITEM_KEYS = {"label", "type", "properties"}  # pylint: disable=invalid-name
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
@@ -91,15 +98,33 @@ class PropertyGraphExtract:
         if "edges" not in context:
             context["edges"] = []
         items = []
-        for chunk in chunks:
-            proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
+        try:
+            max_parallel_chunks = max(1, int(context.get("max_parallel_chunks") or self.max_parallel_chunks))
+        except (TypeError, ValueError):
+            max_parallel_chunks = max(1, self.max_parallel_chunks)
+        chunk_count = len(chunks)
+        if chunk_count == 0:
+            context["max_parallel_chunks"] = 1
+            context["call_count"] = context.get("call_count", 0)
+            return context
+        worker_count = min(max_parallel_chunks, chunk_count)
+        context["max_parallel_chunks"] = worker_count
+        if worker_count <= 1:
+            proceeded_chunks = [self.extract_property_graph_by_llm(schema, chunk) for chunk in chunks]
+        else:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                proceeded_chunks = list(
+                    executor.map(lambda chunk: self.extract_property_graph_by_llm(schema, chunk), chunks)
+                )
+        for index, (chunk, proceeded_chunk) in enumerate(zip(chunks, proceeded_chunks)):
             log.debug(
-                "[LLM] %s input: %s \n output:%s",
+                "[LLM] %s chunk processed: index=%s input_chars=%s output_chars=%s",
                 self.__class__.__name__,
-                chunk,
-                proceeded_chunk,
+                index,
+                len(chunk),
+                len(proceeded_chunk) if isinstance(proceeded_chunk, str) else None,
             )
-            items.extend(self._extract_and_filter_label(schema, proceeded_chunk))
+            items.extend(self._extract_and_filter_label(schema, proceeded_chunk, raise_on_invalid=True))
         items = filter_item(schema, items)
         for item in items:
             if item["type"] == "vertex":
@@ -165,6 +190,13 @@ class PropertyGraphExtract:
 
         label = legacy_endpoint.get("label")
         properties = legacy_endpoint.get("properties", {})
+        if not isinstance(properties, dict):
+            log.warning(
+                "Invalid %s endpoint properties type '%s' has been ignored.",
+                legacy_key,
+                type(properties),
+            )
+            return None, label
         if label not in vertex_label_map:
             return None, label
         canonical_id = self._primary_key_id(vertex_label_map[label], properties)
@@ -191,10 +223,23 @@ class PropertyGraphExtract:
                 vertex_id_map,
             )
             if not out_v or not in_v:
-                log.warning("Invalid edge endpoints '%s' have been ignored.", edge)
+                log.warning(
+                    "Invalid edge endpoints have been ignored: label=%s, outVLabel=%s, inVLabel=%s.",
+                    edge.get("label"),
+                    out_v_label,
+                    in_v_label,
+                )
                 continue
             if out_v_label != edge_label.get("source_label") or in_v_label != edge_label.get("target_label"):
-                log.warning("Invalid edge endpoint labels '%s' have been ignored.", edge)
+                log.warning(
+                    "Invalid edge endpoint labels have been ignored: label=%s, outVLabel=%s, inVLabel=%s, "
+                    "expectedOutVLabel=%s, expectedInVLabel=%s.",
+                    edge.get("label"),
+                    out_v_label,
+                    in_v_label,
+                    edge_label.get("source_label"),
+                    edge_label.get("target_label"),
+                )
                 continue
 
             edge["outV"] = out_v
@@ -204,7 +249,7 @@ class PropertyGraphExtract:
             normalized_edges.append(edge)
         return normalized_edges
 
-    def _extract_and_filter_label(self, schema, text) -> List[Dict[str, Any]]:
+    def _extract_and_filter_label(self, schema, text, raise_on_invalid: bool = False) -> List[Dict[str, Any]]:
         # Strip markdown code blocks (e.g. ```json ... ```)
         text = re.sub(r"```\w*\n?", "", text)
         text = re.sub(r"```", "", text)
@@ -214,6 +259,8 @@ class PropertyGraphExtract:
         json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
         if not json_match:
             log.critical("Invalid property graph! No JSON found, please check the output format example in prompt.")
+            if raise_on_invalid:
+                raise ValueError("Invalid property graph JSON: no JSON object or array found")
             return []
         json_str = json_match.group(1).strip()
 
@@ -228,6 +275,8 @@ class PropertyGraphExtract:
             # Expect property_graph to be a dict with keys "vertices" and "edges"
             if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
                 log.critical("Invalid property graph format; expecting 'vertices' and 'edges'.")
+                if raise_on_invalid:
+                    raise ValueError("Invalid property graph JSON: expecting 'vertices' and 'edges'")
                 return items
 
             # Create sets for valid vertex and edge labels based on the schema
@@ -248,6 +297,13 @@ class PropertyGraphExtract:
                     if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
                         log.warning("Invalid item keys '%s'.", item.keys())
                         continue
+                    if not isinstance(item.get("properties"), dict):
+                        log.warning(
+                            "Invalid %s properties type '%s' has been ignored.",
+                            item_type,
+                            type(item.get("properties")),
+                        )
+                        continue
                     if item_type_value != item_type:
                         log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
                         continue
@@ -266,6 +322,8 @@ class PropertyGraphExtract:
             edge_items = process_items(property_graph["edges"], edge_label_set, "edge")
             edges = self._normalize_edges(edge_items, edge_label_map, vertex_label_map, vertex_id_map)
             items = vertices + edges
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             log.critical("Invalid property graph JSON! Please check the extracted JSON data carefully")
+            if raise_on_invalid:
+                raise ValueError("Invalid property graph JSON: failed to parse extracted JSON") from exc
         return items

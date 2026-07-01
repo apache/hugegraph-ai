@@ -27,7 +27,7 @@ class Commit2GraphNode(BaseNode):
         data_json = self.wk_input.data_json if self.wk_input.data_json else None
         if data_json:
             self.context.assign_from_json(data_json)
-        self.commit_to_graph_op = Commit2Graph()
+        self.commit_to_graph_op = Commit2Graph(self.wk_input.graph_config)
         return super().node_init()
 
     def operator_schedule(self, data_json):

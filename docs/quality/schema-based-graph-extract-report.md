@@ -62,6 +62,112 @@ without antecedent) both cap at F1 < 1.00 for both strategies. The live
 ceiling is 0.72 (Meryl Streep, enhanced), reflecting real LLM behaviour
 against externally-authored GT.
 
+### Why the live delta (+4.8 %) is smaller than the mock delta (+11.6 %)
+
+A reviewer's first instinct on a +4.8 % result is "is that even
+meaningful?". The honest answer has four parts:
+
+1. **This is the number that survives after we removed selection bias.**
+   An earlier revision of this report showed a **+33.3 %** live delta on
+   a single hand-authored 3-chunk corpus with hand-authored ground
+   truth. That number is not in this report because it was
+   double-selection-biased: the author picked both the text *and* the
+   answer key. Replacing it with 8 Wikipedia leads + Wikidata-verified
+   GT dropped the delta to +4.8 %. **The smaller number is the honest
+   one.**
+
+2. **The F1 mean is the least-interesting metric in this table.** The
+   more load-bearing claims sit outside the mean's confidence band:
+
+   * F1 std −25 % (variance-reduction is the "safety-net" claim)
+   * Worst-case F1 4.4× (baseline min 0.049 → enhanced min 0.216)
+   * Latency mean −10.7 % (real-world, wall-clock)
+   * Cost mean −7.1 % (net of +40 % prompt tokens)
+
+   Enhanced is proposed as a *variance-reduction and worst-case-rescue*
+   strategy first, and a mean-F1-improvement strategy second.
+
+3. **The mock track measures the pipeline; the live track measures the
+   pipeline + LLM.** The mock benchmark's +11.6 % is a rigorous
+   pipeline-correctness bound: 16 hand-crafted scenarios each probe one
+   specific mechanism (PK filter, endpoint repair, cross-chunk alias,
+   type coercion…) and enhanced beats baseline by design. The live
+   benchmark's +4.8 % is what remains once real-LLM noise (Wikipedia
+   full-name vs Wikidata short-name mismatch, character-as-Person
+   confusion) dilutes those wins. Both numbers are real; they measure
+   different things.
+
+4. **The design threshold is asserted on the mock track, not the live
+   track.** The rationale: mock is deterministic and reproducible on
+   every CI run, so a +5 % regression there is unambiguous. Live is
+   subject to DeepSeek server-side variance and to Wikidata-GT
+   completeness — pinning a CI threshold against it would either be too
+   loose to catch regressions or too tight to survive normal noise. The
+   live track is treated as *directional confirmation* (non-negative F1
+   delta, non-worse latency/cost) plus a rich variance/worst-case story.
+
+## How to Reproduce This Report
+
+Every number in this report can be regenerated end-to-end. The mock-track
+numbers are deterministic (fixed within a Python version). The live-track
+numbers reflect DeepSeek server-side variance and will land within
+approximately ± 2 % of the reported means over 3 runs.
+
+### Frozen artifacts committed to this repo
+
+| Artifact | Path | Purpose |
+|---|---|---|
+| Public corpus | [`hugegraph-llm/src/tests/data/public_actor_corpus.json`](../../hugegraph-llm/src/tests/data/public_actor_corpus.json) | 8 actors × 3 chunks + Wikidata-verified GT; the input to the live benchmark. |
+| Live-benchmark archive | [`docs/quality/data/live_benchmark_public_actors.json`](data/live_benchmark_public_actors.json) | Full 48-run record: per-run F1/vertex F1/edge F1/property match rate, per-call latency + tokens, predicted vertices/edges, aggregated deltas. Every number in the live-track tables is `jq`-derivable from this file. |
+| Corpus builder script | [`scripts/build_public_actor_corpus.py`](../../scripts/build_public_actor_corpus.py) | Rebuilds the corpus from Wikipedia + Wikidata (deterministic given pinned Wikipedia `revid`s and Wikidata state). |
+| Live-benchmark driver | [`scripts/graph_extract_live_benchmark.py`](../../scripts/graph_extract_live_benchmark.py) | Runs both strategies on the corpus for `--runs` iterations. `--corpus` is required — no hand-authored fallback. |
+
+### Mock track (deterministic; no cost)
+
+```bash
+uv run --directory hugegraph-llm pytest \
+  src/tests/operators/llm_op/test_property_graph_benchmark.py::test_benchmark_produces_comparison_table \
+  -s
+```
+
+The `+5 % relative F1` design threshold is asserted inside this test —
+regressions below it fail CI, not just get spotted in this report.
+
+### Live track (approximately $0.35 USD per run, requires `DEEPSEEK_API_KEY`)
+
+```bash
+# (Optional) Rebuild the public corpus from Wikipedia + Wikidata (~15 min
+# due to Wikidata rate-limits during the 2026-07 WDQS outage). The
+# committed corpus JSON is already the output of this step.
+python scripts/build_public_actor_corpus.py \
+  --output hugegraph-llm/src/tests/data/public_actor_corpus.json
+
+# Run the live benchmark. DEEPSEEK_API_KEY is auto-loaded from
+# .env.local if present. --runs 3 = 48 total LLM calls = ~$0.35 USD.
+uv run --directory hugegraph-llm python ../scripts/graph_extract_live_benchmark.py \
+  --corpus <ABSOLUTE_PATH>/hugegraph-llm/src/tests/data/public_actor_corpus.json \
+  --runs 3 \
+  --output <ABSOLUTE_PATH>/.workflow/deepseek_live_run.json
+```
+
+### Cross-checking without re-running
+
+Every number in the live-track tables is derivable from the committed
+archive via `jq`:
+
+```bash
+# Overall delta (matches the "Overall results" table)
+jq '.delta' docs/quality/data/live_benchmark_public_actors.json
+
+# Per-(corpus, strategy) F1 mean/std (matches per-corpus breakdown)
+jq '.per_corpus_strategy_aggregation | to_entries[] | {key, f1_mean: .value.overall_f1.mean}' \
+  docs/quality/data/live_benchmark_public_actors.json
+
+# All 48 individual F1 values
+jq '.runs[] | {corpus_name, strategy, run_index, overall_f1}' \
+  docs/quality/data/live_benchmark_public_actors.json
+```
+
 ## Backwards Compatibility
 
 **No breaking changes.** Enhanced is strictly opt-in:
@@ -219,14 +325,9 @@ enhanced strategy in the first place):
 
 ### Reproducing the Mock Benchmark
 
-```bash
-uv run --directory hugegraph-llm pytest \
-  src/tests/operators/llm_op/test_property_graph_benchmark.py::test_benchmark_produces_comparison_table \
-  -s
-```
-
-The `+5 % relative` design threshold is asserted inside the same test —
-regressions below it fail CI, not just be spotted in the report.
+See the top-level [How to Reproduce This Report](#how-to-reproduce-this-report)
+section. The +5 % relative design threshold is asserted inside
+`test_benchmark_produces_comparison_table`.
 
 ## Live LLM Benchmark on Public Corpus (DeepSeek Chat)
 
@@ -386,24 +487,14 @@ side.
 
 ### Reproducing the live benchmark
 
-```bash
-# Rebuild the public corpus (fetches Wikipedia + Wikidata; ~15 min due
-# to Wikidata rate-limits during the current WDQS outage).
-python scripts/build_public_actor_corpus.py \
-  --output hugegraph-llm/src/tests/data/public_actor_corpus.json
-
-# Run the live benchmark. Requires DEEPSEEK_API_KEY (auto-loaded from
-# .env.local). --runs 3 costs about $0.35 USD.
-uv run --directory hugegraph-llm python ../scripts/graph_extract_live_benchmark.py \
-  --corpus <ABSOLUTE_PATH>/hugegraph-llm/src/tests/data/public_actor_corpus.json \
-  --runs 3 \
-  --output <ABSOLUTE_PATH>/.workflow/deepseek_live_run_public.json
-```
-
-The full run archive (`.workflow/deepseek_live_run_public.json`, 600 KB)
-contains every LLM call's prompt/completion tokens, latency, and raw
-predicted output — enough to independently recompute every number in
-this section.
+See the top-level [How to Reproduce This Report](#how-to-reproduce-this-report)
+section for the `build_public_actor_corpus.py` and
+`graph_extract_live_benchmark.py` invocations. The full run archive is
+committed at
+[`docs/quality/data/live_benchmark_public_actors.json`](data/live_benchmark_public_actors.json)
+(600 KB) — every LLM call's prompt/completion tokens, latency, and raw
+predicted output is there, enough to independently recompute every
+number in this section without re-running the benchmark.
 
 ## Metric Definitions
 

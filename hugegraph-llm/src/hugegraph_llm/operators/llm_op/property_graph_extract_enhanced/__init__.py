@@ -31,6 +31,12 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.candidate_pa
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.document_assembler import (
     DocumentGraphAssembler,
 )
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.evaluator import (
+    EvaluationReport,
+    GraphExtractionEvaluator,
+    ItemMetrics,
+    PropertyMetrics,
+)
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.normalizer import (
     SchemaAwareNormalizer,
 )
@@ -64,9 +70,13 @@ __all__ = [
     "CandidateGraphParser",
     "DocumentGraph",
     "DocumentGraphAssembler",
+    "EvaluationReport",
+    "GraphExtractionEvaluator",
     "GraphQualityGate",
     "GraphSchemaIndex",
+    "ItemMetrics",
     "NormalizedChunkGraph",
+    "PropertyMetrics",
     "QualityMetrics",
     "SchemaAwareNormalizer",
     "StructuredWarning",

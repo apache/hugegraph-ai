@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 from typing import List
 
+import pytest
+
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
     PENDING_IN_KEY,
     PENDING_OUT_KEY,
@@ -34,6 +36,8 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
     StructuredWarning,
     WarningCode,
 )
+
+pytestmark = pytest.mark.contract
 
 
 def _codes(warnings: List[StructuredWarning]) -> List[WarningCode]:

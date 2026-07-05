@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
     DocumentGraph,
     GraphQualityGate,
@@ -28,6 +30,8 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
     StructuredWarning,
     WarningCode,
 )
+
+pytestmark = pytest.mark.contract
 
 
 def _w(code: WarningCode, item_type: str = "vertex", **kwargs) -> StructuredWarning:

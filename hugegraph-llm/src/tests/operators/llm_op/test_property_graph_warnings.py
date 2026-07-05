@@ -30,6 +30,8 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
     warning_code_distribution,
 )
 
+pytestmark = pytest.mark.contract
+
 
 # ---------------------------------------------------------------- WarningCode
 class TestWarningCode:

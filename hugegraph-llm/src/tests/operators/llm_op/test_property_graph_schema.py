@@ -25,6 +25,8 @@ import pytest
 
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import GraphSchemaIndex
 
+pytestmark = pytest.mark.contract
+
 
 def _schema_with_ids() -> dict:
     """A minimal but complete schema with vertex-label ids populated.

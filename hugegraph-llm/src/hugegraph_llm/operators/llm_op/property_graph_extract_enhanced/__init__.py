@@ -28,5 +28,15 @@ existing baseline nodes (schema, chunks, LLM outputs).
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.schema_index import (
     GraphSchemaIndex,
 )
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.warnings import (
+    StructuredWarning,
+    WarningCode,
+    warning_code_distribution,
+)
 
-__all__ = ["GraphSchemaIndex"]
+__all__ = [
+    "GraphSchemaIndex",
+    "StructuredWarning",
+    "WarningCode",
+    "warning_code_distribution",
+]

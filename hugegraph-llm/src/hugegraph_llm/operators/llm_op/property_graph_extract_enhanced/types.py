@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,40 @@ class CandidateGraph:
 
     vertices: List[Dict[str, Any]] = field(default_factory=list)
     edges: List[Dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.vertices and not self.edges
+
+
+# Pending-endpoint marker keys used on normalized edges. They live under a
+# leading underscore so JSON serialization at the API boundary can strip them
+# without special casing individual fields.
+PENDING_OUT_KEY = "_pending_out"
+PENDING_IN_KEY = "_pending_in"
+
+
+@dataclass(frozen=True)
+class NormalizedChunkGraph:
+    """Chunk-level schema-normalized graph produced by ``SchemaAwareNormalizer``.
+
+    Vertices are schema-valid and have canonical ids when the schema permits;
+    otherwise the LLM-provided id (or none) is kept for baseline-compatible
+    fallback. Edges either have both endpoints resolved to canonical ids
+    (ready to emit) or carry ``PENDING_OUT_KEY`` / ``PENDING_IN_KEY`` hints
+    describing what the document-level assembler can still try. Edges whose
+    endpoints have already been ruled out by the schema are dropped by the
+    normalizer and never appear here.
+
+    ``aliases`` maps ``(label, llm_original_id)`` → ``canonical_id`` for every
+    vertex whose LLM-generated id differed from the canonical one. The
+    assembler unions these tables across chunks to service the third-tier
+    ``explicit_id_alias`` endpoint repair pass.
+    """
+
+    vertices: List[Dict[str, Any]] = field(default_factory=list)
+    edges: List[Dict[str, Any]] = field(default_factory=list)
+    aliases: Dict[Tuple[str, str], str] = field(default_factory=dict)
 
     @property
     def is_empty(self) -> bool:

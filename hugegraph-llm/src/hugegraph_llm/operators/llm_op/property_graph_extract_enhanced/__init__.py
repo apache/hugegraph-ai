@@ -28,10 +28,18 @@ existing baseline nodes (schema, chunks, LLM outputs).
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.candidate_parser import (
     CandidateGraphParser,
 )
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.normalizer import (
+    SchemaAwareNormalizer,
+)
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.schema_index import (
     GraphSchemaIndex,
 )
-from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.types import CandidateGraph
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.types import (
+    PENDING_IN_KEY,
+    PENDING_OUT_KEY,
+    CandidateGraph,
+    NormalizedChunkGraph,
+)
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.warnings import (
     StructuredWarning,
     WarningCode,
@@ -39,9 +47,13 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.warnings imp
 )
 
 __all__ = [
+    "PENDING_IN_KEY",
+    "PENDING_OUT_KEY",
     "CandidateGraph",
     "CandidateGraphParser",
     "GraphSchemaIndex",
+    "NormalizedChunkGraph",
+    "SchemaAwareNormalizer",
     "StructuredWarning",
     "WarningCode",
     "warning_code_distribution",

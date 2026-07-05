@@ -23,8 +23,12 @@ import json
 from typing import List
 
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
+    PENDING_IN_KEY,
+    PENDING_OUT_KEY,
     CandidateGraph,
     CandidateGraphParser,
+    GraphSchemaIndex,
+    SchemaAwareNormalizer,
     StructuredWarning,
     WarningCode,
 )
@@ -316,3 +320,388 @@ class TestItemTypeNormalization:
         # dict that the caller may still be referencing.
         assert "type" not in original  # 'original' was the pre-JSON literal
         assert graph.vertices[0]["type"] == "vertex"
+
+
+# ==============================================================================
+# SchemaAwareNormalizer
+# ==============================================================================
+
+
+def _schema() -> dict:
+    """Minimal schema with vertex-label ids (mirrors HugeGraph server output)."""
+    return {
+        "propertykeys": [
+            {"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"},
+            {"name": "title", "data_type": "TEXT", "cardinality": "SINGLE"},
+            {"name": "year", "data_type": "INT", "cardinality": "SINGLE"},
+            {"name": "role", "data_type": "TEXT", "cardinality": "SINGLE"},
+        ],
+        "vertexlabels": [
+            {
+                "id": 1,
+                "name": "person",
+                "properties": ["name"],
+                "primary_keys": ["name"],
+                "nullable_keys": [],
+                "id_strategy": "PRIMARY_KEY",
+            },
+            {
+                "id": 2,
+                "name": "movie",
+                "properties": ["title", "year"],
+                "primary_keys": ["title"],
+                "nullable_keys": ["year"],
+                "id_strategy": "PRIMARY_KEY",
+            },
+        ],
+        "edgelabels": [
+            {
+                "name": "acted_in",
+                "source_label": "person",
+                "target_label": "movie",
+                "properties": ["role"],
+            }
+        ],
+    }
+
+
+def _normalizer() -> SchemaAwareNormalizer:
+    return SchemaAwareNormalizer(GraphSchemaIndex(_schema()))
+
+
+# --------------------------------------------------------- vertex: label
+class TestNormalizerVertexLabel:
+    def test_valid_vertex_produces_canonical_id(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(vertices=[{"type": "vertex", "label": "person", "properties": {"name": "Tom"}}])
+        graph, warnings = norm.normalize(candidate)
+        assert warnings == []
+        assert graph.vertices == [{"type": "vertex", "label": "person", "properties": {"name": "Tom"}, "id": "1:Tom"}]
+
+    def test_unknown_label_drops_vertex(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(vertices=[{"type": "vertex", "label": "robot", "properties": {"name": "R2D2"}}])
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.VERTEX_LABEL_NOT_IN_SCHEMA]
+        assert graph.vertices == []
+
+    def test_missing_label_drops_vertex(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(vertices=[{"type": "vertex", "properties": {"name": "Tom"}}])
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.VERTEX_LABEL_NOT_IN_SCHEMA]
+        assert graph.vertices == []
+
+
+# --------------------------------------------- vertex: property filter/coerce
+class TestNormalizerVertexProperties:
+    def test_property_not_in_schema_is_dropped(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {
+                    "type": "vertex",
+                    "label": "person",
+                    "properties": {"name": "Tom", "planet": "Earth"},
+                }
+            ]
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.PROPERTY_NOT_IN_SCHEMA]
+        assert graph.vertices[0]["properties"] == {"name": "Tom"}
+
+    def test_string_year_coerced_to_int_with_soft_warning(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[{"type": "vertex", "label": "movie", "properties": {"title": "FG", "year": "1994"}}]
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.PROPERTY_COERCED]
+        assert graph.vertices[0]["properties"] == {"title": "FG", "year": 1994}
+
+    def test_non_pk_property_coercion_failure_drops_only_that_property(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[{"type": "vertex", "label": "movie", "properties": {"title": "FG", "year": "N/A"}}]
+        )
+        graph, warnings = norm.normalize(candidate)
+        codes = _codes(warnings)
+        assert WarningCode.PROPERTY_COERCION_FAILED in codes
+        # The vertex survives without the broken property.
+        assert graph.vertices[0]["properties"] == {"title": "FG"}
+
+    def test_pk_property_coercion_failure_drops_the_whole_vertex(self):
+        norm = _normalizer()
+        # `title` is a PK (TEXT) — a bool value fails the TEXT coercion? No,
+        # TEXT accepts anything via str(). Use INT PK — build a schema where
+        # the PK is INT.
+        schema = _schema()
+        # Change movie's PK to year (INT).
+        schema["vertexlabels"][1]["primary_keys"] = ["year"]
+        idx = GraphSchemaIndex(schema)
+        norm = SchemaAwareNormalizer(idx)
+        candidate = CandidateGraph(
+            vertices=[{"type": "vertex", "label": "movie", "properties": {"title": "FG", "year": "N/A"}}]
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert WarningCode.VERTEX_PRIMARY_KEY_INVALID in _codes(warnings)
+        assert graph.vertices == []
+
+
+# ------------------------------------------------ vertex: primary key checks
+class TestNormalizerVertexPrimaryKey:
+    def test_missing_pk_drops_vertex(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(vertices=[{"type": "vertex", "label": "person", "properties": {}}])
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.VERTEX_PRIMARY_KEY_MISSING]
+        assert graph.vertices == []
+
+    def test_empty_string_pk_drops_vertex(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(vertices=[{"type": "vertex", "label": "person", "properties": {"name": ""}}])
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.VERTEX_PRIMARY_KEY_MISSING]
+        assert graph.vertices == []
+
+
+# ---------------------------------------------------- vertex: id and alias
+class TestNormalizerVertexIdAndAlias:
+    def test_llm_original_id_becomes_alias(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[{"type": "vertex", "id": "v1", "label": "person", "properties": {"name": "Tom"}}]
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.VERTEX_ALIAS_RECORDED]
+        # Alias table contains both the raw-id-to-canonical mapping and the
+        # identity mapping for the canonical id itself.
+        assert graph.aliases[("person", "v1")] == "1:Tom"
+        assert graph.aliases[("person", "1:Tom")] == "1:Tom"
+
+    def test_llm_original_id_matching_canonical_produces_no_alias_warning(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {
+                    "type": "vertex",
+                    "id": "1:Tom",
+                    "label": "person",
+                    "properties": {"name": "Tom"},
+                }
+            ]
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == []
+        assert graph.aliases[("person", "1:Tom")] == "1:Tom"
+
+
+# ----------------------------------------------------------- edge: label
+class TestNormalizerEdgeLabel:
+    def test_unknown_edge_label_drops_edge(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(edges=[{"type": "edge", "label": "directed", "properties": {}}])
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.EDGE_LABEL_NOT_IN_SCHEMA]
+        assert graph.edges == []
+
+
+# ----------------------------------------------------- edge: property filter
+class TestNormalizerEdgeProperties:
+    def test_edge_property_not_in_schema_is_dropped(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {"type": "vertex", "label": "person", "properties": {"name": "Tom"}},
+                {"type": "vertex", "label": "movie", "properties": {"title": "FG"}},
+            ],
+            edges=[
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "source": {"label": "person", "properties": {"name": "Tom"}},
+                    "target": {"label": "movie", "properties": {"title": "FG"}},
+                    "properties": {"role": "Forrest", "budget": 999},
+                }
+            ],
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert WarningCode.PROPERTY_NOT_IN_SCHEMA in _codes(warnings)
+        assert graph.edges[0]["properties"] == {"role": "Forrest"}
+
+
+# --------------------------------------------------- edge: endpoint direction
+class TestNormalizerEdgeEndpointCompatibility:
+    def test_reversed_endpoints_drop_edge(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            edges=[
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "outVLabel": "movie",
+                    "inVLabel": "person",
+                    "outV": "2:FG",
+                    "inV": "1:Tom",
+                    "properties": {},
+                }
+            ]
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert _codes(warnings) == [WarningCode.EDGE_ENDPOINT_MISMATCH]
+        assert graph.edges == []
+
+    def test_missing_endpoint_labels_are_filled_from_schema(self):
+        """LLM sometimes omits redundant outVLabel/inVLabel; use schema."""
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {"type": "vertex", "label": "person", "properties": {"name": "Tom"}},
+                {"type": "vertex", "label": "movie", "properties": {"title": "FG"}},
+            ],
+            edges=[
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "outV": "1:Tom",
+                    "inV": "2:FG",
+                    "properties": {},
+                }
+            ],
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert warnings == []
+        assert graph.edges[0]["outVLabel"] == "person"
+        assert graph.edges[0]["inVLabel"] == "movie"
+
+
+# --------------------------------------------------- edge: endpoint resolution
+class TestNormalizerEdgeEndpointResolution:
+    def test_legacy_source_target_resolves_to_canonical(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {"type": "vertex", "label": "person", "properties": {"name": "Tom"}},
+                {"type": "vertex", "label": "movie", "properties": {"title": "FG"}},
+            ],
+            edges=[
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "source": {"label": "person", "properties": {"name": "Tom"}},
+                    "target": {"label": "movie", "properties": {"title": "FG"}},
+                    "properties": {"role": "Forrest"},
+                }
+            ],
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert warnings == []
+        assert graph.edges[0]["outV"] == "1:Tom"
+        assert graph.edges[0]["inV"] == "2:FG"
+        assert PENDING_OUT_KEY not in graph.edges[0]
+        assert PENDING_IN_KEY not in graph.edges[0]
+
+    def test_llm_raw_id_resolves_via_chunk_aliases(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {"type": "vertex", "id": "v1", "label": "person", "properties": {"name": "Tom"}},
+                {"type": "vertex", "id": "v2", "label": "movie", "properties": {"title": "FG"}},
+            ],
+            edges=[
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "outV": "v1",
+                    "inV": "v2",
+                    "outVLabel": "person",
+                    "inVLabel": "movie",
+                    "properties": {},
+                }
+            ],
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert not any(w.code is WarningCode.ENDPOINT_PENDING_REPAIR for w in warnings)
+        assert graph.edges[0]["outV"] == "1:Tom"
+        assert graph.edges[0]["inV"] == "2:FG"
+
+    def test_unresolvable_out_endpoint_marks_pending(self):
+        """LLM references an id that has no vertex in this chunk."""
+        norm = _normalizer()
+        candidate = CandidateGraph(
+            vertices=[
+                {"type": "vertex", "id": "v2", "label": "movie", "properties": {"title": "FG"}},
+            ],
+            edges=[
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "outV": "v99",
+                    "inV": "v2",
+                    "outVLabel": "person",
+                    "inVLabel": "movie",
+                    "properties": {},
+                }
+            ],
+        )
+        graph, warnings = norm.normalize(candidate)
+        assert WarningCode.ENDPOINT_PENDING_REPAIR in _codes(warnings)
+        edge = graph.edges[0]
+        assert edge.get("outV") is None
+        assert edge[PENDING_OUT_KEY] == {"original_id": "v99"}
+        assert edge["inV"] == "2:FG"
+
+
+# --------------------------------------------------------- integration
+class TestNormalizerIntegration:
+    def test_end_to_end_document_flow_smoke(self):
+        """Parse + normalize round-trip on a mixed-format grouped payload."""
+        parser = CandidateGraphParser()
+        norm = _normalizer()
+        raw = json.dumps(
+            {
+                "vertices": [
+                    {
+                        "type": "vertex",
+                        "id": "v1",
+                        "label": "person",
+                        "properties": {"name": "Tom Hanks"},
+                    },
+                    {
+                        "type": "vertex",
+                        "id": "v2",
+                        "label": "movie",
+                        "properties": {"title": "Forrest Gump", "year": "1994"},
+                    },
+                ],
+                "edges": [
+                    {
+                        "type": "edge",
+                        "label": "acted_in",
+                        "outV": "v1",
+                        "inV": "v2",
+                        "outVLabel": "person",
+                        "inVLabel": "movie",
+                        "properties": {"role": "Forrest"},
+                    }
+                ],
+            }
+        )
+        candidate, parser_warnings = parser.parse(raw)
+        assert parser_warnings == []
+        graph, norm_warnings = norm.normalize(candidate, chunk_id=0)
+        codes = _codes(norm_warnings)
+        # Two alias records (one per vertex) + one soft coerce for year.
+        assert codes.count(WarningCode.VERTEX_ALIAS_RECORDED) == 2
+        assert codes.count(WarningCode.PROPERTY_COERCED) == 1
+        assert graph.vertices[0]["id"] == "1:Tom Hanks"
+        assert graph.vertices[1]["id"] == "2:Forrest Gump"
+        assert graph.vertices[1]["properties"]["year"] == 1994
+        assert graph.edges[0]["outV"] == "1:Tom Hanks"
+        assert graph.edges[0]["inV"] == "2:Forrest Gump"
+
+    def test_chunk_id_flows_into_all_normalizer_warnings(self):
+        norm = _normalizer()
+        candidate = CandidateGraph(vertices=[{"type": "vertex", "label": "robot", "properties": {}}])
+        _, warnings = norm.normalize(candidate, chunk_id=5)
+        assert warnings[0].chunk_id == 5

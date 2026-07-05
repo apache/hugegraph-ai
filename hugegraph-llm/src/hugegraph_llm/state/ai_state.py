@@ -150,6 +150,11 @@ class WkFlowState(GParam):
     triples: Optional[List[Any]] = None
     call_count: Optional[int] = None
     extract_strategy: Optional[str] = None  # mirrors WkFlowInput.extract_strategy for downstream nodes
+    # Enhanced-strategy outputs. Populated only when extract_strategy == "enhanced".
+    chunk_count: Optional[int] = None
+    structured_warnings: Optional[List[Dict[str, Any]]] = None
+    quality_metrics: Optional[Dict[str, Any]] = None
+    debug_info: Optional[Dict[str, Any]] = None
 
     keywords: Optional[List[str]] = None
     vector_result: Optional[Any] = None
@@ -209,6 +214,10 @@ class WkFlowState(GParam):
         self.triples = None
         self.call_count = None
         self.extract_strategy = None
+        self.chunk_count = None
+        self.structured_warnings = None
+        self.quality_metrics = None
+        self.debug_info = None
 
         self.keywords = None
         self.vector_result = None

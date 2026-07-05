@@ -19,17 +19,37 @@
 
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 
 from hugegraph_llm.config import prompt
 from hugegraph_llm.document.chunk_split import ChunkSplitter
 from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
+    CandidateGraphParser,
+    DocumentGraphAssembler,
+    GraphQualityGate,
+    GraphSchemaIndex,
+    SchemaAwareNormalizer,
+    build_prompt_contract,
+)
 from hugegraph_llm.utils.log import log
 
 # TODO: It is not clear whether there is any other dependence on the SCHEMA_EXAMPLE_PROMPT variable.
 # Because the SCHEMA_EXAMPLE_PROMPT variable will no longer change based on
 # prompt.extract_graph_prompt changes after the system loads, this does not seem to meet expectations.
 SCHEMA_EXAMPLE_PROMPT = prompt.extract_graph_prompt
+
+# Enhanced-strategy debug payload keeps the raw LLM output trimmed to a bounded
+# size so the API response cannot grow unbounded on large chunks.
+_DEBUG_RAW_OUTPUT_LIMIT = 2000
+
+
+def _truncate(text: str, limit: int) -> str:
+    if text is None:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"... [truncated {len(text) - limit} chars]"
 
 
 def generate_extract_property_graph_prompt(text, schema=None) -> str:
@@ -100,11 +120,11 @@ class PropertyGraphExtract:
             context["vertices"] = []
         if "edges" not in context:
             context["edges"] = []
+        # Dispatch to the schema-aware quality layer when explicitly requested.
+        # Baseline stays byte-compatible; the enhanced path never runs unless
+        # the caller opted in via extract_strategy="enhanced".
         if self.extract_strategy == "enhanced":
-            log.info(
-                "extract_strategy='enhanced' requested; the schema-aware quality layer is not wired in this commit — "
-                "falling back to the baseline path (behavior unchanged)."
-            )
+            return self._run_enhanced(context, schema, chunks)
         # Mirror the resolved strategy into the shared context so downstream API/meta layers see it.
         context["extract_strategy"] = self.extract_strategy
         items = []
@@ -126,6 +146,96 @@ class PropertyGraphExtract:
 
         context["call_count"] = context.get("call_count", 0) + len(chunks)
         return context
+
+    # ------------------------------------------------------- enhanced strategy
+    def _run_enhanced(
+        self,
+        context: Dict[str, Any],
+        schema: Any,
+        chunks: List[str],
+    ) -> Dict[str, List[Any]]:
+        """Enhanced extraction: LLM → parser → normalizer → assembler → quality gate.
+
+        The schema is threaded through the pipeline twice: once as text embedded
+        in the LLM prompt (via ``generate_extract_property_graph_prompt``), and
+        once as a compiled ``GraphSchemaIndex`` used by every post-LLM stage.
+        Warnings from every stage accumulate into a single list surfaced via
+        ``context["structured_warnings"]``; the assembled document graph plus
+        the quality-gate aggregate populate the remaining meta fields.
+        """
+        schema_dict = schema if isinstance(schema, Mapping) else json.loads(schema)
+        schema_index = GraphSchemaIndex(schema_dict)
+
+        parser = CandidateGraphParser()
+        normalizer = SchemaAwareNormalizer(schema_index)
+        assembler = DocumentGraphAssembler(schema_index)
+        constraint_block = build_prompt_contract(schema_index)
+
+        warnings = []
+        chunk_graphs = []
+        candidate_vertex_total = 0
+        candidate_edge_total = 0
+        debug_records: List[Dict[str, Any]] = []
+
+        for chunk_id, chunk in enumerate(chunks):
+            raw = self._extract_property_graph_by_llm_enhanced(schema, chunk, constraint_block)
+            log.debug(
+                "[LLM enhanced] %s chunk_id=%s output: %s",
+                self.__class__.__name__,
+                chunk_id,
+                raw,
+            )
+            candidate, parse_warnings = parser.parse(raw, chunk_id=chunk_id)
+            warnings.extend(parse_warnings)
+            candidate_vertex_total += len(candidate.vertices)
+            candidate_edge_total += len(candidate.edges)
+
+            normalized, norm_warnings = normalizer.normalize(candidate, chunk_id=chunk_id)
+            warnings.extend(norm_warnings)
+            chunk_graphs.append(normalized)
+
+            if self.include_debug:
+                debug_records.append(
+                    {
+                        "chunk_id": chunk_id,
+                        "raw_output": _truncate(raw, _DEBUG_RAW_OUTPUT_LIMIT),
+                        "candidate_vertex_count": len(candidate.vertices),
+                        "candidate_edge_count": len(candidate.edges),
+                        "normalized_vertex_count": len(normalized.vertices),
+                        "normalized_edge_count": len(normalized.edges),
+                        "chunk_warning_count": len(parse_warnings) + len(norm_warnings),
+                    }
+                )
+
+        doc_graph, asm_warnings = assembler.assemble(chunk_graphs)
+        warnings.extend(asm_warnings)
+
+        metrics = GraphQualityGate.compute(
+            doc_graph,
+            warnings=warnings,
+            candidate_vertex_count=candidate_vertex_total,
+            candidate_edge_count=candidate_edge_total,
+        )
+
+        context["vertices"] = doc_graph.vertices
+        context["edges"] = doc_graph.edges
+        context["call_count"] = context.get("call_count", 0) + len(chunks)
+        context["extract_strategy"] = "enhanced"
+        context["chunk_count"] = len(chunks)
+        context["structured_warnings"] = [w.to_dict() for w in warnings]
+        context["quality_metrics"] = metrics.to_dict()
+        if self.include_debug:
+            context["debug_info"] = {
+                "chunks": debug_records,
+                "warning_code_distribution": metrics.warning_code_distribution,
+            }
+        return context
+
+    def _extract_property_graph_by_llm_enhanced(self, schema: Any, chunk: str, constraint_block: str) -> str:
+        """Same LLM call as baseline, with the schema-aware constraint block appended."""
+        prompt_body = generate_extract_property_graph_prompt(chunk, schema)
+        header = (self.example_prompt or "") + constraint_block
+        return self.llm.generate(prompt=header + prompt_body)
 
     def extract_property_graph_by_llm(self, schema, chunk):
         prompt = generate_extract_property_graph_prompt(chunk, schema)

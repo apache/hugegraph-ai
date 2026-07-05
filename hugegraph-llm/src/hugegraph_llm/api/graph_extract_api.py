@@ -46,7 +46,23 @@ class GraphExtractService:
             )
             raw = json.loads(result_str)
             warnings = [raw.pop("warning")] if "warning" in raw else []
+            # Enhanced-strategy fields — the flow layer only emits these when
+            # extract_strategy == "enhanced", so their absence signals baseline.
+            extract_strategy = raw.pop("extract_strategy", "baseline")
+            chunk_count = raw.pop("chunk_count", None)
+            call_count = raw.pop("call_count", None)
+            structured_warnings = raw.pop("structured_warnings", None)
+            quality_metrics = raw.pop("quality_metrics", None)
+            debug_info = raw.pop("debug_info", None)
+
             result = {"vertices": raw.get("vertices", []), "edges": raw.get("edges", [])}
+
+            # Surface a short top-level summary of the structured warning count
+            # so callers reading the legacy warnings[] can still notice enhanced
+            # activity without parsing meta.
+            if structured_warnings:
+                warnings.append(f"enhanced graph extraction generated {len(structured_warnings)} structured warning(s)")
+
             meta = {}
             if req.include_meta:
                 meta = {
@@ -54,6 +70,21 @@ class GraphExtractService:
                     "edge_count": len(result["edges"]),
                     "text_count": len(req.texts),
                 }
+                if extract_strategy == "enhanced":
+                    meta["extract_strategy"] = extract_strategy
+                    if chunk_count is not None:
+                        meta["chunk_count"] = chunk_count
+                    if call_count is not None:
+                        meta["call_count"] = call_count
+                    meta["token_usage"] = "unavailable"
+                    if structured_warnings is not None:
+                        meta["structured_warnings"] = structured_warnings
+                    if quality_metrics is not None:
+                        meta["quality_metrics"] = quality_metrics
+            # include_debug adds debug_info regardless of include_meta so callers
+            # can grab the debug payload without opting in to counts.
+            if req.include_debug and debug_info is not None:
+                meta["debug_info"] = debug_info
             return GraphExtractResponse(result=result, warnings=warnings, meta=meta)
         except HTTPException:
             raise

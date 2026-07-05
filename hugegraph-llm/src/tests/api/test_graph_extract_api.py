@@ -435,6 +435,152 @@ def test_wkflow_input_reset_clears_enhanced_strategy_fields():
     assert prepared_input.include_debug is None
 
 
+# ==============================================================================
+# Enhanced-strategy envelope
+# ==============================================================================
+
+
+def _enhanced_scheduler_payload(*, structured_warnings=None, quality_metrics=None, debug_info=None):
+    """Mimic what GraphExtractFlow.post_deal emits under enhanced strategy."""
+    payload = {
+        "vertices": [{"id": "1:Tom", "label": "person", "properties": {"name": "Tom"}}],
+        "edges": [],
+        "extract_strategy": "enhanced",
+        "chunk_count": 2,
+        "call_count": 2,
+    }
+    if structured_warnings is not None:
+        payload["structured_warnings"] = structured_warnings
+    if quality_metrics is not None:
+        payload["quality_metrics"] = quality_metrics
+    if debug_info is not None:
+        payload["debug_info"] = debug_info
+    return json.dumps(payload)
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_enhanced_meta_carries_strategy_chunk_call_token_usage(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = _enhanced_scheduler_payload(
+        structured_warnings=[],
+        quality_metrics={"schema_valid_vertex_ratio": 1.0},
+    )
+    mock_singleton.get_instance.return_value = scheduler
+
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "some text",
+            "schema": INLINE_SCHEMA,
+            "extract_strategy": "enhanced",
+            "include_meta": True,
+        },
+    )
+
+    body = response.json()
+    assert response.status_code == status.HTTP_200_OK
+    assert body["meta"]["extract_strategy"] == "enhanced"
+    assert body["meta"]["chunk_count"] == 2
+    assert body["meta"]["call_count"] == 2
+    assert body["meta"]["token_usage"] == "unavailable"
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_enhanced_structured_warnings_and_quality_metrics_in_meta(mock_singleton):
+    warnings_payload = [
+        {"code": "PROPERTY_COERCED", "item_type": "vertex", "reason": "x", "strategy": "enhanced"},
+        {"code": "DUPLICATE_VERTEX_MERGED", "item_type": "vertex", "reason": "y", "strategy": "enhanced"},
+    ]
+    metrics_payload = {
+        "schema_valid_vertex_ratio": 1.0,
+        "duplicate_vertex_reduction": 0.5,
+    }
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = _enhanced_scheduler_payload(
+        structured_warnings=warnings_payload,
+        quality_metrics=metrics_payload,
+    )
+    mock_singleton.get_instance.return_value = scheduler
+
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "t",
+            "schema": INLINE_SCHEMA,
+            "extract_strategy": "enhanced",
+            "include_meta": True,
+        },
+    )
+
+    body = response.json()
+    assert body["meta"]["structured_warnings"] == warnings_payload
+    assert body["meta"]["quality_metrics"] == metrics_payload
+    # Top-level warnings surface a short summary of the structured warning count.
+    assert any("structured warning" in w for w in body["warnings"])
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_enhanced_debug_info_only_when_include_debug(mock_singleton):
+    debug_payload = {
+        "chunks": [{"chunk_id": 0, "raw_output": "..."}],
+        "warning_code_distribution": {"PROPERTY_COERCED": 1},
+    }
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = _enhanced_scheduler_payload(
+        structured_warnings=[],
+        quality_metrics={},
+        debug_info=debug_payload,
+    )
+    mock_singleton.get_instance.return_value = scheduler
+
+    # include_debug=false → no debug_info in meta.
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "t",
+            "schema": INLINE_SCHEMA,
+            "extract_strategy": "enhanced",
+            "include_meta": True,
+        },
+    )
+    assert "debug_info" not in response.json()["meta"]
+
+    # include_debug=true → debug_info populated even without include_meta.
+    scheduler.schedule_flow.return_value = _enhanced_scheduler_payload(
+        structured_warnings=[],
+        quality_metrics={},
+        debug_info=debug_payload,
+    )
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "t",
+            "schema": INLINE_SCHEMA,
+            "extract_strategy": "enhanced",
+            "include_debug": True,
+        },
+    )
+    body = response.json()
+    assert body["meta"]["debug_info"] == debug_payload
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_baseline_response_untouched_when_extract_strategy_is_baseline(mock_singleton):
+    """Regression: baseline meta must stay byte-identical to the pre-enhanced shape."""
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [{"id": "v1"}], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    response = _graph_client().post(
+        "/graph/extract",
+        json={"texts": "t", "schema": INLINE_SCHEMA, "include_meta": True},
+    )
+    body = response.json()
+    # Only the three baseline counts, nothing else.
+    assert body["meta"] == {"vertex_count": 1, "edge_count": 0, "text_count": 1}
+    assert body["warnings"] == []
+
+
 def test_flow_prepare_does_not_leak_config_across_runs():
     # A pooled pipeline is reused across requests, so prepare() must clear config
     # when a later request omits client_config.

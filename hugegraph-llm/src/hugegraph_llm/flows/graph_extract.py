@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import json
+from typing import Any, Dict
 
 from pycgraph import GPipeline
 
@@ -112,20 +113,30 @@ class GraphExtractFlow(BaseFlow):
         vertices = res.get("vertices", [])
         edges = res.get("edges", [])
         chunk_count = len(res.get("chunks", []))
+        extract_strategy = res.get("extract_strategy", "baseline")
         log.info("Graph extraction chunk_count: %s", chunk_count)
+        if extract_strategy == "enhanced":
+            log.info("Enhanced graph extraction strategy in use.")
+        payload: Dict[str, Any] = {"vertices": vertices, "edges": edges}
+        # Enhanced-strategy fields flow to the API layer, which decides which
+        # of them to surface under `meta` based on include_meta / include_debug.
+        # Baseline stays byte-compatible: none of these keys appear.
+        if extract_strategy == "enhanced":
+            payload["extract_strategy"] = extract_strategy
+            payload["chunk_count"] = chunk_count
+            call_count = res.get("call_count")
+            if call_count is not None:
+                payload["call_count"] = call_count
+            structured_warnings = res.get("structured_warnings")
+            if structured_warnings is not None:
+                payload["structured_warnings"] = structured_warnings
+            quality_metrics = res.get("quality_metrics")
+            if quality_metrics is not None:
+                payload["quality_metrics"] = quality_metrics
+            debug_info = res.get("debug_info")
+            if debug_info is not None:
+                payload["debug_info"] = debug_info
         if not vertices and not edges:
             log.info("Please check the schema.(The schema may not match the Doc)")
-            return json.dumps(
-                {
-                    "vertices": vertices,
-                    "edges": edges,
-                    "warning": "The schema may not match the Doc",
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        return json.dumps(
-            {"vertices": vertices, "edges": edges},
-            ensure_ascii=False,
-            indent=2,
-        )
+            payload["warning"] = "The schema may not match the Doc"
+        return json.dumps(payload, ensure_ascii=False, indent=2)

@@ -170,6 +170,200 @@ class TestPropertyGraphExtract(unittest.TestCase):
         result = extractor.run(context)
         self.assertEqual(result["extract_strategy"], "enhanced")
 
+    # ------------------------------------------------------ enhanced strategy
+    def test_enhanced_strategy_runs_full_pipeline_and_returns_canonical_ids(self):
+        """Enhanced end-to-end: parse → normalize → assemble → quality gate."""
+        # A local schema with propertykeys so year is explicitly typed INT,
+        # exercising the coerce path. The default self.schema has no
+        # propertykeys and defaults every property to TEXT/SINGLE.
+        typed_schema = {
+            **self.schema,
+            "propertykeys": [
+                {"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"},
+                {"name": "title", "data_type": "TEXT", "cardinality": "SINGLE"},
+                {"name": "year", "data_type": "INT", "cardinality": "SINGLE"},
+                {"name": "age", "data_type": "INT", "cardinality": "SINGLE"},
+                {"name": "role", "data_type": "TEXT", "cardinality": "SINGLE"},
+            ],
+        }
+        extractor = PropertyGraphExtract(
+            llm=self.mock_llm,
+            example_prompt="prompt",
+            extract_strategy="enhanced",
+        )
+        # LLM emits a valid grouped payload referencing vertices by LLM raw id.
+        self.mock_llm.generate.return_value = json.dumps(
+            {
+                "vertices": [
+                    {
+                        "type": "vertex",
+                        "id": "v1",
+                        "label": "person",
+                        "properties": {"name": "Tom Hanks"},
+                    },
+                    {
+                        "type": "vertex",
+                        "id": "v2",
+                        "label": "movie",
+                        "properties": {"title": "Forrest Gump", "year": "1994"},
+                    },
+                ],
+                "edges": [
+                    {
+                        "type": "edge",
+                        "label": "acted_in",
+                        "outV": "v1",
+                        "inV": "v2",
+                        "outVLabel": "person",
+                        "inVLabel": "movie",
+                        "properties": {"role": "Forrest"},
+                    }
+                ],
+            }
+        )
+        result = extractor.run({"schema": typed_schema, "chunks": ["chunk-0"]})
+
+        # Vertices carry canonical ids computed from the schema.
+        self.assertEqual(len(result["vertices"]), 2)
+        vertex_ids = sorted(v["id"] for v in result["vertices"])
+        self.assertIn("1:Tom Hanks", vertex_ids)
+        self.assertIn("2:Forrest Gump", vertex_ids)
+
+        # Edge endpoints resolved to canonical form.
+        self.assertEqual(len(result["edges"]), 1)
+        self.assertEqual(result["edges"][0]["outV"], "1:Tom Hanks")
+        self.assertEqual(result["edges"][0]["inV"], "2:Forrest Gump")
+
+        # Enhanced meta fields populated in the returned context.
+        self.assertEqual(result["extract_strategy"], "enhanced")
+        self.assertEqual(result["chunk_count"], 1)
+        self.assertIn("structured_warnings", result)
+        self.assertIn("quality_metrics", result)
+        # Year coerce from "1994" → 1994 should have emitted PROPERTY_COERCED.
+        codes = {w["code"] for w in result["structured_warnings"]}
+        self.assertIn("PROPERTY_COERCED", codes)
+        # The coerced value is reflected in the output.
+        movie = next(v for v in result["vertices"] if v["label"] == "movie")
+        self.assertEqual(movie["properties"]["year"], 1994)
+
+    def test_enhanced_strategy_prompt_appends_constraint_block(self):
+        """The constraint block must reach the LLM prompt in enhanced mode."""
+        extractor = PropertyGraphExtract(
+            llm=self.mock_llm,
+            example_prompt="EXAMPLE_HEADER",
+            extract_strategy="enhanced",
+        )
+        self.mock_llm.generate.return_value = json.dumps({"vertices": [], "edges": []})
+        extractor.run({"schema": self.schema, "chunks": ["chunk-0"]})
+
+        called_prompt = self.mock_llm.generate.call_args.kwargs["prompt"]
+        # The caller's example header stays, and the constraint block was appended.
+        self.assertIn("EXAMPLE_HEADER", called_prompt)
+        self.assertIn("Enhanced-strategy constraints", called_prompt)
+        # Schema-declared labels are enumerated in the constraint block.
+        self.assertIn("person", called_prompt)
+        self.assertIn("acted_in", called_prompt)
+
+    def test_enhanced_strategy_drops_schema_invalid_items_with_warnings(self):
+        extractor = PropertyGraphExtract(llm=self.mock_llm, example_prompt="p", extract_strategy="enhanced")
+        # Vertex label 'robot' is not in the schema → dropped.
+        self.mock_llm.generate.return_value = json.dumps(
+            {
+                "vertices": [{"type": "vertex", "label": "robot", "properties": {"name": "R2D2"}}],
+                "edges": [],
+            }
+        )
+        result = extractor.run({"schema": self.schema, "chunks": ["c"]})
+
+        self.assertEqual(result["vertices"], [])
+        codes = {w["code"] for w in result["structured_warnings"]}
+        self.assertIn("VERTEX_LABEL_NOT_IN_SCHEMA", codes)
+
+    def test_enhanced_strategy_dedupes_across_chunks(self):
+        """Two chunks emit the same vertex+edge → assembler merges/dedupes."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm, example_prompt="p", extract_strategy="enhanced")
+        chunk_payload = json.dumps(
+            {
+                "vertices": [
+                    {"type": "vertex", "label": "person", "properties": {"name": "Tom"}},
+                    {
+                        "type": "vertex",
+                        "label": "movie",
+                        "properties": {"title": "FG", "year": 1994},
+                    },
+                ],
+                "edges": [
+                    {
+                        "type": "edge",
+                        "label": "acted_in",
+                        "source": {"label": "person", "properties": {"name": "Tom"}},
+                        "target": {
+                            "label": "movie",
+                            "properties": {"title": "FG", "year": 1994},
+                        },
+                        "properties": {"role": "Forrest"},
+                    }
+                ],
+            }
+        )
+        self.mock_llm.generate.return_value = chunk_payload
+
+        result = extractor.run({"schema": self.schema, "chunks": ["c0", "c1"]})
+
+        # After merge/dedup only one vertex per (label,id) and one edge survives.
+        self.assertEqual(len(result["vertices"]), 2)
+        self.assertEqual(len(result["edges"]), 1)
+        self.assertEqual(result["call_count"], 2)
+        self.assertEqual(result["chunk_count"], 2)
+        codes = [w["code"] for w in result["structured_warnings"]]
+        self.assertIn("DUPLICATE_VERTEX_MERGED", codes)
+        self.assertIn("DUPLICATE_EDGE_MERGED", codes)
+
+    def test_enhanced_strategy_include_debug_records_per_chunk_info(self):
+        extractor = PropertyGraphExtract(
+            llm=self.mock_llm,
+            example_prompt="p",
+            extract_strategy="enhanced",
+            include_debug=True,
+        )
+        self.mock_llm.generate.return_value = json.dumps(
+            {
+                "vertices": [{"type": "vertex", "label": "person", "properties": {"name": "Tom"}}],
+                "edges": [],
+            }
+        )
+        result = extractor.run({"schema": self.schema, "chunks": ["c0", "c1"]})
+
+        debug = result.get("debug_info")
+        self.assertIsNotNone(debug)
+        self.assertEqual(len(debug["chunks"]), 2)
+        self.assertIn("raw_output", debug["chunks"][0])
+        self.assertIn("candidate_vertex_count", debug["chunks"][0])
+        self.assertIn("warning_code_distribution", debug)
+
+    def test_enhanced_strategy_populates_quality_metrics_shape(self):
+        extractor = PropertyGraphExtract(llm=self.mock_llm, example_prompt="p", extract_strategy="enhanced")
+        self.mock_llm.generate.return_value = json.dumps(
+            {
+                "vertices": [{"type": "vertex", "label": "person", "properties": {"name": "Tom"}}],
+                "edges": [],
+            }
+        )
+        result = extractor.run({"schema": self.schema, "chunks": ["c"]})
+        metrics = result["quality_metrics"]
+        for key in (
+            "schema_valid_vertex_ratio",
+            "schema_valid_edge_ratio",
+            "endpoint_resolution_rate",
+            "duplicate_vertex_reduction",
+            "duplicate_edge_reduction",
+            "property_valid_ratio",
+            "dropped_item_count",
+            "coerced_property_count",
+            "endpoint_repair_count",
+        ):
+            self.assertIn(key, metrics)
+
     def test_generate_extract_property_graph_prompt(self):
         """Test the generate_extract_property_graph_prompt function."""
         text = "Sample text"

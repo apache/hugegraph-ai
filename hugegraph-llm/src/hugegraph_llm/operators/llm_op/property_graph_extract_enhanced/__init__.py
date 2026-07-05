@@ -34,6 +34,9 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.document_ass
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.normalizer import (
     SchemaAwareNormalizer,
 )
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.prompt_contract import (
+    build_prompt_contract,
+)
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.quality_gate import (
     GraphQualityGate,
     QualityMetrics,
@@ -68,5 +71,6 @@ __all__ = [
     "SchemaAwareNormalizer",
     "StructuredWarning",
     "WarningCode",
+    "build_prompt_contract",
     "warning_code_distribution",
 ]

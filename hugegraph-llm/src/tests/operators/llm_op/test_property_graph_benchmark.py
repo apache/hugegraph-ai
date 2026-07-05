@@ -36,13 +36,15 @@ is the source of truth for ``docs/quality/schema-based-graph-extract-report.md``
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pytest
 
 from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
+    EvaluationReport,
     GraphExtractionEvaluator,
     GraphSchemaIndex,
 )
@@ -89,18 +91,45 @@ SCHEMA: Dict[str, Any] = {
 }
 
 
+# Multi-primary-key schema used exclusively by s14. Keeping it isolated so the
+# other nine scenarios remain readable against a single-PK mental model.
+SCHEMA_MULTI_PK: Dict[str, Any] = {
+    "propertykeys": [
+        {"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"},
+        {"name": "company", "data_type": "TEXT", "cardinality": "SINGLE"},
+        {"name": "title", "data_type": "TEXT", "cardinality": "SINGLE"},
+    ],
+    "vertexlabels": [
+        {
+            "id": 3,
+            "name": "Employee",
+            "id_strategy": "PRIMARY_KEY",
+            "primary_keys": ["name", "company"],
+            "properties": ["name", "company", "title"],
+            "nullable_keys": ["title"],
+        },
+    ],
+    "edgelabels": [],
+}
+
+
 # --------------------------------------------------------------- scenario type
 
 
 @dataclass(frozen=True)
 class Scenario:
-    """A benchmark scenario: LLM responses, chunks, and expected ground truth."""
+    """A benchmark scenario: LLM responses, chunks, and expected ground truth.
+
+    ``schema`` overrides the module-level default when a scenario needs a
+    different vocabulary (currently only s14 for multi-primary-key coverage).
+    """
 
     name: str
     description: str
     chunks: Sequence[str]
     responses: Sequence[str]
     expected: Mapping[str, Sequence[Mapping[str, Any]]]
+    schema: Optional[Mapping[str, Any]] = None
 
 
 def _vertex(label: str, vid: str, **props):
@@ -434,23 +463,178 @@ def _build_scenarios() -> List[Scenario]:
         )
     )
 
+    # 11. Missing endpoint referent — edge points to a vertex that is never
+    #     defined in any chunk. Both strategies must drop the edge.
+    scenarios.append(
+        Scenario(
+            name="s11_missing_endpoint_referent",
+            description="Edge references v99 which no chunk ever defines; both must drop it.",
+            chunks=["Tom Hanks starred in something unspecified."],
+            responses=[
+                _r(
+                    [
+                        {"label": "Person", "type": "vertex", "id": "v1", "properties": {"name": "Tom Hanks"}},
+                    ],
+                    [
+                        {
+                            "label": "ACTED_IN",
+                            "type": "edge",
+                            "outV": "v1",
+                            "inV": "v99",
+                            "outVLabel": "Person",
+                            "inVLabel": "Movie",
+                            "properties": {"role": "Star"},
+                        }
+                    ],
+                )
+            ],
+            expected={"vertices": [_vertex("Person", "1:Tom Hanks", name="Tom Hanks")], "edges": []},
+        )
+    )
+
+    # 12. Wrong edge direction — schema requires Person → Movie; LLM inverts.
+    #     Both strategies must drop the edge; the two vertices survive.
+    scenarios.append(
+        Scenario(
+            name="s12_wrong_edge_direction",
+            description="ACTED_IN emitted Movie → Person; endpoint labels violate schema direction.",
+            chunks=["Forrest Gump features Tom Hanks."],
+            responses=[
+                _r(
+                    [
+                        {"label": "Person", "type": "vertex", "id": "v1", "properties": {"name": "Tom Hanks"}},
+                        {"label": "Movie", "type": "vertex", "id": "v2", "properties": {"title": "Forrest Gump"}},
+                    ],
+                    [
+                        {
+                            "label": "ACTED_IN",
+                            "type": "edge",
+                            "outV": "v2",
+                            "inV": "v1",
+                            "outVLabel": "Movie",
+                            "inVLabel": "Person",
+                            "properties": {"role": "Forrest"},
+                        }
+                    ],
+                )
+            ],
+            expected={
+                "vertices": [
+                    _vertex("Person", "1:Tom Hanks", name="Tom Hanks"),
+                    _vertex("Movie", "2:Forrest Gump", title="Forrest Gump"),
+                ],
+                "edges": [],
+            },
+        )
+    )
+
+    # 13. Duplicate edge across chunks — same edge emitted in two chunks.
+    #     Both get F1=1.0 (set-based) but enhanced dedupes at raw level too;
+    #     baseline appends both, producing extra commit load downstream.
+    _dup_edge_response = _r(
+        [
+            {"label": "Person", "type": "vertex", "id": "v1", "properties": {"name": "Tom Hanks"}},
+            {"label": "Movie", "type": "vertex", "id": "v2", "properties": {"title": "Forrest Gump"}},
+        ],
+        [
+            {
+                "label": "ACTED_IN",
+                "type": "edge",
+                "outV": "v1",
+                "inV": "v2",
+                "outVLabel": "Person",
+                "inVLabel": "Movie",
+                "properties": {"role": "Forrest"},
+            }
+        ],
+    )
+    scenarios.append(
+        Scenario(
+            name="s13_duplicate_edge_across_chunks",
+            description="Same ACTED_IN edge emitted in two chunks; enhanced dedupes at raw level.",
+            chunks=[
+                "Tom Hanks starred in Forrest Gump.",
+                "Tom Hanks acted in Forrest Gump as Forrest.",
+            ],
+            responses=[_dup_edge_response, _dup_edge_response],
+            expected={
+                "vertices": [
+                    _vertex("Person", "1:Tom Hanks", name="Tom Hanks"),
+                    _vertex("Movie", "2:Forrest Gump", title="Forrest Gump"),
+                ],
+                "edges": [_edge("ACTED_IN", "1:Tom Hanks", "2:Forrest Gump", role="Forrest")],
+            },
+        )
+    )
+
+    # 14. Multi-primary-key vertex — Employee keyed by (name, company).
+    #     Both strategies compute canonical id "3:Alice!Acme"; validates that
+    #     the "!"-join rule works for composite PKs on both sides.
+    scenarios.append(
+        Scenario(
+            name="s14_multi_primary_key",
+            description="Employee with composite primary key (name, company).",
+            chunks=["Alice is a Principal Engineer at Acme Corp."],
+            responses=[
+                _r(
+                    [
+                        {
+                            "label": "Employee",
+                            "type": "vertex",
+                            "id": "v1",
+                            "properties": {"name": "Alice", "company": "Acme", "title": "Principal Engineer"},
+                        }
+                    ],
+                    [],
+                )
+            ],
+            expected={
+                "vertices": [
+                    {
+                        "label": "Employee",
+                        "type": "vertex",
+                        "id": "3:Alice!Acme",
+                        "properties": {"name": "Alice", "company": "Acme", "title": "Principal Engineer"},
+                    }
+                ],
+                "edges": [],
+            },
+            schema=SCHEMA_MULTI_PK,
+        )
+    )
+
     return scenarios
 
 
 # ------------------------------------------------------------ runtime harness
 
 
-def _run(scenario: Scenario, *, strategy: str) -> Dict[str, Any]:
+def _run(scenario: Scenario, *, strategy: str) -> Tuple[Dict[str, Any], float, int]:
+    """Runs one strategy against a scenario; returns (graph, latency_ms, call_count).
+
+    Latency includes JSON parsing, normalization, and assembly (for enhanced) or
+    the baseline's per-chunk normalization pass. With FakeLLM the LLM call is a
+    dict pop, so the measurement is dominated by post-LLM processing — a useful
+    signal for the pipeline overhead added by the enhanced strategy.
+    """
+    schema = scenario.schema if scenario.schema is not None else SCHEMA
     llm = FakeLLM(scenario.responses)
     extractor = PropertyGraphExtract(llm=llm, example_prompt="", extract_strategy=strategy)
-    context = {"schema": SCHEMA, "chunks": list(scenario.chunks)}
+    context = {"schema": schema, "chunks": list(scenario.chunks)}
+    start = time.perf_counter()
     result = extractor.run(context)
-    return {"vertices": result.get("vertices", []), "edges": result.get("edges", [])}
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    return (
+        {"vertices": result.get("vertices", []), "edges": result.get("edges", [])},
+        elapsed_ms,
+        int(result.get("call_count", 0)),
+    )
 
 
-@pytest.fixture(scope="module")
-def evaluator() -> GraphExtractionEvaluator:
-    return GraphExtractionEvaluator(GraphSchemaIndex(SCHEMA))
+def _evaluate(scenario: Scenario, predicted: Mapping[str, Any]) -> EvaluationReport:
+    schema = scenario.schema if scenario.schema is not None else SCHEMA
+    evaluator = GraphExtractionEvaluator(GraphSchemaIndex(schema))
+    return evaluator.evaluate(predicted, scenario.expected)
 
 
 @pytest.fixture(scope="module")
@@ -461,77 +645,158 @@ def scenarios() -> List[Scenario]:
 # --------------------------------------------------------------- benchmark
 
 
-def test_benchmark_produces_comparison_table(scenarios, evaluator, capsys):
+def test_benchmark_produces_comparison_table(scenarios, capsys):
     """Runs every scenario against both strategies and prints a Markdown table.
 
-    The table drives ``docs/quality/schema-based-graph-extract-report.md`` and
-    also acts as the human-readable audit trail for the design invariants below.
+    Columns reported:
+
+    * ``b F1`` / ``e F1`` — overall structural F1 for baseline vs. enhanced.
+    * ``b match%`` / ``e match%`` — property_exact_match_rate on TP items.
+    * ``calls`` — LLM invocation count (equal by design: one per chunk).
+    * ``b ms`` / ``e ms`` — post-LLM processing latency (FakeLLM makes the LLM
+      call itself effectively free, so these are enhanced-vs-baseline pipeline
+      overhead numbers, not end-to-end).
+    * ``b vraw`` / ``e vraw`` — raw predicted vertex counts (enhanced dedupes
+      across chunks; baseline does not).
+
     Use ``pytest -s`` to see the table locally.
     """
-    header = "| scenario | baseline F1 | enhanced F1 | baseline valid% | enhanced valid% | baseline match% | enhanced match% |"
-    separator = "|---|---:|---:|---:|---:|---:|---:|"
+    header = "| scenario | b F1 | e F1 | b match% | e match% | calls | b ms | e ms | b vraw | e vraw |"
+    separator = "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
     rows: List[str] = [header, separator]
     baseline_f1_sum = 0.0
     enhanced_f1_sum = 0.0
+    baseline_ms_sum = 0.0
+    enhanced_ms_sum = 0.0
+    total_calls = 0
     for scenario in scenarios:
-        baseline_pred = _run(scenario, strategy="baseline")
-        enhanced_pred = _run(scenario, strategy="enhanced")
-        baseline_report = evaluator.evaluate(baseline_pred, scenario.expected)
-        enhanced_report = evaluator.evaluate(enhanced_pred, scenario.expected)
+        baseline_pred, baseline_ms, baseline_calls = _run(scenario, strategy="baseline")
+        enhanced_pred, enhanced_ms, enhanced_calls = _run(scenario, strategy="enhanced")
+        baseline_report = _evaluate(scenario, baseline_pred)
+        enhanced_report = _evaluate(scenario, enhanced_pred)
+
+        # Both strategies make one LLM call per chunk — verify the invariant.
+        assert baseline_calls == enhanced_calls == len(scenario.chunks), (
+            f"{scenario.name}: expected call_count == {len(scenario.chunks)} for both strategies, "
+            f"got baseline={baseline_calls}, enhanced={enhanced_calls}"
+        )
+
         rows.append(
-            "| {name} | {bf1:.2f} | {ef1:.2f} | {bv:.2f} | {ev:.2f} | {bm:.2f} | {em:.2f} |".format(
+            "| {name} | {bf1:.2f} | {ef1:.2f} | {bm:.2f} | {em:.2f} | {c} | {bms:.2f} | {ems:.2f} | {bvraw} | {evraw} |".format(
                 name=scenario.name,
                 bf1=baseline_report.overall_f1,
                 ef1=enhanced_report.overall_f1,
-                bv=baseline_report.property_metrics.property_valid_ratio,
-                ev=enhanced_report.property_metrics.property_valid_ratio,
                 bm=baseline_report.property_metrics.property_exact_match_rate,
                 em=enhanced_report.property_metrics.property_exact_match_rate,
+                c=baseline_calls,
+                bms=baseline_ms,
+                ems=enhanced_ms,
+                bvraw=baseline_report.vertex_metrics.predicted_count_raw,
+                evraw=enhanced_report.vertex_metrics.predicted_count_raw,
             )
         )
         baseline_f1_sum += baseline_report.overall_f1
         enhanced_f1_sum += enhanced_report.overall_f1
+        baseline_ms_sum += baseline_ms
+        enhanced_ms_sum += enhanced_ms
+        total_calls += baseline_calls
+
         # Design invariant: enhanced never regresses F1.
         assert enhanced_report.overall_f1 + 1e-9 >= baseline_report.overall_f1, (
             f"{scenario.name}: enhanced F1 {enhanced_report.overall_f1} regressed vs "
             f"baseline {baseline_report.overall_f1}"
         )
 
-    avg_baseline = baseline_f1_sum / len(scenarios)
-    avg_enhanced = enhanced_f1_sum / len(scenarios)
-    rows.append("| **average** | **{ab:.2f}** | **{ae:.2f}** | | | | |".format(ab=avg_baseline, ae=avg_enhanced))
+    n = len(scenarios)
+    avg_baseline = baseline_f1_sum / n
+    avg_enhanced = enhanced_f1_sum / n
+    f1_relative_gain_pct = (avg_enhanced - avg_baseline) / avg_baseline * 100.0 if avg_baseline else 0.0
+    rows.append(
+        "| **average / total** | **{ab:.2f}** | **{ae:.2f}** | | | **{c}** | **{bms:.2f}** | **{ems:.2f}** | | |".format(
+            ab=avg_baseline,
+            ae=avg_enhanced,
+            c=total_calls,
+            bms=baseline_ms_sum,
+            ems=enhanced_ms_sum,
+        )
+    )
+    rows.append("| **F1 relative gain** | | **+{pct:.1f}%** | | | | | | | |".format(pct=f1_relative_gain_pct))
     # Print to stdout so `pytest -s` captures the exact table to paste into the report.
     print("\n" + "\n".join(rows))
     assert avg_enhanced >= avg_baseline
 
 
-def test_enhanced_wins_on_cross_chunk_edge(scenarios, evaluator):
+def test_enhanced_wins_on_cross_chunk_edge(scenarios):
     scenario = next(s for s in scenarios if s.name == "s06_cross_chunk_edge")
-    baseline_report = evaluator.evaluate(_run(scenario, strategy="baseline"), scenario.expected)
-    enhanced_report = evaluator.evaluate(_run(scenario, strategy="enhanced"), scenario.expected)
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    baseline_report = _evaluate(scenario, baseline_pred)
+    enhanced_report = _evaluate(scenario, enhanced_pred)
     assert baseline_report.edge_metrics.f1 == 0.0
     assert enhanced_report.edge_metrics.f1 == 1.0
 
 
-def test_enhanced_wins_on_alias_mismatch(scenarios, evaluator):
+def test_enhanced_wins_on_alias_mismatch(scenarios):
     scenario = next(s for s in scenarios if s.name == "s07_alias_mismatch")
-    baseline_report = evaluator.evaluate(_run(scenario, strategy="baseline"), scenario.expected)
-    enhanced_report = evaluator.evaluate(_run(scenario, strategy="enhanced"), scenario.expected)
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    baseline_report = _evaluate(scenario, baseline_pred)
+    enhanced_report = _evaluate(scenario, enhanced_pred)
     assert baseline_report.edge_metrics.f1 == 0.0
     assert enhanced_report.edge_metrics.f1 == 1.0
 
 
-def test_enhanced_wins_on_type_coercion(scenarios, evaluator):
+def test_enhanced_wins_on_type_coercion(scenarios):
     scenario = next(s for s in scenarios if s.name == "s03_type_coercion_int")
-    baseline_report = evaluator.evaluate(_run(scenario, strategy="baseline"), scenario.expected)
-    enhanced_report = evaluator.evaluate(_run(scenario, strategy="enhanced"), scenario.expected)
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    baseline_report = _evaluate(scenario, baseline_pred)
+    enhanced_report = _evaluate(scenario, enhanced_pred)
     assert enhanced_report.property_metrics.property_exact_match_rate == 1.0
     assert baseline_report.property_metrics.property_exact_match_rate < 1.0
 
 
-def test_enhanced_matches_baseline_on_well_formed_input(scenarios, evaluator):
+def test_enhanced_matches_baseline_on_well_formed_input(scenarios):
     scenario = next(s for s in scenarios if s.name == "s01_simple_well_formed")
-    baseline_report = evaluator.evaluate(_run(scenario, strategy="baseline"), scenario.expected)
-    enhanced_report = evaluator.evaluate(_run(scenario, strategy="enhanced"), scenario.expected)
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    baseline_report = _evaluate(scenario, baseline_pred)
+    enhanced_report = _evaluate(scenario, enhanced_pred)
     assert baseline_report.overall_f1 == 1.0
     assert enhanced_report.overall_f1 == 1.0
+
+
+def test_missing_endpoint_referent_dropped_by_both(scenarios):
+    scenario = next(s for s in scenarios if s.name == "s11_missing_endpoint_referent")
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    assert _evaluate(scenario, baseline_pred).overall_f1 == 1.0
+    assert _evaluate(scenario, enhanced_pred).overall_f1 == 1.0
+    assert len(baseline_pred["edges"]) == 0
+    assert len(enhanced_pred["edges"]) == 0
+
+
+def test_wrong_edge_direction_dropped_by_both(scenarios):
+    scenario = next(s for s in scenarios if s.name == "s12_wrong_edge_direction")
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    assert len(baseline_pred["edges"]) == 0
+    assert len(enhanced_pred["edges"]) == 0
+
+
+def test_duplicate_edge_deduped_only_by_enhanced(scenarios):
+    scenario = next(s for s in scenarios if s.name == "s13_duplicate_edge_across_chunks")
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    # Both have equal set-based F1, but baseline appends the duplicate raw copy.
+    assert len(baseline_pred["edges"]) == 2, "baseline is expected to keep raw duplicates"
+    assert len(enhanced_pred["edges"]) == 1, "enhanced is expected to dedupe raw duplicates"
+
+
+def test_multi_primary_key_handled_by_both(scenarios):
+    scenario = next(s for s in scenarios if s.name == "s14_multi_primary_key")
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    # Both should produce canonical id "3:Alice!Acme".
+    assert baseline_pred["vertices"][0]["id"] == "3:Alice!Acme"
+    assert enhanced_pred["vertices"][0]["id"] == "3:Alice!Acme"

@@ -45,8 +45,11 @@ run. Rates are hard-coded below; update if pricing changes.
 
 from __future__ import annotations
 
+import argparse
 import json
+import math
 import os
+import statistics
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -239,6 +242,28 @@ class TrackedDeepSeekLLM:
         return response.choices[0].message.content
 
 
+@dataclass
+class SingleRunResult:
+    """One (corpus, strategy, run-index) trial with metrics + evaluation."""
+
+    corpus_name: str
+    strategy: str
+    run_index: int
+    predicted: dict[str, Any]
+    total_latency_ms: float
+    call_count: int
+    prompt_tokens_total: int
+    completion_tokens_total: int
+    tokens_total: int
+    cost_usd_estimate: float
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    overall_f1: float = 0.0
+    vertex_f1: float = 0.0
+    edge_f1: float = 0.0
+    property_match_rate: float = 0.0
+    evaluation: dict[str, Any] | None = None
+
+
 def _estimate_cost(prompt_tokens: int, completion_tokens: int) -> float:
     return (
         prompt_tokens * DEEPSEEK_INPUT_USD_PER_M / 1_000_000.0
@@ -246,14 +271,26 @@ def _estimate_cost(prompt_tokens: int, completion_tokens: int) -> float:
     )
 
 
-def _run_strategy(strategy: str, api_key: str) -> StrategyRunMetrics:
+def _run_strategy_on_corpus(
+    strategy: str,
+    api_key: str,
+    schema: dict[str, Any],
+    chunks: list[str],
+    expected: dict[str, Any],
+    corpus_name: str,
+    run_index: int,
+    evaluator: GraphExtractionEvaluator,
+) -> SingleRunResult:
+    """Runs one strategy against one corpus once; returns a SingleRunResult
+    with LLM metrics and evaluation baked in.
+    """
     llm = TrackedDeepSeekLLM(api_key=api_key)
     extractor = PropertyGraphExtract(
         llm=llm,
         example_prompt=EXTRACT_PROMPT_HEADER,
         extract_strategy=strategy,
     )
-    context = {"schema": SCHEMA, "chunks": list(CORPUS)}
+    context = {"schema": schema, "chunks": list(chunks)}
     start = time.perf_counter()
     result = extractor.run(context)
     total_latency_ms = (time.perf_counter() - start) * 1000.0
@@ -262,9 +299,14 @@ def _run_strategy(strategy: str, api_key: str) -> StrategyRunMetrics:
     completion_tokens_total = sum(c.completion_tokens for c in llm.calls)
     tokens_total = sum(c.total_tokens for c in llm.calls)
 
-    return StrategyRunMetrics(
+    predicted = {"vertices": result.get("vertices", []), "edges": result.get("edges", [])}
+    evaluation = evaluator.evaluate(predicted, expected)
+
+    return SingleRunResult(
+        corpus_name=corpus_name,
         strategy=strategy,
-        predicted={"vertices": result.get("vertices", []), "edges": result.get("edges", [])},
+        run_index=run_index,
+        predicted=predicted,
         total_latency_ms=total_latency_ms,
         call_count=int(result.get("call_count", 0) or len(llm.calls)),
         prompt_tokens_total=prompt_tokens_total,
@@ -272,7 +314,40 @@ def _run_strategy(strategy: str, api_key: str) -> StrategyRunMetrics:
         tokens_total=tokens_total,
         cost_usd_estimate=_estimate_cost(prompt_tokens_total, completion_tokens_total),
         calls=[asdict(c) for c in llm.calls],
+        overall_f1=evaluation.overall_f1,
+        vertex_f1=evaluation.vertex_metrics.f1,
+        edge_f1=evaluation.edge_metrics.f1,
+        property_match_rate=evaluation.property_metrics.property_exact_match_rate,
+        evaluation=evaluation.to_dict(),
     )
+
+
+def _agg_stats(values: list[float]) -> dict[str, float]:
+    """mean/std/min/max over a list of floats. std is 0 for n<2 (documented)."""
+    if not values:
+        return {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "n": 0}
+    return {
+        "mean": statistics.fmean(values),
+        "std": statistics.pstdev(values) if len(values) >= 2 else 0.0,
+        "min": min(values),
+        "max": max(values),
+        "n": len(values),
+    }
+
+
+def _aggregate(runs: list[SingleRunResult]) -> dict[str, Any]:
+    """Aggregate a set of runs into mean/std/min/max on the headline metrics."""
+    return {
+        "runs": len(runs),
+        "overall_f1": _agg_stats([r.overall_f1 for r in runs]),
+        "vertex_f1": _agg_stats([r.vertex_f1 for r in runs]),
+        "edge_f1": _agg_stats([r.edge_f1 for r in runs]),
+        "property_match_rate": _agg_stats([r.property_match_rate for r in runs]),
+        "latency_ms": _agg_stats([r.total_latency_ms for r in runs]),
+        "prompt_tokens_total": _agg_stats([float(r.prompt_tokens_total) for r in runs]),
+        "completion_tokens_total": _agg_stats([float(r.completion_tokens_total) for r in runs]),
+        "cost_usd_estimate": _agg_stats([r.cost_usd_estimate for r in runs]),
+    }
 
 
 def _load_env_local() -> None:
@@ -290,67 +365,170 @@ def _load_env_local() -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-def _format_row(m: StrategyRunMetrics, f1: float, match_rate: float) -> str:
-    return (
-        f"| {m.strategy:<9} | {f1:.2f} | {match_rate:.2f} | "
-        f"{m.call_count} | {m.total_latency_ms / 1000:.2f}s | "
-        f"{m.prompt_tokens_total} | {m.completion_tokens_total} | "
-        f"${m.cost_usd_estimate:.6f} |"
-    )
+def _load_corpora(corpus_path: str | None) -> list[dict[str, Any]]:
+    """Loads corpora from --corpus JSON or falls back to the legacy hard-coded one.
+
+    Legacy fallback is preserved for two reasons: (1) it lets the script be
+    smoke-tested with zero setup, and (2) it makes the change to add
+    ``--corpus`` support strictly additive (no breaking behavior for anyone
+    who previously ran the script without arguments).
+    """
+    if corpus_path is None:
+        return [
+            {
+                "name": "legacy_tom_hanks_3chunk",
+                "chunks": list(CORPUS),
+                "ground_truth": GROUND_TRUTH,
+                "source": "hand-authored (kept as sanity/smoke sample)",
+            }
+        ]
+    data = json.loads(Path(corpus_path).read_text(encoding="utf-8"))
+    corpora: list[dict[str, Any]] = []
+    for c in data["corpora"]:
+        corpora.append(
+            {
+                "name": c["name"],
+                "chunks": c["chunks"],
+                "ground_truth": c["ground_truth"],
+                "source": {
+                    "wikipedia_revision": c.get("wikipedia_revision"),
+                    "wikipedia_url": c.get("wikipedia_url"),
+                    "actor_qid": c.get("actor_qid"),
+                    "verified_films": len(c.get("verified_films", [])),
+                },
+            }
+        )
+    return corpora
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--corpus",
+        default=None,
+        help=(
+            "Path to a public corpus JSON built by "
+            "scripts/build_public_actor_corpus.py. If omitted, the legacy "
+            "hand-authored 3-chunk Tom Hanks corpus is used (smoke only)."
+        ),
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help=(
+            "Number of runs per (corpus, strategy) for variance estimation. "
+            "Default 3. Set to 1 for a quick single-run smoke."
+        ),
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help=("Where to archive the full run JSON. Defaults to .workflow/deepseek_live_run.json (kept out of git)."),
+    )
+    args = parser.parse_args()
+
     _load_env_local()
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key:
         print("ERROR: DEEPSEEK_API_KEY is not set (checked .env.local + environment).")
         return 2
 
-    print("Running baseline strategy against DeepSeek Chat ...")
-    baseline_metrics = _run_strategy("baseline", api_key)
-    print("Running enhanced strategy against DeepSeek Chat ...")
-    enhanced_metrics = _run_strategy("enhanced", api_key)
-
+    corpora = _load_corpora(args.corpus)
+    print(f"Loaded {len(corpora)} corpora (runs per strategy per corpus: {args.runs})")
     evaluator = GraphExtractionEvaluator(GraphSchemaIndex(SCHEMA))
-    baseline_eval = evaluator.evaluate(baseline_metrics.predicted, GROUND_TRUTH)
-    enhanced_eval = evaluator.evaluate(enhanced_metrics.predicted, GROUND_TRUTH)
 
-    header = "| strategy  |   F1 | match% | calls | latency | in_tok | out_tok |         cost |"
-    separator = "|---|---:|---:|---:|---:|---:|---:|---:|"
-    print("\n" + header)
-    print(separator)
+    all_runs: list[SingleRunResult] = []
+    for corpus in corpora:
+        for strategy in ("baseline", "enhanced"):
+            for run_i in range(args.runs):
+                print(
+                    f"  {corpus['name']} / {strategy} / run{run_i + 1}/{args.runs} ...",
+                    flush=True,
+                )
+                r = _run_strategy_on_corpus(
+                    strategy=strategy,
+                    api_key=api_key,
+                    schema=SCHEMA,
+                    chunks=corpus["chunks"],
+                    expected=corpus["ground_truth"],
+                    corpus_name=corpus["name"],
+                    run_index=run_i,
+                    evaluator=evaluator,
+                )
+                all_runs.append(r)
+                print(
+                    f"    F1={r.overall_f1:.3f}  vF1={r.vertex_f1:.3f}  eF1={r.edge_f1:.3f}  "
+                    f"latency={r.total_latency_ms / 1000:.2f}s  "
+                    f"tokens={r.tokens_total}  cost=${r.cost_usd_estimate:.6f}"
+                )
+
+    # ----- per-(corpus, strategy) aggregation -----
+    by_key: dict[tuple[str, str], list[SingleRunResult]] = {}
+    for r in all_runs:
+        by_key.setdefault((r.corpus_name, r.strategy), []).append(r)
+
+    per_pair_agg: dict[str, dict[str, Any]] = {}
+    for (corpus_name, strategy), runs in by_key.items():
+        per_pair_agg[f"{corpus_name}|{strategy}"] = _aggregate(runs)
+
+    # ----- per-strategy aggregation across all runs -----
+    per_strategy: dict[str, dict[str, Any]] = {}
+    for strategy in ("baseline", "enhanced"):
+        strategy_runs = [r for r in all_runs if r.strategy == strategy]
+        per_strategy[strategy] = _aggregate(strategy_runs)
+
+    baseline_f1 = per_strategy["baseline"]["overall_f1"]["mean"]
+    enhanced_f1 = per_strategy["enhanced"]["overall_f1"]["mean"]
+    f1_absolute_delta = enhanced_f1 - baseline_f1
+    f1_relative_pct = (f1_absolute_delta / baseline_f1 * 100.0) if baseline_f1 > 0 else float("nan")
+
+    # ----- summary table -----
+    print("\n=== Summary (mean +/- std across runs and corpora) ===")
     print(
-        _format_row(
-            baseline_metrics, baseline_eval.overall_f1, baseline_eval.property_metrics.property_exact_match_rate
-        )
+        f"  baseline: F1={baseline_f1:.3f} +/- {per_strategy['baseline']['overall_f1']['std']:.3f}  "
+        f"latency={per_strategy['baseline']['latency_ms']['mean'] / 1000:.2f}s  "
+        f"cost=${per_strategy['baseline']['cost_usd_estimate']['mean']:.6f}"
     )
     print(
-        _format_row(
-            enhanced_metrics, enhanced_eval.overall_f1, enhanced_eval.property_metrics.property_exact_match_rate
-        )
+        f"  enhanced: F1={enhanced_f1:.3f} +/- {per_strategy['enhanced']['overall_f1']['std']:.3f}  "
+        f"latency={per_strategy['enhanced']['latency_ms']['mean'] / 1000:.2f}s  "
+        f"cost=${per_strategy['enhanced']['cost_usd_estimate']['mean']:.6f}"
     )
+    if not math.isnan(f1_relative_pct):
+        print(f"  delta F1: {f1_absolute_delta:+.3f} absolute ({f1_relative_pct:+.1f}% relative)")
 
+    # ----- persist -----
     workflow_dir = _REPO_ROOT / ".workflow"
     workflow_dir.mkdir(exist_ok=True)
-    out_path = workflow_dir / "deepseek_live_run.json"
+    out_path = Path(args.output) if args.output else workflow_dir / "deepseek_live_run.json"
     payload = {
         "model": DEEPSEEK_MODEL_LITELLM,
         "pricing": {
             "input_usd_per_m": DEEPSEEK_INPUT_USD_PER_M,
             "output_usd_per_m": DEEPSEEK_OUTPUT_USD_PER_M,
         },
+        "corpus_source": args.corpus if args.corpus else "legacy hand-authored (--corpus flag not set)",
+        "runs_per_strategy_per_corpus": args.runs,
         "schema": SCHEMA,
-        "corpus": CORPUS,
-        "ground_truth": GROUND_TRUTH,
-        "baseline": {
-            "metrics": asdict(baseline_metrics),
-            "evaluation": baseline_eval.to_dict(),
-        },
-        "enhanced": {
-            "metrics": asdict(enhanced_metrics),
-            "evaluation": enhanced_eval.to_dict(),
+        "corpora": [
+            {
+                "name": c["name"],
+                "chunks": c["chunks"],
+                "ground_truth": c["ground_truth"],
+                "source": c.get("source"),
+            }
+            for c in corpora
+        ],
+        "runs": [asdict(r) for r in all_runs],
+        "per_corpus_strategy_aggregation": per_pair_agg,
+        "per_strategy_aggregation": per_strategy,
+        "delta": {
+            "f1_absolute": f1_absolute_delta,
+            "f1_relative_percent": f1_relative_pct,
         },
     }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nFull run archived to {out_path}")
     return 0

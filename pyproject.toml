@@ -188,6 +188,7 @@ ignore = [
 "tests/**/*.py" = ["T20"]
 "hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
+"scripts/**/*.py" = ["T20"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["hugegraph_llm", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]

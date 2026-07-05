@@ -41,6 +41,8 @@ class GraphExtractService:
                 language=req.language,
                 split_type=req.split_type,
                 client_config=req.client_config,
+                extract_strategy=req.extract_strategy,
+                include_debug=req.include_debug,
             )
             raw = json.loads(result_str)
             warnings = [raw.pop("warning")] if "warning" in raw else []

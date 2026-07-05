@@ -324,6 +324,117 @@ def test_flow_prepare_keeps_omitted_graphspace_none():
     assert prepared_input.graph_client_config["graphspace"] is None
 
 
+def test_request_defaults_extract_strategy_to_baseline():
+    req = GraphExtractRequest(texts="hello", schema=INLINE_SCHEMA)
+    assert req.extract_strategy == "baseline"
+    assert req.include_debug is False
+
+
+def test_request_accepts_explicit_baseline_and_enhanced_strategy():
+    baseline_req = GraphExtractRequest(texts="hello", schema=INLINE_SCHEMA, extract_strategy="baseline")
+    enhanced_req = GraphExtractRequest(
+        texts="hello",
+        schema=INLINE_SCHEMA,
+        extract_strategy="enhanced",
+        include_debug=True,
+    )
+    assert baseline_req.extract_strategy == "baseline"
+    assert baseline_req.include_debug is False
+    assert enhanced_req.extract_strategy == "enhanced"
+    assert enhanced_req.include_debug is True
+
+
+def test_graph_extract_rejects_unknown_extract_strategy():
+    response = _graph_client().post(
+        "/graph/extract",
+        json={"texts": "x", "schema": INLINE_SCHEMA, "extract_strategy": "aggressive"},
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_graph_extract_threads_strategy_and_debug_into_scheduler_kwargs(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": INLINE_SCHEMA,
+            "extract_strategy": "enhanced",
+            "include_debug": True,
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    kwargs = scheduler.schedule_flow.call_args.kwargs
+    assert kwargs["extract_strategy"] == "enhanced"
+    assert kwargs["include_debug"] is True
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_graph_extract_defaults_baseline_strategy_when_field_omitted(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    response = _graph_client().post("/graph/extract", json={"texts": "x", "schema": INLINE_SCHEMA})
+
+    assert response.status_code == status.HTTP_200_OK
+    kwargs = scheduler.schedule_flow.call_args.kwargs
+    assert kwargs["extract_strategy"] == "baseline"
+    assert kwargs["include_debug"] is False
+
+
+def test_flow_prepare_captures_extract_strategy_and_include_debug():
+    flow = GraphExtractFlow()
+    prepared_input = WkFlowInput()
+
+    flow.prepare(
+        prepared_input,
+        json.dumps(INLINE_SCHEMA),
+        ["text"],
+        "prompt",
+        "property_graph",
+        extract_strategy="enhanced",
+        include_debug=True,
+    )
+
+    assert prepared_input.extract_strategy == "enhanced"
+    assert prepared_input.include_debug is True
+
+
+def test_flow_prepare_defaults_extract_strategy_and_include_debug():
+    flow = GraphExtractFlow()
+    prepared_input = WkFlowInput()
+
+    flow.prepare(
+        prepared_input,
+        json.dumps(INLINE_SCHEMA),
+        ["text"],
+        "prompt",
+        "property_graph",
+    )
+
+    assert prepared_input.extract_strategy == "baseline"
+    assert prepared_input.include_debug is False
+
+
+def test_wkflow_input_reset_clears_enhanced_strategy_fields():
+    prepared_input = WkFlowInput()
+    prepared_input.extract_strategy = "enhanced"
+    prepared_input.include_debug = True
+
+    from pycgraph import CStatus  # local import to avoid polluting module namespace
+
+    prepared_input.reset(CStatus())
+
+    assert prepared_input.extract_strategy is None
+    assert prepared_input.include_debug is None
+
+
 def test_flow_prepare_does_not_leak_config_across_runs():
     # A pooled pipeline is reused across requests, so prepare() must clear config
     # when a later request omits client_config.

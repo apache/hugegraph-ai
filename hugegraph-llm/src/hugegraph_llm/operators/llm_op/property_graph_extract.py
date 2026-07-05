@@ -78,9 +78,19 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
 
 
 class PropertyGraphExtract:
-    def __init__(self, llm: BaseLLM, example_prompt: str = prompt.extract_graph_prompt) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        example_prompt: str = prompt.extract_graph_prompt,
+        extract_strategy: str = "baseline",
+        include_debug: bool = False,
+    ) -> None:
         self.llm = llm
         self.example_prompt = example_prompt
+        # extract_strategy is captured now; the schema-aware quality layer wired in a later
+        # commit inspects it to branch behavior. Baseline is byte-compatible with the pre-flag path.
+        self.extract_strategy = extract_strategy if extract_strategy in ("baseline", "enhanced") else "baseline"
+        self.include_debug = bool(include_debug)
         self.NECESSARY_ITEM_KEYS = {"label", "type", "properties"}  # pylint: disable=invalid-name
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
@@ -90,6 +100,13 @@ class PropertyGraphExtract:
             context["vertices"] = []
         if "edges" not in context:
             context["edges"] = []
+        if self.extract_strategy == "enhanced":
+            log.info(
+                "extract_strategy='enhanced' requested; the schema-aware quality layer is not wired in this commit — "
+                "falling back to the baseline path (behavior unchanged)."
+            )
+        # Mirror the resolved strategy into the shared context so downstream API/meta layers see it.
+        context["extract_strategy"] = self.extract_strategy
         items = []
         for chunk in chunks:
             proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)

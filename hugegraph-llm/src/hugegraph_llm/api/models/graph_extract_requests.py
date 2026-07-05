@@ -45,6 +45,20 @@ class GraphExtractRequest(BaseModel):
     language: Literal["zh", "en"] = Query("zh", description="Language for chunk splitting.")
     split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
     include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")
+    extract_strategy: Literal["baseline", "enhanced"] = Query(
+        "baseline",
+        description=(
+            "Which extraction strategy to use. 'baseline' preserves the existing behavior; "
+            "'enhanced' opts into the schema-aware graph quality layer."
+        ),
+    )
+    include_debug: bool = Query(
+        False,
+        description=(
+            "When true, the enhanced strategy attaches per-chunk debug details under 'meta.debug_info'. "
+            "Ignored by the baseline strategy."
+        ),
+    )
     client_config: Optional[GraphExtractClientConfig] = Field(None, description="Request-scoped HugeGraph connection.")
 
     @field_validator("texts")

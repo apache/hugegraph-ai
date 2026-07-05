@@ -134,6 +134,41 @@ class TestPropertyGraphExtract(unittest.TestCase):
         self.assertEqual(extractor.llm, self.mock_llm)
         self.assertEqual(extractor.example_prompt, custom_prompt)
         self.assertEqual(extractor.NECESSARY_ITEM_KEYS, {"label", "type", "properties"})
+        # Default plumbing values for the enhanced strategy stay opt-in.
+        self.assertEqual(extractor.extract_strategy, "baseline")
+        self.assertFalse(extractor.include_debug)
+
+    def test_init_captures_extract_strategy_and_include_debug(self):
+        """Enhanced strategy flags flow through the constructor when provided."""
+        extractor = PropertyGraphExtract(
+            llm=self.mock_llm,
+            example_prompt="prompt",
+            extract_strategy="enhanced",
+            include_debug=True,
+        )
+        self.assertEqual(extractor.extract_strategy, "enhanced")
+        self.assertTrue(extractor.include_debug)
+
+    def test_init_normalizes_unknown_strategy_to_baseline(self):
+        """Unknown strategy values must not silently activate an unsupported path."""
+        extractor = PropertyGraphExtract(
+            llm=self.mock_llm,
+            example_prompt="prompt",
+            extract_strategy="aggressive",
+        )
+        self.assertEqual(extractor.extract_strategy, "baseline")
+
+    def test_run_records_extract_strategy_in_context(self):
+        """run() surfaces the resolved strategy for downstream API meta consumers."""
+        extractor = PropertyGraphExtract(
+            llm=self.mock_llm,
+            example_prompt="prompt",
+            extract_strategy="enhanced",
+        )
+        self.mock_llm.generate.return_value = json.dumps({"vertices": [], "edges": []})
+        context = {"schema": self.schema, "chunks": ["chunk-1"]}
+        result = extractor.run(context)
+        self.assertEqual(result["extract_strategy"], "enhanced")
 
     def test_generate_extract_property_graph_prompt(self):
         """Test the generate_extract_property_graph_prompt function."""

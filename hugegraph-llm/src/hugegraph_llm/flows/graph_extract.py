@@ -56,6 +56,9 @@ class GraphExtractFlow(BaseFlow):
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
+        # Enhanced graph extraction opt-in flags (baseline behavior stays unchanged when defaults hold).
+        prepared_input.extract_strategy = kwargs.get("extract_strategy", "baseline")
+        prepared_input.include_debug = bool(kwargs.get("include_debug", False))
         client_config = kwargs.get("client_config")
         if client_config:
             # URL stays server-controlled; only identity/graphspace are request-scoped.

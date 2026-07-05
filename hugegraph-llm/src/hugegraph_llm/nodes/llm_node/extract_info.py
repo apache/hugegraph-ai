@@ -38,10 +38,17 @@ class ExtractNode(BaseNode):
         example_prompt = self.wk_input.example_prompt
         extract_type = self.wk_input.extract_type
         self.extract_type = extract_type
+        extract_strategy = self.wk_input.extract_strategy or "baseline"
+        include_debug = bool(self.wk_input.include_debug)
         if extract_type == "triples":
             self.info_extract = InfoExtract(llm, example_prompt)
         elif extract_type == "property_graph":
-            self.property_graph_extract = PropertyGraphExtract(llm, example_prompt)
+            self.property_graph_extract = PropertyGraphExtract(
+                llm,
+                example_prompt,
+                extract_strategy=extract_strategy,
+                include_debug=include_debug,
+            )
         else:
             return CStatus(-1, f"Unsupported extract_type: {extract_type}")
         return super().node_init()

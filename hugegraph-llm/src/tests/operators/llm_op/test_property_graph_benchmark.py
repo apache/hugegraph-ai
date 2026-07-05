@@ -28,6 +28,17 @@ Design invariants asserted here:
   (``enhanced.overall_f1 >= baseline.overall_f1``).
 * Enhanced wins strictly on the scenarios it was designed to fix
   (cross-chunk edges, alias mismatch, type coercion).
+* Average F1 improvement meets the design-stage threshold of
+  ``+5% relative`` — encoded as ``DESIGN_F1_RELATIVE_GAIN_MIN``. The threshold
+  is deliberately conservative; the current implementation clears it by
+  ~2x, but a regression that drops below +5% must fail CI, not just be
+  spotted in the report.
+
+Scenarios s15 and s16 cover *domain limitations* where neither strategy
+wins: a fictional character with a schema-valid name (s15) and a
+first-chunk pronoun with no antecedent for the assembler to bind to (s16).
+Their presence forces the mock benchmark to report an honest
+``enhanced avg F1 < 1.00``, matching the ceiling observed on real LLM output.
 
 The numeric table produced by :func:`test_benchmark_produces_comparison_table`
 is the source of truth for ``docs/quality/schema-based-graph-extract-report.md``.
@@ -51,6 +62,13 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
 from tests.fixtures.fake_llm import FakeLLM
 
 pytestmark = pytest.mark.contract
+
+# Design-stage F1 improvement threshold (Issue #74 rubric check #6).
+# The mock benchmark is a rubric-coverage tool, not the effect headline —
+# it must clear a floor that would break loudly if a regression flattened
+# the F1 gap. Set at +5% relative so the threshold survives small future
+# additions to the scenario set without accidental green-washing.
+DESIGN_F1_RELATIVE_GAIN_MIN = 0.05
 
 # --------------------------------------------------------------------- schema
 
@@ -603,6 +621,92 @@ def _build_scenarios() -> List[Scenario]:
         )
     )
 
+    # 15. Character promoted to Person — a semantic error the schema layer
+    #     cannot catch. Enhanced has NO advantage here: "Chuck Noland" has a
+    #     valid PK, passes every schema check, and neither strategy has
+    #     access to the world knowledge that Chuck is a fictional character.
+    #     This is the exact failure mode observed on the live DeepSeek run.
+    scenarios.append(
+        Scenario(
+            name="s15_character_promoted_to_person",
+            description=(
+                "LLM emits a fictional character as a Person vertex. Schema-valid "
+                "but semantically wrong; neither strategy can drop it."
+            ),
+            chunks=["In Cast Away, Tom Hanks played Chuck Noland, a FedEx executive."],
+            responses=[
+                _r(
+                    [
+                        {"label": "Person", "type": "vertex", "id": "v1", "properties": {"name": "Tom Hanks"}},
+                        {"label": "Movie", "type": "vertex", "id": "v2", "properties": {"title": "Cast Away"}},
+                        {"label": "Person", "type": "vertex", "id": "v3", "properties": {"name": "Chuck Noland"}},
+                    ],
+                    [
+                        {
+                            "label": "ACTED_IN",
+                            "type": "edge",
+                            "outV": "v1",
+                            "inV": "v2",
+                            "outVLabel": "Person",
+                            "inVLabel": "Movie",
+                            "properties": {"role": "Chuck Noland"},
+                        }
+                    ],
+                )
+            ],
+            expected={
+                "vertices": [
+                    _vertex("Person", "1:Tom Hanks", name="Tom Hanks"),
+                    _vertex("Movie", "2:Cast Away", title="Cast Away"),
+                ],
+                "edges": [
+                    _edge("ACTED_IN", "1:Tom Hanks", "2:Cast Away", role="Chuck Noland"),
+                ],
+            },
+        )
+    )
+
+    # 16. Pronoun promoted to Person, no prior chunk to resolve the alias
+    #     against. Enhanced's document assembler can only repair across
+    #     chunks; a single-chunk pronoun ghost gets kept by both. Its
+    #     spurious outgoing edge also gets kept by both — F1 tanks equally.
+    scenarios.append(
+        Scenario(
+            name="s16_pronoun_ghost_no_prior_context",
+            description=(
+                "Single-chunk pronoun-as-Person with no earlier antecedent. "
+                "Enhanced's cross-chunk alias table has nothing to link to; "
+                "both strategies emit the ghost Person and its edge."
+            ),
+            chunks=["He voiced Woody in the Toy Story franchise."],
+            responses=[
+                _r(
+                    [
+                        {"label": "Person", "type": "vertex", "id": "v1", "properties": {"name": "He"}},
+                        {"label": "Movie", "type": "vertex", "id": "v2", "properties": {"title": "Toy Story"}},
+                    ],
+                    [
+                        {
+                            "label": "ACTED_IN",
+                            "type": "edge",
+                            "outV": "v1",
+                            "inV": "v2",
+                            "outVLabel": "Person",
+                            "inVLabel": "Movie",
+                            "properties": {"role": "Woody"},
+                        }
+                    ],
+                )
+            ],
+            expected={
+                "vertices": [
+                    _vertex("Movie", "2:Toy Story", title="Toy Story"),
+                ],
+                "edges": [],
+            },
+        )
+    )
+
     return scenarios
 
 
@@ -724,6 +828,15 @@ def test_benchmark_produces_comparison_table(scenarios, capsys):
     # Print to stdout so `pytest -s` captures the exact table to paste into the report.
     print("\n" + "\n".join(rows))
     assert avg_enhanced >= avg_baseline
+    # Enforce the design-stage F1-improvement threshold documented in the report.
+    # This is a floor; regressions below +5% relative must fail CI.
+    if avg_baseline > 0:
+        actual_relative_gain = (avg_enhanced - avg_baseline) / avg_baseline
+        assert actual_relative_gain >= DESIGN_F1_RELATIVE_GAIN_MIN, (
+            f"design-stage F1 improvement threshold not met: got "
+            f"{actual_relative_gain * 100:.2f}% relative, "
+            f"need >= {DESIGN_F1_RELATIVE_GAIN_MIN * 100:.1f}%"
+        )
 
 
 def test_enhanced_wins_on_cross_chunk_edge(scenarios):
@@ -800,3 +913,41 @@ def test_multi_primary_key_handled_by_both(scenarios):
     # Both should produce canonical id "3:Alice!Acme".
     assert baseline_pred["vertices"][0]["id"] == "3:Alice!Acme"
     assert enhanced_pred["vertices"][0]["id"] == "3:Alice!Acme"
+
+
+def test_character_promoted_to_person_hurts_both_strategies(scenarios):
+    """s15: enhanced has no advantage over baseline on semantic errors.
+
+    "Chuck Noland" is a fictional character with a schema-valid ``name``.
+    Neither strategy has the world knowledge to distinguish it from a real
+    Person. Both keep the ghost vertex, both take an equal precision hit —
+    documented so the report can honestly disclose enhanced's ceiling.
+    """
+    scenario = next(s for s in scenarios if s.name == "s15_character_promoted_to_person")
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    baseline_report = _evaluate(scenario, baseline_pred)
+    enhanced_report = _evaluate(scenario, enhanced_pred)
+    # Both fail: neither reaches F1=1.0.
+    assert baseline_report.overall_f1 < 1.0
+    assert enhanced_report.overall_f1 < 1.0
+    # Both fail EQUALLY: enhanced has no schema-level lever to catch this.
+    assert abs(enhanced_report.overall_f1 - baseline_report.overall_f1) < 1e-9
+
+
+def test_pronoun_ghost_hurts_both_when_no_prior_context(scenarios):
+    """s16: enhanced's cross-chunk alias table cannot help a first-chunk pronoun.
+
+    Enhanced beats baseline on s06/s07 because it can look back across
+    chunks. When the pronoun appears in the *first* chunk with no
+    antecedent, the alias table is empty and enhanced cannot repair the
+    edge either. Both strategies emit the ghost Person and the spurious edge.
+    """
+    scenario = next(s for s in scenarios if s.name == "s16_pronoun_ghost_no_prior_context")
+    baseline_pred, _, _ = _run(scenario, strategy="baseline")
+    enhanced_pred, _, _ = _run(scenario, strategy="enhanced")
+    baseline_report = _evaluate(scenario, baseline_pred)
+    enhanced_report = _evaluate(scenario, enhanced_pred)
+    assert baseline_report.overall_f1 < 1.0
+    assert enhanced_report.overall_f1 < 1.0
+    assert abs(enhanced_report.overall_f1 - baseline_report.overall_f1) < 1e-9

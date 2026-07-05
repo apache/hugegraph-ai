@@ -34,6 +34,10 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.document_ass
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.normalizer import (
     SchemaAwareNormalizer,
 )
+from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.quality_gate import (
+    GraphQualityGate,
+    QualityMetrics,
+)
 from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced.schema_index import (
     GraphSchemaIndex,
 )
@@ -57,8 +61,10 @@ __all__ = [
     "CandidateGraphParser",
     "DocumentGraph",
     "DocumentGraphAssembler",
+    "GraphQualityGate",
     "GraphSchemaIndex",
     "NormalizedChunkGraph",
+    "QualityMetrics",
     "SchemaAwareNormalizer",
     "StructuredWarning",
     "WarningCode",

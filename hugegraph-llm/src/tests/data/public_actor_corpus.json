@@ -1,0 +1,1976 @@
+{
+  "meta": {
+    "schema_source": "Person + Movie + ACTED_IN (matches live_benchmark schema)",
+    "text_source": "Wikipedia lead extract (via /w/api.php action=query prop=extracts exintro)",
+    "ground_truth_source": "Wikidata P161 (cast member) verified per film via wbgetentities. Only films whose Wikidata entity is an instance-of (P31) a film class AND whose P161 claims include the actor's Q-id are admitted.",
+    "built_at_utc": "2026-07-05T10:13:18.577372+00:00",
+    "actor_count": 8,
+    "total_vertices": 65,
+    "total_edges": 57
+  },
+  "corpora": [
+    {
+      "name": "Tom Hanks",
+      "actor_qid": "Q2263",
+      "wikipedia_title": "Tom Hanks",
+      "wikipedia_revision": 1362528109,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1362528109",
+      "text": "Thomas Jeffrey Hanks (born July 9, 1956) is an  American actor and filmmaker. Known for both his comedic and dramatic roles, he is one of the most popular and recognizable film stars worldwide, and is regarded as an American cultural icon. In 2020, Hanks was ranked as the fourth-highest-grossing American film actor of all time. His numerous awards include two Academy Awards, seven Emmy Awards, and four Golden Globe Awards; he has also been nominated for five BAFTA Awards and a Tony Award. He received the AFI Life Achievement Award in 2002, the Kennedy Center Honor in 2014, the Presidential Medal of Freedom in 2016, and the Golden Globe Cecil B. DeMille Award in 2020.\nHanks rose to fame with leading roles in the comedies Splash (1984), The Money Pit (1986), Big (1988), and A League of Their Own (1992). He won two consecutive Academy Awards for Best Actor, playing a gay lawyer suffering from AIDS in Philadelphia (1993), then the title character in Forrest Gump (1994). Hanks has collaborated with Steven Spielberg on five films—Saving Private Ryan (1998), Catch Me If You Can (2002), The Terminal (2004), Bridge of Spies (2015) and The Post (2017)—and three World War II-themed miniseries: Band of Brothers (2001), The Pacific (2010) and Masters of the Air (2024). He has also frequently collaborated with directors Ron Howard, Nora Ephron and Robert Zemeckis.\nHanks cemented his film stardom with lead roles in the romantic comedies Sleepless in Seattle (1993) and You've Got Mail (1998); the dramas Apollo 13 (1995), The Green Mile (1999), Cast Away (2000), Road to Perdition (2002), Cloud Atlas (2012) and News of the World (2020); and the biographical dramas Charlie Wilson's War (2007), Captain Phillips (2013), Saving Mr. Banks (2013), Sully (2016), A Beautiful Day in the Neighborhood (2019) and Elvis (2022). He played the title character in the Robert Langdon series (2006–2016), voiced Sheriff Woody in the Toy Story franchise (1995–present) and multiple roles in The Polar Express (2004). Hanks directed and acted in That Thing You Do! (1996) and Larry Crowne (2011).\nHis breakthrough television role was a co-lead in the ABC sitcom Bosom Buddies (1980–1982). He has hosted Saturday Night Live ten times and launched a production company, Playtone, which has produced various limited series and television movies, including From the Earth to the Moon (1998), Band of Brothers, John Adams (2008), The Pacific, Game Change (2012) and Olive Kitteridge (2015). He made his Broadway debut in Nora Ephron's Lucky Guy (2013), earning a nomination for the Tony Award for Best Actor in a Play.",
+      "chunks": [
+        "Thomas Jeffrey Hanks (born July 9, 1956) is an  American actor and filmmaker. Known for both his comedic and dramatic roles, he is one of the most popular and recognizable film stars worldwide, and is regarded as an American cultural icon. In 2020, Hanks was ranked as the fourth-highest-grossing American film actor of all time. His numerous awards include two Academy Awards, seven Emmy Awards, and four Golden Globe Awards; he has also been nominated for five BAFTA Awards and a Tony Award. He received the AFI Life Achievement Award in 2002, the Kennedy Center Honor in 2014, the Presidential Medal of Freedom in 2016, and the Golden Globe Cecil B. DeMille Award in 2020.",
+        "Hanks rose to fame with leading roles in the comedies Splash (1984), The Money Pit (1986), Big (1988), and A League of Their Own (1992). He won two consecutive Academy Awards for Best Actor, playing a gay lawyer suffering from AIDS in Philadelphia (1993), then the title character in Forrest Gump (1994). Hanks has collaborated with Steven Spielberg on five films—Saving Private Ryan (1998), Catch Me If You Can (2002), The Terminal (2004), Bridge of Spies (2015) and The Post (2017)—and three World War II-themed miniseries: Band of Brothers (2001), The Pacific (2010) and Masters of the Air (2024). He has also frequently collaborated with directors Ron Howard, Nora Ephron and Robert Zemeckis. Hanks cemented his film stardom with lead roles in the romantic comedies Sleepless in Seattle (1993) and You've Got Mail (1998); the dramas Apollo 13 (1995), The Green Mile (1999), Cast Away (2000), Road to Perdition (2002), Cloud Atlas (2012) and News of the World (2020); and the biographical dramas Charlie Wilson's War (2007), Captain Phillips (2013), Saving Mr. Banks (2013), Sully (2016), A Beautiful Day in the Neighborhood (2019) and Elvis (2022).",
+        "He played the title character in the Robert Langdon series (2006–2016), voiced Sheriff Woody in the Toy Story franchise (1995–present) and multiple roles in The Polar Express (2004). Hanks directed and acted in That Thing You Do! (1996) and Larry Crowne (2011). His breakthrough television role was a co-lead in the ABC sitcom Bosom Buddies (1980–1982). He has hosted Saturday Night Live ten times and launched a production company, Playtone, which has produced various limited series and television movies, including From the Earth to the Moon (1998), Band of Brothers, John Adams (2008), The Pacific, Game Change (2012) and Olive Kitteridge (2015). He made his Broadway debut in Nora Ephron's Lucky Guy (2013), earning a nomination for the Tony Award for Best Actor in a Play."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Tom Hanks",
+            "properties": {
+              "name": "Tom Hanks"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Splash",
+            "properties": {
+              "title": "Splash",
+              "year": 1984
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:A League of Their Own",
+            "properties": {
+              "title": "A League of Their Own",
+              "year": 1992
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Catch Me If You Can",
+            "properties": {
+              "title": "Catch Me If You Can",
+              "year": 2002
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Terminal",
+            "properties": {
+              "title": "The Terminal",
+              "year": 2004
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Bridge of Spies",
+            "properties": {
+              "title": "Bridge of Spies",
+              "year": 2015
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Post",
+            "properties": {
+              "title": "The Post",
+              "year": 2017
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Sleepless in Seattle",
+            "properties": {
+              "title": "Sleepless in Seattle",
+              "year": 1993
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:Splash",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:A League of Their Own",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:Catch Me If You Can",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:The Terminal",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:Bridge of Spies",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:The Post",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Tom Hanks",
+            "inV": "2:Sleepless in Seattle",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "Splash",
+          "mentioned_title": "Splash",
+          "year": 1984,
+          "wikidata_qid": "Q1127184"
+        },
+        {
+          "title": "A League of Their Own",
+          "mentioned_title": "A League of Their Own",
+          "year": 1992,
+          "wikidata_qid": "Q1306472"
+        },
+        {
+          "title": "Catch Me If You Can",
+          "mentioned_title": "Catch Me If You Can",
+          "year": 2002,
+          "wikidata_qid": "Q208108"
+        },
+        {
+          "title": "The Terminal",
+          "mentioned_title": "The Terminal",
+          "year": 2004,
+          "wikidata_qid": "Q318766"
+        },
+        {
+          "title": "Bridge of Spies",
+          "mentioned_title": "Bridge of Spies",
+          "year": 2015,
+          "wikidata_qid": "Q18067135"
+        },
+        {
+          "title": "The Post",
+          "mentioned_title": "The Post",
+          "year": 2017,
+          "wikidata_qid": "Q30203425"
+        },
+        {
+          "title": "Sleepless in Seattle",
+          "mentioned_title": "Sleepless in Seattle",
+          "year": 1993,
+          "wikidata_qid": "Q107167"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "The Money Pit",
+          "year": "1986",
+          "reason": "not_a_film",
+          "qid": "Q116897480"
+        },
+        {
+          "title": "Big",
+          "year": "1988",
+          "reason": "not_a_film",
+          "qid": "Q84"
+        },
+        {
+          "title": "AIDS in Philadelphia",
+          "year": "1993",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "Forrest Gump",
+          "year": "1994",
+          "reason": "not_a_film",
+          "qid": "Q552213"
+        },
+        {
+          "title": "Private Ryan",
+          "year": "1998",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "Band of Brothers",
+          "year": "2001",
+          "reason": "not_a_film",
+          "qid": "Q16950158"
+        },
+        {
+          "title": "The Pacific",
+          "year": "2010",
+          "reason": "not_a_film",
+          "qid": "Q98"
+        },
+        {
+          "title": "Air",
+          "year": "2024",
+          "reason": "not_a_film",
+          "qid": "Q318452"
+        }
+      ]
+    },
+    {
+      "name": "Meryl Streep",
+      "actor_qid": "Q873",
+      "wikipedia_title": "Meryl Streep",
+      "wikipedia_revision": 1361813527,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1361813527",
+      "text": "Mary Louise \"Meryl\" Streep (born June 22, 1949) is an American actress. Widely regarded by peers and critics as the greatest actress of her generation, and by many as the greatest of all time, she is recognized as one of the most versatile performers in cinema, noted for her technical precision, nuanced emotional depth, command of dialects, and professional longevity. Streep is an alumna of Vassar College and the Yale School of Drama, holding a Bachelor of Arts and a Master of Fine Arts. Her artistic process often includes refining her characters' dialogue so that their motivations possess a psychological depth and agency that transcend traditional archetypes. Beyond her creative work, she is a prominent advocate for gender parity, labor protections, and a challenge to the influence of the male gaze in film criticism and production. \nStreep began her professional stage career in 1975 in Trelawny of the Wells and earned a Tony Award nomination the following year for 27 Wagons Full of Cotton. She transitioned to film in Julia (1977), followed by her first Academy Award nomination for The Deer Hunter (1978). For Kramer vs. Kramer (1979), she won her first Oscar after advocating to rewrite her character's courtroom testimony, shifting the role from a secondary antagonist to a portrayal focused on a woman's autonomy. She became a leading actress of the 1980s with performances in The French Lieutenant's Woman (1981), Sophie's Choice (1982), Out of Africa (1985), and A Cry in the Dark (1988), for which she received the Best Actress Award at Cannes.\nAfter expanding into various genres in the 1990s, Streep achieved a new level of commercial stardom in the 2000s. She transitioned from her established dramatic niche to lead high-grossing mainstream successes, portraying a formidable antagonist in The Devil Wears Prada (2006) and a singing lead in the musical Mamma Mia! (2008). During this period, she continued to receive critical acclaim for her dramatic turns in Doubt (2008) and The Iron Lady (2011), the latter earning her a third Academy Award. \nStreep's career honors include three Academy Awards, eight Golden Globe Awards, two British Academy Film Awards, three Primetime Emmy Awards, one Children's and Family Emmy Award, and two Screen Actors Guild Awards. She is a recipient of the AFI Life Achievement Award, the Honorary Palme d'Or, the Kennedy Center Honor, the Golden Globe Cecil B. DeMille Award, and an Honorary César. In 2014, she was awarded the Presidential Medal of Freedom. She holds the record for the most Academy Award and Globe nominations of any performer, with 21 and 34 respectively. A prolific artist, her career spans over 64 films and 18 television projects, alongside more than 20 musical recordings and 30 audiobooks.\n\n",
+      "chunks": [
+        "Mary Louise \"Meryl\" Streep (born June 22, 1949) is an American actress. Widely regarded by peers and critics as the greatest actress of her generation, and by many as the greatest of all time, she is recognized as one of the most versatile performers in cinema, noted for her technical precision, nuanced emotional depth, command of dialects, and professional longevity. Streep is an alumna of Vassar College and the Yale School of Drama, holding a Bachelor of Arts and a Master of Fine Arts. Her artistic process often includes refining her characters' dialogue so that their motivations possess a psychological depth and agency that transcend traditional archetypes. Beyond her creative work, she is a prominent advocate for gender parity, labor protections, and a challenge to the influence of the male gaze in film criticism and production. Streep began her professional stage career in 1975 in Trelawny of the Wells and earned a Tony Award nomination the following year for 27 Wagons Full of Cotton.",
+        "She transitioned to film in Julia (1977), followed by her first Academy Award nomination for The Deer Hunter (1978). For Kramer vs. Kramer (1979), she won her first Oscar after advocating to rewrite her character's courtroom testimony, shifting the role from a secondary antagonist to a portrayal focused on a woman's autonomy. She became a leading actress of the 1980s with performances in The French Lieutenant's Woman (1981), Sophie's Choice (1982), Out of Africa (1985), and A Cry in the Dark (1988), for which she received the Best Actress Award at Cannes. After expanding into various genres in the 1990s, Streep achieved a new level of commercial stardom in the 2000s. She transitioned from her established dramatic niche to lead high-grossing mainstream successes, portraying a formidable antagonist in The Devil Wears Prada (2006) and a singing lead in the musical Mamma Mia!",
+        "(2008). During this period, she continued to receive critical acclaim for her dramatic turns in Doubt (2008) and The Iron Lady (2011), the latter earning her a third Academy Award. Streep's career honors include three Academy Awards, eight Golden Globe Awards, two British Academy Film Awards, three Primetime Emmy Awards, one Children's and Family Emmy Award, and two Screen Actors Guild Awards. She is a recipient of the AFI Life Achievement Award, the Honorary Palme d'Or, the Kennedy Center Honor, the Golden Globe Cecil B. DeMille Award, and an Honorary César. In 2014, she was awarded the Presidential Medal of Freedom. She holds the record for the most Academy Award and Globe nominations of any performer, with 21 and 34 respectively. A prolific artist, her career spans over 64 films and 18 television projects, alongside more than 20 musical recordings and 30 audiobooks."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Meryl Streep",
+            "properties": {
+              "name": "Meryl Streep"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Deer Hunter",
+            "properties": {
+              "title": "The Deer Hunter",
+              "year": 1978
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Sophie's Choice",
+            "properties": {
+              "title": "Sophie's Choice",
+              "year": 1982
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Out of Africa",
+            "properties": {
+              "title": "Out of Africa",
+              "year": 1985
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Devil Wears Prada",
+            "properties": {
+              "title": "The Devil Wears Prada",
+              "year": 2006
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Mamma Mia!",
+            "properties": {
+              "title": "Mamma Mia!",
+              "year": 2008
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Iron Lady",
+            "properties": {
+              "title": "The Iron Lady",
+              "year": 2011
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Meryl Streep",
+            "inV": "2:The Deer Hunter",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Meryl Streep",
+            "inV": "2:Sophie's Choice",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Meryl Streep",
+            "inV": "2:Out of Africa",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Meryl Streep",
+            "inV": "2:The Devil Wears Prada",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Meryl Streep",
+            "inV": "2:Mamma Mia!",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Meryl Streep",
+            "inV": "2:The Iron Lady",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "The Deer Hunter",
+          "mentioned_title": "The Deer Hunter",
+          "year": 1978,
+          "wikidata_qid": "Q201674"
+        },
+        {
+          "title": "Sophie's Choice",
+          "mentioned_title": "Sophie's Choice",
+          "year": 1982,
+          "wikidata_qid": "Q165627"
+        },
+        {
+          "title": "Out of Africa",
+          "mentioned_title": "Out of Africa",
+          "year": 1985,
+          "wikidata_qid": "Q208266"
+        },
+        {
+          "title": "The Devil Wears Prada",
+          "mentioned_title": "The Devil Wears Prada",
+          "year": 2006,
+          "wikidata_qid": "Q223316"
+        },
+        {
+          "title": "Mamma Mia!",
+          "mentioned_title": "Mamma Mia!",
+          "year": 2008,
+          "wikidata_qid": "Q188850"
+        },
+        {
+          "title": "The Iron Lady",
+          "mentioned_title": "The Iron Lady",
+          "year": 2011,
+          "wikidata_qid": "Q269810"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "Julia",
+          "year": "1977",
+          "reason": "not_a_film",
+          "qid": "Q2737173"
+        },
+        {
+          "title": "For Kramer vs. Kramer",
+          "year": "1979",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "The French Lieutenant's Woman",
+          "year": "1981",
+          "reason": "not_a_film",
+          "qid": "Q1268075"
+        },
+        {
+          "title": "Dark",
+          "year": "1988",
+          "reason": "not_a_film",
+          "qid": "Q28443710"
+        },
+        {
+          "title": "Doubt",
+          "year": "2008",
+          "reason": "not_a_film",
+          "qid": "Q37529041"
+        }
+      ]
+    },
+    {
+      "name": "Leonardo DiCaprio",
+      "actor_qid": "Q38111",
+      "wikipedia_title": "Leonardo DiCaprio",
+      "wikipedia_revision": 1360720429,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1360720429",
+      "text": "Leonardo Wilhelm DiCaprio ( ; Italian: [diˈkaːprjo]; born November 11, 1974) is an American actor and film producer. Known for his work in biographical and period films, he is the recipient of numerous accolades, including an Academy Award, an Actor Award, a British Academy Film Award, an Emmy Award, a Silver Bear and three Golden Globes. His films as a leading actor have grossed $7 billion worldwide, and he has been placed eight times in annual rankings of the world's highest-paid actors.\nBorn in Los Angeles, DiCaprio began his career in the late 1980s by appearing in television commercials. He had a recurring role in the sitcom Parenthood (1990–1991), and had his first major film part as author Tobias Wolff in This Boy's Life (1993). He received critical acclaim and his first Academy Award nomination for playing a developmentally disabled boy in What's Eating Gilbert Grape (1993). DiCaprio achieved international stardom with the star-crossed romances Romeo + Juliet (1996) and Titanic (1997). After the latter became the highest-grossing film in the world at the time, he reduced his workload for a few years. In an attempt to shed his image of a romantic hero, DiCaprio sought roles in other genres, including the 2002 crime dramas Catch Me If You Can and Gangs of New York; the latter marked the first of his many successful collaborations with director Martin Scorsese.\nDiCaprio continued to gain acclaim for his performances in the biopic The Aviator (2004), the political thriller Blood Diamond (2006), the crime thriller The Departed (2006), and the romantic drama Revolutionary Road (2008). He later made environmental documentaries and starred in several high-profile directors' successful projects, including the thrillers Inception and Shutter Island (both 2010); the western Django Unchained (2012); the romantic drama The Great Gatsby (2013); the biopic The Wolf of Wall Street (2013); the survival drama The Revenant (2015), for which he won the Academy Award for Best Actor; the comedy-drama Once Upon a Time in Hollywood (2019); the crime drama Killers of the Flower Moon (2023) and the action film One Battle After Another (2025).\nDiCaprio is the founder of Appian Way Productions—a production company that has made some of his films and the documentary series Greensburg (2008–2010)—and Leonardo DiCaprio Foundation, a nonprofit organization devoted to promoting environmental awareness. A United Nations Messenger of Peace, he regularly supports charitable causes. In 2005, he was named a Commander of the Order of Arts and Letters for his contributions to the arts, and in 2016, he appeared in Time magazine's 100 most influential people in the world. DiCaprio was voted one of the 50 greatest actors of all time in a 2022 readers' poll by Empire magazine.",
+      "chunks": [
+        "Leonardo Wilhelm DiCaprio ( ; Italian: [diˈkaːprjo]; born November 11, 1974) is an American actor and film producer. Known for his work in biographical and period films, he is the recipient of numerous accolades, including an Academy Award, an Actor Award, a British Academy Film Award, an Emmy Award, a Silver Bear and three Golden Globes. His films as a leading actor have grossed $7 billion worldwide, and he has been placed eight times in annual rankings of the world's highest-paid actors. Born in Los Angeles, DiCaprio began his career in the late 1980s by appearing in television commercials. He had a recurring role in the sitcom Parenthood (1990–1991), and had his first major film part as author Tobias Wolff in This Boy's Life (1993).",
+        "He received critical acclaim and his first Academy Award nomination for playing a developmentally disabled boy in What's Eating Gilbert Grape (1993). DiCaprio achieved international stardom with the star-crossed romances Romeo + Juliet (1996) and Titanic (1997). After the latter became the highest-grossing film in the world at the time, he reduced his workload for a few years. In an attempt to shed his image of a romantic hero, DiCaprio sought roles in other genres, including the 2002 crime dramas Catch Me If You Can and Gangs of New York; the latter marked the first of his many successful collaborations with director Martin Scorsese. DiCaprio continued to gain acclaim for his performances in the biopic The Aviator (2004), the political thriller Blood Diamond (2006), the crime thriller The Departed (2006), and the romantic drama Revolutionary Road (2008).",
+        "He later made environmental documentaries and starred in several high-profile directors' successful projects, including the thrillers Inception and Shutter Island (both 2010); the western Django Unchained (2012); the romantic drama The Great Gatsby (2013); the biopic The Wolf of Wall Street (2013); the survival drama The Revenant (2015), for which he won the Academy Award for Best Actor; the comedy-drama Once Upon a Time in Hollywood (2019); the crime drama Killers of the Flower Moon (2023) and the action film One Battle After Another (2025). DiCaprio is the founder of Appian Way Productions—a production company that has made some of his films and the documentary series Greensburg (2008–2010)—and Leonardo DiCaprio Foundation, a nonprofit organization devoted to promoting environmental awareness. A United Nations Messenger of Peace, he regularly supports charitable causes. In 2005, he was named a Commander of the Order of Arts and Letters for his contributions to the arts, and in 2016, he appeared in Time magazine's 100 most influential people in the world. DiCaprio was voted one of the 50 greatest actors of all time in a 2022 readers' poll by Empire magazine."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Leonardo DiCaprio",
+            "properties": {
+              "name": "Leonardo DiCaprio"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:What's Eating Gilbert Grape",
+            "properties": {
+              "title": "What's Eating Gilbert Grape",
+              "year": 1993
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Aviator",
+            "properties": {
+              "title": "The Aviator",
+              "year": 2004
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Blood Diamond",
+            "properties": {
+              "title": "Blood Diamond",
+              "year": 2006
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Departed",
+            "properties": {
+              "title": "The Departed",
+              "year": 2006
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Revolutionary Road",
+            "properties": {
+              "title": "Revolutionary Road",
+              "year": 2008
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Django Unchained",
+            "properties": {
+              "title": "Django Unchained",
+              "year": 2012
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Wolf of Wall Street",
+            "properties": {
+              "title": "The Wolf of Wall Street",
+              "year": 2013
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Revenant",
+            "properties": {
+              "title": "The Revenant",
+              "year": 2015
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Once Upon a Time in Hollywood",
+            "properties": {
+              "title": "Once Upon a Time in Hollywood",
+              "year": 2019
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:One Battle After Another",
+            "properties": {
+              "title": "One Battle After Another",
+              "year": 2025
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:What's Eating Gilbert Grape",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:The Aviator",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:Blood Diamond",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:The Departed",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:Revolutionary Road",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:Django Unchained",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:The Wolf of Wall Street",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:The Revenant",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:Once Upon a Time in Hollywood",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Leonardo DiCaprio",
+            "inV": "2:One Battle After Another",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "What's Eating Gilbert Grape",
+          "mentioned_title": "What's Eating Gilbert Grape",
+          "year": 1993,
+          "wikidata_qid": "Q660894"
+        },
+        {
+          "title": "The Aviator",
+          "mentioned_title": "The Aviator",
+          "year": 2004,
+          "wikidata_qid": "Q201924"
+        },
+        {
+          "title": "Blood Diamond",
+          "mentioned_title": "Blood Diamond",
+          "year": 2006,
+          "wikidata_qid": "Q74958"
+        },
+        {
+          "title": "The Departed",
+          "mentioned_title": "The Departed",
+          "year": 2006,
+          "wikidata_qid": "Q172975"
+        },
+        {
+          "title": "Revolutionary Road",
+          "mentioned_title": "Revolutionary Road",
+          "year": 2008,
+          "wikidata_qid": "Q276299"
+        },
+        {
+          "title": "Django Unchained",
+          "mentioned_title": "Django Unchained",
+          "year": 2012,
+          "wikidata_qid": "Q571032"
+        },
+        {
+          "title": "The Wolf of Wall Street",
+          "mentioned_title": "The Wolf of Wall Street",
+          "year": 2013,
+          "wikidata_qid": "Q1392744"
+        },
+        {
+          "title": "The Revenant",
+          "mentioned_title": "The Revenant",
+          "year": 2015,
+          "wikidata_qid": "Q18002795"
+        },
+        {
+          "title": "Once Upon a Time in Hollywood",
+          "mentioned_title": "Once Upon a Time in Hollywood",
+          "year": 2019,
+          "wikidata_qid": "Q47300912"
+        },
+        {
+          "title": "One Battle After Another",
+          "mentioned_title": "One Battle After Another",
+          "year": 2025,
+          "wikidata_qid": "Q117085614"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "Tobias Wolff in This Boy's Life",
+          "year": "1993",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "Juliet",
+          "year": "1996",
+          "reason": "not_a_film",
+          "qid": "Q20000410"
+        },
+        {
+          "title": "Titanic",
+          "year": "1997",
+          "reason": "not_a_film",
+          "qid": "Q25173"
+        },
+        {
+          "title": "The Great Gatsby",
+          "year": "2013",
+          "reason": "not_a_film",
+          "qid": "Q214371"
+        },
+        {
+          "title": "Flower Moon",
+          "year": "2023",
+          "reason": "not_a_film",
+          "qid": "Q36865409"
+        }
+      ]
+    },
+    {
+      "name": "Denzel Washington",
+      "actor_qid": "Q42101",
+      "wikipedia_title": "Denzel Washington",
+      "wikipedia_revision": 1361981186,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1361981186",
+      "text": "Denzel Hayes Washington Jr. (born December 28, 1954) is an American actor. Known for his dramatic roles on stage and screen, he has received numerous accolades including two Academy Awards, an Actor Award, two Golden Globes, two Silver Bears and a Tony Award as well as nominations for a Grammy Award and two Primetime Emmy Awards. In 2020, The New York Times named Washington the greatest actor of the 21st century. He has also been honored with the Cecil B. DeMille Award in 2016, AFI Life Achievement Award in 2019, the Honorary Palme d'Or in 2025, and the Presidential Medal of Freedom in 2025. Films in which he has appeared have grossed over $5.1 billion worldwide.\nAfter training at the American Conservatory Theater, Washington began his career in theater, acting in performances off-Broadway. He first came to prominence in the NBC medical drama series St. Elsewhere (1982–1988), and in the war film A Soldier's Story (1984). Washington won Academy Awards for Best Supporting Actor for playing an American Civil War soldier in the war drama Glory (1989) and for Best Actor for playing a corrupt police officer in the crime thriller Training Day (2001). He was Oscar-nominated for his roles in Cry Freedom (1987), Malcolm X (1992), The Hurricane (1999), Flight (2012), Fences (2016), Roman J. Israel, Esq. (2017), and The Tragedy of Macbeth (2021).\nWashington has starred in other notable films, including The Pelican Brief, Philadelphia (both 1993); Crimson Tide, Devil in a Blue Dress (both 1995); He Got Game (1998); Remember the Titans (2000); Man on Fire (2004); Déjà Vu, Inside Man (both 2006); American Gangster (2007); Unstoppable, The Book of Eli (both 2010); The Equalizer trilogy (2014–2023), Gladiator II (2024), and Highest 2 Lowest (2025). Washington has also directed the films Antwone Fisher (2002), The Great Debaters (2007), Fences (2016), and A Journal for Jordan (2021).\nOn stage, he has acted in The Public Theater productions of Coriolanus (1979) and The Tragedy of Richard III (1990). He made his Broadway debut in the Ron Milner play Checkmates (1988). He won the Tony Award for Best Actor in a Play for his role as a disillusioned working class father in the Broadway revival of August Wilson's play Fences (2010). He has also acted in the Broadway revivals of William Shakespeare's Julius Caesar (2005) and Othello (2025), Lorraine Hansberry's play A Raisin in the Sun (2014), and Eugene O'Neill's play The Iceman Cometh (2018).\n\n",
+      "chunks": [
+        "Denzel Hayes Washington Jr. (born December 28, 1954) is an American actor. Known for his dramatic roles on stage and screen, he has received numerous accolades including two Academy Awards, an Actor Award, two Golden Globes, two Silver Bears and a Tony Award as well as nominations for a Grammy Award and two Primetime Emmy Awards. In 2020, The New York Times named Washington the greatest actor of the 21st century. He has also been honored with the Cecil B. DeMille Award in 2016, AFI Life Achievement Award in 2019, the Honorary Palme d'Or in 2025, and the Presidential Medal of Freedom in 2025.",
+        "Films in which he has appeared have grossed over $5.1 billion worldwide. After training at the American Conservatory Theater, Washington began his career in theater, acting in performances off-Broadway. He first came to prominence in the NBC medical drama series St. Elsewhere (1982–1988), and in the war film A Soldier's Story (1984). Washington won Academy Awards for Best Supporting Actor for playing an American Civil War soldier in the war drama Glory (1989) and for Best Actor for playing a corrupt police officer in the crime thriller Training Day (2001). He was Oscar-nominated for his roles in Cry Freedom (1987), Malcolm X (1992), The Hurricane (1999), Flight (2012), Fences (2016), Roman J.",
+        "Israel, Esq. (2017), and The Tragedy of Macbeth (2021). Washington has starred in other notable films, including The Pelican Brief, Philadelphia (both 1993); Crimson Tide, Devil in a Blue Dress (both 1995); He Got Game (1998); Remember the Titans (2000); Man on Fire (2004); Déjà Vu, Inside Man (both 2006); American Gangster (2007); Unstoppable, The Book of Eli (both 2010); The Equalizer trilogy (2014–2023), Gladiator II (2024), and Highest 2 Lowest (2025). Washington has also directed the films Antwone Fisher (2002), The Great Debaters (2007), Fences (2016), and A Journal for Jordan (2021). On stage, he has acted in The Public Theater productions of Coriolanus (1979) and The Tragedy of Richard III (1990). He made his Broadway debut in the Ron Milner play Checkmates (1988). He won the Tony Award for Best Actor in a Play for his role as a disillusioned working class father in the Broadway revival of August Wilson's play Fences (2010). He has also acted in the Broadway revivals of William Shakespeare's Julius Caesar (2005) and Othello (2025), Lorraine Hansberry's play A Raisin in the Sun (2014), and Eugene O'Neill's play The Iceman Cometh (2018)."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Denzel Washington",
+            "properties": {
+              "name": "Denzel Washington"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:A Soldier's Story",
+            "properties": {
+              "title": "A Soldier's Story",
+              "year": 1984
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Cry Freedom",
+            "properties": {
+              "title": "Cry Freedom",
+              "year": 1987
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Hurricane",
+            "properties": {
+              "title": "The Hurricane",
+              "year": 1999
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Fences",
+            "properties": {
+              "title": "Fences",
+              "year": 2016
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Roman J. Israel, Esq.",
+            "properties": {
+              "title": "Roman J. Israel, Esq.",
+              "year": 2017
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Remember the Titans",
+            "properties": {
+              "title": "Remember the Titans",
+              "year": 2000
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Gladiator II",
+            "properties": {
+              "title": "Gladiator II",
+              "year": 2024
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:A Soldier's Story",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:Cry Freedom",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:The Hurricane",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:Fences",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:Roman J. Israel, Esq.",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:Remember the Titans",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Denzel Washington",
+            "inV": "2:Gladiator II",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "A Soldier's Story",
+          "mentioned_title": "A Soldier's Story",
+          "year": 1984,
+          "wikidata_qid": "Q1624196"
+        },
+        {
+          "title": "Cry Freedom",
+          "mentioned_title": "Cry Freedom",
+          "year": 1987,
+          "wikidata_qid": "Q962363"
+        },
+        {
+          "title": "The Hurricane",
+          "mentioned_title": "The Hurricane",
+          "year": 1999,
+          "wikidata_qid": "Q832732"
+        },
+        {
+          "title": "Fences",
+          "mentioned_title": "Fences",
+          "year": 2016,
+          "wikidata_qid": "Q25136220"
+        },
+        {
+          "title": "Roman J. Israel, Esq.",
+          "mentioned_title": "Roman J. Israel, Esq.",
+          "year": 2017,
+          "wikidata_qid": "Q29096095"
+        },
+        {
+          "title": "Remember the Titans",
+          "mentioned_title": "Remember the Titans",
+          "year": 2000,
+          "wikidata_qid": "Q117696"
+        },
+        {
+          "title": "Gladiator II",
+          "mentioned_title": "Gladiator II",
+          "year": 2024,
+          "wikidata_qid": "Q115789958"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "Glory",
+          "year": "1989",
+          "reason": "not_a_film",
+          "qid": "Q892206"
+        },
+        {
+          "title": "Training Day",
+          "year": "2001",
+          "reason": "not_a_film",
+          "qid": "Q137971633"
+        },
+        {
+          "title": "Malcolm X",
+          "year": "1992",
+          "reason": "not_a_film",
+          "qid": "Q43303"
+        },
+        {
+          "title": "Flight",
+          "year": "2012",
+          "reason": "not_a_film",
+          "qid": "Q13583449"
+        },
+        {
+          "title": "The Tragedy of Macbeth",
+          "year": "2021",
+          "reason": "not_a_film",
+          "qid": "Q130283"
+        },
+        {
+          "title": "He Got Game",
+          "year": "1998",
+          "reason": "not_a_film",
+          "qid": "Q1639281"
+        },
+        {
+          "title": "Man on Fire",
+          "year": "2004",
+          "reason": "not_a_film",
+          "qid": "Q134599078"
+        },
+        {
+          "title": "American Gangster",
+          "year": "2007",
+          "reason": "not_a_film",
+          "qid": "Q2455341"
+        }
+      ]
+    },
+    {
+      "name": "Julia Roberts",
+      "actor_qid": "Q40523",
+      "wikipedia_title": "Julia Roberts",
+      "wikipedia_revision": 1361873675,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1361873675",
+      "text": "Julia Fiona Roberts (born October 28, 1967) is an American actress. Known for her leading roles across several genres, she has received various accolades, including an Academy Award, a British Academy Film Award, and three Golden Globes. She became known for playing charming and relatable characters in romantic comedies and blockbusters, before expanding into dramas, thrillers, and independent films.\nAfter early breakthroughs in Mystic Pizza (1988) and Steel Magnolias (1989), Roberts cemented herself as a Hollywood leading lady with the romantic comedies Pretty Woman (1990), My Best Friend's Wedding (1997), Notting Hill (1999), and Runaway Bride (1999). She won the Academy Award for Best Actress for her portrayal of the titular role in the biographical drama Erin Brockovich (2000). Roberts then starred in films such as Ocean's Eleven (2001), Ocean's Twelve (2004), Charlie Wilson's War (2007), Valentine's Day (2010), Eat Pray Love (2010), August: Osage County (2013), Wonder (2017), Ticket to Paradise (2022), Leave the World Behind (2023), and After the Hunt (2025). On television, she starred as a physician during the AIDS crisis in the HBO film The Normal Heart (2014), which earned her a Primetime Emmy Award nomination, a social worker in the first season of the streaming series Homecoming (2018), and portrayed Martha Mitchell in the Starz political limited series Gaslit (2022).\nRoberts runs the production company Red Om Films, through which she has served as an executive producer for various projects she has starred in, as well as for the first four films of the American Girl franchise (2004–2008). She has served as the global ambassador for Lancôme since 2009. She was the world's highest-paid actress throughout the majority of the 1990s and the first half of the 2000s.  People magazine has named her the most beautiful woman in the world a record five times.\n\n",
+      "chunks": [
+        "Julia Fiona Roberts (born October 28, 1967) is an American actress. Known for her leading roles across several genres, she has received various accolades, including an Academy Award, a British Academy Film Award, and three Golden Globes. She became known for playing charming and relatable characters in romantic comedies and blockbusters, before expanding into dramas, thrillers, and independent films.",
+        "After early breakthroughs in Mystic Pizza (1988) and Steel Magnolias (1989), Roberts cemented herself as a Hollywood leading lady with the romantic comedies Pretty Woman (1990), My Best Friend's Wedding (1997), Notting Hill (1999), and Runaway Bride (1999). She won the Academy Award for Best Actress for her portrayal of the titular role in the biographical drama Erin Brockovich (2000). Roberts then starred in films such as Ocean's Eleven (2001), Ocean's Twelve (2004), Charlie Wilson's War (2007), Valentine's Day (2010), Eat Pray Love (2010), August: Osage County (2013), Wonder (2017), Ticket to Paradise (2022), Leave the World Behind (2023), and After the Hunt (2025).",
+        "On television, she starred as a physician during the AIDS crisis in the HBO film The Normal Heart (2014), which earned her a Primetime Emmy Award nomination, a social worker in the first season of the streaming series Homecoming (2018), and portrayed Martha Mitchell in the Starz political limited series Gaslit (2022). Roberts runs the production company Red Om Films, through which she has served as an executive producer for various projects she has starred in, as well as for the first four films of the American Girl franchise (2004–2008). She has served as the global ambassador for Lancôme since 2009. She was the world's highest-paid actress throughout the majority of the 1990s and the first half of the 2000s. People magazine has named her the most beautiful woman in the world a record five times."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Julia Roberts",
+            "properties": {
+              "name": "Julia Roberts"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Mystic Pizza",
+            "properties": {
+              "title": "Mystic Pizza",
+              "year": 1988
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Steel Magnolias",
+            "properties": {
+              "title": "Steel Magnolias",
+              "year": 1989
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Pretty Woman",
+            "properties": {
+              "title": "Pretty Woman",
+              "year": 1990
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:My Best Friend's Wedding",
+            "properties": {
+              "title": "My Best Friend's Wedding",
+              "year": 1997
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Ocean's Eleven",
+            "properties": {
+              "title": "Ocean's Eleven",
+              "year": 2001
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Ocean's Twelve",
+            "properties": {
+              "title": "Ocean's Twelve",
+              "year": 2004
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Charlie Wilson's War",
+            "properties": {
+              "title": "Charlie Wilson's War",
+              "year": 2007
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Eat Pray Love",
+            "properties": {
+              "title": "Eat Pray Love",
+              "year": 2010
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:August: Osage County",
+            "properties": {
+              "title": "August: Osage County",
+              "year": 2013
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Ticket to Paradise",
+            "properties": {
+              "title": "Ticket to Paradise",
+              "year": 2022
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Mystic Pizza",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Steel Magnolias",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Pretty Woman",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:My Best Friend's Wedding",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Ocean's Eleven",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Ocean's Twelve",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Charlie Wilson's War",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Eat Pray Love",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:August: Osage County",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Julia Roberts",
+            "inV": "2:Ticket to Paradise",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "Mystic Pizza",
+          "mentioned_title": "Mystic Pizza",
+          "year": 1988,
+          "wikidata_qid": "Q1331243"
+        },
+        {
+          "title": "Steel Magnolias",
+          "mentioned_title": "Steel Magnolias",
+          "year": 1989,
+          "wikidata_qid": "Q762140"
+        },
+        {
+          "title": "Pretty Woman",
+          "mentioned_title": "Pretty Woman",
+          "year": 1990,
+          "wikidata_qid": "Q207954"
+        },
+        {
+          "title": "My Best Friend's Wedding",
+          "mentioned_title": "My Best Friend's Wedding",
+          "year": 1997,
+          "wikidata_qid": "Q918380"
+        },
+        {
+          "title": "Ocean's Eleven",
+          "mentioned_title": "Ocean's Eleven",
+          "year": 2001,
+          "wikidata_qid": "Q205447"
+        },
+        {
+          "title": "Ocean's Twelve",
+          "mentioned_title": "Ocean's Twelve",
+          "year": 2004,
+          "wikidata_qid": "Q504053"
+        },
+        {
+          "title": "Charlie Wilson's War",
+          "mentioned_title": "Charlie Wilson's War",
+          "year": 2007,
+          "wikidata_qid": "Q273568"
+        },
+        {
+          "title": "Eat Pray Love",
+          "mentioned_title": "Eat Pray Love",
+          "year": 2010,
+          "wikidata_qid": "Q304030"
+        },
+        {
+          "title": "August: Osage County",
+          "mentioned_title": "August: Osage County",
+          "year": 2013,
+          "wikidata_qid": "Q4055443"
+        },
+        {
+          "title": "Ticket to Paradise",
+          "mentioned_title": "Ticket to Paradise",
+          "year": 2022,
+          "wikidata_qid": "Q109511080"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "Notting Hill",
+          "year": "1999",
+          "reason": "not_a_film",
+          "qid": "Q1411854"
+        },
+        {
+          "title": "Runaway Bride",
+          "year": "1999",
+          "reason": "not_a_film",
+          "qid": "Q135047589"
+        },
+        {
+          "title": "Erin Brockovich",
+          "year": "2000",
+          "reason": "not_a_film",
+          "qid": "Q232019"
+        },
+        {
+          "title": "Valentine's Day",
+          "year": "2010",
+          "reason": "not_a_film",
+          "qid": "Q37587"
+        },
+        {
+          "title": "Wonder",
+          "year": "2017",
+          "reason": "not_a_film",
+          "qid": "Q103820386"
+        }
+      ]
+    },
+    {
+      "name": "Anthony Hopkins",
+      "actor_qid": "Q65932",
+      "wikipedia_title": "Anthony Hopkins",
+      "wikipedia_revision": 1362122753,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1362122753",
+      "text": "Sir Philip Anthony Hopkins (born 31 December 1937) is a Welsh actor. Considered one of Britain's most recognisable and prolific actors, he is known for his performances on the screen and stage. Hopkins has received numerous accolades, including two Academy Awards, four BAFTA Awards, two Primetime Emmy Awards, and a Laurence Olivier Award. He has also received the Cecil B. DeMille Award in 2005 and the BAFTA Fellowship for lifetime achievement in 2008. He was knighted by Queen Elizabeth II for his services to drama in 1993.\nAfter graduating from the Royal Welsh College of Music & Drama in 1957, Hopkins trained at RADA (the Royal Academy of Dramatic Art) in London. He was then spotted by Laurence Olivier, who invited him to join the Royal National Theatre in 1965. Productions at the National included King Lear (his favourite Shakespeare play), Coriolanus, Macbeth, and Antony and Cleopatra. In 1985, he received acclaim and a Laurence Olivier Award for his performance in the David Hare play Pravda. His last stage play was a West End production of M. Butterfly in 1989.\nHopkins's early film roles include The Lion in Winter (1968), A Bridge Too Far (1977), Magic (1978), and The Elephant Man (1980). He won two Academy Awards for Best Actor for playing Hannibal Lecter in the horror thriller The Silence of the Lambs (1991) and an octogenarian with dementia in the psychological drama The Father (2020). He was also Oscar-nominated for The Remains of the Day (1993), Nixon (1995), Amistad (1997), and The Two Popes (2019). Other notable films include 84 Charing Cross Road (1987), Howards End (1992), Bram Stoker's Dracula (1992), Shadowlands (1993), Legends of the Fall (1994), The Mask of Zorro (1998), and the Marvel Cinematic Universe films Thor (2011), Thor: The Dark World (2013), and Thor: Ragnarok (2017).\nFor his work on television, Hopkins received a British Academy Television Award for Best Actor for his performance in War and Peace (1972). He won two Primetime Emmy Awards for Outstanding Lead Actor in a Limited or Anthology Series or Movie for The Lindbergh Kidnapping Case (1976) and The Bunker (1981). Other notable projects include the BBC film The Dresser (2015), PBS's King Lear (2018), and the HBO series Westworld (2016–2018).\n\n",
+      "chunks": [
+        "Sir Philip Anthony Hopkins (born 31 December 1937) is a Welsh actor. Considered one of Britain's most recognisable and prolific actors, he is known for his performances on the screen and stage. Hopkins has received numerous accolades, including two Academy Awards, four BAFTA Awards, two Primetime Emmy Awards, and a Laurence Olivier Award. He has also received the Cecil B. DeMille Award in 2005 and the BAFTA Fellowship for lifetime achievement in 2008. He was knighted by Queen Elizabeth II for his services to drama in 1993.",
+        "After graduating from the Royal Welsh College of Music & Drama in 1957, Hopkins trained at RADA (the Royal Academy of Dramatic Art) in London. He was then spotted by Laurence Olivier, who invited him to join the Royal National Theatre in 1965. Productions at the National included King Lear (his favourite Shakespeare play), Coriolanus, Macbeth, and Antony and Cleopatra. In 1985, he received acclaim and a Laurence Olivier Award for his performance in the David Hare play Pravda. His last stage play was a West End production of M. Butterfly in 1989.",
+        "Hopkins's early film roles include The Lion in Winter (1968), A Bridge Too Far (1977), Magic (1978), and The Elephant Man (1980). He won two Academy Awards for Best Actor for playing Hannibal Lecter in the horror thriller The Silence of the Lambs (1991) and an octogenarian with dementia in the psychological drama The Father (2020). He was also Oscar-nominated for The Remains of the Day (1993), Nixon (1995), Amistad (1997), and The Two Popes (2019). Other notable films include 84 Charing Cross Road (1987), Howards End (1992), Bram Stoker's Dracula (1992), Shadowlands (1993), Legends of the Fall (1994), The Mask of Zorro (1998), and the Marvel Cinematic Universe films Thor (2011), Thor: The Dark World (2013), and Thor: Ragnarok (2017). For his work on television, Hopkins received a British Academy Television Award for Best Actor for his performance in War and Peace (1972). He won two Primetime Emmy Awards for Outstanding Lead Actor in a Limited or Anthology Series or Movie for The Lindbergh Kidnapping Case (1976) and The Bunker (1981). Other notable projects include the BBC film The Dresser (2015), PBS's King Lear (2018), and the HBO series Westworld (2016–2018)."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Anthony Hopkins",
+            "properties": {
+              "name": "Anthony Hopkins"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:A Bridge Too Far",
+            "properties": {
+              "title": "A Bridge Too Far",
+              "year": 1977
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Elephant Man",
+            "properties": {
+              "title": "The Elephant Man",
+              "year": 1980
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Two Popes",
+            "properties": {
+              "title": "The Two Popes",
+              "year": 2019
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Howards End",
+            "properties": {
+              "title": "Howards End",
+              "year": 1992
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Anthony Hopkins",
+            "inV": "2:A Bridge Too Far",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Anthony Hopkins",
+            "inV": "2:The Elephant Man",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Anthony Hopkins",
+            "inV": "2:The Two Popes",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Anthony Hopkins",
+            "inV": "2:Howards End",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "A Bridge Too Far",
+          "mentioned_title": "A Bridge Too Far",
+          "year": 1977,
+          "wikidata_qid": "Q467053"
+        },
+        {
+          "title": "The Elephant Man",
+          "mentioned_title": "The Elephant Man",
+          "year": 1980,
+          "wikidata_qid": "Q272860"
+        },
+        {
+          "title": "The Two Popes",
+          "mentioned_title": "The Two Popes",
+          "year": 2019,
+          "wikidata_qid": "Q58894738"
+        },
+        {
+          "title": "Howards End",
+          "mentioned_title": "Howards End",
+          "year": 1992,
+          "wikidata_qid": "Q913389"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "The Lion in Winter",
+          "year": "1968",
+          "reason": "not_a_film",
+          "qid": "Q133880051"
+        },
+        {
+          "title": "Magic",
+          "year": "1978",
+          "reason": "not_a_film",
+          "qid": "Q81741"
+        },
+        {
+          "title": "Lambs",
+          "year": "1991",
+          "reason": "not_a_film",
+          "qid": "Q99517508"
+        },
+        {
+          "title": "The Father",
+          "year": "2020",
+          "reason": "not_a_film",
+          "qid": "Q186350"
+        },
+        {
+          "title": "Day",
+          "year": "1993",
+          "reason": "not_a_film",
+          "qid": "Q5242796"
+        },
+        {
+          "title": "Nixon",
+          "year": "1995",
+          "reason": "not_a_film",
+          "qid": "Q16880460"
+        },
+        {
+          "title": "Amistad",
+          "year": "1997",
+          "reason": "not_a_film",
+          "qid": "Q8197461"
+        },
+        {
+          "title": "Charing Cross Road",
+          "year": "1987",
+          "reason": "not_a_film",
+          "qid": "Q1063230"
+        },
+        {
+          "title": "Bram Stoker's Dracula",
+          "year": "1992",
+          "reason": "not_a_film",
+          "qid": "Q1406611"
+        },
+        {
+          "title": "Shadowlands",
+          "year": "1993",
+          "reason": "not_a_film",
+          "qid": "Q7460744"
+        },
+        {
+          "title": "Fall",
+          "year": "1994",
+          "reason": "not_a_film",
+          "qid": "Q4491399"
+        }
+      ]
+    },
+    {
+      "name": "Nicole Kidman",
+      "actor_qid": "Q37459",
+      "wikipedia_title": "Nicole Kidman",
+      "wikipedia_revision": 1362589294,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1362589294",
+      "text": "Nicole Mary Kidman (born 20 June 1967) is an Australian-American actress and producer. Known for her work in blockbusters and independent films across many genres, she has consistently ranked among the world's highest-paid actresses since the late 1990s. Her accolades include an Academy Award, an Actor Award, a British Academy Film Award, six Golden Globe Awards, two Primetime Emmy Awards, and a Volpi Cup.\nKidman began her career in Australia with the 1983 films Bush Christmas and BMX Bandits. In 1989, her breakthrough came with lead roles in Dead Calm and the miniseries Bangkok Hilton. She rose to international prominence with a supporting role in Days of Thunder (1990) followed by leading roles in Far and Away (1992), To Die For (1995), Batman Forever (1995), Practical Magic (1998), and Eyes Wide Shut (1999).\nKidman earned Academy Award nominations for her performances in Moulin Rouge! (2001), Rabbit Hole (2010), Lion (2016), and Being the Ricardos (2021). For her portrayal of Virginia Woolf in The Hours (2002), she received the Academy Award for Best Actress and a shared Silver Bear for Best Actress. She also starred in acclaimed films such as Cold Mountain (2003), The Killing of a Sacred Deer (2017), The Beguiled (2017), Bombshell (2019), The Northman (2022), and Babygirl (2024). She achieved commercial success with the films The Others (2001), The Golden Compass (2007), Australia (2008), Paddington (2014), and Aquaman (2018).\nOn television, she produced and starred in the HBO series Big Little Lies (2017–2019), for which she won the Primetime Emmy Awards for Outstanding Limited Series and Outstanding Lead Actress in a Limited Series or Movie. She also starred in the television movie Hemingway & Gellhorn  (2012), as well as television series Top of the Lake: China Girl (2017), The Undoing (2020), Nine Perfect Strangers (2021–present), Special Ops: Lioness (2023–present), Expats (2024), The Perfect Couple (2024), and Scarpetta (2026-present). \nKidman has served as a goodwill ambassador for UNICEF since 1994 and UNWomen since 2006. She was appointed Companion of the Order of Australia in 2006. Divorced from actor Tom Cruise and country musician Keith Urban, she has two children from each marriage. In 2010, she founded the production company Blossom Films. In 2004 and 2018, Time included her on its list of the 100 most influential people in the world, and in 2020, The New York Times named her one of the greatest actors of the 21st century. She was also honored with a star on the Hollywood Walk of Fame in 2003, and in 2024, became the first Australian actor to receive the AFI Life Achievement Award.",
+      "chunks": [
+        "Nicole Mary Kidman (born 20 June 1967) is an Australian-American actress and producer. Known for her work in blockbusters and independent films across many genres, she has consistently ranked among the world's highest-paid actresses since the late 1990s. Her accolades include an Academy Award, an Actor Award, a British Academy Film Award, six Golden Globe Awards, two Primetime Emmy Awards, and a Volpi Cup. Kidman began her career in Australia with the 1983 films Bush Christmas and BMX Bandits. In 1989, her breakthrough came with lead roles in Dead Calm and the miniseries Bangkok Hilton. She rose to international prominence with a supporting role in Days of Thunder (1990) followed by leading roles in Far and Away (1992), To Die For (1995), Batman Forever (1995), Practical Magic (1998), and Eyes Wide Shut (1999).",
+        "Kidman earned Academy Award nominations for her performances in Moulin Rouge! (2001), Rabbit Hole (2010), Lion (2016), and Being the Ricardos (2021). For her portrayal of Virginia Woolf in The Hours (2002), she received the Academy Award for Best Actress and a shared Silver Bear for Best Actress. She also starred in acclaimed films such as Cold Mountain (2003), The Killing of a Sacred Deer (2017), The Beguiled (2017), Bombshell (2019), The Northman (2022), and Babygirl (2024). She achieved commercial success with the films The Others (2001), The Golden Compass (2007), Australia (2008), Paddington (2014), and Aquaman (2018). On television, she produced and starred in the HBO series Big Little Lies (2017–2019), for which she won the Primetime Emmy Awards for Outstanding Limited Series and Outstanding Lead Actress in a Limited Series or Movie.",
+        "She also starred in the television movie Hemingway & Gellhorn  (2012), as well as television series Top of the Lake: China Girl (2017), The Undoing (2020), Nine Perfect Strangers (2021–present), Special Ops: Lioness (2023–present), Expats (2024), The Perfect Couple (2024), and Scarpetta (2026-present). Kidman has served as a goodwill ambassador for UNICEF since 1994 and UNWomen since 2006. She was appointed Companion of the Order of Australia in 2006. Divorced from actor Tom Cruise and country musician Keith Urban, she has two children from each marriage. In 2010, she founded the production company Blossom Films. In 2004 and 2018, Time included her on its list of the 100 most influential people in the world, and in 2020, The New York Times named her one of the greatest actors of the 21st century. She was also honored with a star on the Hollywood Walk of Fame in 2003, and in 2024, became the first Australian actor to receive the AFI Life Achievement Award."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Nicole Kidman",
+            "properties": {
+              "name": "Nicole Kidman"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Far and Away",
+            "properties": {
+              "title": "Far and Away",
+              "year": 1992
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:To Die For",
+            "properties": {
+              "title": "To Die For",
+              "year": 1995
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Practical Magic",
+            "properties": {
+              "title": "Practical Magic",
+              "year": 1998
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Eyes Wide Shut",
+            "properties": {
+              "title": "Eyes Wide Shut",
+              "year": 1999
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Moulin Rouge!",
+            "properties": {
+              "title": "Moulin Rouge!",
+              "year": 2001
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Being the Ricardos",
+            "properties": {
+              "title": "Being the Ricardos",
+              "year": 2021
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Beguiled",
+            "properties": {
+              "title": "The Beguiled",
+              "year": 2017
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:Far and Away",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:To Die For",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:Practical Magic",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:Eyes Wide Shut",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:Moulin Rouge!",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:Being the Ricardos",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Nicole Kidman",
+            "inV": "2:The Beguiled",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "Far and Away",
+          "mentioned_title": "Far and Away",
+          "year": 1992,
+          "wikidata_qid": "Q839341"
+        },
+        {
+          "title": "To Die For",
+          "mentioned_title": "To Die For",
+          "year": 1995,
+          "wikidata_qid": "Q590701"
+        },
+        {
+          "title": "Practical Magic",
+          "mentioned_title": "Practical Magic",
+          "year": 1998,
+          "wikidata_qid": "Q148429"
+        },
+        {
+          "title": "Eyes Wide Shut",
+          "mentioned_title": "Eyes Wide Shut",
+          "year": 1999,
+          "wikidata_qid": "Q209481"
+        },
+        {
+          "title": "Moulin Rouge!",
+          "mentioned_title": "Moulin Rouge!",
+          "year": 2001,
+          "wikidata_qid": "Q193573"
+        },
+        {
+          "title": "Being the Ricardos",
+          "mentioned_title": "Being the Ricardos",
+          "year": 2021,
+          "wikidata_qid": "Q105907125"
+        },
+        {
+          "title": "The Beguiled",
+          "mentioned_title": "The Beguiled",
+          "year": 2017,
+          "wikidata_qid": "Q27684970"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "Days of Thunder",
+          "year": "1990",
+          "reason": "not_a_film",
+          "qid": "Q5243398"
+        },
+        {
+          "title": "Batman Forever",
+          "year": "1995",
+          "reason": "not_a_film",
+          "qid": "Q2527522"
+        },
+        {
+          "title": "Rabbit Hole",
+          "year": "2010",
+          "reason": "not_a_film",
+          "qid": "Q110555987"
+        },
+        {
+          "title": "Lion",
+          "year": "2016",
+          "reason": "not_a_film",
+          "qid": "Q6555385"
+        },
+        {
+          "title": "Virginia Woolf in The Hours",
+          "year": "2002",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "Cold Mountain",
+          "year": "2003",
+          "reason": "not_a_film",
+          "qid": "Q5142303"
+        },
+        {
+          "title": "Sacred Deer",
+          "year": "2017",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "Bombshell",
+          "year": "2019",
+          "reason": "not_a_film",
+          "qid": "Q19501393"
+        }
+      ]
+    },
+    {
+      "name": "Morgan Freeman",
+      "actor_qid": "Q48337",
+      "wikipedia_title": "Morgan Freeman",
+      "wikipedia_revision": 1356958182,
+      "wikipedia_url": "https://en.wikipedia.org/w/index.php?oldid=1356958182",
+      "text": "Morgan Freeman (born June 1, 1937) is an American actor, producer, and narrator. In a career spanning six decades, he has received numerous accolades, including an Academy Award and a Golden Globe Award, as well as a nomination for a Grammy Award and a Tony Award. He was honored with the Kennedy Center Honor in 2008, an AFI Life Achievement Award in 2011, the Cecil B. DeMille Award in 2012, and Screen Actors Guild Life Achievement Award in 2018. In a 2022 readers' poll by Empire, he was voted one of the 50 greatest actors of all time.\nBorn in Memphis, Tennessee, Freeman was raised in Mississippi, where he began acting in school plays. He studied theater arts in Los Angeles and appeared in stage productions in his early career. He rose to fame in the 1970s for his role in the children's television series The Electric Company. Freeman then appeared in the Shakespearean plays Coriolanus and Julius Caesar, the former of which earned him an Obie Award. In 1978, he was nominated for the Tony Award for Best Featured Actor in a Play for his role as Zeke in the Richard Wesley play The Mighty Gents.\nFreeman received the Academy Award for Best Supporting Actor playing a former boxer in Clint Eastwood's sports drama Million Dollar Baby (2004). He was Oscar-nominated for Street Smart (1987), Driving Miss Daisy (1989), The Shawshank Redemption (1994), and Invictus (2009). He also performed in Glory (1989), Lean on Me (1989), Robin Hood: Prince of Thieves (1991), Unforgiven (1992), Se7en (1995), Amistad (1997), Deep Impact (1998), Gone Baby Gone (2007), and The Bucket List (2007). He also portrayed Lucius Fox in Christopher Nolan's Dark Knight trilogy (2005–2012) and acted in the action films Wanted (2008), Red (2010), Oblivion (2013), the Now You See Me films (2013–2025), and Lucy (2014).\nKnown for his distinctive voice, he has narrated numerous documentaries including The Long Way Home (1997), March of the Penguins (2005), Through the Wormhole (2010–2017), The Story of God with Morgan Freeman (2016–2019), Our Universe (2022) and Life on Our Planet (2023). He made his directorial debut with the drama Bopha! (1993). He founded the film production company Revelations Entertainment with business partner Lori McCreary in 1996, under which they produced projects such as the CBS political drama Madam Secretary (2014–2019).\n\n",
+      "chunks": [
+        "Morgan Freeman (born June 1, 1937) is an American actor, producer, and narrator. In a career spanning six decades, he has received numerous accolades, including an Academy Award and a Golden Globe Award, as well as a nomination for a Grammy Award and a Tony Award. He was honored with the Kennedy Center Honor in 2008, an AFI Life Achievement Award in 2011, the Cecil B. DeMille Award in 2012, and Screen Actors Guild Life Achievement Award in 2018. In a 2022 readers' poll by Empire, he was voted one of the 50 greatest actors of all time. Born in Memphis, Tennessee, Freeman was raised in Mississippi, where he began acting in school plays.",
+        "He studied theater arts in Los Angeles and appeared in stage productions in his early career. He rose to fame in the 1970s for his role in the children's television series The Electric Company. Freeman then appeared in the Shakespearean plays Coriolanus and Julius Caesar, the former of which earned him an Obie Award. In 1978, he was nominated for the Tony Award for Best Featured Actor in a Play for his role as Zeke in the Richard Wesley play The Mighty Gents. Freeman received the Academy Award for Best Supporting Actor playing a former boxer in Clint Eastwood's sports drama Million Dollar Baby (2004). He was Oscar-nominated for Street Smart (1987), Driving Miss Daisy (1989), The Shawshank Redemption (1994), and Invictus (2009).",
+        "He also performed in Glory (1989), Lean on Me (1989), Robin Hood: Prince of Thieves (1991), Unforgiven (1992), Se7en (1995), Amistad (1997), Deep Impact (1998), Gone Baby Gone (2007), and The Bucket List (2007). He also portrayed Lucius Fox in Christopher Nolan's Dark Knight trilogy (2005–2012) and acted in the action films Wanted (2008), Red (2010), Oblivion (2013), the Now You See Me films (2013–2025), and Lucy (2014). Known for his distinctive voice, he has narrated numerous documentaries including The Long Way Home (1997), March of the Penguins (2005), Through the Wormhole (2010–2017), The Story of God with Morgan Freeman (2016–2019), Our Universe (2022) and Life on Our Planet (2023). He made his directorial debut with the drama Bopha! (1993). He founded the film production company Revelations Entertainment with business partner Lori McCreary in 1996, under which they produced projects such as the CBS political drama Madam Secretary (2014–2019)."
+      ],
+      "ground_truth": {
+        "vertices": [
+          {
+            "label": "Person",
+            "type": "vertex",
+            "id": "1:Morgan Freeman",
+            "properties": {
+              "name": "Morgan Freeman"
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Million Dollar Baby",
+            "properties": {
+              "title": "Million Dollar Baby",
+              "year": 2004
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Driving Miss Daisy",
+            "properties": {
+              "title": "Driving Miss Daisy",
+              "year": 1989
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Shawshank Redemption",
+            "properties": {
+              "title": "The Shawshank Redemption",
+              "year": 1994
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Lean on Me",
+            "properties": {
+              "title": "Lean on Me",
+              "year": 1989
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:Gone Baby Gone",
+            "properties": {
+              "title": "Gone Baby Gone",
+              "year": 2007
+            }
+          },
+          {
+            "label": "Movie",
+            "type": "vertex",
+            "id": "2:The Bucket List",
+            "properties": {
+              "title": "The Bucket List",
+              "year": 2007
+            }
+          }
+        ],
+        "edges": [
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Morgan Freeman",
+            "inV": "2:Million Dollar Baby",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Morgan Freeman",
+            "inV": "2:Driving Miss Daisy",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Morgan Freeman",
+            "inV": "2:The Shawshank Redemption",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Morgan Freeman",
+            "inV": "2:Lean on Me",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Morgan Freeman",
+            "inV": "2:Gone Baby Gone",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          },
+          {
+            "label": "ACTED_IN",
+            "type": "edge",
+            "outV": "1:Morgan Freeman",
+            "inV": "2:The Bucket List",
+            "outVLabel": "Person",
+            "inVLabel": "Movie",
+            "properties": {}
+          }
+        ]
+      },
+      "verified_films": [
+        {
+          "title": "Million Dollar Baby",
+          "mentioned_title": "Million Dollar Baby",
+          "year": 2004,
+          "wikidata_qid": "Q184255"
+        },
+        {
+          "title": "Driving Miss Daisy",
+          "mentioned_title": "Driving Miss Daisy",
+          "year": 1989,
+          "wikidata_qid": "Q211373"
+        },
+        {
+          "title": "The Shawshank Redemption",
+          "mentioned_title": "The Shawshank Redemption",
+          "year": 1994,
+          "wikidata_qid": "Q172241"
+        },
+        {
+          "title": "Lean on Me",
+          "mentioned_title": "Lean on Me",
+          "year": 1989,
+          "wikidata_qid": "Q1199323"
+        },
+        {
+          "title": "Gone Baby Gone",
+          "mentioned_title": "Gone Baby Gone",
+          "year": 2007,
+          "wikidata_qid": "Q247182"
+        },
+        {
+          "title": "The Bucket List",
+          "mentioned_title": "The Bucket List",
+          "year": 2007,
+          "wikidata_qid": "Q463768"
+        }
+      ],
+      "rejected_mentions": [
+        {
+          "title": "Oscar-nominated for Street Smart",
+          "year": "1987",
+          "reason": "no_wikidata_match"
+        },
+        {
+          "title": "Invictus",
+          "year": "2009",
+          "reason": "not_a_film",
+          "qid": "Q1097535"
+        },
+        {
+          "title": "Glory",
+          "year": "1989",
+          "reason": "not_a_film",
+          "qid": "Q892206"
+        },
+        {
+          "title": "Robin Hood: Prince of Thieves",
+          "year": "1991",
+          "reason": "not_a_film",
+          "qid": "Q7352488"
+        },
+        {
+          "title": "Unforgiven",
+          "year": "1992",
+          "reason": "not_a_film",
+          "qid": "Q7884406"
+        },
+        {
+          "title": "Se7en",
+          "year": "1995",
+          "reason": "not_a_film",
+          "qid": "Q12051546"
+        },
+        {
+          "title": "Amistad",
+          "year": "1997",
+          "reason": "not_a_film",
+          "qid": "Q8197461"
+        },
+        {
+          "title": "Deep Impact",
+          "year": "1998",
+          "reason": "not_a_film",
+          "qid": "Q730381"
+        },
+        {
+          "title": "Wanted",
+          "year": "2008",
+          "reason": "not_a_film",
+          "qid": "Q7968158"
+        }
+      ]
+    }
+  ]
+}

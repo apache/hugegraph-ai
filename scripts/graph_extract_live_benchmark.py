@@ -18,9 +18,10 @@
 """Live-LLM benchmark for the schema-based graph extraction strategies.
 
 Runs the baseline and enhanced extraction pipelines against a real LLM
-(DeepSeek Chat via LiteLLM) using a fixed multi-chunk corpus, and reports
-quality (F1 vs. ground truth), latency (wall-clock), LLM call count,
-prompt/completion tokens, and an approximate USD cost per run.
+(DeepSeek Chat via LiteLLM) on a public, externally-authored corpus, and
+reports quality (F1 vs. Wikidata-verified ground truth), latency
+(wall-clock), LLM call count, prompt/completion tokens, and an
+approximate USD cost per run.
 
 This script is deliberately kept OUT of the pytest test tree — it costs
 real money and requires network + DEEPSEEK_API_KEY. It is only invoked
@@ -30,13 +31,21 @@ report.
 Usage:
 
     # DEEPSEEK_API_KEY must be set (loaded from .env.local by default).
-    python scripts/graph_extract_live_benchmark.py
+    python scripts/graph_extract_live_benchmark.py \\
+        --corpus hugegraph-llm/src/tests/data/public_actor_corpus.json \\
+        --runs 3
+
+The ``--corpus`` argument is required. Build a corpus with
+``scripts/build_public_actor_corpus.py``. No hand-authored corpus is
+embedded in this script — that would defeat the reproducibility goal
+(text and ground truth must both be third-party-authored so a reviewer
+can audit them).
 
 Output:
 
     * Human-readable table to stdout.
     * Full run record (per-strategy metrics + LLM I/O) to
-      ``.workflow/deepseek_live_run.json`` for archival.
+      ``--output`` (defaults to ``.workflow/deepseek_live_run.json``).
 
 Cost estimates use DeepSeek Chat pricing as published at
 https://api-docs.deepseek.com/quick_start/pricing at the time of the
@@ -105,71 +114,6 @@ SCHEMA: dict[str, Any] = {
             "source_label": "Person",
             "target_label": "Movie",
             "properties": ["role"],
-        },
-    ],
-}
-
-
-# Three-chunk corpus with cross-chunk entity references — the exact class
-# of input where enhanced is expected to win in production.
-CORPUS: list[str] = [
-    (
-        "Tom Hanks is an American actor. He starred in Forrest Gump, "
-        "which was released in 1994. The film won six Academy Awards."
-    ),
-    (
-        "Tom Hanks also acted in Cast Away, which came out in 2000. "
-        "In it, he played Chuck Noland, a FedEx executive who survives a "
-        "plane crash and becomes stranded on a deserted island."
-    ),
-    (
-        "He additionally voiced Woody in the Toy Story franchise. "
-        "Toy Story premiered in 1995 and revolutionized computer animation."
-    ),
-]
-
-
-# Ground truth: what a schema-conformant extraction of the corpus above
-# should produce. Canonical ids follow the {vertex_label.id}:{pk} rule.
-GROUND_TRUTH: dict[str, list[dict[str, Any]]] = {
-    "vertices": [
-        {"label": "Person", "type": "vertex", "id": "1:Tom Hanks", "properties": {"name": "Tom Hanks"}},
-        {
-            "label": "Movie",
-            "type": "vertex",
-            "id": "2:Forrest Gump",
-            "properties": {"title": "Forrest Gump", "year": 1994},
-        },
-        {"label": "Movie", "type": "vertex", "id": "2:Cast Away", "properties": {"title": "Cast Away", "year": 2000}},
-        {"label": "Movie", "type": "vertex", "id": "2:Toy Story", "properties": {"title": "Toy Story", "year": 1995}},
-    ],
-    "edges": [
-        {
-            "label": "ACTED_IN",
-            "type": "edge",
-            "outV": "1:Tom Hanks",
-            "inV": "2:Forrest Gump",
-            "outVLabel": "Person",
-            "inVLabel": "Movie",
-            "properties": {},
-        },
-        {
-            "label": "ACTED_IN",
-            "type": "edge",
-            "outV": "1:Tom Hanks",
-            "inV": "2:Cast Away",
-            "outVLabel": "Person",
-            "inVLabel": "Movie",
-            "properties": {"role": "Chuck Noland"},
-        },
-        {
-            "label": "ACTED_IN",
-            "type": "edge",
-            "outV": "1:Tom Hanks",
-            "inV": "2:Toy Story",
-            "outVLabel": "Person",
-            "inVLabel": "Movie",
-            "properties": {"role": "Woody"},
         },
     ],
 }
@@ -365,23 +309,16 @@ def _load_env_local() -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-def _load_corpora(corpus_path: str | None) -> list[dict[str, Any]]:
-    """Loads corpora from --corpus JSON or falls back to the legacy hard-coded one.
+def _load_corpora(corpus_path: str) -> list[dict[str, Any]]:
+    """Loads corpora from a public corpus JSON built by
+    ``scripts/build_public_actor_corpus.py``.
 
-    Legacy fallback is preserved for two reasons: (1) it lets the script be
-    smoke-tested with zero setup, and (2) it makes the change to add
-    ``--corpus`` support strictly additive (no breaking behavior for anyone
-    who previously ran the script without arguments).
+    A corpus is required — this script no longer accepts an implicit
+    hand-authored fallback. The whole point of the live benchmark is to
+    measure effect on externally-authored text + ground truth; embedding
+    a hand-authored corpus in the script would silently reintroduce the
+    selection bias the public-corpus track exists to remove.
     """
-    if corpus_path is None:
-        return [
-            {
-                "name": "legacy_tom_hanks_3chunk",
-                "chunks": list(CORPUS),
-                "ground_truth": GROUND_TRUTH,
-                "source": "hand-authored (kept as sanity/smoke sample)",
-            }
-        ]
     data = json.loads(Path(corpus_path).read_text(encoding="utf-8"))
     corpora: list[dict[str, Any]] = []
     for c in data["corpora"]:
@@ -405,11 +342,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--corpus",
-        default=None,
+        required=True,
         help=(
             "Path to a public corpus JSON built by "
-            "scripts/build_public_actor_corpus.py. If omitted, the legacy "
-            "hand-authored 3-chunk Tom Hanks corpus is used (smoke only)."
+            "scripts/build_public_actor_corpus.py. Required — no implicit "
+            "hand-authored fallback (deliberate; see module docstring)."
         ),
     )
     parser.add_argument(
@@ -508,7 +445,7 @@ def main() -> int:
             "input_usd_per_m": DEEPSEEK_INPUT_USD_PER_M,
             "output_usd_per_m": DEEPSEEK_OUTPUT_USD_PER_M,
         },
-        "corpus_source": args.corpus if args.corpus else "legacy hand-authored (--corpus flag not set)",
+        "corpus_source": args.corpus,
         "runs_per_strategy_per_corpus": args.runs,
         "schema": SCHEMA,
         "corpora": [

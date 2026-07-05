@@ -82,3 +82,30 @@ class NormalizedChunkGraph:
     @property
     def is_empty(self) -> bool:
         return not self.vertices and not self.edges
+
+
+@dataclass(frozen=True)
+class DocumentGraph:
+    """Final document-level graph ready for API response or write-to-graph.
+
+    Emitted by ``DocumentGraphAssembler`` after cross-chunk vertex merge,
+    document-level endpoint repair, and edge deduplication. Vertices and
+    edges are plain dicts in the shape the existing baseline post-deal
+    already produces — the enhanced path stays wire-compatible.
+
+    ``pre_merge_vertex_count`` / ``pre_merge_edge_count`` capture the totals
+    across all input chunks before deduplication; the quality gate uses them
+    to compute the duplicate-reduction ratios. ``endpoint_repair_count`` is
+    the number of edges the assembler resolved via the cross-chunk alias
+    table (edges resolved at chunk level do not count).
+    """
+
+    vertices: List[Dict[str, Any]] = field(default_factory=list)
+    edges: List[Dict[str, Any]] = field(default_factory=list)
+    pre_merge_vertex_count: int = 0
+    pre_merge_edge_count: int = 0
+    endpoint_repair_count: int = 0
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.vertices and not self.edges

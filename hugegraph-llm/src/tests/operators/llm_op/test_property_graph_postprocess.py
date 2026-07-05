@@ -27,7 +27,9 @@ from hugegraph_llm.operators.llm_op.property_graph_extract_enhanced import (
     PENDING_OUT_KEY,
     CandidateGraph,
     CandidateGraphParser,
+    DocumentGraphAssembler,
     GraphSchemaIndex,
+    NormalizedChunkGraph,
     SchemaAwareNormalizer,
     StructuredWarning,
     WarningCode,
@@ -705,3 +707,303 @@ class TestNormalizerIntegration:
         candidate = CandidateGraph(vertices=[{"type": "vertex", "label": "robot", "properties": {}}])
         _, warnings = norm.normalize(candidate, chunk_id=5)
         assert warnings[0].chunk_id == 5
+
+
+# ==============================================================================
+# DocumentGraphAssembler
+# ==============================================================================
+
+
+def _assembler() -> DocumentGraphAssembler:
+    return DocumentGraphAssembler(GraphSchemaIndex(_schema()))
+
+
+def _v(label: str, vid: str, **props) -> dict:
+    return {"type": "vertex", "label": label, "id": vid, "properties": dict(props)}
+
+
+def _e_resolved(label: str, out_v: str, in_v: str, out_label: str, in_label: str, **props) -> dict:
+    return {
+        "type": "edge",
+        "label": label,
+        "outV": out_v,
+        "inV": in_v,
+        "outVLabel": out_label,
+        "inVLabel": in_label,
+        "properties": dict(props),
+    }
+
+
+# ---------------------------------------------------------- vertex merge
+class TestAssemblerVertexMerge:
+    def test_same_key_across_chunks_merges_and_emits_warning(self):
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(vertices=[_v("person", "1:Tom", name="Tom")])
+        chunk_b = NormalizedChunkGraph(vertices=[_v("person", "1:Tom", name="Tom")])
+        graph, warnings = asm.assemble([chunk_a, chunk_b])
+        assert len(graph.vertices) == 1
+        assert graph.pre_merge_vertex_count == 2
+        codes = _codes(warnings)
+        assert codes.count(WarningCode.DUPLICATE_VERTEX_MERGED) == 1
+
+    def test_property_conflict_first_wins(self):
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(vertices=[_v("movie", "2:FG", title="FG", year=1994)])
+        chunk_b = NormalizedChunkGraph(vertices=[_v("movie", "2:FG", title="FG", year=1993)])
+        graph, warnings = asm.assemble([chunk_a, chunk_b])
+        assert graph.vertices[0]["properties"]["year"] == 1994
+        codes = _codes(warnings)
+        assert WarningCode.PROPERTY_CONFLICT in codes
+        conflict = next(w for w in warnings if w.code is WarningCode.PROPERTY_CONFLICT)
+        assert conflict.context == {"property": "year", "kept": 1994, "discarded": 1993}
+
+    def test_missing_property_completed_from_later_chunk(self):
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(vertices=[_v("movie", "2:FG", title="FG")])
+        chunk_b = NormalizedChunkGraph(vertices=[_v("movie", "2:FG", title="FG", year=1994)])
+        graph, _ = asm.assemble([chunk_a, chunk_b])
+        assert graph.vertices[0]["properties"] == {"title": "FG", "year": 1994}
+
+    def test_different_keys_stay_separate(self):
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(vertices=[_v("person", "1:Tom", name="Tom")])
+        chunk_b = NormalizedChunkGraph(vertices=[_v("person", "1:Alice", name="Alice")])
+        graph, warnings = asm.assemble([chunk_a, chunk_b])
+        assert len(graph.vertices) == 2
+        assert WarningCode.DUPLICATE_VERTEX_MERGED not in _codes(warnings)
+
+    def test_output_order_preserves_first_appearance(self):
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(
+            vertices=[
+                _v("person", "1:Tom", name="Tom"),
+                _v("movie", "2:FG", title="FG"),
+            ]
+        )
+        chunk_b = NormalizedChunkGraph(
+            vertices=[
+                _v("movie", "2:FG", title="FG"),
+                _v("person", "1:Tom", name="Tom"),
+            ]
+        )
+        graph, _ = asm.assemble([chunk_a, chunk_b])
+        assert [v["id"] for v in graph.vertices] == ["1:Tom", "2:FG"]
+
+    def test_vertex_without_id_is_kept_verbatim(self):
+        asm = _assembler()
+        vertex_no_id = {"type": "vertex", "label": "person", "properties": {"name": "Anon"}}
+        chunk = NormalizedChunkGraph(vertices=[vertex_no_id, vertex_no_id])
+        graph, warnings = asm.assemble([chunk])
+        # Both occurrences kept — no merge (no way to identify).
+        assert len(graph.vertices) == 2
+        assert WarningCode.DUPLICATE_VERTEX_MERGED not in _codes(warnings)
+
+
+# --------------------------------------------------------- endpoint repair
+class TestAssemblerEndpointRepair:
+    def test_pending_out_endpoint_repaired_via_cross_chunk_alias(self):
+        """Chunk A has the vertex + alias; chunk B has the edge referencing the raw id."""
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(
+            vertices=[_v("person", "1:Tom", name="Tom"), _v("movie", "2:FG", title="FG")],
+            aliases={("person", "v1"): "1:Tom", ("movie", "2:FG"): "2:FG", ("person", "1:Tom"): "1:Tom"},
+        )
+        edge = {
+            "type": "edge",
+            "label": "acted_in",
+            "inV": "2:FG",
+            "inVLabel": "movie",
+            "outVLabel": "person",
+            "properties": {},
+            PENDING_OUT_KEY: {"original_id": "v1"},
+        }
+        chunk_b = NormalizedChunkGraph(edges=[edge])
+        graph, warnings = asm.assemble([chunk_a, chunk_b])
+        assert graph.endpoint_repair_count == 1
+        assert graph.edges[0]["outV"] == "1:Tom"
+        # No leftover pending marker.
+        assert PENDING_OUT_KEY not in graph.edges[0]
+        # Also no ENDPOINT_UNRESOLVED / AMBIGUOUS.
+        codes = _codes(warnings)
+        assert WarningCode.ENDPOINT_UNRESOLVED not in codes
+        assert WarningCode.ENDPOINT_AMBIGUOUS not in codes
+
+    def test_pending_endpoint_with_no_alias_is_dropped_as_unresolved(self):
+        asm = _assembler()
+        edge = {
+            "type": "edge",
+            "label": "acted_in",
+            "inV": "2:FG",
+            "inVLabel": "movie",
+            "outVLabel": "person",
+            "properties": {},
+            PENDING_OUT_KEY: {"original_id": "ghost"},
+        }
+        chunk_b = NormalizedChunkGraph(edges=[edge])
+        graph, warnings = asm.assemble([chunk_b])
+        assert graph.edges == []
+        assert WarningCode.ENDPOINT_UNRESOLVED in _codes(warnings)
+
+    def test_ambiguous_alias_yields_endpoint_ambiguous(self):
+        """The same LLM raw id maps to different canonical ids across chunks."""
+        asm = _assembler()
+        chunk_a = NormalizedChunkGraph(aliases={("person", "v1"): "1:Tom"})
+        chunk_b = NormalizedChunkGraph(aliases={("person", "v1"): "1:Alice"})
+        edge = {
+            "type": "edge",
+            "label": "acted_in",
+            "inV": "2:FG",
+            "inVLabel": "movie",
+            "outVLabel": "person",
+            "properties": {},
+            PENDING_OUT_KEY: {"original_id": "v1"},
+        }
+        chunk_c = NormalizedChunkGraph(edges=[edge])
+        graph, warnings = asm.assemble([chunk_a, chunk_b, chunk_c])
+        assert graph.edges == []
+        assert WarningCode.ENDPOINT_AMBIGUOUS in _codes(warnings)
+        assert WarningCode.ENDPOINT_UNRESOLVED not in _codes(warnings)
+
+    def test_edge_already_resolved_at_chunk_level_passes_through(self):
+        asm = _assembler()
+        chunk = NormalizedChunkGraph(
+            vertices=[_v("person", "1:Tom", name="Tom"), _v("movie", "2:FG", title="FG")],
+            edges=[_e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Forrest")],
+        )
+        graph, warnings = asm.assemble([chunk])
+        assert graph.endpoint_repair_count == 0
+        assert len(graph.edges) == 1
+        assert graph.edges[0]["outV"] == "1:Tom"
+
+
+# --------------------------------------------------------------- edge dedup
+class TestAssemblerEdgeDedupe:
+    def test_identical_edges_deduped(self):
+        asm = _assembler()
+        edge_1 = _e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Forrest")
+        edge_2 = _e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Forrest")
+        chunk = NormalizedChunkGraph(
+            vertices=[_v("person", "1:Tom", name="Tom"), _v("movie", "2:FG", title="FG")],
+            edges=[edge_1, edge_2],
+        )
+        graph, warnings = asm.assemble([chunk])
+        assert len(graph.edges) == 1
+        assert graph.pre_merge_edge_count == 2
+        assert WarningCode.DUPLICATE_EDGE_MERGED in _codes(warnings)
+
+    def test_same_endpoints_different_properties_are_both_kept(self):
+        """Different property signatures represent distinct facts — don't merge."""
+        asm = _assembler()
+        edge_1 = _e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Forrest")
+        edge_2 = _e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Narrator")
+        chunk = NormalizedChunkGraph(
+            vertices=[_v("person", "1:Tom", name="Tom"), _v("movie", "2:FG", title="FG")],
+            edges=[edge_1, edge_2],
+        )
+        graph, warnings = asm.assemble([chunk])
+        assert len(graph.edges) == 2
+        assert WarningCode.DUPLICATE_EDGE_MERGED not in _codes(warnings)
+
+    def test_dedupe_handles_nested_list_property_values(self):
+        """LIST/SET cardinality property values (unhashable as tuples) still dedupe."""
+        asm = _assembler()
+        edge = {
+            "type": "edge",
+            "label": "acted_in",
+            "outV": "1:Tom",
+            "inV": "2:FG",
+            "outVLabel": "person",
+            "inVLabel": "movie",
+            "properties": {"tags": ["lead", "drama"]},
+        }
+        chunk = NormalizedChunkGraph(edges=[dict(edge), dict(edge)])
+        graph, warnings = asm.assemble([chunk])
+        assert len(graph.edges) == 1
+        assert WarningCode.DUPLICATE_EDGE_MERGED in _codes(warnings)
+
+
+# --------------------------------------------------------------- integration
+class TestAssemblerIntegration:
+    def test_multi_chunk_end_to_end(self):
+        """Two chunks reference the same entity — merged, deduped, endpoint repaired across chunks."""
+        asm = _assembler()
+        # Chunk 0: Tom + Forrest Gump + acted_in edge (fully local).
+        chunk_0 = NormalizedChunkGraph(
+            vertices=[_v("person", "1:Tom", name="Tom"), _v("movie", "2:FG", title="FG")],
+            edges=[_e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Forrest")],
+        )
+        # Chunk 1: Duplicate Tom + duplicate edge with same shape (should merge/dedupe).
+        chunk_1 = NormalizedChunkGraph(
+            vertices=[_v("person", "1:Tom", name="Tom"), _v("movie", "2:FG", title="FG")],
+            edges=[_e_resolved("acted_in", "1:Tom", "2:FG", "person", "movie", role="Forrest")],
+        )
+        graph, warnings = asm.assemble([chunk_0, chunk_1])
+        assert len(graph.vertices) == 2
+        assert len(graph.edges) == 1
+        assert graph.pre_merge_vertex_count == 4
+        assert graph.pre_merge_edge_count == 2
+        codes = _codes(warnings)
+        assert codes.count(WarningCode.DUPLICATE_VERTEX_MERGED) == 2
+        assert codes.count(WarningCode.DUPLICATE_EDGE_MERGED) == 1
+
+    def test_full_pipeline_parser_normalizer_assembler(self):
+        """Parse two chunks' raw output, normalize, assemble; verify the whole loop."""
+        parser = CandidateGraphParser()
+        norm = _normalizer()
+        asm = _assembler()
+
+        chunk_0_raw = json.dumps(
+            {
+                "vertices": [
+                    {"type": "vertex", "id": "v1", "label": "person", "properties": {"name": "Tom Hanks"}},
+                    {
+                        "type": "vertex",
+                        "id": "v2",
+                        "label": "movie",
+                        "properties": {"title": "Forrest Gump", "year": "1994"},
+                    },
+                ],
+                "edges": [
+                    {
+                        "type": "edge",
+                        "label": "acted_in",
+                        "outV": "v1",
+                        "inV": "v2",
+                        "outVLabel": "person",
+                        "inVLabel": "movie",
+                        "properties": {"role": "Forrest"},
+                    }
+                ],
+            }
+        )
+        chunk_1_raw = json.dumps(
+            {
+                "vertices": [{"type": "vertex", "id": "u1", "label": "person", "properties": {"name": "Tom Hanks"}}],
+                "edges": [
+                    {
+                        "type": "edge",
+                        "label": "acted_in",
+                        "source": {"label": "person", "properties": {"name": "Tom Hanks"}},
+                        "target": {"label": "movie", "properties": {"title": "Forrest Gump"}},
+                        "properties": {},
+                    }
+                ],
+            }
+        )
+
+        chunk_graphs = []
+        for i, raw in enumerate([chunk_0_raw, chunk_1_raw]):
+            cand, _ = parser.parse(raw, chunk_id=i)
+            ng, _ = norm.normalize(cand, chunk_id=i)
+            chunk_graphs.append(ng)
+
+        doc, warnings = asm.assemble(chunk_graphs)
+        # Two unique vertices (Tom + Forrest Gump); one unique edge shape after dedup
+        # (chunk_0 has role=Forrest, chunk_1 has empty properties → both kept as
+        # distinct signatures — that matches the "different property sig, keep both"
+        # rule).
+        assert len(doc.vertices) == 2
+        assert len(doc.edges) == 2
+        # Vertex Tom appeared twice → 1 merge.
+        codes = _codes(warnings)
+        assert codes.count(WarningCode.DUPLICATE_VERTEX_MERGED) == 1

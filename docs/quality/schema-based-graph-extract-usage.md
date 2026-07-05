@@ -164,6 +164,29 @@ Baseline remains a fine default when:
   produces the assembled graph at the end. For very large documents,
   consider chunking upstream and calling `/graph/extract` per batch.
 
+* **No knowledge-base entity resolution.** Enhanced can resolve aliases
+  *within* a single request (e.g. `"He"` → `"Tom Hanks"` when both
+  appear in different chunks) via its `DocumentGraphAssembler`. It
+  cannot resolve *out-of-corpus* aliases: if the LLM extracts
+  `"Thomas Jeffrey Hanks"` from an article's opening line and the
+  downstream canonical id is `"Tom Hanks"`, both records land as
+  separate vertices. Solving this needs either LLM-side alignment
+  (system prompt telling the model to emit shortest canonical names) or
+  an external entity-resolution step (string similarity + gazetteer /
+  Wikidata / customer-supplied alias table). Both are out of scope for
+  Issue #74. See the effect report's live-benchmark failure analysis
+  for concrete numbers.
+
+## When enhanced does **not** help
+
+The live benchmark on 8 public Wikipedia corpora showed enhanced
+regressing F1 on 3 of the 8 corpora (baseline already strong; enhanced's
+stricter deduplication merged near-duplicate film titles that were
+actually different films). Consider running baseline first and switching
+to enhanced only if `warnings` count is high or if quality is
+consistently under target. A production deployment can gate this on
+first-pass baseline warning counts.
+
 ## Migration Notes
 
 None required. Existing baseline callers keep byte-compatible responses

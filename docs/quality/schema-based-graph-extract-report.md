@@ -118,7 +118,7 @@ approximately ± 2 % of the reported means over 3 runs.
 | Artifact | Path | Purpose |
 |---|---|---|
 | Public corpus | [`hugegraph-llm/src/tests/data/public_actor_corpus.json`](../../hugegraph-llm/src/tests/data/public_actor_corpus.json) | 8 actors × 3 chunks + Wikidata-verified GT; the input to the live benchmark. |
-| Live-benchmark archive | [`docs/quality/data/live_benchmark_public_actors.json`](data/live_benchmark_public_actors.json) | Full 48-run record: per-run F1/vertex F1/edge F1/property match rate, per-call latency + tokens, predicted vertices/edges, aggregated deltas. Every number in the live-track tables is `jq`-derivable from this file. |
+| Live-benchmark archive | Available on request (not bundled in this PR — see [Cross-checking](#cross-checking-without-re-running) below for sha256 and rationale) | Full 48-run record: per-run F1/vertex F1/edge F1/property match rate, per-call latency + tokens, predicted vertices/edges, aggregated deltas. Every number in the live-track tables is `jq`-derivable from this file. |
 | Corpus builder script | [`scripts/build_public_actor_corpus.py`](../../scripts/build_public_actor_corpus.py) | Rebuilds the corpus from Wikipedia + Wikidata (deterministic given pinned Wikipedia `revid`s and Wikidata state). |
 | Live-benchmark driver | [`scripts/graph_extract_live_benchmark.py`](../../scripts/graph_extract_live_benchmark.py) | Runs both strategies on the corpus for `--runs` iterations. `--corpus` is required — no hand-authored fallback. |
 
@@ -152,20 +152,28 @@ uv run --directory hugegraph-llm python ../scripts/graph_extract_live_benchmark.
 
 ### Cross-checking without re-running
 
-Every number in the live-track tables is derivable from the committed
-archive via `jq`:
+The 48-run archive is not bundled in this PR (it would add ~600 KB /
+21 k lines to the diff — ~67 % of the total change). Available on
+request; verify integrity via sha256:
+
+```text
+8c7b7a8c22451405d9a6f4403dae09a534777c097a396cfcb4e563fc9e04b1e7
+```
+
+Given the archive, every number in the live-track tables is derivable
+via `jq`:
 
 ```bash
 # Overall delta (matches the "Overall results" table)
-jq '.delta' docs/quality/data/live_benchmark_public_actors.json
+jq '.delta' live_benchmark_public_actors.json
 
 # Per-(corpus, strategy) F1 mean/std (matches per-corpus breakdown)
 jq '.per_corpus_strategy_aggregation | to_entries[] | {key, f1_mean: .value.overall_f1.mean}' \
-  docs/quality/data/live_benchmark_public_actors.json
+  live_benchmark_public_actors.json
 
 # All 48 individual F1 values
 jq '.runs[] | {corpus_name, strategy, run_index, overall_f1}' \
-  docs/quality/data/live_benchmark_public_actors.json
+  live_benchmark_public_actors.json
 ```
 
 ## Backwards Compatibility
@@ -489,12 +497,11 @@ side.
 
 See the top-level [How to Reproduce This Report](#how-to-reproduce-this-report)
 section for the `build_public_actor_corpus.py` and
-`graph_extract_live_benchmark.py` invocations. The full run archive is
-committed at
-[`docs/quality/data/live_benchmark_public_actors.json`](data/live_benchmark_public_actors.json)
-(600 KB) — every LLM call's prompt/completion tokens, latency, and raw
-predicted output is there, enough to independently recompute every
-number in this section without re-running the benchmark.
+`graph_extract_live_benchmark.py` invocations, plus the sha256 for
+verifying an archive obtained on request. The archive (~600 KB, 48-run
+record including every LLM call's prompt/completion tokens, latency,
+and raw predicted output) makes every number in this section
+independently recomputable without re-running the benchmark.
 
 ## Metric Definitions
 

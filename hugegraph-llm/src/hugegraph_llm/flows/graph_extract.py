@@ -44,6 +44,7 @@ class GraphExtractFlow(BaseFlow):
         extract_type,
         split_type=SPLIT_TYPE_DOCUMENT,
         language="zh",
+        graph_extract_max_workers=1,
         **kwargs,
     ):
         # prepare input data
@@ -53,6 +54,13 @@ class GraphExtractFlow(BaseFlow):
             raise ValueError("split_type must be document, paragraph, or sentence")
 
         prepared_input.split_type = split_type
+        try:
+            graph_extract_max_workers = int(graph_extract_max_workers)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("graph_extract_max_workers must be a positive integer") from exc
+        if graph_extract_max_workers < 1:
+            raise ValueError("graph_extract_max_workers must be a positive integer")
+        prepared_input.graph_extract_max_workers = graph_extract_max_workers
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
@@ -76,6 +84,7 @@ class GraphExtractFlow(BaseFlow):
         extract_type,
         split_type=SPLIT_TYPE_DOCUMENT,
         language="zh",
+        graph_extract_max_workers=1,
         **kwargs,
     ):
         pipeline = GPipeline()
@@ -89,6 +98,7 @@ class GraphExtractFlow(BaseFlow):
             extract_type,
             split_type,
             language,
+            graph_extract_max_workers,
             **kwargs,
         )
 

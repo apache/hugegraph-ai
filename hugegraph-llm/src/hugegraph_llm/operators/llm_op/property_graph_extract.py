@@ -19,6 +19,7 @@
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List
 
 from hugegraph_llm.config import prompt
@@ -78,9 +79,15 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
 
 
 class PropertyGraphExtract:
-    def __init__(self, llm: BaseLLM, example_prompt: str = prompt.extract_graph_prompt) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        example_prompt: str = prompt.extract_graph_prompt,
+        max_workers: int = 1,
+    ) -> None:
         self.llm = llm
         self.example_prompt = example_prompt
+        self.max_workers = max(1, int(max_workers or 1))
         self.NECESSARY_ITEM_KEYS = {"label", "type", "properties"}  # pylint: disable=invalid-name
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
@@ -90,25 +97,59 @@ class PropertyGraphExtract:
             context["vertices"] = []
         if "edges" not in context:
             context["edges"] = []
+
         items = []
-        for chunk in chunks:
-            proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
-            log.debug(
-                "[LLM] %s input: %s \n output:%s",
-                self.__class__.__name__,
-                chunk,
-                proceeded_chunk,
-            )
-            items.extend(self._extract_and_filter_label(schema, proceeded_chunk))
+        if self.max_workers == 1 or len(chunks) <= 1:
+            chunk_results = [
+                self._extract_chunk_items(schema, chunk, index, len(chunks)) for index, chunk in enumerate(chunks)
+            ]
+        else:
+            chunk_results = self._extract_chunks_concurrently(schema, chunks)
+
+        for chunk_items in chunk_results:
+            items.extend(chunk_items)
+
         items = filter_item(schema, items)
         for item in items:
             if item["type"] == "vertex":
                 context["vertices"].append(item)
             elif item["type"] == "edge":
                 context["edges"].append(item)
-
         context["call_count"] = context.get("call_count", 0) + len(chunks)
         return context
+
+    def _extract_chunks_concurrently(self, schema, chunks):
+        worker_count = min(self.max_workers, len(chunks))
+        chunk_results = [None] * len(chunks)
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            future_to_index = {
+                executor.submit(
+                    self._extract_chunk_items,
+                    schema,
+                    chunk,
+                    index,
+                    len(chunks),
+                ): index
+                for index, chunk in enumerate(chunks)
+            }
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                chunk_results[index] = future.result()
+        return chunk_results
+
+    def _extract_chunk_items(self, schema, chunk, chunk_index, chunk_count):
+        try:
+            proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
+        except Exception as exc:
+            raise RuntimeError(f"Graph extraction failed for chunk {chunk_index + 1}/{chunk_count}: {exc}") from exc
+
+        log.debug(
+            "[LLM] %s input: %s \noutput:%s",
+            self.__class__.__name__,
+            chunk,
+            proceeded_chunk,
+        )
+        return self._extract_and_filter_label(schema, proceeded_chunk)
 
     def extract_property_graph_by_llm(self, schema, chunk):
         prompt = generate_extract_property_graph_prompt(chunk, schema)

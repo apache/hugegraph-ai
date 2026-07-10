@@ -87,6 +87,7 @@ def extract_graph(
     schema,
     example_prompt,
     split_type=SPLIT_TYPE_DOCUMENT,
+    graph_extract_max_workers=1,
 ) -> str:
     texts = read_documents(input_file, input_text)
     scheduler = SchedulerSingleton.get_instance()
@@ -95,13 +96,23 @@ def extract_graph(
     if split_type not in VALID_SPLIT_TYPES:
         raise gr.Error("split_type must be document, paragraph, or sentence")
     try:
+        graph_extract_max_workers = int(graph_extract_max_workers)
+    except (TypeError, ValueError) as exc:
+        raise gr.Error("graph_extract_max_workers must be a positive integer") from exc
+    if graph_extract_max_workers < 1:
+        raise gr.Error("graph_extract_max_workers must be a positive integer")
+    try:
+        schedule_kwargs = {"split_type": split_type}
+        if graph_extract_max_workers != 1:
+            schedule_kwargs["graph_extract_max_workers"] = graph_extract_max_workers
+
         return scheduler.schedule_flow(
             FlowName.GRAPH_EXTRACT,
             schema,
             texts,
             example_prompt,
             "property_graph",
-            split_type=split_type,
+            **schedule_kwargs,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.error(e)

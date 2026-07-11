@@ -19,6 +19,7 @@ import time
 
 import gradio as gr
 import pytest
+from pydantic import ValidationError
 
 from hugegraph_llm.flows.graph_extract import GraphExtractFlow
 from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
@@ -41,9 +42,10 @@ SCHEMA = {
 
 
 class CountingLLM:
-    def __init__(self, delay=0.02, fail_on=None):
+    def __init__(self, delay=0.02, fail_on=None, malformed_on=None):
         self.delay = delay
         self.fail_on = fail_on
+        self.malformed_on = malformed_on
         self.active = 0
         self.max_active = 0
         self.lock = threading.Lock()
@@ -58,6 +60,8 @@ class CountingLLM:
             self.calls.append(chunk)
             if chunk == self.fail_on:
                 raise RuntimeError("boom")
+            if chunk == self.malformed_on:
+                return "this is not json"
             time.sleep(self.delay)
             return json.dumps(
                 {
@@ -155,7 +159,7 @@ def test_graph_extract_flow_prepare_stores_positive_concurrency():
 def test_graph_extract_flow_prepare_rejects_invalid_concurrency():
     flow = GraphExtractFlow()
 
-    with pytest.raises(ValueError, match="positive integer"):
+    with pytest.raises(ValueError, match="between 1 and 8"):
         flow.prepare(
             WkFlowInput(),
             "{}",
@@ -199,5 +203,64 @@ def test_extract_graph_helper_rejects_invalid_concurrency(monkeypatch):
         lambda input_file, input_text: ["doc"],
     )
 
-    with pytest.raises(gr.Error, match="positive integer"):
+    with pytest.raises(gr.Error, match="between 1 and 8"):
         graph_index_utils.extract_graph([], "", "{}", "prompt", "document", 0)
+
+
+def test_property_graph_extract_malformed_chunk_reports_chunk_context():
+    llm = CountingLLM(malformed_on="bad")
+    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
+
+    with pytest.raises(RuntimeError, match="chunk 2/3"):
+        extractor.run({"schema": SCHEMA, "chunks": ["ok", "bad", "later"]})
+
+
+def test_graph_extract_flow_prepare_rejects_concurrency_above_backend_cap():
+    flow = GraphExtractFlow()
+
+    with pytest.raises(ValueError, match="between 1 and 8"):
+        flow.prepare(
+            WkFlowInput(),
+            "{}",
+            ["doc"],
+            "prompt",
+            "property_graph",
+            graph_extract_max_workers=9,
+        )
+
+
+def test_extract_graph_helper_rejects_concurrency_above_backend_cap(monkeypatch):
+    monkeypatch.setattr(
+        graph_index_utils,
+        "read_documents",
+        lambda input_file, input_text: ["doc"],
+    )
+
+    with pytest.raises(gr.Error, match="between 1 and 8"):
+        graph_index_utils.extract_graph(
+            [],
+            "",
+            "{}",
+            "prompt",
+            "document",
+            9,
+        )
+
+
+def test_rest_graph_extract_request_accepts_and_validates_concurrency():
+    from hugegraph_llm.api.models.graph_extract_requests import GraphExtractRequest
+
+    request = GraphExtractRequest(
+        texts="doc",
+        schema=SCHEMA,
+        graph_extract_max_workers=4,
+    )
+
+    assert request.graph_extract_max_workers == 4
+
+    with pytest.raises(ValidationError):
+        GraphExtractRequest(
+            texts="doc",
+            schema=SCHEMA,
+            graph_extract_max_workers=9,
+        )

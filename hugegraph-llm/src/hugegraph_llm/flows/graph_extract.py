@@ -27,6 +27,7 @@ from hugegraph_llm.operators.document_op.chunk_split import (
     VALID_SPLIT_TYPES,
 )
 from hugegraph_llm.state.ai_state import WkFlowInput, WkFlowState
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 from hugegraph_llm.utils.log import log
 
 
@@ -54,13 +55,7 @@ class GraphExtractFlow(BaseFlow):
             raise ValueError("split_type must be document, paragraph, or sentence")
 
         prepared_input.split_type = split_type
-        try:
-            graph_extract_max_workers = int(graph_extract_max_workers)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("graph_extract_max_workers must be a positive integer") from exc
-        if graph_extract_max_workers < 1:
-            raise ValueError("graph_extract_max_workers must be a positive integer")
-        prepared_input.graph_extract_max_workers = graph_extract_max_workers
+        prepared_input.graph_extract_max_workers = validate_graph_extract_max_workers(graph_extract_max_workers)
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type

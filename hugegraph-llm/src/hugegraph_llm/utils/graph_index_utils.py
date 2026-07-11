@@ -28,6 +28,7 @@ from hugegraph_llm.operators.document_op.chunk_split import (
     SPLIT_TYPE_DOCUMENT,
     VALID_SPLIT_TYPES,
 )
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 
 from ..config import huge_settings
 from .hugegraph_utils import clean_hg_data
@@ -96,11 +97,9 @@ def extract_graph(
     if split_type not in VALID_SPLIT_TYPES:
         raise gr.Error("split_type must be document, paragraph, or sentence")
     try:
-        graph_extract_max_workers = int(graph_extract_max_workers)
-    except (TypeError, ValueError) as exc:
-        raise gr.Error("graph_extract_max_workers must be a positive integer") from exc
-    if graph_extract_max_workers < 1:
-        raise gr.Error("graph_extract_max_workers must be a positive integer")
+        graph_extract_max_workers = validate_graph_extract_max_workers(graph_extract_max_workers)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from exc
     try:
         schedule_kwargs = {"split_type": split_type}
         if graph_extract_max_workers != 1:

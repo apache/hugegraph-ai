@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 from hugegraph_llm.config import prompt
 from hugegraph_llm.document.chunk_split import ChunkSplitter
 from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 from hugegraph_llm.utils.log import log
 
 # TODO: It is not clear whether there is any other dependence on the SCHEMA_EXAMPLE_PROMPT variable.
@@ -87,7 +88,7 @@ class PropertyGraphExtract:
     ) -> None:
         self.llm = llm
         self.example_prompt = example_prompt
-        self.max_workers = max(1, int(max_workers or 1))
+        self.max_workers = validate_graph_extract_max_workers(max_workers)
         self.NECESSARY_ITEM_KEYS = {"label", "type", "properties"}  # pylint: disable=invalid-name
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
@@ -140,6 +141,8 @@ class PropertyGraphExtract:
     def _extract_chunk_items(self, schema, chunk, chunk_index, chunk_count):
         try:
             proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
+            self._extract_property_graph_json(proceeded_chunk)
+            self._extract_property_graph_json(proceeded_chunk)
         except Exception as exc:
             raise RuntimeError(f"Graph extraction failed for chunk {chunk_index + 1}/{chunk_count}: {exc}") from exc
 
@@ -150,6 +153,30 @@ class PropertyGraphExtract:
             proceeded_chunk,
         )
         return self._extract_and_filter_label(schema, proceeded_chunk)
+
+    @staticmethod
+    def _extract_property_graph_json(text):
+        text = re.sub(r"```\w*\n?", "", text)
+        text = re.sub(r"```", "", text)
+        text = text.strip()
+
+        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if not json_match:
+            raise ValueError("No JSON found in property graph extraction response")
+
+        json_str = json_match.group(1).strip()
+        try:
+            property_graph = json.loads(json_str)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid property graph JSON: {exc.msg}") from exc
+
+        if isinstance(property_graph, list):
+            return property_graph
+
+        if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
+            raise ValueError("Invalid property graph format; expecting 'vertices' and 'edges'")
+
+        return property_graph
 
     def extract_property_graph_by_llm(self, schema, chunk):
         prompt = generate_extract_property_graph_prompt(chunk, schema)

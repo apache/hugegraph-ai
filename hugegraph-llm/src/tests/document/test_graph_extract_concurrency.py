@@ -25,6 +25,7 @@ from hugegraph_llm.flows.graph_extract import GraphExtractFlow
 from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphExtract
 from hugegraph_llm.state.ai_state import WkFlowInput
 from hugegraph_llm.utils import graph_index_utils
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 
 SCHEMA = {
     "vertexlabels": [
@@ -264,3 +265,74 @@ def test_rest_graph_extract_request_accepts_and_validates_concurrency():
             schema=SCHEMA,
             graph_extract_max_workers=9,
         )
+
+
+class BlockingLLM:
+    def __init__(self):
+        self.started = []
+        self.release = threading.Event()
+        self.lock = threading.Lock()
+
+    def generate(self, prompt):
+        chunk = CountingLLM._chunk_from_prompt(prompt)
+        with self.lock:
+            self.started.append(chunk)
+
+        if chunk == "bad":
+            raise RuntimeError("boom")
+        if chunk == "slow":
+            self.release.wait(timeout=1)
+
+        return json.dumps(
+            {
+                "vertices": [
+                    {
+                        "label": "person",
+                        "type": "vertex",
+                        "properties": {"name": chunk},
+                    }
+                ],
+                "edges": [],
+            }
+        )
+
+
+def test_property_graph_extract_cancels_queued_chunks_after_failure():
+    llm = BlockingLLM()
+    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
+
+    with pytest.raises(RuntimeError, match="chunk 2/4"):
+        extractor.run({"schema": SCHEMA, "chunks": ["slow", "bad", "later", "d"]})
+
+    llm.release.set()
+    time.sleep(0.05)
+
+    assert "later" not in llm.started
+    assert "d" not in llm.started
+
+
+def test_property_graph_extract_parses_successful_chunk_response_once(monkeypatch):
+    llm = CountingLLM()
+    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=1)
+    parse_count = 0
+    original_parser = extractor._extract_property_graph_json
+
+    def counting_parser(text):
+        nonlocal parse_count
+        parse_count += 1
+        return original_parser(text)
+
+    monkeypatch.setattr(extractor, "_extract_property_graph_json", counting_parser)
+
+    extractor.run({"schema": SCHEMA, "chunks": ["a", "b"]})
+
+    assert parse_count == 2
+
+
+def test_graph_extract_worker_validator_rejects_fractional_and_bool_values():
+    assert validate_graph_extract_max_workers(1.0) == 1
+    assert validate_graph_extract_max_workers("8") == 8
+
+    for invalid_value in (True, False, 1.9, 8.9, "1.9"):
+        with pytest.raises(ValueError, match="between 1 and 8"):
+            validate_graph_extract_max_workers(invalid_value)

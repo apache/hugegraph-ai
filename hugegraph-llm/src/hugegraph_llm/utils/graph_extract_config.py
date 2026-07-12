@@ -17,12 +17,22 @@ MAX_GRAPH_EXTRACT_WORKERS = 8
 
 
 def validate_graph_extract_max_workers(value) -> int:
-    try:
+    if isinstance(value, bool):
+        raise ValueError(f"graph_extract_max_workers must be an integer between 1 and {MAX_GRAPH_EXTRACT_WORKERS}")
+
+    if isinstance(value, int):
+        workers = value
+    elif isinstance(value, float):
+        if not value.is_integer():
+            raise ValueError(f"graph_extract_max_workers must be an integer between 1 and {MAX_GRAPH_EXTRACT_WORKERS}")
         workers = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"graph_extract_max_workers must be an integer between 1 and {MAX_GRAPH_EXTRACT_WORKERS}"
-        ) from exc
+    elif isinstance(value, str):
+        stripped_value = value.strip()
+        if not stripped_value or not stripped_value.lstrip("+-").isdigit():
+            raise ValueError(f"graph_extract_max_workers must be an integer between 1 and {MAX_GRAPH_EXTRACT_WORKERS}")
+        workers = int(stripped_value)
+    else:
+        raise ValueError(f"graph_extract_max_workers must be an integer between 1 and {MAX_GRAPH_EXTRACT_WORKERS}")
 
     if workers < 1 or workers > MAX_GRAPH_EXTRACT_WORKERS:
         raise ValueError(f"graph_extract_max_workers must be an integer between 1 and {MAX_GRAPH_EXTRACT_WORKERS}")

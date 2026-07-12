@@ -122,27 +122,54 @@ class PropertyGraphExtract:
     def _extract_chunks_concurrently(self, schema, chunks):
         worker_count = min(self.max_workers, len(chunks))
         chunk_results = [None] * len(chunks)
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            future_to_index = {
-                executor.submit(
+        executor = ThreadPoolExecutor(max_workers=worker_count)
+        future_to_index = {}
+        next_index = 0
+
+        try:
+            while next_index < len(chunks) and len(future_to_index) < worker_count:
+                future = executor.submit(
                     self._extract_chunk_items,
                     schema,
-                    chunk,
-                    index,
+                    chunks[next_index],
+                    next_index,
                     len(chunks),
-                ): index
-                for index, chunk in enumerate(chunks)
-            }
-            for future in as_completed(future_to_index):
-                index = future_to_index[future]
-                chunk_results[index] = future.result()
-        return chunk_results
+                )
+                future_to_index[future] = next_index
+                next_index += 1
+
+            while future_to_index:
+                for future in as_completed(future_to_index):
+                    index = future_to_index.pop(future)
+                    try:
+                        chunk_results[index] = future.result()
+                    except Exception:
+                        for pending_future in future_to_index:
+                            pending_future.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise
+
+                    if next_index < len(chunks):
+                        next_future = executor.submit(
+                            self._extract_chunk_items,
+                            schema,
+                            chunks[next_index],
+                            next_index,
+                            len(chunks),
+                        )
+                        future_to_index[next_future] = next_index
+                        next_index += 1
+                    break
+        except Exception:
+            raise
+        else:
+            executor.shutdown(wait=True)
+            return chunk_results
 
     def _extract_chunk_items(self, schema, chunk, chunk_index, chunk_count):
         try:
             proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
-            self._extract_property_graph_json(proceeded_chunk)
-            self._extract_property_graph_json(proceeded_chunk)
+            property_graph = self._extract_property_graph_json(proceeded_chunk)
         except Exception as exc:
             raise RuntimeError(f"Graph extraction failed for chunk {chunk_index + 1}/{chunk_count}: {exc}") from exc
 
@@ -152,7 +179,7 @@ class PropertyGraphExtract:
             chunk,
             proceeded_chunk,
         )
-        return self._extract_and_filter_label(schema, proceeded_chunk)
+        return self._extract_and_filter_label(schema, property_graph)
 
     @staticmethod
     def _extract_property_graph_json(text):
@@ -272,68 +299,16 @@ class PropertyGraphExtract:
             normalized_edges.append(edge)
         return normalized_edges
 
-    def _extract_and_filter_label(self, schema, text) -> List[Dict[str, Any]]:
-        # Strip markdown code blocks (e.g. ```json ... ```)
-        text = re.sub(r"```\w*\n?", "", text)
-        text = re.sub(r"```", "", text)
-        text = text.strip()
+    def _extract_and_filter_label(self, schema, property_graph):
+        _ = schema
+        if isinstance(property_graph, str):
+            property_graph = self._extract_property_graph_json(property_graph)
 
-        # Try to extract JSON (object or array)
-        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
-        if not json_match:
-            log.critical("Invalid property graph! No JSON found, please check the output format example in prompt.")
-            return []
-        json_str = json_match.group(1).strip()
+        if isinstance(property_graph, list):
+            graph_items = property_graph
+        elif isinstance(property_graph, dict):
+            graph_items = property_graph["vertices"] + property_graph["edges"]
+        else:
+            raise ValueError("Invalid property graph format")
 
-        items = []
-        try:
-            property_graph = json.loads(json_str)
-            # Handle flat array format: convert to {"vertices": [...], "edges": [...]}
-            if isinstance(property_graph, list):
-                vertices = [item for item in property_graph if isinstance(item, dict) and item.get("type") == "vertex"]
-                edges = [item for item in property_graph if isinstance(item, dict) and item.get("type") == "edge"]
-                property_graph = {"vertices": vertices, "edges": edges}
-            # Expect property_graph to be a dict with keys "vertices" and "edges"
-            if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
-                log.critical("Invalid property graph format; expecting 'vertices' and 'edges'.")
-                return items
-
-            # Create sets for valid vertex and edge labels based on the schema
-            vertex_label_map = {vertex["name"]: vertex for vertex in schema["vertexlabels"]}
-            edge_label_map = {edge["name"]: edge for edge in schema["edgelabels"]}
-            vertex_label_set = set(vertex_label_map)
-            edge_label_set = set(edge_label_map)
-
-            def process_items(item_list, valid_labels, item_type):
-                parsed_items = []
-                for item in item_list:
-                    if not isinstance(item, dict):
-                        log.warning("Invalid property graph item type '%s'.", type(item))
-                        continue
-                    item = dict(item)
-                    item_type_value = item.get("type", item_type)
-                    item["type"] = item_type_value
-                    if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
-                        log.warning("Invalid item keys '%s'.", item.keys())
-                        continue
-                    if item_type_value != item_type:
-                        log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
-                        continue
-                    if item["label"] not in valid_labels:
-                        log.warning(
-                            "Invalid %s label '%s' has been ignored.",
-                            item_type,
-                            item["label"],
-                        )
-                        continue
-                    parsed_items.append(item)
-                return parsed_items
-
-            vertex_items = process_items(property_graph["vertices"], vertex_label_set, "vertex")
-            vertices, vertex_id_map = self._normalize_vertices(vertex_items, vertex_label_map)
-            edge_items = process_items(property_graph["edges"], edge_label_set, "edge")
-            edges = self._normalize_edges(edge_items, edge_label_map, vertex_label_map, vertex_id_map)
-            items = vertices + edges
-        except json.JSONDecodeError:
-            log.critical("Invalid property graph JSON! Please check the extracted JSON data carefully")
-        return items
+        return [item for item in graph_items if isinstance(item, dict) and self.NECESSARY_ITEM_KEYS.issubset(item)]

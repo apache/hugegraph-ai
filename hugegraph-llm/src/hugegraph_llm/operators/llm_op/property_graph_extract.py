@@ -300,15 +300,53 @@ class PropertyGraphExtract:
         return normalized_edges
 
     def _extract_and_filter_label(self, schema, property_graph):
-        _ = schema
         if isinstance(property_graph, str):
             property_graph = self._extract_property_graph_json(property_graph)
 
         if isinstance(property_graph, list):
-            graph_items = property_graph
-        elif isinstance(property_graph, dict):
-            graph_items = property_graph["vertices"] + property_graph["edges"]
-        else:
-            raise ValueError("Invalid property graph format")
+            property_graph = {
+                "vertices": [
+                    item for item in property_graph if isinstance(item, dict) and item.get("type") == "vertex"
+                ],
+                "edges": [item for item in property_graph if isinstance(item, dict) and item.get("type") == "edge"],
+            }
 
-        return [item for item in graph_items if isinstance(item, dict) and self.NECESSARY_ITEM_KEYS.issubset(item)]
+        if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
+            raise ValueError("Invalid property graph format; expecting 'vertices' and 'edges'")
+
+        vertex_label_map = {vertex["name"]: vertex for vertex in schema["vertexlabels"]}
+        edge_label_map = {edge["name"]: edge for edge in schema["edgelabels"]}
+        vertex_label_set = set(vertex_label_map)
+        edge_label_set = set(edge_label_map)
+
+        def process_items(item_list, valid_labels, item_type):
+            parsed_items = []
+            for item in item_list:
+                if not isinstance(item, dict):
+                    log.warning("Invalid property graph item type '%s'.", type(item))
+                    continue
+
+                item = dict(item)
+                item_type_value = item.get("type", item_type)
+                item["type"] = item_type_value
+
+                if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
+                    log.warning("Invalid item keys '%s'.", item.keys())
+                    continue
+                if item_type_value != item_type:
+                    log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
+                    continue
+                if item["label"] not in valid_labels:
+                    log.warning("Invalid %s label '%s' has been ignored.", item_type, item["label"])
+                    continue
+
+                parsed_items.append(item)
+            return parsed_items
+
+        vertex_items = process_items(property_graph["vertices"], vertex_label_set, "vertex")
+        vertices, vertex_id_map = self._normalize_vertices(vertex_items, vertex_label_map)
+
+        edge_items = process_items(property_graph["edges"], edge_label_set, "edge")
+        edges = self._normalize_edges(edge_items, edge_label_map, vertex_label_map, vertex_id_map)
+
+        return vertices + edges

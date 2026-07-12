@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import json
+import re
 import threading
 import time
 
@@ -82,21 +83,10 @@ class CountingLLM:
 
     @staticmethod
     def _chunk_from_prompt(prompt):
-        for marker in (
-            "first",
-            "second",
-            "third",
-            "later",
-            "bad",
-            "ok",
-            "a",
-            "b",
-            "c",
-            "d",
-        ):
-            if marker in prompt:
-                return marker
-        raise AssertionError(f"Could not identify chunk in prompt: {prompt}")
+        match = re.search(r"## Text:\s*(.*?)\s*## Graph schema", prompt, re.DOTALL)
+        if not match:
+            raise AssertionError(f"Could not identify chunk in prompt: {prompt}")
+        return match.group(1).strip()
 
 
 def test_property_graph_extract_respects_configured_concurrency_limit():
@@ -336,3 +326,30 @@ def test_graph_extract_worker_validator_rejects_fractional_and_bool_values():
     for invalid_value in (True, False, 1.9, 8.9, "1.9"):
         with pytest.raises(ValueError, match="between 1 and 8"):
             validate_graph_extract_max_workers(invalid_value)
+
+
+def test_property_graph_extract_accepts_vertices_without_explicit_type():
+    class UntypedVertexLLM:
+        def generate(self, prompt):
+            return json.dumps(
+                {
+                    "vertices": [
+                        {
+                            "label": "person",
+                            "properties": {"name": "Ada"},
+                        },
+                        {
+                            "label": "person",
+                            "properties": {"name": "Bob"},
+                        },
+                    ],
+                    "edges": [],
+                }
+            )
+
+    extractor = PropertyGraphExtract(UntypedVertexLLM(), example_prompt="", max_workers=1)
+
+    result = extractor.run({"schema": SCHEMA, "chunks": ["a"]})
+
+    assert [vertex["label"] for vertex in result["vertices"]] == ["person", "person"]
+    assert [vertex["type"] for vertex in result["vertices"]] == ["vertex", "vertex"]

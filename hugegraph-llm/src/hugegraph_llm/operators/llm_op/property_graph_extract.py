@@ -301,7 +301,11 @@ class PropertyGraphExtract:
 
     def _extract_and_filter_label(self, schema, property_graph):
         if isinstance(property_graph, str):
-            property_graph = self._extract_property_graph_json(property_graph)
+            try:
+                property_graph = self._extract_property_graph_json(property_graph)
+            except ValueError as exc:
+                log.warning("Invalid property graph extraction response: %s", exc)
+                return []
 
         if isinstance(property_graph, list):
             property_graph = {

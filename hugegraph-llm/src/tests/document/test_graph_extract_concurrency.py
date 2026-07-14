@@ -353,3 +353,19 @@ def test_property_graph_extract_accepts_vertices_without_explicit_type():
 
     assert [vertex["label"] for vertex in result["vertices"]] == ["person", "person"]
     assert [vertex["type"] for vertex in result["vertices"]] == ["vertex", "vertex"]
+
+
+def test_property_graph_extract_malformed_container_shape_reports_chunk_context():
+    class MalformedContainerLLM:
+        def generate(self, prompt):
+            return json.dumps(
+                {
+                    "vertices": {},
+                    "edges": [],
+                }
+            )
+
+    extractor = PropertyGraphExtract(MalformedContainerLLM(), example_prompt="", max_workers=1)
+
+    with pytest.raises(RuntimeError, match="chunk 1/1"):
+        extractor.run({"schema": SCHEMA, "chunks": ["a"]})

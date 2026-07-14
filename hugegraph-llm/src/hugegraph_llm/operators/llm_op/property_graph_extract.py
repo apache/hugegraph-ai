@@ -181,8 +181,7 @@ class PropertyGraphExtract:
         )
         return self._extract_and_filter_label(schema, property_graph)
 
-    @staticmethod
-    def _extract_property_graph_json(text):
+    def _extract_property_graph_json(self, text):
         text = re.sub(r"```\w*\n?", "", text)
         text = re.sub(r"```", "", text)
         text = text.strip()
@@ -202,6 +201,9 @@ class PropertyGraphExtract:
 
         if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
             raise ValueError("Invalid property graph format; expecting 'vertices' and 'edges'")
+
+        if not isinstance(property_graph["vertices"], list) or not isinstance(property_graph["edges"], list):
+            raise ValueError("Invalid property graph format; 'vertices' and 'edges' must be lists")
 
         return property_graph
 

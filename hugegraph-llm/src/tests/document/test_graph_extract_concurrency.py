@@ -111,15 +111,51 @@ def test_property_graph_extract_serial_mode_keeps_one_active_call():
 
 
 def test_property_graph_extract_preserves_chunk_merge_order_with_concurrency():
-    llm = CountingLLM()
-    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=3)
+    class ReverseFinishLLM:
+        def __init__(self):
+            self.first_started = threading.Event()
+            self.release_first = threading.Event()
+            self.completion_order = []
+            self.lock = threading.Lock()
 
-    result = extractor.run({"schema": SCHEMA, "chunks": ["first", "second", "third"]})
+        def generate(self, prompt):
+            if "FIRST_CHUNK" in prompt:
+                chunk_name = "FIRST_CHUNK"
+                self.first_started.set()
+                self.release_first.wait(timeout=2)
+                time.sleep(0.05)
+            elif "SECOND_CHUNK" in prompt:
+                chunk_name = "SECOND_CHUNK"
+                assert self.first_started.wait(timeout=2)
+                self.release_first.set()
+            else:
+                raise AssertionError(f"Unexpected prompt: {prompt}")
 
-    assert [item["properties"]["name"] for item in result["vertices"]] == [
-        "first",
-        "second",
-        "third",
+            with self.lock:
+                self.completion_order.append(chunk_name)
+
+            return json.dumps(
+                {
+                    "vertices": [
+                        {
+                            "label": "person",
+                            "type": "vertex",
+                            "properties": {"name": chunk_name},
+                        }
+                    ],
+                    "edges": [],
+                }
+            )
+
+    llm = ReverseFinishLLM()
+    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
+
+    result = extractor.run({"schema": SCHEMA, "chunks": ["FIRST_CHUNK", "SECOND_CHUNK"]})
+
+    assert llm.completion_order == ["SECOND_CHUNK", "FIRST_CHUNK"]
+    assert [vertex["properties"]["name"] for vertex in result["vertices"]] == [
+        "FIRST_CHUNK",
+        "SECOND_CHUNK",
     ]
 
 

@@ -256,6 +256,30 @@ def test_service_extract_sync_maps_errors_to_500(mock_singleton):
     assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
+@pytest.mark.parametrize("raw_value", [True, False, "1.0"])
+def test_graph_extract_rejects_raw_invalid_worker_values(raw_value):
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": INLINE_SCHEMA,
+            "graph_extract_max_workers": raw_value,
+        },
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.parametrize("raw_value", [True, False, "1.0"])
+def test_request_model_rejects_raw_invalid_worker_values(raw_value):
+    with pytest.raises(ValidationError):
+        GraphExtractRequest(
+            texts="hello",
+            schema=INLINE_SCHEMA,
+            graph_extract_max_workers=raw_value,
+        )
+
+
 def test_request_model_validation():
     req = GraphExtractRequest(texts="hello", schema=INLINE_SCHEMA)
     assert req.texts == ["hello"]

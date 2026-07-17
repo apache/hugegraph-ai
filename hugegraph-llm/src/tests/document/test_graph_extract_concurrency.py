@@ -405,3 +405,88 @@ def test_property_graph_extract_malformed_container_shape_reports_chunk_context(
 
     with pytest.raises(RuntimeError, match="chunk 1/1"):
         extractor.run({"schema": SCHEMA, "chunks": ["a"]})
+
+
+def test_property_graph_extract_waits_for_in_flight_call_after_failure():
+    class LifecycleLLM:
+        def __init__(self):
+            self.slow_started = threading.Event()
+            self.release_slow = threading.Event()
+            self.slow_finished = threading.Event()
+            self.calls = []
+            self.lock = threading.Lock()
+
+        def generate(self, prompt):
+            with self.lock:
+                if "LATER_CHUNK" in prompt:
+                    self.calls.append("LATER_CHUNK")
+                elif "SLOW_CHUNK" in prompt:
+                    self.calls.append("SLOW_CHUNK")
+                elif "FAIL_CHUNK" in prompt:
+                    self.calls.append("FAIL_CHUNK")
+
+            if "SLOW_CHUNK" in prompt:
+                self.slow_started.set()
+                self.release_slow.wait(timeout=2)
+                self.slow_finished.set()
+                return json.dumps({"vertices": [], "edges": []})
+
+            if "FAIL_CHUNK" in prompt:
+                assert self.slow_started.wait(timeout=2)
+                self.release_slow.set()
+                raise ValueError("fast failure")
+
+            if "LATER_CHUNK" in prompt:
+                return json.dumps({"vertices": [], "edges": []})
+
+            raise AssertionError(f"Unexpected prompt: {prompt}")
+
+    llm = LifecycleLLM()
+    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
+
+    with pytest.raises(RuntimeError, match="chunk 2/3"):
+        extractor.run({"schema": SCHEMA, "chunks": ["SLOW_CHUNK", "FAIL_CHUNK", "LATER_CHUNK"]})
+
+    assert llm.slow_finished.is_set()
+    assert "LATER_CHUNK" not in llm.calls
+
+
+def test_property_graph_extract_reports_lowest_in_flight_failure_index():
+    class FailureOrderLLM:
+        def __init__(self):
+            self.first_started = threading.Event()
+            self.second_failed = threading.Event()
+            self.calls = []
+            self.lock = threading.Lock()
+
+        def generate(self, prompt):
+            with self.lock:
+                if "LATER_CHUNK" in prompt:
+                    self.calls.append("LATER_CHUNK")
+                elif "FIRST_FAIL_CHUNK" in prompt:
+                    self.calls.append("FIRST_FAIL_CHUNK")
+                elif "SECOND_FAIL_CHUNK" in prompt:
+                    self.calls.append("SECOND_FAIL_CHUNK")
+
+            if "FIRST_FAIL_CHUNK" in prompt:
+                self.first_started.set()
+                assert self.second_failed.wait(timeout=2)
+                raise ValueError("first failure")
+
+            if "SECOND_FAIL_CHUNK" in prompt:
+                assert self.first_started.wait(timeout=2)
+                self.second_failed.set()
+                raise ValueError("second failure")
+
+            if "LATER_CHUNK" in prompt:
+                return json.dumps({"vertices": [], "edges": []})
+
+            raise AssertionError(f"Unexpected prompt: {prompt}")
+
+    llm = FailureOrderLLM()
+    extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
+
+    with pytest.raises(RuntimeError, match="chunk 1/3"):
+        extractor.run({"schema": SCHEMA, "chunks": ["FIRST_FAIL_CHUNK", "SECOND_FAIL_CHUNK", "LATER_CHUNK"]})
+
+    assert "LATER_CHUNK" not in llm.calls

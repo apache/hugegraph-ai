@@ -19,7 +19,7 @@
 
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any, Dict, List
 
 from hugegraph_llm.config import prompt
@@ -122,49 +122,86 @@ class PropertyGraphExtract:
     def _extract_chunks_concurrently(self, schema, chunks):
         worker_count = min(self.max_workers, len(chunks))
         chunk_results = [None] * len(chunks)
-        executor = ThreadPoolExecutor(max_workers=worker_count)
         future_to_index = {}
         next_index = 0
+        first_error = None
 
-        try:
+        def submit_next(executor):
+            nonlocal next_index
+            future = executor.submit(
+                self._extract_chunk_items,
+                schema,
+                chunks[next_index],
+                next_index,
+                len(chunks),
+            )
+            future_to_index[future] = next_index
+            next_index += 1
+
+        def collect_done(done_futures):
+            completed_results = []
+            completed_errors = []
+
+            for future in done_futures:
+                index = future_to_index.pop(future)
+                try:
+                    completed_results.append((index, future.result()))
+                except Exception as exc:
+                    completed_errors.append((index, exc))
+
+            return completed_results, completed_errors
+
+        def update_first_error(completed_errors):
+            nonlocal first_error
+            if not completed_errors:
+                return
+            current_error = min(completed_errors, key=lambda item: item[0])
+            if first_error is None or current_error[0] < first_error[0]:
+                first_error = current_error
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
             while next_index < len(chunks) and len(future_to_index) < worker_count:
-                future = executor.submit(
-                    self._extract_chunk_items,
-                    schema,
-                    chunks[next_index],
-                    next_index,
-                    len(chunks),
-                )
-                future_to_index[future] = next_index
-                next_index += 1
+                submit_next(executor)
 
-            while future_to_index:
-                for future in as_completed(future_to_index):
-                    index = future_to_index.pop(future)
-                    try:
-                        chunk_results[index] = future.result()
-                    except Exception:
-                        for pending_future in future_to_index:
-                            pending_future.cancel()
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        raise
+            while future_to_index and first_error is None:
+                done, _ = wait(future_to_index, return_when=FIRST_COMPLETED)
+                # Drain any other futures that completed before we decide whether to
+                # submit more work. This prevents submitting queued chunks after an
+                # already-visible in-flight failure.
+                done.update(future for future in future_to_index if future.done())
 
-                    if next_index < len(chunks):
-                        next_future = executor.submit(
-                            self._extract_chunk_items,
-                            schema,
-                            chunks[next_index],
-                            next_index,
-                            len(chunks),
-                        )
-                        future_to_index[next_future] = next_index
-                        next_index += 1
+                completed_results, completed_errors = collect_done(done)
+                update_first_error(completed_errors)
+
+                for index, result in completed_results:
+                    chunk_results[index] = result
+
+                if first_error is not None:
                     break
-        except Exception:
-            raise
-        else:
-            executor.shutdown(wait=True)
-            return chunk_results
+
+                while next_index < len(chunks) and len(future_to_index) < worker_count:
+                    submit_next(executor)
+
+            if first_error is not None:
+                # Do not submit more chunks after the first observed failure.
+                # Cancel queued work if any, then wait for already-running calls so no
+                # background LLM call outlives this failed extraction.
+                for future in future_to_index:
+                    future.cancel()
+
+                remaining_errors = []
+                for future, index in list(future_to_index.items()):
+                    if future.cancelled():
+                        continue
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        remaining_errors.append((index, exc))
+
+                update_first_error(remaining_errors)
+                raise first_error[1]
+
+        return chunk_results
 
     def _extract_chunk_items(self, schema, chunk, chunk_index, chunk_count):
         try:

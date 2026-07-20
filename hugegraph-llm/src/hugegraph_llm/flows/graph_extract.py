@@ -27,6 +27,7 @@ from hugegraph_llm.operators.document_op.chunk_split import (
     VALID_SPLIT_TYPES,
 )
 from hugegraph_llm.state.ai_state import WkFlowInput, WkFlowState
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 from hugegraph_llm.utils.log import log
 
 
@@ -44,6 +45,7 @@ class GraphExtractFlow(BaseFlow):
         extract_type,
         split_type=SPLIT_TYPE_DOCUMENT,
         language="zh",
+        graph_extract_max_workers=1,
         **kwargs,
     ):
         # prepare input data
@@ -53,6 +55,7 @@ class GraphExtractFlow(BaseFlow):
             raise ValueError("split_type must be document, paragraph, or sentence")
 
         prepared_input.split_type = split_type
+        prepared_input.graph_extract_max_workers = validate_graph_extract_max_workers(graph_extract_max_workers)
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
@@ -76,6 +79,7 @@ class GraphExtractFlow(BaseFlow):
         extract_type,
         split_type=SPLIT_TYPE_DOCUMENT,
         language="zh",
+        graph_extract_max_workers=1,
         **kwargs,
     ):
         pipeline = GPipeline()
@@ -89,6 +93,7 @@ class GraphExtractFlow(BaseFlow):
             extract_type,
             split_type,
             language,
+            graph_extract_max_workers,
             **kwargs,
         )
 

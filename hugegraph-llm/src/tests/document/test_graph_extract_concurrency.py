@@ -90,14 +90,51 @@ class CountingLLM:
 
 
 def test_property_graph_extract_respects_configured_concurrency_limit():
-    llm = CountingLLM()
+    class OverlapLLM:
+        def __init__(self):
+            self.active = 0
+            self.max_active = 0
+            self.calls = []
+            self.lock = threading.Lock()
+            self.two_workers_started = threading.Event()
+
+        def generate(self, prompt):
+            chunk = CountingLLM._chunk_from_prompt(prompt)
+            with self.lock:
+                self.calls.append(chunk)
+                self.active += 1
+                self.max_active = max(self.max_active, self.active)
+                if len(self.calls) == 2:
+                    self.two_workers_started.set()
+
+            try:
+                if chunk in {"FIRST_CHUNK", "SECOND_CHUNK"}:
+                    assert self.two_workers_started.wait(timeout=2)
+                    time.sleep(0.02)
+
+                return json.dumps(
+                    {
+                        "vertices": [
+                            {
+                                "label": "person",
+                                "type": "vertex",
+                                "properties": {"name": chunk},
+                            }
+                        ],
+                        "edges": [],
+                    }
+                )
+            finally:
+                with self.lock:
+                    self.active -= 1
+
+    llm = OverlapLLM()
     extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
 
-    result = extractor.run({"schema": SCHEMA, "chunks": ["a", "b", "c", "d"]})
+    result = extractor.run({"schema": SCHEMA, "chunks": ["FIRST_CHUNK", "SECOND_CHUNK", "THIRD_CHUNK"]})
 
-    assert llm.max_active <= 2
-    assert llm.max_active > 1
-    assert result["call_count"] == 4
+    assert llm.max_active == 2
+    assert result["call_count"] == 3
 
 
 def test_property_graph_extract_serial_mode_keeps_one_active_call():
@@ -411,6 +448,7 @@ def test_property_graph_extract_waits_for_in_flight_call_after_failure():
     class LifecycleLLM:
         def __init__(self):
             self.slow_started = threading.Event()
+            self.fail_started = threading.Event()
             self.release_slow = threading.Event()
             self.slow_finished = threading.Event()
             self.calls = []
@@ -433,7 +471,7 @@ def test_property_graph_extract_waits_for_in_flight_call_after_failure():
 
             if "FAIL_CHUNK" in prompt:
                 assert self.slow_started.wait(timeout=2)
-                self.release_slow.set()
+                self.fail_started.set()
                 raise ValueError("fast failure")
 
             if "LATER_CHUNK" in prompt:
@@ -443,11 +481,34 @@ def test_property_graph_extract_waits_for_in_flight_call_after_failure():
 
     llm = LifecycleLLM()
     extractor = PropertyGraphExtract(llm, example_prompt="", max_workers=2)
+    returned = threading.Event()
+    errors = []
 
-    with pytest.raises(RuntimeError, match="chunk 2/3"):
-        extractor.run({"schema": SCHEMA, "chunks": ["SLOW_CHUNK", "FAIL_CHUNK", "LATER_CHUNK"]})
+    def run_extractor():
+        try:
+            extractor.run({"schema": SCHEMA, "chunks": ["SLOW_CHUNK", "FAIL_CHUNK", "LATER_CHUNK"]})
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            returned.set()
 
+    run_thread = threading.Thread(target=run_extractor)
+    run_thread.start()
+
+    try:
+        assert llm.slow_started.wait(timeout=2)
+        assert llm.fail_started.wait(timeout=2)
+        time.sleep(0.05)
+        assert not returned.is_set()
+        assert not llm.slow_finished.is_set()
+    finally:
+        llm.release_slow.set()
+        run_thread.join(timeout=2)
+
+    assert returned.is_set()
     assert llm.slow_finished.is_set()
+    assert errors
+    assert "chunk 2/3" in str(errors[0])
     assert "LATER_CHUNK" not in llm.calls
 
 
@@ -490,3 +551,25 @@ def test_property_graph_extract_reports_lowest_in_flight_failure_index():
         extractor.run({"schema": SCHEMA, "chunks": ["FIRST_FAIL_CHUNK", "SECOND_FAIL_CHUNK", "LATER_CHUNK"]})
 
     assert "LATER_CHUNK" not in llm.calls
+
+
+def test_property_graph_extract_malformed_item_fields_report_chunk_context():
+    class MalformedItemFieldsLLM:
+        def generate(self, prompt):
+            return json.dumps(
+                {
+                    "vertices": [
+                        {
+                            "label": "person",
+                            "type": "vertex",
+                            "properties": ["not", "a", "mapping"],
+                        }
+                    ],
+                    "edges": [],
+                }
+            )
+
+    extractor = PropertyGraphExtract(MalformedItemFieldsLLM(), example_prompt="", max_workers=1)
+
+    with pytest.raises(RuntimeError, match="chunk 1/1"):
+        extractor.run({"schema": SCHEMA, "chunks": ["a"]})

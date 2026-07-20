@@ -110,7 +110,6 @@ class PropertyGraphExtract:
         for chunk_items in chunk_results:
             items.extend(chunk_items)
 
-        items = filter_item(schema, items)
         for item in items:
             if item["type"] == "vertex":
                 context["vertices"].append(item)
@@ -207,16 +206,10 @@ class PropertyGraphExtract:
         try:
             proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
             property_graph = self._extract_property_graph_json(proceeded_chunk)
+            chunk_items = self._extract_and_filter_label(schema, property_graph)
+            return filter_item(schema, chunk_items)
         except Exception as exc:
             raise RuntimeError(f"Graph extraction failed for chunk {chunk_index + 1}/{chunk_count}: {exc}") from exc
-
-        log.debug(
-            "[LLM] %s input: %s \noutput:%s",
-            self.__class__.__name__,
-            chunk,
-            proceeded_chunk,
-        )
-        return self._extract_and_filter_label(schema, property_graph)
 
     def _extract_property_graph_json(self, text):
         text = re.sub(r"```\w*\n?", "", text)
@@ -376,6 +369,8 @@ class PropertyGraphExtract:
                 if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
                     log.warning("Invalid item keys '%s'.", item.keys())
                     continue
+                if not isinstance(item["properties"], dict):
+                    raise ValueError(f"Invalid {item_type} properties; expected object")
                 if item_type_value != item_type:
                     log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
                     continue

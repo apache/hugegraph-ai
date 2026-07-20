@@ -104,6 +104,30 @@ def test_graph_extract_moves_warning_into_warnings(mock_singleton):
 
 
 @patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_graph_extract_forwards_non_default_worker_count(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    client = _graph_client()
+
+    response = client.post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": INLINE_SCHEMA,
+            "graph_extract_max_workers": 4,
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert scheduler.schedule_flow.call_args.kwargs["graph_extract_max_workers"] == 4
+
+    response = client.post("/graph/extract", json={"texts": "x", "schema": INLINE_SCHEMA})
+    assert response.status_code == status.HTTP_200_OK
+    assert scheduler.schedule_flow.call_args.kwargs["graph_extract_max_workers"] == 1
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
 def test_graph_extract_accepts_text_and_list(mock_singleton):
     scheduler = MagicMock()
     scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})

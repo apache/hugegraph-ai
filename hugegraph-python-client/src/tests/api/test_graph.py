@@ -93,10 +93,10 @@ class TestGraphManager(unittest.TestCase):
     def test_get_vertex_by_page(self):
         self.graph.addVertex("person", {"name": "Alice", "age": 20})
         self.graph.addVertex("person", {"name": "Bob", "age": 23})
-        # FIXME: destructure (items, next_page) and assert vertex contents;
-        # len(tuple) only proves the method returned two values.
-        vertices = self.graph.getVertexByPage("person", 1)
-        self.assertEqual(len(vertices), 2)
+        vertices, next_page = self.graph.getVertexByPage("person", 1)
+        self.assertEqual(len(vertices), 1)
+        self.assertIn(vertices[0].properties["name"], {"Alice", "Bob"})
+        self.assertIsNotNone(next_page)
 
     def test_get_vertex_by_condition(self):
         self.graph.addVertex("person", {"name": "Alice", "age": 25})
@@ -104,6 +104,17 @@ class TestGraphManager(unittest.TestCase):
         vertices = self.graph.getVertexByCondition("person", properties={"age": "P.gt(29)"})
         self.assertEqual(len(vertices), 1)
         self.assertEqual(vertices[0].properties["name"], "Bob")
+
+    def test_get_vertex_by_condition_with_page(self):
+        self.graph.addVertex("person", {"name": "Condition Page Alice", "age": 25})
+        vertices, next_page = self.graph.getVertexByConditionWithPage(
+            "person",
+            limit=1,
+            properties={"name": "Condition Page Alice"},
+        )
+        self.assertEqual(len(vertices), 1)
+        self.assertEqual(vertices[0].properties["name"], "Condition Page Alice")
+        self.assertIsNone(next_page)
 
     def test_remove_vertex_by_id(self):
         vertex = self.graph.addVertex("person", {"name": "Alice", "age": 20})
@@ -219,7 +230,8 @@ class TestGraphManager(unittest.TestCase):
 def test_graph_supports_primary_key_and_custom_string_id(client_utils):
     graph = client_utils.graph
     graph.addVertex("person", {"name": "quality_marko", "age": 29, "city": "Beijing"})
-    person = graph.getVertexByCondition(label="person", properties={"name": "quality_marko"}, limit=1)[0]
+    people = graph.getVertexByCondition(label="person", properties={"name": "quality_marko"}, limit=1)
+    person = people[0]
     assert person.id is not None
 
     graph.addVertex("book", {"name": "Quality Book", "price": 100}, id="quality-book-1")

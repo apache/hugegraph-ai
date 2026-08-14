@@ -19,6 +19,7 @@ import json
 import os
 import shutil
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import requests
 from pyhugegraph.client import PyHugeClient
@@ -33,19 +34,59 @@ MAX_EDGES = 200000
 BACKUP_DIR = str(os.path.join(resource_path, "backup-graph-data-4020", huge_settings.graph_name))
 
 
-def run_gremlin_query(query, fmt=True):
-    res = get_hg_client().gremlin().exec(query)
+def run_gremlin_query(query, fmt=True, connection=None):
+    res = get_hg_client(connection=connection).gremlin().exec(query)
     return json.dumps(res, indent=4, ensure_ascii=False) if fmt else res
 
 
-def get_hg_client():
+def get_hg_client(connection=None):
+    if connection is None:
+        connection = {
+            "url": huge_settings.graph_url,
+            "graph": huge_settings.graph_name,
+            "user": huge_settings.graph_user,
+            "pwd": huge_settings.graph_pwd,
+            "graphspace": huge_settings.graph_space,
+        }
+    configured = _normalize_graph_url(huge_settings.graph_url)
+    requested = _normalize_graph_url(connection["url"])
+    if requested != configured:
+        raise ValueError("Request graph URL must match the configured HugeGraph URL")
     return PyHugeClient(
-        url=huge_settings.graph_url,
-        graph=huge_settings.graph_name,
-        user=huge_settings.graph_user,
-        pwd=huge_settings.graph_pwd,
-        graphspace=huge_settings.graph_space,
+        url=requested,
+        graph=connection["graph"],
+        user=connection["user"],
+        pwd=connection["pwd"],
+        graphspace=connection["graphspace"],
     )
+
+
+def _normalize_graph_url(url):
+    raw_url = str(url).strip()
+    if "://" not in raw_url:
+        raw_url = f"http://{raw_url}"
+    try:
+        parsed = urlsplit(raw_url)
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("not an absolute HTTP(S) URL")
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            raise ValueError("missing hostname")
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Graph URL must be a valid HTTP(S) URL") from exc
+    default_port = 80 if parsed.scheme.lower() == "http" else 443
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None and port != default_port:
+        authority += f":{port}"
+    return f"{parsed.scheme.lower()}://{authority}{parsed.path.rstrip('/')}"
 
 
 def init_hg_test_data():

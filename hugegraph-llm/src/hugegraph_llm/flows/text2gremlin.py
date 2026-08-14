@@ -40,6 +40,7 @@ class Text2GremlinFlow(BaseFlow):
         schema_input: str,
         gremlin_prompt_input: Optional[str],
         requested_outputs: Optional[List[str]],
+        graph_client_config: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         # sanitize example_num to [0,10], fallback to 2 if invalid
@@ -67,6 +68,7 @@ class Text2GremlinFlow(BaseFlow):
         prepared_input.schema = schema_input
         prepared_input.gremlin_prompt = gremlin_prompt_input
         prepared_input.requested_outputs = req
+        prepared_input.graph_client_config = graph_client_config
 
     def build_flow(
         self,
@@ -75,6 +77,7 @@ class Text2GremlinFlow(BaseFlow):
         schema_input: str,
         gremlin_prompt_input: Optional[str] = None,
         requested_outputs: Optional[List[str]] = None,
+        graph_client_config: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         pipeline = GPipeline()
@@ -87,6 +90,7 @@ class Text2GremlinFlow(BaseFlow):
             schema_input=schema_input,
             gremlin_prompt_input=gremlin_prompt_input,
             requested_outputs=requested_outputs,
+            graph_client_config=graph_client_config,
         )
 
         pipeline.createGParam(prepared_input, "wkflow_input")
@@ -106,7 +110,7 @@ class Text2GremlinFlow(BaseFlow):
 
     def post_deal(self, pipeline=None, **kwargs) -> Dict[str, Any]:
         state = pipeline.getGParamWithNoEmpty("wkflow_state").to_json()
-        # 始终返回 5 个标准键，避免前端因过滤异常看不到字段
+        # Always return the five standard keys so filtering errors do not hide fields.
         return {
             "match_result": state.get("match_result", []),
             "template_gremlin": state.get("result", ""),

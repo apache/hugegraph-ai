@@ -38,7 +38,7 @@ class VectorQueryNode(BaseNode):
             # pylint: disable=import-outside-toplevel
             from hugegraph_llm.utils.vector_index_utils import get_vector_index_class
 
-            # 从 wk_input 中读取用户配置参数
+            # Read user configuration parameters from wk_input.
             vector_index = get_vector_index_class(index_settings.cur_vector_index)
             embedding = Embeddings().get_embedding()
             max_items = self.wk_input.max_items if self.wk_input.max_items is not None else 3

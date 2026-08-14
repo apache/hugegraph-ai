@@ -15,9 +15,34 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class RAGResponse(BaseModel):
     status_code: int = -1
     message: str = ""
+
+
+class ThinAPIError(BaseModel):
+    type: str
+    message: str
+    suggestion: str | None = None
+    retryable: bool = False
+    source: str = "hugegraph-llm"
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ThinAPIMeta(BaseModel):
+    request_id: str
+    duration_ms: float = 0.0
+
+
+class ThinAPIResponse(BaseModel):
+    ok: bool
+    data: Any = None
+    error: ThinAPIError | None = None
+    warnings: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    meta: ThinAPIMeta

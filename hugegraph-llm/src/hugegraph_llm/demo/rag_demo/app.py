@@ -16,6 +16,7 @@
 # under the License.
 
 import argparse
+import ipaddress
 import os
 
 import gradio as gr
@@ -26,6 +27,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from hugegraph_llm.api.admin_api import admin_http_api
 from hugegraph_llm.api.graph_extract_api import graph_extract_http_api
 from hugegraph_llm.api.rag_api import rag_http_api
+from hugegraph_llm.api.thin_api import thin_router
 from hugegraph_llm.config import admin_settings, huge_settings, prompt
 from hugegraph_llm.demo.rag_demo.admin_block import create_admin_block, log_stream
 from hugegraph_llm.demo.rag_demo.configs_block import (
@@ -57,9 +59,18 @@ def authenticate(credentials: HTTPAuthorizationCredentials = Depends(sec)):
 
         raise HTTPException(
             status_code=401,
-            detail=f"Invalid token {credentials.credentials}, please contact the admin",
+            detail="Invalid authentication token, please contact the admin",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def create_api_router() -> tuple[APIRouter, bool]:
+    """Build the production API router, including its authentication boundary."""
+    auth_enabled = admin_settings.enable_login.lower() == "true"
+    log.info("(Status) Authentication is %s now.", "enabled" if auth_enabled else "disabled")
+    api_router = APIRouter(dependencies=[Depends(authenticate)] if auth_enabled else [])
+    api_router.include_router(thin_router)
+    return api_router, auth_enabled
 
 
 # pylint: disable=C0301
@@ -162,9 +173,7 @@ def create_app():
     # we don't need to manually check the env now
     # settings.check_env()
     prompt.update_yaml_file()
-    auth_enabled = admin_settings.enable_login.lower() == "true"
-    log.info("(Status) Authentication is %s now.", "enabled" if auth_enabled else "disabled")
-    api_auth = APIRouter(dependencies=[Depends(authenticate)] if auth_enabled else [])
+    api_auth, auth_enabled = create_api_router()
 
     hugegraph_llm = init_rag_ui()
 
@@ -194,11 +203,31 @@ def create_app():
     return app
 
 
-if __name__ == "__main__":
+def is_loopback_host(host: str) -> bool:
+    normalized_host = host.strip()
+    if normalized_host.lower() == "localhost":
+        return True
+
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return False
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="host")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="host")
     parser.add_argument("--port", type=int, default=8001, help="port")
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def run_server(args: argparse.Namespace) -> None:
+    if not is_loopback_host(args.host):
+        log.warning(
+            "SECURITY WARNING: The HugeGraph RAG HTTP API has no unified authentication. "
+            "Binding to a non-loopback host can expose it to other machines. Configure reverse proxy authentication, "
+            "a firewall, or a trusted network before continuing."
+        )
 
     uvicorn.run(
         "hugegraph_llm.demo.rag_demo.app:create_app",
@@ -207,3 +236,11 @@ if __name__ == "__main__":
         factory=True,
         reload=os.getenv("HG_DEV_RELOAD") == "1",
     )
+
+
+def main(argv: list[str] | None = None) -> None:
+    run_server(parse_args(argv))
+
+
+if __name__ == "__main__":
+    main()

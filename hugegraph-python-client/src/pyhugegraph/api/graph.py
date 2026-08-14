@@ -16,14 +16,28 @@
 # under the License.
 
 import json
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 
 from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.structure.edge_data import EdgeData
 from pyhugegraph.structure.vertex_data import VertexData
 from pyhugegraph.utils import huge_router as router
 from pyhugegraph.utils.exceptions import NotFoundError
-from pyhugegraph.utils.id_format import format_vertex_id, format_vertex_id_path
+from pyhugegraph.utils.id_format import (
+    format_edge_id_path,
+    format_vertex_id,
+    format_vertex_id_path,
+)
+
+
+def _urlencode_query(params):
+    parts = []
+    for key, value in params:
+        if value is None:
+            parts.append(quote_plus(str(key), safe=""))
+        else:
+            parts.append(urlencode([(key, value)]))
+    return "&".join(parts)
 
 
 class GraphManager(HugeParamsBase):
@@ -69,39 +83,47 @@ class GraphManager(HugeParamsBase):
 
     def getVertexByPage(self, label, limit, page=None, properties=None):
         path = "graph/vertices?"
-        para = ""
-        para = para + "&label=" + label
+        params = [("label", label)]
         if properties:
-            para = para + "&properties=" + json.dumps(properties)
+            params.append(("properties", json.dumps(properties)))
         if page:
-            para += f"&page={page}"
+            params.append(("page", page))
         else:
-            para += "&page"
-        para = para + "&limit=" + str(limit)
-        path = path + para[1:]
+            params.append(("page", None))
+        params.append(("limit", str(limit)))
+        path = path + _urlencode_query(params)
         if response := self._sess.request(path):
             res = [VertexData(item) for item in response["vertices"]]
             next_page = response["page"]
             return res, next_page
         return None, None
 
-    def getVertexByCondition(self, label="", limit=0, page=None, properties=None):
+    def getVertexByConditionWithPage(self, label="", limit=0, page=None, properties=None):
         path = "graph/vertices?"
-        para = ""
+        params = []
         if label:
-            para = para + "&label=" + label
+            params.append(("label", label))
         if properties:
-            para = para + "&properties=" + json.dumps(properties)
+            params.append(("properties", json.dumps(properties)))
         if limit > 0:
-            para = para + "&limit=" + str(limit)
+            params.append(("limit", str(limit)))
         if page:
-            para += f"&page={page}"
+            params.append(("page", page))
         else:
-            para += "&page"
-        path = path + para[1:]
+            params.append(("page", None))
+        path = path + _urlencode_query(params)
         if response := self._sess.request(path):
-            return [VertexData(item) for item in response["vertices"]]
-        return None
+            return [VertexData(item) for item in response["vertices"]], response.get("page")
+        return None, None
+
+    def getVertexByCondition(self, label="", limit=0, page=None, properties=None):
+        vertices, _ = self.getVertexByConditionWithPage(
+            label=label,
+            limit=limit,
+            page=page,
+            properties=properties,
+        )
+        return vertices
 
     def removeVertexById(self, vertex_id):
         path = f"graph/vertices/{format_vertex_id_path(vertex_id)}"
@@ -137,29 +159,37 @@ class GraphManager(HugeParamsBase):
             return [EdgeData({"id": item}) for item in response]
         return None
 
-    @router.http("PUT", "graph/edges/{edge_id}?action=append")
     def appendEdge(
         self,
         edge_id,
-        properties,  # pylint: disable=unused-argument
+        properties,
     ) -> EdgeData | None:
-        if response := self._invoke_request(data=json.dumps({"properties": properties})):
+        path = f"graph/edges/{format_edge_id_path(edge_id)}?action=append"
+        if response := self._sess.request(
+            path,
+            "PUT",
+            data=json.dumps({"properties": properties}),
+        ):
             return EdgeData(response)
         return None
 
-    @router.http("PUT", "graph/edges/{edge_id}?action=eliminate")
     def eliminateEdge(
         self,
         edge_id,
-        properties,  # pylint: disable=unused-argument
+        properties,
     ) -> EdgeData | None:
-        if response := self._invoke_request(data=json.dumps({"properties": properties})):
+        path = f"graph/edges/{format_edge_id_path(edge_id)}?action=eliminate"
+        if response := self._sess.request(
+            path,
+            "PUT",
+            data=json.dumps({"properties": properties}),
+        ):
             return EdgeData(response)
         return None
 
-    @router.http("GET", "graph/edges/{edge_id}")
-    def getEdgeById(self, edge_id) -> EdgeData | None:  # pylint: disable=unused-argument
-        if response := self._invoke_request():
+    def getEdgeById(self, edge_id) -> EdgeData | None:
+        path = f"graph/edges/{format_edge_id_path(edge_id)}"
+        if response := self._sess.request(path):
             return EdgeData(response)
         return None
 
@@ -173,31 +203,31 @@ class GraphManager(HugeParamsBase):
         properties=None,
     ):
         path = "graph/edges?"
-        para = ""
+        params = []
         if vertex_id is not None:
             if direction:
-                vertex_query = urlencode({"vertex_id": format_vertex_id(vertex_id)})
-                para = para + "&" + vertex_query + "&direction=" + direction
+                params.append(("vertex_id", format_vertex_id(vertex_id)))
+                params.append(("direction", direction))
             else:
                 raise NotFoundError("Direction can not be empty.")
         if label:
-            para = para + "&label=" + label
+            params.append(("label", label))
         if properties:
-            para = para + "&properties=" + json.dumps(properties)
+            params.append(("properties", json.dumps(properties)))
         if page:
-            para += f"&page={page}"
+            params.append(("page", page))
         else:
-            para += "&page"
+            params.append(("page", None))
         if limit > 0:
-            para = para + "&limit=" + str(limit)
-        path = path + para[1:]
+            params.append(("limit", str(limit)))
+        path = path + _urlencode_query(params)
         if response := self._sess.request(path):
             return [EdgeData(item) for item in response["edges"]], response["page"]
         return None, None
 
-    @router.http("DELETE", "graph/edges/{edge_id}")
-    def removeEdgeById(self, edge_id) -> dict:  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def removeEdgeById(self, edge_id) -> dict:
+        path = f"graph/edges/{format_edge_id_path(edge_id)}"
+        return self._sess.request(path, "DELETE")
 
     def getVerticesById(self, vertex_ids) -> list[VertexData] | None:
         if not vertex_ids:
@@ -213,9 +243,7 @@ class GraphManager(HugeParamsBase):
         if not edge_ids:
             return []
         path = "traversers/edges?"
-        for vertex_id in edge_ids:
-            path += f"ids={vertex_id}&"  # pylint: disable=consider-using-join
-        path = path.rstrip("&")
+        path += urlencode([("ids", str(edge_id)) for edge_id in edge_ids])
         if response := self._sess.request(path):
             return [EdgeData(item) for item in response["edges"]]
         return None

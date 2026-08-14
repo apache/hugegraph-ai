@@ -24,9 +24,6 @@ from ..client_utils import ClientUtils
 
 pytestmark = [pytest.mark.integration, pytest.mark.hugegraph]
 
-# FIXME: add schema builder contract tests proving calc*/userdata survive
-# property key create() and multi-field index labels preserve field order.
-
 
 class TestSchemaManager(unittest.TestCase):
     client = None

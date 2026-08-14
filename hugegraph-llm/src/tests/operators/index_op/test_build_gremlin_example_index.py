@@ -37,7 +37,7 @@ class TestBuildGremlinExampleIndex(unittest.TestCase):
         # Mock vector store instance
         self.mock_vector_store_instance = MagicMock(spec=VectorStoreBase)
 
-        # Mock vector store class - 正确设置 from_name 方法
+        # Mock vector store class - configure the from_name method correctly.
         self.mock_vector_store_class = MagicMock()
         self.mock_vector_store_class.from_name = MagicMock(return_value=self.mock_vector_store_instance)
 

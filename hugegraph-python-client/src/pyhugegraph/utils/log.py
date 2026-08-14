@@ -117,7 +117,21 @@ def init_logger(
         if rank > 0:
             log_filename = f"{log_filename}.rank{rank}"
 
-        os.makedirs(os.path.dirname(log_filename), exist_ok=True)
+        try:
+            log_directory = os.path.dirname(log_filename)
+            if log_directory:
+                os.makedirs(log_directory, exist_ok=True)
+        except OSError:
+            # If we can't create the log directory (e.g., read-only filesystem),
+            # fall back to console-only logging
+            if stdout_logging:
+                # Already have console handler, just skip file logging
+                pass
+            else:
+                # No stdout logging and can't create file - create a null handler
+                null_handler = logging.NullHandler()
+                log_instance.addHandler(null_handler)
+            return log_instance
         file_handler = RotatingFileHandler(
             log_filename,
             maxBytes=max_log_size,

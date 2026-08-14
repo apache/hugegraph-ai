@@ -16,7 +16,7 @@
 # under the License.
 
 import json
-from functools import partial
+from functools import partial, wraps
 from typing import Optional
 
 import gradio as gr
@@ -24,13 +24,44 @@ import requests
 from dotenv import dotenv_values
 from requests.auth import HTTPBasicAuth
 
-from hugegraph_llm.config import huge_settings, index_settings, llm_settings
+from hugegraph_llm.config import huge_settings, index_settings, llm_settings, runtime_config_lock
 from hugegraph_llm.config.models.base_config import env_path
 from hugegraph_llm.models.embeddings.litellm import LiteLLMEmbedding
 from hugegraph_llm.models.llms.litellm import LiteLLMClient
 from hugegraph_llm.utils.log import log
 
 current_llm = "chat"
+
+
+def _restore_config(settings, values):
+    for field, value in values.items():
+        setattr(settings, field, value)
+
+
+def _transactional_config_update(settings_getter):
+    """Serialize, persist on success, and roll back failed config updates."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            settings = settings_getter()
+            with runtime_config_lock:
+                original_values = settings.model_dump()
+                try:
+                    status_code = func(*args, **kwargs)
+                    if not 200 <= status_code < 300:
+                        _restore_config(settings, original_values)
+                        return status_code
+                    settings.update_env()
+                except Exception:
+                    _restore_config(settings, original_values)
+                    raise
+                gr.Info("Configured!")
+                return status_code
+
+        return wrapper
+
+    return decorator
 
 
 def test_litellm_embedding(api_key, api_base, model_name) -> int:
@@ -179,6 +210,7 @@ def apply_vector_engine_backend(  # pylint: disable=too-many-branches
     return status_code
 
 
+@_transactional_config_update(lambda: llm_settings)
 def apply_embedding_config(arg1, arg2, arg3, origin_call=None) -> int:
     status_code = -1
     embedding_option = llm_settings.embedding_type
@@ -200,11 +232,10 @@ def apply_embedding_config(arg1, arg2, arg3, origin_call=None) -> int:
         llm_settings.litellm_embedding_api_base = arg2
         llm_settings.litellm_embedding_model = arg3
         status_code = test_litellm_embedding(arg1, arg2, arg3)
-    llm_settings.update_env()
-    gr.Info("Configured!")
     return status_code
 
 
+@_transactional_config_update(lambda: llm_settings)
 def apply_reranker_config(
     reranker_api_key: Optional[str] = None,
     reranker_model: Optional[str] = None,
@@ -238,11 +269,10 @@ def apply_reranker_config(
             headers=headers,
             origin_call=origin_call,
         )
-    llm_settings.update_env()
-    gr.Info("Configured!")
     return status_code
 
 
+@_transactional_config_update(lambda: huge_settings)
 def apply_graph_config(url, name, user, pwd, gs, origin_call=None) -> int:
     # Add URL prefix automatically to improve the user experience
     if url and not (url.startswith("http://") or url.startswith("https://")):
@@ -261,10 +291,10 @@ def apply_graph_config(url, name, user, pwd, gs, origin_call=None) -> int:
     auth = HTTPBasicAuth(user, pwd)
     # for http api return status
     response = test_api_connection(test_url, auth=auth, origin_call=origin_call)
-    huge_settings.update_env()
     return response
 
 
+@_transactional_config_update(lambda: llm_settings)
 def apply_llm_config(
     current_llm_config,
     api_key_or_host,
@@ -307,8 +337,6 @@ def apply_llm_config(
 
         status_code = test_litellm_chat(api_key_or_host, api_base_or_port, model_name, int(max_tokens))
 
-    gr.Info("Configured!")
-    llm_settings.update_env()
     return status_code
 
 

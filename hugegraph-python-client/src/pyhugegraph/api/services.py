@@ -65,7 +65,7 @@ class ServicesManager(HugeParamsBase):
         """
         return self._invoke_request(data=body_params.dumps())
 
-    @router.http("GET", "/graphspaces/${graphspace}/services")
+    @router.http("GET", "/graphspaces/{graphspace}/services")
     def list_services(self, graphspace: str):  # pylint: disable=unused-argument
         """
         List all services in a specified graph space.

@@ -15,7 +15,6 @@
 
 import json
 
-import gradio as gr
 from pycgraph import GPipeline
 
 from hugegraph_llm.flows.common import BaseFlow
@@ -64,5 +63,5 @@ class ImportGraphDataFlow(BaseFlow):
 
     def post_deal(self, pipeline=None, **kwargs):
         res = pipeline.getGParamWithNoEmpty("wkflow_state").to_json()
-        gr.Info("Import graph data successfully!")
+        log.info("Import graph data completed successfully.")
         return json.dumps(res, ensure_ascii=False, indent=2)

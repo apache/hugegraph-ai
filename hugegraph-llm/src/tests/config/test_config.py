@@ -21,7 +21,7 @@ from os import environ
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -93,3 +93,51 @@ class TestConfig(unittest.TestCase):
         from hugegraph_llm.demo.rag_demo import configs_block
 
         self.assertEqual(configs_block.env_path, base_config.env_path)
+
+
+def test_failed_ui_config_update_restores_memory_without_persisting(monkeypatch):
+    from hugegraph_llm.config import llm_settings
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    monkeypatch.setattr(llm_settings, "embedding_type", "openai")
+    monkeypatch.setattr(llm_settings, "openai_embedding_api_key", "old-key")
+    monkeypatch.setattr(llm_settings, "openai_embedding_api_base", "https://old.example")
+    monkeypatch.setattr(llm_settings, "openai_embedding_model", "old-model")
+    update_env = Mock()
+    monkeypatch.setattr(type(llm_settings), "update_env", update_env)
+    monkeypatch.setattr(configs_block, "test_api_connection", Mock(return_value=500))
+    monkeypatch.setattr(configs_block.gr, "Info", Mock())
+
+    result = configs_block.apply_embedding_config("new-key", "https://new.example", "new-model", origin_call="http")
+
+    assert result == 500
+    assert llm_settings.openai_embedding_api_key == "old-key"
+    assert llm_settings.openai_embedding_api_base == "https://old.example"
+    assert llm_settings.openai_embedding_model == "old-model"
+    update_env.assert_not_called()
+
+
+def test_successful_ui_config_update_persists(monkeypatch):
+    from hugegraph_llm.config import llm_settings
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    monkeypatch.setattr(llm_settings, "embedding_type", "openai")
+    update_env = Mock()
+    monkeypatch.setattr(type(llm_settings), "update_env", update_env)
+    monkeypatch.setattr(configs_block, "test_api_connection", Mock(return_value=200))
+    monkeypatch.setattr(configs_block.gr, "Info", Mock())
+
+    result = configs_block.apply_embedding_config("new-key", "https://new.example", "new-model", origin_call="http")
+
+    assert result == 200
+    assert llm_settings.openai_embedding_api_key == "new-key"
+    update_env.assert_called_once_with()
+
+
+def test_http_and_ui_config_updates_share_lock():
+    from hugegraph_llm.api import rag_api
+    from hugegraph_llm.config import runtime_config_lock
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    assert rag_api.runtime_config_lock is runtime_config_lock
+    assert configs_block.runtime_config_lock is runtime_config_lock

@@ -185,3 +185,62 @@ def test_gremlin_execute_surfaces_invalid_query(hugegraph_client):
         or "No signature" in result["raw_exec_res"]
         or "NotFound" in result["raw_exec_res"]
     )
+
+
+@pytest.mark.parametrize(
+    ("requested_output", "result_key", "query_key"),
+    [
+        ("template_execution_result", "template_exec_res", "result"),
+        ("raw_execution_result", "raw_exec_res", "raw_result"),
+    ],
+)
+def test_gremlin_execute_passes_request_connection(monkeypatch, requested_output, result_key, query_key):
+    from unittest.mock import Mock
+
+    from hugegraph_llm.nodes.hugegraph_node.gremlin_execute import GremlinExecuteNode
+
+    run_query = Mock(return_value="query result")
+    monkeypatch.setattr(
+        "hugegraph_llm.nodes.hugegraph_node.gremlin_execute.run_gremlin_query",
+        run_query,
+    )
+    connection = {
+        "url": "http://request:8080",
+        "graph": "request_graph",
+        "user": "user",
+        "pwd": "pwd",
+        "graphspace": "space",
+    }
+    node = GremlinExecuteNode()
+    node.wk_input = type(
+        "Input",
+        (),
+        {"requested_outputs": [requested_output], "graph_client_config": connection},
+    )()
+
+    result = node.operator_schedule({query_key: "g.V()"})
+
+    assert result[result_key] == "query result"
+    run_query.assert_called_once_with(query="g.V().limit(100)", connection=connection)
+
+
+def test_gremlin_execute_passes_none_connection_for_default_config(monkeypatch):
+    from unittest.mock import Mock
+
+    from hugegraph_llm.nodes.hugegraph_node.gremlin_execute import GremlinExecuteNode
+
+    run_query = Mock(return_value="query result")
+    monkeypatch.setattr(
+        "hugegraph_llm.nodes.hugegraph_node.gremlin_execute.run_gremlin_query",
+        run_query,
+    )
+    node = GremlinExecuteNode()
+    node.wk_input = type(
+        "Input",
+        (),
+        {"requested_outputs": ["raw_execution_result"], "graph_client_config": None},
+    )()
+
+    node.operator_schedule({"raw_result": "g.E()"})
+
+    run_query.assert_called_once_with(query="g.E().limit(100)", connection=None)

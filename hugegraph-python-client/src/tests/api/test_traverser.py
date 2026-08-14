@@ -51,9 +51,13 @@ class TestTraverserManager(unittest.TestCase):
         pass
 
     def test_traverser_operations(self):
-        marko = self.graph.getVertexByCondition("person", properties={"name": "marko"})[0].id
-        josh = self.graph.getVertexByCondition("person", properties={"name": "josh"})[0].id
-        ripple = self.graph.getVertexByCondition("software", properties={"name": "ripple"})[0].id
+        def first_vertex_id(label, properties):
+            vertices = self.graph.getVertexByCondition(label, properties=properties)
+            return vertices[0].id
+
+        marko = first_vertex_id("person", {"name": "marko"})
+        josh = first_vertex_id("person", {"name": "josh"})
+        ripple = first_vertex_id("software", {"name": "ripple"})
 
         k_out_result = self.traverser.k_out(marko, 2)
         self.assertEqual(k_out_result["vertices"], ["1:peter", "2:ripple"])

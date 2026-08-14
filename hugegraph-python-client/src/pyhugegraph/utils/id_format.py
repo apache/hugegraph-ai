@@ -48,7 +48,25 @@ def format_vertex_id(vertex_id, allow_none: bool = False) -> str | None:
 
 
 def format_vertex_id_path(vertex_id, allow_none: bool = False) -> str | None:
+    """Format a vertex id as a URL path segment.
+
+    Vertex ids pass through format_vertex_id's json.dumps wrapper so HugeGraph
+    server can parse numeric ids such as 123 differently from string ids such
+    as "123".
+    """
     formatted_id = format_vertex_id(vertex_id, allow_none=allow_none)
     if formatted_id is None:
         return None
     return quote(formatted_id, safe="")
+
+
+def format_edge_id_path(edge_id) -> str:
+    """Format an edge id as a URL path segment.
+
+    Edge ids are HugeGraph-generated composite strings such as
+    "S1:alice>11>>S2:bob", so they do not need JSON type disambiguation and
+    are URL-encoded directly from their string form.
+    """
+    if edge_id is None:
+        raise ValueError("The edge id can't be None")
+    return quote(str(edge_id), safe="")

@@ -5,7 +5,7 @@ networks:
 services:
   # HugeGraph Server
   hugegraph-server:
-    image: hugegraph/hugegraph
+    image: hugegraph/hugegraph:1.7.0
     container_name: server
     restart: unless-stopped
     ports:

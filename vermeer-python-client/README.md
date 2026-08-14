@@ -55,15 +55,15 @@ from pyvermeer.structure.task_data import TaskCreateRequest
 try:
     create_response = client.tasks.create_task(
         create_task=TaskCreateRequest(
-            task_type='load',
-            graph_name='DEFAULT-example',
+            task_type="load",
+            graph_name="DEFAULT-example",
             params={
-                "load.hg_pd_peers": "[\"127.0.0.1:8686\"]",
+                "load.hg_pd_peers": '["127.0.0.1:8686"]',
                 "load.hugegraph_name": "DEFAULT/example/g",
                 "load.hugegraph_password": "xxx",
                 "load.hugegraph_username": "xxx",
                 "load.parallel": "10",
-                "load.type": "hugegraph"
+                "load.type": "hugegraph",
             },
         )
     )

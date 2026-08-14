@@ -240,7 +240,7 @@ Scheduler.pipeline_pool: Dict[str, Any] = {
     "graph_extract": {
         "manager": GPipelineManager(),
         "flow": GraphExtractFlow(),
-    }
+    },
 }
 ```
 
@@ -423,9 +423,7 @@ class GraphExtractFlow(BaseFlow):
 
         pipeline.registerGElement(schema_node, set(), "schema_node")
         pipeline.registerGElement(chunk_split_node, set(), "chunk_split")
-        pipeline.registerGElement(
-            graph_extract_node, {schema_node, chunk_split_node}, "graph_extract"
-        )
+        pipeline.registerGElement(graph_extract_node, {schema_node, chunk_split_node}, "graph_extract")
 
         return pipeline
 

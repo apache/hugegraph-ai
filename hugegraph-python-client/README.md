@@ -89,28 +89,28 @@ The `hugegraph-python-client` provides comprehensive schema management capabilit
 
 ```python
 # Define a property key
-client.schema().propertyKey('name').dataType('STRING').cardinality('SINGLE').create()
+client.schema().propertyKey("name").dataType("STRING").cardinality("SINGLE").create()
 ```
 
 #### Define Vertex Labels
 
 ```python
 # Define a vertex label
-client.schema().vertexLabel('person').properties('name', 'age').primaryKeys('name').create()
+client.schema().vertexLabel("person").properties("name", "age").primaryKeys("name").create()
 ```
 
 #### Define Edge Labels
 
 ```python
 # Define an edge label
-client.schema().edgeLabel('knows').sourceLabel('person').targetLabel('person').properties('since').create()
+client.schema().edgeLabel("knows").sourceLabel("person").targetLabel("person").properties("since").create()
 ```
 
 #### Define Index Labels
 
 ```python
 # Define an index label
-client.schema().indexLabel('personByName').onV('person').by('name').secondary().create()
+client.schema().indexLabel("personByName").onV("person").by("name").secondary().create()
 ```
 
 ### CRUD Operations
@@ -121,11 +121,11 @@ The client allows you to perform CRUD operations on the graph data. Below are ex
 
 ```python
 # Create vertices
-v1 = client.graph().addVertex('person').property('name', 'John').property('age', 29).create()
-v2 = client.graph().addVertex('person').property('name', 'Jane').property('age', 25).create()
+v1 = client.graph().addVertex("person").property("name", "John").property("age", 29).create()
+v2 = client.graph().addVertex("person").property("name", "Jane").property("age", 25).create()
 
 # Create an edge
-client.graph().addEdge(v1, 'knows', v2).property('since', '2020').create()
+client.graph().addEdge(v1, "knows", v2).property("since", "2020").create()
 ```
 
 #### Read Vertices and Edges
@@ -144,10 +144,10 @@ print(edge)
 
 ```python
 # Update a vertex
-client.graph().updateVertex(v1.id).property('age', 30).update()
+client.graph().updateVertex(v1.id).property("age", 30).update()
 
 # Update an edge
-client.graph().updateEdge(edge.id).property('since', '2021').update()
+client.graph().updateEdge(edge.id).property("since", "2021").update()
 ```
 
 #### Delete Vertices and Edges

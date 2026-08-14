@@ -13,19 +13,36 @@
 
 [project]
 name = "hugegraph-mcp"
-version = "0.1.0"
+version = "1.7.0"
 description = "FastMCP server that exposes HugeGraph schema & Gremlin tools over MCP/STDIO"
 readme = "README.md"
 license = { text = "Apache-2.0" }
+keywords = ["hugegraph", "mcp", "model-context-protocol", "gremlin"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 requires-python = ">=3.10"
 authors = [
     { name = "Apache HugeGraph Contributors", email = "dev@hugegraph.apache.org" },
 ]
 
 dependencies = [
-    "fastmcp>=2.2.0",
-    "hugegraph-python-client>=1.7.0",
+    "fastmcp==3.2.4",
+    "hugegraph-python-client>=1.7.0,<2",
 ]
+
+[project.urls]
+Homepage = "https://hugegraph.apache.org/"
+Repository = "https://github.com/apache/hugegraph-ai"
+Issues = "https://github.com/apache/hugegraph-ai/issues"
+
 [project.scripts]
 hugegraph-mcp = "hugegraph_mcp.server:main"
 
@@ -38,9 +55,6 @@ packages = ["hugegraph_mcp"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.uv.sources]
-hugegraph-python-client = { workspace = true }
 
 [tool.ruff.lint.per-file-ignores]
 # server.py must patch os.makedirs before importing pyhugegraph (which creates logs at import time)

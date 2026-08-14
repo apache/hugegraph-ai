@@ -75,16 +75,15 @@ jobs:
 
       - name: Install MCP dependencies
         run: |
-          # The root workspace includes hugegraph-llm (<3.12). Install the
-          # MCP packages directly so every matrix entry exercises its stated
-          # interpreter instead of silently falling back to Python 3.11.
-          uv venv --python "${{ matrix.python-version }}" .mcp-venv
-          uv pip install --python .mcp-venv/bin/python \
+          # Install the standalone MCP packages with pip. FastMCP 3.x has
+          # platform-specific metadata that uv cannot resolve on Linux x86.
+          python -m pip install --upgrade pip
+          python -m pip install \
             -e ./hugegraph-python-client \
             -e ./hugegraph-mcp \
             "pytest~=8.0.0" \
             "ruff>=0.11.0"
-          .mcp-venv/bin/python --version
+          python --version
 
       - name: Verify isolated wheel install
         if: matrix.python-version == '3.10'
@@ -110,7 +109,7 @@ jobs:
           from pyhugegraph.utils.huge_requests import HGraphSession
 
           assert version("hugegraph-python-client") == "1.7.0"
-          assert version("hugegraph-mcp") == "0.1.0"
+          assert version("hugegraph-mcp") == "1.7.0"
 
           class CaptureSession:
               cfg = SimpleNamespace(graphspace="GS", gs_supported=True)
@@ -134,15 +133,15 @@ jobs:
 
       - name: Check MCP formatting
         run: |
-          .mcp-venv/bin/ruff format --check hugegraph-mcp/hugegraph_mcp hugegraph-mcp/tests
+          ruff format --check hugegraph-mcp/hugegraph_mcp hugegraph-mcp/tests
 
       - name: Lint MCP
         run: |
-          .mcp-venv/bin/ruff check hugegraph-mcp/hugegraph_mcp hugegraph-mcp/tests
+          ruff check hugegraph-mcp/hugegraph_mcp hugegraph-mcp/tests
 
       - name: Run MCP tests
         run: |
-          .mcp-venv/bin/python -m pytest hugegraph-mcp -m "not live and not integration and not llm"
+          python -m pytest hugegraph-mcp -m "not live and not integration and not llm"
 
   real-hugegraph-write-path:
     runs-on: ubuntu-latest
@@ -184,7 +183,11 @@ jobs:
 
       - name: Install MCP dependencies
         run: |
-          uv sync --extra mcp --extra dev
+          python -m pip install --upgrade pip
+          python -m pip install \
+            -e ./hugegraph-python-client \
+            -e ./hugegraph-mcp \
+            "pytest~=8.0.0"
 
       - name: Run real HugeGraph write-path tests
         working-directory: hugegraph-mcp
@@ -197,4 +200,4 @@ jobs:
           HUGEGRAPH_MCP_READONLY: "false"
           HUGEGRAPH_MCP_ALLOW_AI: "false"
         run: |
-          uv run pytest tests/integration/test_real_write_path.py -m real_hugegraph
+          python -m pytest tests/integration/test_real_write_path.py -m real_hugegraph

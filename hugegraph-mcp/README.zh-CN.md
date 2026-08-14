@@ -8,25 +8,53 @@ HugeGraph MCP 是 HugeGraph 的 Model Context Protocol Server。它的定位是�
 
 ## 快速开始
 
-如果尚未安装，请先安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)。然后，在仓库根目录安装 MCP 依赖并启动 stdio server：
+请先安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)，设置连接变量后通过 `uvx` 运行 HugeGraph MCP。请将 `hugegraph.example.com` 替换为实际的 HugeGraph Server 主机名：
 
 ```bash
-uv sync --extra mcp --extra dev
-
-export HUGEGRAPH_URL=http://127.0.0.1:8080
+export HUGEGRAPH_URL=http://hugegraph.example.com:8080
 export HUGEGRAPH_GRAPH_PATH=DEFAULT/hugegraph
 export HUGEGRAPH_USER=admin
 export HUGEGRAPH_PASSWORD=admin
 export HUGEGRAPH_MCP_READONLY=true
 
-uv run --project hugegraph-mcp hugegraph-mcp
+uvx --from hugegraph-mcp==1.7.0 hugegraph-mcp
 ```
 
 进程通过 stdout 输出 MCP JSON-RPC，请由 MCP 客户端连接。除非已经有明确的写入验证计划，否则保持
 `HUGEGRAPH_MCP_READONLY=true`。默认工具集是 `v2_core`；旧客户端需要 10 工具兼容契约时，在启动前设置
 `HUGEGRAPH_MCP_TOOLSET=v1`。
 
+对于支持 JSON Server 配置的 MCP 客户端，可使用 `uvx` 作为启动命令：
+
+```json
+{
+  "mcpServers": {
+    "hugegraph": {
+      "command": "uvx",
+      "args": ["--from", "hugegraph-mcp==1.7.0", "hugegraph-mcp"],
+      "env": {
+        "HUGEGRAPH_URL": "http://hugegraph.example.com:8080",
+        "HUGEGRAPH_GRAPH_PATH": "DEFAULT/hugegraph",
+        "HUGEGRAPH_USER": "admin",
+        "HUGEGRAPH_PASSWORD": "admin",
+        "HUGEGRAPH_MCP_READONLY": "true"
+      }
+    }
+  }
+}
+```
+
 ## 开发者说明
+
+### 从源码运行
+
+在仓库根目录执行：
+
+```bash
+uv venv
+uv pip install -e ../hugegraph-python-client -e .
+uv run --project hugegraph-mcp hugegraph-mcp
+```
 
 ### 设计边界
 

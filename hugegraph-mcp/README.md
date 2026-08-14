@@ -8,18 +8,16 @@ HugeGraph MCP is a Model Context Protocol server for HugeGraph. It is designed a
 
 ## Quick Start
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if it is not already available. Then, from the repository root, install the MCP extra and start the stdio server:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), set the connection variables, and run HugeGraph MCP with `uvx`. Replace `hugegraph.example.com` with your HugeGraph Server host:
 
 ```bash
-uv sync --extra mcp --extra dev
-
-export HUGEGRAPH_URL=http://127.0.0.1:8080
+export HUGEGRAPH_URL=http://hugegraph.example.com:8080
 export HUGEGRAPH_GRAPH_PATH=DEFAULT/hugegraph
 export HUGEGRAPH_USER=admin
 export HUGEGRAPH_PASSWORD=admin
 export HUGEGRAPH_MCP_READONLY=true
 
-uv run --project hugegraph-mcp hugegraph-mcp
+uvx --from hugegraph-mcp==1.7.0 hugegraph-mcp
 ```
 
 The process speaks MCP JSON-RPC on stdout; connect it from an MCP client. Keep
@@ -27,7 +25,37 @@ The process speaks MCP JSON-RPC on stdout; connect it from an MCP client. Keep
 plan. The default toolset is `v2_core`; set `HUGEGRAPH_MCP_TOOLSET=v1` before
 startup when an older client requires the 10-tool compatibility contract.
 
+For MCP clients that accept JSON server configuration, use `uvx` as the command:
+
+```json
+{
+  "mcpServers": {
+    "hugegraph": {
+      "command": "uvx",
+      "args": ["--from", "hugegraph-mcp==1.7.0", "hugegraph-mcp"],
+      "env": {
+        "HUGEGRAPH_URL": "http://hugegraph.example.com:8080",
+        "HUGEGRAPH_GRAPH_PATH": "DEFAULT/hugegraph",
+        "HUGEGRAPH_USER": "admin",
+        "HUGEGRAPH_PASSWORD": "admin",
+        "HUGEGRAPH_MCP_READONLY": "true"
+      }
+    }
+  }
+}
+```
+
 ## Developer Notes
+
+### Run from Source
+
+From the repository root:
+
+```bash
+uv venv
+uv pip install -e ../hugegraph-python-client -e .
+uv run --project hugegraph-mcp hugegraph-mcp
+```
 
 ### Design Boundary
 

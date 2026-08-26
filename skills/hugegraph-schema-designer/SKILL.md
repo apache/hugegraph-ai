@@ -24,6 +24,15 @@ Review the dry-run response before applying it. The confirmed call must resend
 the same `operations` and use the `plan_hash`, `nonce`, and `expires_at` issued
 by that dry-run.
 
+Schema create operations use a closed field contract. Property keys accept
+`data_type`, `cardinality`, `aggregate_type`, and `user_data`; vertex labels
+accept `id_strategy`, `properties`, `primary_keys`, `nullable_keys`,
+`index_labels`, `enable_label_index`, and `user_data`; edge labels accept
+`source_label`, `target_label`, `properties`, `nullable_keys`, `sort_keys`,
+`frequency`, `enable_label_index`, and `user_data`. Unsupported fields,
+including `ttl*`, are rejected during validation instead of being silently
+dropped. Supported fields are forwarded and checked by a live-schema post-read.
+
 ## Order
 
 ```text

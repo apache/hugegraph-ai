@@ -160,6 +160,16 @@ When a call fails, `ok=false` and `error` uses this structure:
 | `execute_gremlin_write_tool` | Execute direct Gremlin writes; disabled by default and available only when `HUGEGRAPH_MCP_ADMIN_MODE=true` and `HUGEGRAPH_MCP_READONLY=false` |
 | `refresh_vid_embeddings_tool` | Refresh VID embeddings and mutate index state; disabled by default and available only when `HUGEGRAPH_MCP_ADMIN_MODE=true` and `HUGEGRAPH_MCP_READONLY=false` |
 
+Schema apply uses a closed operation-field contract. The supported create fields
+are `data_type`, `cardinality`, `aggregate_type`, and `user_data` for property
+keys; `id_strategy`, `properties`, `primary_keys`, `nullable_keys`,
+`index_labels`, `enable_label_index`, and `user_data` for vertex labels; and
+`source_label`, `target_label`, `properties`, `nullable_keys`, `sort_keys`,
+`frequency`, `enable_label_index`, and `user_data` for edge labels. Fields not
+listed here, including `ttl*`, are rejected during validation before a plan is
+issued. Supported fields are forwarded to HugeGraph and checked by a post-read
+of the live schema.
+
 The old `query_graph_tool`, `manage_schema_tool`, and `manage_graph_data_tool` are no longer exposed as user interfaces. New integrations should use the stable tools listed above.
 
 ## Write Safety Chain

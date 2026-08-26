@@ -32,9 +32,6 @@ GremlinSafety = GremlinClassification  # Compatibility alias.
 
 # ========== Classifier constants ==========
 
-_METHOD_RE = re.compile(r"\.\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(")
-_QUOTED_OR_DYNAMIC_MEMBER_RE = re.compile(r"\.\s*(?:['\"]|\()")
-_READ_START_RE = re.compile(r"^\s*g\s*\.\s*(?:V|E)\s*\(", re.IGNORECASE)
 _DYNAMIC_MARKERS = ("${", "#{", "->")
 _MAX_REPEAT_TIMES = 10
 _ALLOWED_ARG_TOKENS = {"true", "false", "null"}
@@ -109,6 +106,288 @@ _READ_METHODS = {
 _ANONYMOUS_READ_METHODS = {"outv", "inv", "bothv", "otherv"}
 
 
+@dataclass(frozen=True)
+class _GremlinToken:
+    """A token produced by the conservative Gremlin scanner."""
+
+    kind: Literal["identifier", "number", "string", "punctuation", "unknown"]
+    value: str
+
+
+@dataclass(frozen=True)
+class _GremlinLexResult:
+    tokens: tuple[_GremlinToken, ...]
+    valid: bool
+    normalized: str
+
+
+@dataclass(frozen=True)
+class _GremlinTokenAnalysis:
+    method_names: tuple[str, ...]
+    has_write_method: bool
+    uncertain: bool
+
+
+_SAFE_PUNCTUATION = frozenset(".(),[]:-")
+_OPEN_TO_CLOSE = {"(": ")", "[": "]", "{": "}"}
+_CLOSE_TO_OPEN = {value: key for key, value in _OPEN_TO_CLOSE.items()}
+
+
+def _is_identifier_start(char: str) -> bool:
+    return char == "_" or (char.isascii() and char.isalpha())
+
+
+def _is_identifier_part(char: str) -> bool:
+    return _is_identifier_start(char) or (char.isascii() and char.isdigit())
+
+
+def _append_masked(normalized: list[str], source: str) -> None:
+    """Mask comments/string contents while retaining line structure."""
+
+    normalized.extend("\n" if char == "\n" else " " for char in source)
+
+
+def _consume_quoted(query: str, start: int) -> int | None:
+    """Return the first offset after a quoted literal, or None if incomplete."""
+
+    quote = query[start]
+    triple = query.startswith(quote * 3, start)
+    index = start + (3 if triple else 1)
+    length = len(query)
+
+    while index < length:
+        char = query[index]
+        if char == "\\":
+            # A trailing escape cannot be a complete Groovy string.
+            if index + 1 >= length:
+                return None
+            index += 2
+            continue
+        if triple:
+            if query.startswith(quote * 3, index):
+                return index + 3
+        elif char == quote:
+            return index + 1
+        index += 1
+
+    return None
+
+
+def _lex_gremlin_query(query: str) -> _GremlinLexResult:
+    """Tokenize strings/comments and code in one pass.
+
+    This is deliberately a small safety scanner, not a Groovy parser.  It only
+    needs to establish that every visible member is a known call and that no
+    lexical structure is incomplete.  Unknown syntax is retained as an
+    ``unknown`` token so callers can fail closed instead of silently dropping it.
+    """
+
+    tokens: list[_GremlinToken] = []
+    normalized: list[str] = []
+    index = 0
+    length = len(query)
+    valid = True
+
+    while index < length:
+        char = query[index]
+
+        if char.isspace():
+            normalized.append(char)
+            index += 1
+            continue
+
+        # Groovy line and block comments are recognized outside strings only.
+        if char == "/" and index + 1 < length and query[index + 1] == "/":
+            start = index
+            index += 2
+            while index < length and query[index] not in "\r\n":
+                index += 1
+            _append_masked(normalized, query[start:index])
+            continue
+        if char == "/" and index + 1 < length and query[index + 1] == "*":
+            start = index
+            end = query.find("*/", index + 2)
+            if end < 0:
+                _append_masked(normalized, query[start:])
+                valid = False
+                break
+            index = end + 2
+            _append_masked(normalized, query[start:index])
+            continue
+
+        if char in {"'", '"'}:
+            start = index
+            end = _consume_quoted(query, index)
+            if end is None:
+                _append_masked(normalized, query[start:])
+                valid = False
+                break
+            tokens.append(_GremlinToken("string", query[start:end]))
+            # Keep delimiters in the normalized form for compatibility with
+            # cost-warning callers, but never expose literal contents as code.
+            delimiter_length = 3 if query.startswith(char * 3, start) else 1
+            normalized.extend(query[start : start + delimiter_length])
+            _append_masked(
+                normalized,
+                query[start + delimiter_length : end - delimiter_length],
+            )
+            normalized.extend(query[end - delimiter_length : end])
+            index = end
+            continue
+
+        if _is_identifier_start(char):
+            start = index
+            index += 1
+            while index < length and _is_identifier_part(query[index]):
+                index += 1
+            value = query[start:index]
+            tokens.append(_GremlinToken("identifier", value))
+            normalized.extend(value)
+            continue
+
+        if char.isascii() and char.isdigit():
+            start = index
+            index += 1
+            seen_dot = False
+            while index < length:
+                current = query[index]
+                if current.isascii() and current.isdigit():
+                    index += 1
+                elif current == "." and not seen_dot:
+                    seen_dot = True
+                    index += 1
+                else:
+                    break
+            value = query[start:index]
+            tokens.append(_GremlinToken("number", value))
+            normalized.extend(value)
+            continue
+
+        if char in _SAFE_PUNCTUATION:
+            tokens.append(_GremlinToken("punctuation", char))
+            normalized.append(char)
+            index += 1
+            continue
+
+        # Keep operators, interpolation markers, slashy literals, and unicode
+        # syntax visible.  The analyzer will reject them as unexplained rather
+        # than allowing a failed extraction to become ``safe``.
+        tokens.append(_GremlinToken("unknown", char))
+        normalized.append(char)
+        index += 1
+
+    return _GremlinLexResult(tuple(tokens), valid, "".join(normalized))
+
+
+def _analyze_tokens(lexed: _GremlinLexResult) -> _GremlinTokenAnalysis:
+    tokens = lexed.tokens
+    methods: list[str] = []
+    has_write_method = False
+    uncertain = not lexed.valid or not tokens
+    stack: list[str] = []
+
+    for index, token in enumerate(tokens):
+        if token.kind == "unknown":
+            uncertain = True
+            continue
+
+        if token.kind == "string" and any(
+            marker in token.value for marker in _DYNAMIC_MARKERS
+        ):
+            # GStrings can interpolate arbitrary Groovy expressions.  Treat
+            # them as ambiguous even though their contents are not code tokens.
+            uncertain = True
+            continue
+
+        if token.kind == "punctuation":
+            if token.value in _OPEN_TO_CLOSE:
+                stack.append(token.value)
+            elif token.value in _CLOSE_TO_OPEN:
+                if not stack or stack.pop() != _CLOSE_TO_OPEN[token.value]:
+                    uncertain = True
+            elif token.value in {";", "+", "=", "?", "!", "*", "%", "/"}:
+                uncertain = True
+            continue
+
+        if token.kind != "identifier":
+            continue
+
+        lowered = token.value.lower()
+        previous = tokens[index - 1] if index else None
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        is_member = previous is not None and previous.value == "."
+        is_call = following is not None and following.value == "("
+
+        if is_member:
+            # A member must be a call.  This closes the old gap where a bare
+            # write identifier was consumed by a separate loose regex.
+            if not is_call:
+                uncertain = True
+                if lowered in _WRITE_METHODS or lowered in {"property", "iterate"}:
+                    has_write_method = True
+                continue
+            methods.append(lowered)
+            if lowered in _WRITE_METHODS or lowered in {"property", "iterate"}:
+                has_write_method = True
+            continue
+
+        if is_call:
+            # Only the anonymous traversal steps supported by the old
+            # classifier are explainable without a receiver (for example
+            # ``inV()`` inside ``where``). Treat every other bare call as
+            # unexplained rather than allowing ``count()``/a user function to
+            # masquerade as a valid traversal step.
+            if lowered in _ANONYMOUS_READ_METHODS:
+                methods.append(lowered)
+            elif lowered in _WRITE_METHODS or lowered in {"property", "iterate"}:
+                has_write_method = True
+            else:
+                uncertain = True
+            continue
+
+        if index == 0 and lowered == "g":
+            continue
+        if lowered in _ALLOWED_ARG_TOKENS:
+            continue
+        # Every remaining identifier is an unexplained variable, enum, map key,
+        # or dynamic expression.  It must not be silently ignored.
+        uncertain = True
+
+    if stack:
+        uncertain = True
+
+    # The public read contract starts at exactly g.V(...) or g.E(...).
+    if len(tokens) < 4:
+        uncertain = True
+    else:
+        root = tokens[:4]
+        if not (
+            root[0].kind == "identifier"
+            and root[0].value.lower() == "g"
+            and root[1].value == "."
+            and root[2].kind == "identifier"
+            and root[2].value.lower() in {"v", "e"}
+            and root[3].value == "("
+        ):
+            uncertain = True
+
+    # Dynamic member names (``.\"drop\"()`` / ``.(expr)()``) never enter the
+    # identifier stream and therefore need an explicit structural rejection.
+    for index, token in enumerate(tokens):
+        if token.value == ".":
+            next_token = tokens[index + 1] if index + 1 < len(tokens) else None
+            if next_token is None or next_token.kind != "identifier":
+                uncertain = True
+
+    if any(marker in lexed.normalized for marker in _DYNAMIC_MARKERS):
+        uncertain = True
+
+    if any(token.value in {"{", "}"} for token in tokens):
+        uncertain = True
+
+    return _GremlinTokenAnalysis(tuple(methods), has_write_method, uncertain)
+
+
 # ========== Classifier implementation ==========
 
 
@@ -122,20 +401,14 @@ def classify_gremlin_read_safety(gremlin_query: str) -> GremlinSafety:
     if not isinstance(gremlin_query, str) or not gremlin_query.strip():
         return "uncertain"
 
-    query_without_strings = _strip_string_literals(gremlin_query)
-    methods = _extract_method_names(query_without_strings)
-    lowered_methods = [method.lower() for method in methods]
+    lexed = _lex_gremlin_query(gremlin_query)
+    analysis = _analyze_tokens(lexed)
 
-    if _has_unsafe_write_steps(query_without_strings, lowered_methods):
+    if analysis.has_write_method:
         return "unsafe"
-
-    if _has_dynamic_construction_markers(gremlin_query, query_without_strings):
+    if analysis.uncertain:
         return "uncertain"
-
-    if not _READ_START_RE.search(query_without_strings):
-        return "uncertain"
-
-    if any(method not in _READ_METHODS for method in lowered_methods):
+    if any(method not in _READ_METHODS for method in analysis.method_names):
         return "uncertain"
 
     return "safe"
@@ -147,109 +420,35 @@ def is_safe_gremlin_read(gremlin_query: str) -> bool:
 
 
 def _extract_method_names(query_without_strings: str) -> list[str]:
-    return _METHOD_RE.findall(query_without_strings)
+    lexed = _lex_gremlin_query(query_without_strings)
+    return list(_analyze_tokens(lexed).method_names)
 
 
 def _has_unsafe_write_steps(
     query_without_strings: str, lowered_methods: list[str]
 ) -> bool:
-    if any(method in _WRITE_METHODS for method in lowered_methods):
-        return True
-
-    if "property" in lowered_methods:
-        return True
-
-    if "iterate" in lowered_methods:
-        return True
-
-    return bool(
-        re.search(r"\.\s*[VE]\s*\([^)]*\)\s*\.\s*drop\s*\(", query_without_strings)
-    )
+    del lowered_methods  # The shared lexer is the source of truth.
+    return _analyze_tokens(_lex_gremlin_query(query_without_strings)).has_write_method
 
 
 def _has_dynamic_construction_markers(
     original_query: str, query_without_strings: str
 ) -> bool:
-    # Groovy permits quoted and parenthesized member names (for example
-    # `g.V().'drop'()`), which disappear when string literals are stripped.
-    # Treat them as ambiguous so a write step cannot masquerade as a read.
-    if _QUOTED_OR_DYNAMIC_MEMBER_RE.search(original_query):
-        return True
-
-    if any(marker in original_query for marker in _DYNAMIC_MARKERS):
-        return True
-
-    if "+" in query_without_strings:
-        return True
-
-    if "{" in query_without_strings or "}" in query_without_strings:
-        return True
-
-    if ";" in query_without_strings:
-        return True
-
-    if re.search(
-        r"(?:^|[;\s])(?:def|var|String|query)\s+\w+\s*=", query_without_strings
-    ):
-        return True
-
-    return _has_bare_identifier_arguments(query_without_strings)
+    del query_without_strings
+    # Analyze the original source so interpolation and dynamic member markers
+    # that occur inside a quoted literal are still visible to this compatibility
+    # helper.  The public classifier uses the same source directly.
+    return _analyze_tokens(_lex_gremlin_query(original_query)).uncertain
 
 
 def _has_bare_identifier_arguments(query_without_strings: str) -> bool:
-    cleaned = re.sub(
-        r"\.\s*[A-Za-z_][A-Za-z0-9_]*",
-        " ",
-        query_without_strings,
-    )
-    for method in _ANONYMOUS_READ_METHODS:
-        cleaned = re.sub(
-            rf"\b{method}\s*\(",
-            "(",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
-    cleaned = re.sub(r"^\s*[gG]\b", " ", cleaned)
-    for token_match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\b", cleaned):
-        token = token_match.group(0).lower()
-        if token not in _ALLOWED_ARG_TOKENS:
-            return True
-
-    return False
+    return _analyze_tokens(_lex_gremlin_query(query_without_strings)).uncertain
 
 
 def _strip_string_literals(query: str) -> str:
-    """Replace string literal contents with spaces while preserving structure."""
+    """Replace strings/comments with masked text using the shared scanner."""
 
-    result: list[str] = []
-    quote: str | None = None
-    escaped = False
-
-    for char in query:
-        if quote is None:
-            if char in {"'", '"'}:
-                quote = char
-                result.append(char)
-            else:
-                result.append(char)
-            continue
-
-        if escaped:
-            escaped = False
-            result.append(" ")
-        elif char == "\\":
-            escaped = True
-            result.append(" ")
-        elif char == quote:
-            quote = None
-            result.append(char)
-        else:
-            result.append(" ")
-
-    if quote is not None:
-        return query
-
-    return "".join(result)
+    return _lex_gremlin_query(query).normalized
 
 
 # ========== Structured decision ==========

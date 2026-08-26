@@ -107,6 +107,57 @@ def test_id_based_ingest_writes_the_intended_edge(hugegraph_client):
     )
 
 
+def test_apply_schema_forwards_and_verifies_supported_fields(hugegraph_client):
+    suffix = uuid4().hex[:8]
+    property_name = f"mcp_schema_property_{suffix}"
+    label_name = f"mcp_schema_vertex_{suffix}"
+    operations = [
+        {
+            "type": "create_property_key",
+            "name": property_name,
+            "data_type": "TEXT",
+            "user_data": {"owner": "mcp-integration"},
+        },
+        {
+            "type": "create_vertex_label",
+            "name": label_name,
+            "id_strategy": "PRIMARY_KEY",
+            "properties": [property_name],
+            "primary_keys": [property_name],
+            "enable_label_index": False,
+            "user_data": {"owner": "mcp-integration"},
+        },
+    ]
+
+    dry_run = server.apply_schema_tool(mode="dry_run", operations=operations)
+    assert dry_run["ok"] is True
+    assert dry_run["data"]["valid"] is True
+    context = dry_run["data"]["plan_context"]
+
+    applied = server.apply_schema_tool(
+        mode="apply",
+        operations=operations,
+        confirm=True,
+        plan_hash=dry_run["data"]["plan_hash"],
+        nonce=context["nonce"],
+        expires_at=context["expires_at"],
+    )
+    assert applied["ok"] is True
+    assert applied["data"]["status"] == "applied"
+
+    schema = hugegraph_client.schema().getSchema()
+    raw_schema = schema.get("schema", schema)
+    property_key = next(
+        item for item in raw_schema["propertykeys"] if item.get("name") == property_name
+    )
+    vertex_label = next(
+        item for item in raw_schema["vertexlabels"] if item.get("name") == label_name
+    )
+    assert property_key.get("user_data") == {"owner": "mcp-integration"}
+    assert vertex_label.get("enable_label_index") is False
+    assert vertex_label.get("user_data") == {"owner": "mcp-integration"}
+
+
 def test_create_edge_rejects_missing_endpoint(hugegraph_client):
     names = _schema_names("missing")
     _ensure_custom_id_schema(hugegraph_client, names)

@@ -138,9 +138,11 @@ def _normalize_schema_items(
                 continue
             if output_name in {
                 "fields",
+                "index_labels",
                 "nullable_keys",
                 "primary_keys",
                 "properties",
+                "sort_keys",
             }:
                 value = _normalize_named_list(value)
             result[output_name] = value
@@ -170,6 +172,7 @@ def normalized_schema_summary(
                     "cardinality",
                     ("cardinality", "cardinality_type", "cardinalityType"),
                 ),
+                ("aggregate_type", ("aggregate_type", "aggregateType")),
             ],
             name_aliases=("name", "property_name", "propertyName"),
         ),
@@ -180,6 +183,11 @@ def normalized_schema_summary(
                 ("properties", ("properties",)),
                 ("primary_keys", ("primary_keys", "primaryKeys")),
                 ("nullable_keys", ("nullable_keys", "nullableKeys")),
+                ("index_labels", ("index_labels", "indexLabels")),
+                (
+                    "enable_label_index",
+                    ("enable_label_index", "enableLabelIndex"),
+                ),
             ],
         ),
         "edgelabels": _normalize_schema_items(
@@ -189,7 +197,12 @@ def normalized_schema_summary(
                 ("target_label", ("target_label", "targetLabel")),
                 ("properties", ("properties",)),
                 ("nullable_keys", ("nullable_keys", "nullableKeys")),
+                ("sort_keys", ("sort_keys", "sortKeys")),
                 ("frequency", ("frequency",)),
+                (
+                    "enable_label_index",
+                    ("enable_label_index", "enableLabelIndex"),
+                ),
             ],
         ),
         "indexlabels": _normalize_schema_items(

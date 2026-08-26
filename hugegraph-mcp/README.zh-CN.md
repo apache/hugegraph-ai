@@ -163,6 +163,14 @@ HugeGraph MCP 不把 MCP 做成另一套业务内核。MCP 层负责：
 | `execute_gremlin_write_tool` | 直接执行 Gremlin 写语句；默认禁用，仅 `HUGEGRAPH_MCP_ADMIN_MODE=true` 且 `HUGEGRAPH_MCP_READONLY=false` 时可用 |
 | `refresh_vid_embeddings_tool` | 刷新 VID embeddings，会改变索引状态；默认禁用，仅 `HUGEGRAPH_MCP_ADMIN_MODE=true` 且 `HUGEGRAPH_MCP_READONLY=false` 时可用 |
 
+Schema apply 使用闭合的操作字段契约。PropertyKey 支持
+`data_type`、`cardinality`、`aggregate_type`、`user_data`；VertexLabel 支持
+`id_strategy`、`properties`、`primary_keys`、`nullable_keys`、`index_labels`、
+`enable_label_index`、`user_data`；EdgeLabel 支持 `source_label`、`target_label`、
+`properties`、`nullable_keys`、`sort_keys`、`frequency`、`enable_label_index`、
+`user_data`。未列出的字段（包括 `ttl*`）会在签发 plan 前的校验阶段拒绝。
+支持的字段会转发到 HugeGraph，并通过 live schema 回读核对。
+
 
 
 

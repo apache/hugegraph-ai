@@ -75,6 +75,48 @@ IDENTIFIER_FIELDS = {
     "create_index_label": ("name", "base_label"),
 }
 
+# This table is the contract for schema operations.  Validation rejects fields
+# outside it, apply forwards every field in it that is present, and post-read
+# verification checks the same field set.  Keeping one source of truth prevents
+# a field from being accepted and then silently discarded by the builder.
+SUPPORTED_FIELDS = {
+    "create_property_key": frozenset(
+        {"type", "name", "data_type", "cardinality", "aggregate_type", "user_data"}
+    ),
+    "create_vertex_label": frozenset(
+        {
+            "type",
+            "name",
+            "id_strategy",
+            "properties",
+            "primary_keys",
+            "nullable_keys",
+            "index_labels",
+            "enable_label_index",
+            "user_data",
+        }
+    ),
+    "create_edge_label": frozenset(
+        {
+            "type",
+            "name",
+            "source_label",
+            "target_label",
+            "properties",
+            "nullable_keys",
+            "sort_keys",
+            "frequency",
+            "enable_label_index",
+            "user_data",
+        }
+    ),
+    # Index creation remains outside P0a apply, but validate still has a closed
+    # contract so an unsupported field cannot be accepted and later ignored.
+    "create_index_label": frozenset(
+        {"type", "name", "base_type", "base_label", "fields", "index_type", "unique"}
+    ),
+}
+
 UNSUPPORTED_EDGE_LABEL_FIELDS = frozenset(
     {"parent_label", "parentLabel", "edgelabel_type", "edgeLabelType"}
 )
@@ -179,6 +221,110 @@ def _validation_error(
         "reason": reason,
         "suggestion": suggestion,
     }
+
+
+def _validate_supported_fields(
+    *,
+    idx: int,
+    operation: dict[str, Any],
+    op_type: str,
+    errors: list[ValidationError],
+) -> None:
+    supported = SUPPORTED_FIELDS.get(op_type)
+    if supported is None:
+        return
+
+    # Parent/child edge fields have a dedicated, backwards-compatible error
+    # below; leave them out here so callers retain that actionable message.
+    unknown = [
+        field
+        for field in operation
+        if field not in supported
+        and not (
+            op_type == "create_edge_label" and field in UNSUPPORTED_EDGE_LABEL_FIELDS
+        )
+    ]
+    if not unknown:
+        return
+    unknown.sort(key=str)
+    errors.append(
+        _validation_error(
+            idx,
+            operation,
+            f"unsupported field(s) for {op_type}: {', '.join(map(str, unknown))}",
+            "Remove unsupported fields; this operation only accepts the documented schema fields.",
+        )
+    )
+
+
+def _validate_bool_field(
+    *,
+    idx: int,
+    operation: dict[str, Any],
+    field: str,
+    errors: list[ValidationError],
+) -> None:
+    if field in operation and type(operation[field]) is not bool:
+        errors.append(
+            _validation_error(
+                idx,
+                operation,
+                f"{field} must be a boolean, got {type(operation[field]).__name__}",
+                f"Use true or false for {field}.",
+            )
+        )
+
+
+def _validate_user_data_field(
+    *,
+    idx: int,
+    operation: dict[str, Any],
+    errors: list[ValidationError],
+) -> None:
+    if "user_data" in operation and not isinstance(operation["user_data"], dict):
+        errors.append(
+            _validation_error(
+                idx,
+                operation,
+                "user_data must be an object",
+                "Use a JSON object mapping user-data keys to values.",
+            )
+        )
+
+
+def _validate_index_labels_field(
+    *,
+    idx: int,
+    operation: dict[str, Any],
+    errors: list[ValidationError],
+) -> None:
+    if "index_labels" not in operation:
+        return
+    values = operation["index_labels"]
+    if not isinstance(values, list) or any(
+        not isinstance(value, str) or not value for value in values
+    ):
+        errors.append(
+            _validation_error(
+                idx,
+                operation,
+                "index_labels must be a list of non-empty strings",
+                "Use an array of index label names for index_labels.",
+            )
+        )
+        return
+
+    duplicate_names = _duplicate_names(values)
+    if duplicate_names:
+        errors.append(
+            _validation_error(
+                idx,
+                operation,
+                "index_labels contains duplicate name(s): "
+                + ", ".join(duplicate_names),
+                "Remove duplicate index label names from index_labels.",
+            )
+        )
 
 
 def _schema_items(live_schema: dict[str, Any], key: str) -> set[str]:
@@ -673,6 +819,23 @@ def validate_schema_operations(
                 )
             )
             continue
+
+        _validate_supported_fields(
+            idx=idx,
+            operation=operation,
+            op_type=op_type,
+            errors=errors,
+        )
+        if op_type in {"create_vertex_label", "create_edge_label"}:
+            _validate_bool_field(
+                idx=idx,
+                operation=operation,
+                field="enable_label_index",
+                errors=errors,
+            )
+            _validate_user_data_field(idx=idx, operation=operation, errors=errors)
+        if op_type == "create_vertex_label":
+            _validate_index_labels_field(idx=idx, operation=operation, errors=errors)
 
         for field in REQUIRED_FIELDS[op_type]:
             if field not in operation or operation[field] in (None, ""):
@@ -1199,13 +1362,13 @@ def _apply_one_operation(manager, operation: dict[str, Any]) -> None:
 
 
 def _apply_property_key_options(builder, operation: dict[str, Any]) -> None:
-    data_type = str(operation.get("data_type", "TEXT")).upper()
+    data_type = str(operation.get("data_type") or "TEXT").upper()
     method_name = PROPERTY_KEY_DATA_TYPE_METHODS.get(data_type)
     if method_name is None:
         raise ValueError(f"Unsupported property key data_type: {data_type}")
     getattr(builder, method_name)()
 
-    cardinality = str(operation.get("cardinality", "SINGLE")).upper()
+    cardinality = str(operation.get("cardinality") or "SINGLE").upper()
     method_name = PROPERTY_KEY_CARDINALITY_METHODS.get(cardinality)
     if method_name is None:
         raise ValueError(f"Unsupported property key cardinality: {cardinality}")
@@ -1215,44 +1378,91 @@ def _apply_property_key_options(builder, operation: dict[str, Any]) -> None:
     if aggregate_type:
         normalized = str(aggregate_type).upper()
         if normalized in PROPERTY_KEY_DIRECT_AGGREGATE_TYPES:
-            if not hasattr(builder, "add_parameter"):
-                raise ValueError(
-                    f"Property key aggregate_type {normalized} requires a builder "
-                    "that supports direct schema parameters."
-                )
-            builder.add_parameter("aggregate_type", normalized)
-            return
-
-        method_name = PROPERTY_KEY_AGGREGATE_METHODS.get(normalized)
-        if method_name is None:
-            raise ValueError(
-                f"Unsupported property key aggregate_type: {aggregate_type}"
+            _set_builder_parameter(
+                builder,
+                "create_property_key",
+                "aggregate_type",
+                normalized,
             )
-        getattr(builder, method_name)()
+        else:
+            method_name = PROPERTY_KEY_AGGREGATE_METHODS.get(normalized)
+            if method_name is None:
+                raise ValueError(
+                    f"Unsupported property key aggregate_type: {aggregate_type}"
+                )
+            getattr(builder, method_name)()
+
+    if "user_data" in operation:
+        _set_builder_parameter(
+            builder,
+            "create_property_key",
+            "user_data",
+            operation["user_data"],
+        )
+
+
+def _set_builder_parameter(
+    builder: Any,
+    op_type: str,
+    field: str,
+    value: Any,
+) -> None:
+    """Forward a table-approved field without silently dropping it."""
+
+    if field not in SUPPORTED_FIELDS.get(op_type, frozenset()):
+        raise ValueError(f"Unsupported {op_type} field: {field}")
+    setter = getattr(builder, "add_parameter", None)
+    if not callable(setter):
+        raise TypeError(
+            f"Schema builder cannot forward supported {op_type} field: {field}"
+        )
+    setter(field, value)
 
 
 def _apply_vertex_label_options(builder, operation: dict[str, Any]) -> None:
-    id_strategy = str(operation.get("id_strategy", "PRIMARY_KEY")).upper()
+    id_strategy = str(operation.get("id_strategy") or "PRIMARY_KEY").upper()
     method_name = VERTEX_LABEL_ID_STRATEGY_METHODS.get(id_strategy)
     if method_name is None:
         raise ValueError(f"Unsupported vertex label id_strategy: {id_strategy}")
     getattr(builder, method_name)()
 
-    if operation.get("properties"):
+    if operation.get("properties") is not None:
         builder.properties(*operation["properties"])
-    if operation.get("primary_keys"):
+    if operation.get("primary_keys") is not None:
         builder.primaryKeys(*operation["primary_keys"])
-    if operation.get("nullable_keys"):
+    if operation.get("nullable_keys") is not None:
         builder.nullableKeys(*operation["nullable_keys"])
+    if operation.get("index_labels") is not None:
+        _set_builder_parameter(
+            builder,
+            "create_vertex_label",
+            "index_labels",
+            operation["index_labels"],
+        )
+    if "enable_label_index" in operation:
+        method = getattr(builder, "enableLabelIndex", None)
+        if not callable(method):
+            raise ValueError(
+                "Schema builder cannot forward supported create_vertex_label field: "
+                "enable_label_index"
+            )
+        method(operation["enable_label_index"])
+    if "user_data" in operation:
+        _set_builder_parameter(
+            builder,
+            "create_vertex_label",
+            "user_data",
+            operation["user_data"],
+        )
 
 
 def _apply_edge_label_options(builder, operation: dict[str, Any]) -> None:
     builder.link(operation["source_label"], operation["target_label"])
-    if operation.get("properties"):
+    if operation.get("properties") is not None:
         builder.properties(*operation["properties"])
-    if operation.get("nullable_keys"):
+    if operation.get("nullable_keys") is not None:
         builder.nullableKeys(*operation["nullable_keys"])
-    if operation.get("sort_keys"):
+    if operation.get("sort_keys") is not None:
         builder.sortKeys(*operation["sort_keys"])
 
     frequency = operation.get("frequency")
@@ -1262,6 +1472,21 @@ def _apply_edge_label_options(builder, operation: dict[str, Any]) -> None:
         if method_name is None:
             raise ValueError(f"Unsupported edge label frequency: {frequency}")
         getattr(builder, method_name)()
+    if "enable_label_index" in operation:
+        method = getattr(builder, "enableLabelIndex", None)
+        if not callable(method):
+            raise ValueError(
+                "Schema builder cannot forward supported create_edge_label field: "
+                "enable_label_index"
+            )
+        method(operation["enable_label_index"])
+    if "user_data" in operation:
+        _set_builder_parameter(
+            builder,
+            "create_edge_label",
+            "user_data",
+            operation["user_data"],
+        )
 
 
 def _operation_observed(
@@ -1375,45 +1600,106 @@ def _string_field_matches(
     )
 
 
+def _mapping_field_matches(
+    observed: dict[str, Any], operation: dict[str, Any], field: str
+) -> bool:
+    if field not in operation:
+        return True
+    expected = operation[field]
+    aliases = [field, _camel_case_schema_field(field)]
+    if field == "user_data":
+        aliases.append("userdata")
+    actual = _field_value(observed, *aliases)
+    # HugeGraph may omit an empty optional user_data object in its response.
+    if actual is None and expected == {}:
+        return True
+    return isinstance(actual, dict) and actual == expected
+
+
+def _scalar_field_matches(
+    observed: dict[str, Any], operation: dict[str, Any], field: str
+) -> bool:
+    if field not in operation:
+        return True
+    return (
+        _field_value(observed, field, _camel_case_schema_field(field))
+        == operation[field]
+    )
+
+
 def _camel_case_schema_field(field: str) -> str:
     parts = field.split("_")
     return parts[0] + "".join(part.title() for part in parts[1:])
+
+
+_ENUM_MATCH_FIELDS = frozenset(
+    {"data_type", "cardinality", "aggregate_type", "id_strategy", "frequency"}
+)
+_LIST_MATCH_FIELDS = frozenset(
+    {"properties", "primary_keys", "nullable_keys", "sort_keys", "index_labels"}
+)
+_STRING_MATCH_FIELDS = frozenset({"source_label", "target_label"})
+_MAPPING_MATCH_FIELDS = frozenset({"user_data"})
+_SCALAR_MATCH_FIELDS = frozenset(
+    {"enable_label_index", "unique", "index_type", "base_type"}
+)
+
+
+def _supported_field_matches(
+    op_type: str,
+    field: str,
+    operation: dict[str, Any],
+    observed: dict[str, Any],
+) -> bool:
+    if field in _ENUM_MATCH_FIELDS:
+        default = None
+        if op_type == "create_property_key" and field == "cardinality":
+            default = "SINGLE"
+        elif op_type == "create_vertex_label" and field == "id_strategy":
+            default = "PRIMARY_KEY"
+        return _enum_field_matches(observed, operation, field, default=default)
+    if field in _LIST_MATCH_FIELDS:
+        return _list_field_matches(observed, operation, field)
+    if field in _STRING_MATCH_FIELDS:
+        return _string_field_matches(observed, operation, field)
+    if field in _MAPPING_MATCH_FIELDS:
+        return _mapping_field_matches(observed, operation, field)
+    if field in _SCALAR_MATCH_FIELDS:
+        return _scalar_field_matches(observed, operation, field)
+    # ``type``/``name`` are handled by operation lookup, and any other field
+    # should already have been rejected by _validate_supported_fields.
+    return field in {"type", "name"}
 
 
 def _operation_fields_match(
     operation: dict[str, Any], observed: dict[str, Any]
 ) -> bool:
     op_type = _operation_type(operation)
-    if op_type == "create_property_key":
-        return (
-            _enum_field_matches(observed, operation, "data_type")
-            and _enum_field_matches(
-                observed, operation, "cardinality", default="SINGLE"
-            )
-            and _enum_field_matches(observed, operation, "aggregate_type")
-        )
+    if op_type not in SUPPORTED_FIELDS:
+        return False
 
-    if op_type == "create_vertex_label":
-        return (
-            _enum_field_matches(
-                observed, operation, "id_strategy", default="PRIMARY_KEY"
-            )
-            and _list_field_matches(observed, operation, "properties")
-            and _list_field_matches(observed, operation, "primary_keys")
-            and _list_field_matches(observed, operation, "nullable_keys")
-        )
+    # Keep post-read verification closed even when a caller bypasses the
+    # normal validate/dry-run path. An unrecognized field must never disappear
+    # from the comparison and turn a partial apply into a reported success.
+    if any(field not in SUPPORTED_FIELDS[op_type] for field in operation):
+        return False
 
-    if op_type == "create_edge_label":
-        return (
-            _string_field_matches(observed, operation, "source_label")
-            and _string_field_matches(observed, operation, "target_label")
-            and _list_field_matches(observed, operation, "properties")
-            and _list_field_matches(observed, operation, "nullable_keys")
-            and _list_field_matches(observed, operation, "sort_keys")
-            and _enum_field_matches(observed, operation, "frequency")
-        )
+    fields = {
+        field
+        for field in SUPPORTED_FIELDS[op_type]
+        if field in operation and field not in {"type", "name"}
+    }
+    # These options have always had an apply-time default. Keep checking the
+    # effective value even when the caller omitted the optional field.
+    if op_type == "create_property_key" and "cardinality" not in operation:
+        fields.add("cardinality")
+    if op_type == "create_vertex_label" and "id_strategy" not in operation:
+        fields.add("id_strategy")
 
-    return False
+    return all(
+        _supported_field_matches(op_type, field, operation, observed)
+        for field in fields
+    )
 
 
 def _partial_apply_result(

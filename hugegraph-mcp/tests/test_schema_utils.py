@@ -133,6 +133,68 @@ def test_normalized_schema_summary_binds_property_key_cardinality_aliases():
     ]
 
 
+def test_normalized_schema_summary_binds_supported_schema_fields():
+    summary = normalized_schema_summary(
+        {
+            "schema": {
+                "propertykeys": [
+                    {
+                        "name": "score",
+                        "data_type": "INT",
+                        "cardinality": "SINGLE",
+                        "aggregate_type": "SUM",
+                    }
+                ],
+                "vertexlabels": [
+                    {
+                        "name": "person",
+                        "properties": ["name"],
+                        "primary_keys": ["name"],
+                        "index_labels": ["person_by_name"],
+                        "enable_label_index": False,
+                    }
+                ],
+                "edgelabels": [
+                    {
+                        "name": "knows",
+                        "source_label": "person",
+                        "target_label": "person",
+                        "sort_keys": ["score"],
+                        "enableLabelIndex": True,
+                    }
+                ],
+            }
+        }
+    )
+
+    assert summary["propertykeys"] == [
+        {
+            "name": "score",
+            "data_type": "INT",
+            "cardinality": "SINGLE",
+            "aggregate_type": "SUM",
+        }
+    ]
+    assert summary["vertexlabels"] == [
+        {
+            "name": "person",
+            "properties": ["name"],
+            "primary_keys": ["name"],
+            "index_labels": ["person_by_name"],
+            "enable_label_index": False,
+        }
+    ]
+    assert summary["edgelabels"] == [
+        {
+            "name": "knows",
+            "source_label": "person",
+            "target_label": "person",
+            "sort_keys": ["score"],
+            "enable_label_index": True,
+        }
+    ]
+
+
 def test_graph_data_validate_does_not_reverse_import_ingest_module():
     source = inspect.getsource(graph_data_validate)
 

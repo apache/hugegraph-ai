@@ -134,6 +134,60 @@ def test_edge_endpoint_where_traversal_is_safe():
     assert decision.classification == "safe"
 
 
+def test_comments_cannot_hide_write_steps():
+    for query in [
+        "g.V().drop/**/()",
+        "g.V().drop//\n()",
+        "g.V().drop /* */ ()",
+        "g.V().addV/**/('pwned')",
+    ]:
+        decision = check_gremlin_read(query)
+
+        assert decision.allowed is False, query
+        assert decision.classification == "unsafe", query
+
+
+def test_comments_inside_strings_are_not_lexed_as_comments():
+    for query in [
+        "g.V().has('note', '/* not a comment */').limit(1)",
+        "g.V().has('url', 'https://example.test//path').limit(1)",
+        "g.V().has('quote', 'escaped \\' // text').limit(1)",
+        "g.V().has('note', '''/* not a comment */''').limit(1)",
+        "g./**/V/**/()./**/has('name', 'Alice')",
+    ]:
+        decision = check_gremlin_read(query)
+
+        assert decision.allowed is True, query
+        assert decision.classification == "safe", query
+
+
+def test_incomplete_or_unexplained_lexical_structure_is_uncertain():
+    for query in [
+        "g.V().count() /* unterminated",
+        "g.V().has('name', 'unterminated)",
+        "g.V().count() / stray",
+        "g.V().count().",
+        "g.V()count()",
+        "g.V().where(out())",
+    ]:
+        decision = check_gremlin_read(query)
+
+        assert decision.allowed is False, query
+        assert decision.classification == "uncertain", query
+
+
+def test_interpolated_strings_are_not_treated_as_static_literals():
+    for query in [
+        'g.V().has("name", "${dynamic}")',
+        'g.V().has("name", "#{dynamic}")',
+        'g.V().has("name", "prefix -> suffix")',
+    ]:
+        decision = check_gremlin_read(query)
+
+        assert decision.allowed is False, query
+        assert decision.classification == "uncertain", query
+
+
 def test_gremlin_cost_warnings_bounded_limit_query_is_empty():
     assert gremlin_cost_warnings("g.V().limit(10)") == []
 

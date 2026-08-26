@@ -119,6 +119,12 @@ Continue only when `data.toolset` is `v2_core` and `data.readonly` is `false`. I
 
 Safety decision verified: `apply_schema_tool(mode="apply")` is unlocked only for P0a create operations, and real schema writes must use the `dry_run -> plan_hash -> confirm` chain. The confirm step also verifies by post-reading live schema.
 
+Schema create operations use a closed field contract. `enable_label_index`,
+`index_labels`, and `user_data` are forwarded and checked when supplied;
+unimplemented fields such as `ttl*` must fail validation before a plan is
+issued. Keep any optional fields identical between the dry-run and confirm
+requests.
+
 Dry-run call:
 
 ```json

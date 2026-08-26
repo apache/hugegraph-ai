@@ -48,10 +48,17 @@ def hugegraph_client(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "false")
 
     client = build_hugegraph_client(MCPConfig.from_env(), client_cls=PyHugeClient)
-    try:
-        client.schema().getSchema()
-    except Exception as exc:  # noqa: BLE001 - depends on external service
-        pytest.fail(f"HugeGraph Server is not available: {exc}")
+    deadline = time.monotonic() + 60.0
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            client.schema().getSchema()
+            break
+        except Exception as exc:  # noqa: BLE001 - service startup is asynchronous
+            last_error = exc
+            time.sleep(1.0)
+    else:
+        pytest.fail(f"HugeGraph Server is not available: {last_error}")
     return client
 
 

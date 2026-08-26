@@ -206,16 +206,22 @@ def _admin_gate(tool_name: str, *, requires_write: bool = False) -> dict | None:
 
 
 @mcp.tool()
-def inspect_graph_tool(include_raw_schema: bool = False) -> dict:
-    """检视 HugeGraph 服务器状态、schema 摘要、点边计数和 AI 状态。
+def inspect_graph_tool(
+    include_raw_schema: bool = False,
+    include_counts: bool = False,
+) -> dict:
+    """检视 HugeGraph 服务器状态、schema 摘要和 AI 状态。
 
     Capability: READ.
-    推荐作为连接后第一个调用的工具。
+    推荐作为连接后第一个调用的工具。默认不执行全图 count；
+    include_counts=true 时才返回 vertex_count/edge_count 数值，
+    否则这两个字段保留为 null。
     """
     result = _call_public_tool(
         "inspect_graph_tool",
         inspect_graph,
         include_raw_schema=include_raw_schema,
+        include_counts=include_counts,
     )
     if result.get("ok") and isinstance(result.get("data"), dict):
         result["data"]["mcp_tool_contract_version"] = MCP_TOOL_CONTRACT_VERSION

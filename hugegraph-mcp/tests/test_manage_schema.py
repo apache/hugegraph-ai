@@ -2383,3 +2383,44 @@ def test_manage_schema_apply_readonly_blocks_after_valid_plan(monkeypatch):
 
     assert result["ok"] is False
     assert result["error"]["type"] == "READONLY_VIOLATION"
+
+
+def test_manage_schema_dry_run_rejects_too_many_operations_before_plan(monkeypatch):
+    monkeypatch.setattr(
+        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
+    )
+    issue = Mock()
+    monkeypatch.setattr(manage_schema_module, "issue_plan", issue)
+    operations = [_property_key(f"pk_{idx}") for idx in range(201)]
+
+    result = manage_schema(mode="dry_run", operations=operations)
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "MAX_OPERATIONS" in result["error"]["details"]["errors"][0]["reason"]
+    assert "plan_hash" not in (result.get("data") or {})
+    issue.assert_not_called()
+
+
+def test_manage_schema_dry_run_rejects_oversized_payload_before_plan(monkeypatch):
+    monkeypatch.setattr(
+        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
+    )
+    issue = Mock()
+    monkeypatch.setattr(manage_schema_module, "issue_plan", issue)
+    operations = [
+        {
+            "type": "create_property_key",
+            "name": "age",
+            "data_type": "TEXT",
+            "user_data": {"blob": "x" * 1_048_576},
+        }
+    ]
+
+    result = manage_schema(mode="dry_run", operations=operations)
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "MAX_PAYLOAD_BYTES" in result["error"]["details"]["errors"][0]["reason"]
+    assert "plan_hash" not in (result.get("data") or {})
+    issue.assert_not_called()

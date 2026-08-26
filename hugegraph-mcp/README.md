@@ -146,7 +146,7 @@ When a call fails, `ok=false` and `error` uses this structure:
 
 | Tool | Description |
 |------|-------------|
-| `inspect_graph_tool` | Inspect HugeGraph Server status, schema summary, vertex/edge counts, readonly state, AI availability, and current MCP tool contract fields |
+| `inspect_graph_tool` | Inspect HugeGraph Server status, schema summary, readonly state, AI availability, and current MCP tool contract fields. Vertex/edge counts stay `null` unless `include_counts=true` |
 | `inspect_schema_tool` | Inspect schema objects, relations, and index labels; supports filtering by property key, vertex label, edge label, or index label |
 | `query_graph_data_tool` | Query vertices or edges by typed operations (`get_by_id`, `get_by_ids`, `page`, `condition`) with explicit limits and no Gremlin full-scan fallback |
 | `generate_gremlin_tool` | Generate Gremlin from natural language; defaults to generation only; `execute=true` still requires read-only validation |
@@ -203,7 +203,9 @@ The confirm phase must fully revalidate the plan. If the dry-run result expires,
 
 ### Import Semantics
 
-`import_graph_data_tool(mode="ingest")` is the structured import path shared by `v2_core` and the `v1` compatibility toolset. It uses local schema validation, dry-run/hash/confirm, and direct Gremlin writes through `manage_graph_data()`; it does not call the HugeGraph-AI `/graph-import` HTTP path. The legacy/internal AI-backed function is named `ingest_graph_data_via_ai()`.
+`import_graph_data_tool(mode="ingest")` is the structured import path shared by `v2_core` and the `v1` compatibility toolset. It uses local schema validation, dry-run/hash/confirm, and direct Gremlin writes through `manage_graph_data()`; it does not call the HugeGraph-AI `/graph-import` HTTP path. The legacy/internal AI-backed function is named `ingest_graph_data_via_ai()`. This PR keeps both write kernels: public MCP import uses local Gremlin writes, while `ingest_graph_data_via_ai()` remains the leftover HugeGraph-AI `/graph-import` dual-write path and is not closed here.
+
+Schema and graph-data dry-run share hard limits of `MAX_OPERATIONS = 200` and `MAX_PAYLOAD_BYTES = 1048576` (1 MiB). Exceeding either limit returns `VALIDATION_ERROR` before `plan_hash` is generated. The limits are not configurable in this release.
 
 When `import_graph_data_tool(mode="ingest")` executes a create operation, it returns one of three states:
 

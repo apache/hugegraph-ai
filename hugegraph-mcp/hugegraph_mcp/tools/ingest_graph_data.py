@@ -909,6 +909,18 @@ def ingest_graph_data_via_ai(
         if replay_error is not None:
             return replay_error
 
+    from hugegraph_mcp.write_limits import (
+        graph_data_operation_count,
+        write_limit_envelope,
+    )
+
+    limit_error = write_limit_envelope(
+        graph_data_operation_count(graph_data),
+        graph_data,
+    )
+    if limit_error is not None:
+        return limit_error
+
     live_schema = _fetch_live_schema()
     if live_schema is None:
         return envelope_err(

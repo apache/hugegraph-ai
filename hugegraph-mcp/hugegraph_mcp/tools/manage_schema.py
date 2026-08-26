@@ -50,6 +50,11 @@ from hugegraph_mcp.tools.schema_contract import (
     schema_collection_for_operation,
 )
 from hugegraph_mcp.tools.schema_utils import normalized_schema_summary, schema_payload
+from hugegraph_mcp.write_limits import (
+    collect_write_limit_errors,
+    operation_count_from_list,
+    write_limit_envelope,
+)
 
 ALLOWED_OPERATION_TYPES = frozenset(
     {
@@ -1223,6 +1228,16 @@ def dry_run_schema_operations(
     live_schema: dict[str, Any] | None = None,
     nonce: str | None = None,
 ) -> dict[str, Any]:
+    limit_errors = collect_write_limit_errors(
+        operation_count_from_list(operations),
+        operations,
+    )
+    if limit_errors:
+        return {
+            "valid": False,
+            "errors": limit_errors,
+            "warnings": [],
+        }
     live_schema = current_live_schema(live_schema)
     validation = validate_schema_operations(operations, live_schema)
     if not validation["valid"]:
@@ -1771,6 +1786,14 @@ def manage_schema(
         expires_at: dry_run returned plan_context.expires_at
     """
     operations = operations or []
+
+    if mode in {"dry_run", "apply"}:
+        limit_error = write_limit_envelope(
+            operation_count_from_list(operations),
+            operations,
+        )
+        if limit_error is not None:
+            return limit_error
 
     if mode == "design":
         return envelope_ok(_design_from_operations(operations))

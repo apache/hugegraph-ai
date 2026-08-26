@@ -13,6 +13,7 @@
 
 import re
 from copy import deepcopy
+from unittest.mock import Mock
 
 from hugegraph_mcp.tools import manage_graph_data as manage_graph_data_module
 from hugegraph_mcp.tools.graph_data_gremlin import (
@@ -1836,3 +1837,68 @@ def test_manage_graph_data_import_validates_graph_payload(monkeypatch):
 
     assert result["ok"] is False
     assert result["error"]["type"] == "SCHEMA_MISMATCH"
+
+
+def test_manage_graph_data_dry_run_rejects_too_many_operations_before_plan(
+    monkeypatch,
+):
+    _mock_schema(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    execute_read = Mock(
+        return_value={"data": [0], "total": 1, "duration_ms": 1, "is_read": True}
+    )
+    monkeypatch.setattr(
+        manage_graph_data_module.gremlin_tools,
+        "execute_gremlin_read",
+        execute_read,
+    )
+    graph_data = {
+        "vertices": [
+            {"label": "person", "properties": {"name": f"n{idx}"}} for idx in range(201)
+        ],
+        "edges": [],
+    }
+
+    result = manage_graph_data_module.manage_graph_data(
+        mode="import",
+        graph_data=graph_data,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "MAX_OPERATIONS" in result["error"]["details"]["errors"][0]["reason"]
+    assert "plan_hash" not in (result.get("data") or {})
+    execute_read.assert_not_called()
+
+
+def test_manage_graph_data_dry_run_rejects_oversized_payload_before_plan(monkeypatch):
+    _mock_schema(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    execute_read = Mock(
+        return_value={"data": [0], "total": 1, "duration_ms": 1, "is_read": True}
+    )
+    monkeypatch.setattr(
+        manage_graph_data_module.gremlin_tools,
+        "execute_gremlin_read",
+        execute_read,
+    )
+    graph_data = {
+        "vertices": [
+            {
+                "label": "person",
+                "properties": {"name": "Alice", "note": "x" * 1_048_576},
+            }
+        ],
+        "edges": [],
+    }
+
+    result = manage_graph_data_module.manage_graph_data(
+        mode="import",
+        graph_data=graph_data,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "MAX_PAYLOAD_BYTES" in result["error"]["details"]["errors"][0]["reason"]
+    assert "plan_hash" not in (result.get("data") or {})
+    execute_read.assert_not_called()

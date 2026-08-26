@@ -149,7 +149,7 @@ HugeGraph MCP 不把 MCP 做成另一套业务内核。MCP 层负责：
 
 | 工具 | 说明 |
 |------|------|
-| `inspect_graph_tool` | 查看 HugeGraph Server 状态、schema 摘要、点边计数、readonly 状态、AI 可用性和当前 MCP 工具契约字段 |
+| `inspect_graph_tool` | 查看 HugeGraph Server 状态、schema 摘要、readonly 状态、AI 可用性和当前 MCP 工具契约字段。默认不计数，`include_counts=true` 时才返回点边计数，否则 `vertex_count`/`edge_count` 为 `null` |
 | `inspect_schema_tool` | 查看 schema 对象、关系和索引标签；支持按 property key、vertex label、edge label 或 index label 过滤 |
 | `query_graph_data_tool` | 通过类型化操作查询点或边（`get_by_id`、`get_by_ids`、`page`、`condition`），有显式 limit，不自动降级为 Gremlin 全图扫描 |
 | `generate_gremlin_tool` | 根据自然语言生成 Gremlin；默认只生成，不执行；`execute=true` 时也必须通过只读校验 |
@@ -205,7 +205,9 @@ confirm 阶段必须全量重验。dry-run 结果过期、目标图变化、sche
 
 ### 导入语义
 
-`import_graph_data_tool(mode="ingest")` 是 `v2_core` 与 `v1` 兼容工具集共用的结构化导入路径。它使用本地 schema 校验、dry-run/hash/confirm 和 `manage_graph_data()` 的 direct Gremlin 写入；不会调用 HugeGraph-AI `/graph-import` HTTP 路径。legacy/internal 的 AI-backed 函数命名为 `ingest_graph_data_via_ai()`。
+`import_graph_data_tool(mode="ingest")` 是 `v2_core` 与 `v1` 兼容工具集共用的结构化导入路径。它使用本地 schema 校验、dry-run/hash/confirm 和 `manage_graph_data()` 的 direct Gremlin 写入；不会调用 HugeGraph-AI `/graph-import` HTTP 路径。legacy/internal 的 AI-backed 函数命名为 `ingest_graph_data_via_ai()`。本 PR 保留双写入内核：公开 MCP 导入走本地 Gremlin，`ingest_graph_data_via_ai()` 仍是遗留的 HugeGraph-AI `/graph-import` 路径，本卡不关闭。
+
+schema 与 graph-data dry-run 共用硬上限：`MAX_OPERATIONS = 200`、`MAX_PAYLOAD_BYTES = 1048576`（1 MiB）。超限在生成 `plan_hash` 之前返回 `VALIDATION_ERROR`。本版本不提供可配置上限。
 
 `import_graph_data_tool(mode="ingest")` 执行创建时返回三类状态：
 

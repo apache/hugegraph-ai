@@ -918,6 +918,25 @@ def test_validate_graph_payload_rejects_ambiguous_scalar_endpoint():
     )
 
 
+def test_ingest_graph_data_dry_run_rejects_too_many_operations_before_plan(
+    monkeypatch,
+):
+    _mock_schema(monkeypatch)
+    graph_data = {
+        "vertices": [
+            {"label": "person", "properties": {"name": f"n{idx}"}} for idx in range(201)
+        ],
+        "edges": [],
+    }
+
+    result = ingest_graph_data_module.ingest_graph_data(graph_data)
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "MAX_OPERATIONS" in result["error"]["details"]["errors"][0]["reason"]
+    assert "plan_hash" not in (result.get("data") or {})
+
+
 def test_ingest_graph_data_valid_payload_with_primary_key_endpoints(monkeypatch):
     _mock_schema(monkeypatch)
 

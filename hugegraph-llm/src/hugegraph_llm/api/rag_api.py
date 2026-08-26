@@ -202,11 +202,10 @@ def rag_http_api(
 ):
     @router.post("/rag", status_code=status.HTTP_200_OK)
     def rag_answer_api(req: RAGRequest):
-        if req.client_config is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="client_config is not supported on /rag; use /config/graph.",
-            )
+        # client_config on /rag is accepted for request compatibility but ignored
+        # here. Matching/mismatch request-scoped config belongs to a later llm
+        # change; this path must not reject the field and must not mutate
+        # process-global huge_settings.
         # Basic parameter validation: empty query => 400
         if not req.query or not str(req.query).strip():
             raise HTTPException(
@@ -250,11 +249,8 @@ def rag_http_api(
     @router.post("/rag/graph", status_code=status.HTTP_200_OK)
     def graph_rag_recall_api(req: GraphRAGRequest):
         try:
-            if req.client_config is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="client_config is not supported on /rag/graph; use /config/graph.",
-                )
+            # client_config on /rag/graph is accepted for request compatibility
+            # but ignored here. Do not reject the field or mutate huge_settings.
             # Basic parameter validation: empty query => 400
             if not req.query or not str(req.query).strip():
                 raise HTTPException(

@@ -288,7 +288,7 @@ def test_rag_api_invalid_request_body_returns_validation_shape():
     assert response.json()["detail"][0]["loc"][-1] == "query"
 
 
-def test_rag_rejects_request_graph_config_without_mutating_globals(monkeypatch):
+def test_rag_accepts_client_config_without_mutating_globals(monkeypatch):
     monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
     monkeypatch.setattr(huge_settings, "graph_name", "original_graph")
     monkeypatch.setattr(huge_settings, "graph_user", "original_user")
@@ -306,8 +306,8 @@ def test_rag_rejects_request_graph_config_without_mutating_globals(monkeypatch):
         },
     )
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    callbacks["rag_answer_func"].assert_not_called()
+    assert response.status_code == status.HTTP_200_OK
+    callbacks["rag_answer_func"].assert_called_once()
     assert huge_settings.graph_url == "http://original:8080"
     assert huge_settings.graph_name == "original_graph"
     assert huge_settings.graph_user == "original_user"
@@ -315,7 +315,12 @@ def test_rag_rejects_request_graph_config_without_mutating_globals(monkeypatch):
     assert huge_settings.graph_space == "original_space"
 
 
-def test_graph_rag_rejects_request_graph_config():
+def test_graph_rag_accepts_client_config_without_mutating_globals(monkeypatch):
+    monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
+    monkeypatch.setattr(huge_settings, "graph_name", "original_graph")
+    monkeypatch.setattr(huge_settings, "graph_user", "original_user")
+    monkeypatch.setattr(huge_settings, "graph_pwd", "original_pwd")
+    monkeypatch.setattr(huge_settings, "graph_space", "original_space")
     client, callbacks = _make_test_client()
     response = client.post(
         "/rag/graph",
@@ -327,8 +332,13 @@ def test_graph_rag_rejects_request_graph_config():
         },
     )
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    callbacks["graph_rag_recall_func"].assert_not_called()
+    assert response.status_code == status.HTTP_200_OK
+    callbacks["graph_rag_recall_func"].assert_called_once()
+    assert huge_settings.graph_url == "http://original:8080"
+    assert huge_settings.graph_name == "original_graph"
+    assert huge_settings.graph_user == "original_user"
+    assert huge_settings.graph_pwd == "original_pwd"
+    assert huge_settings.graph_space == "original_space"
 
 
 def test_text2gremlin_passes_configured_graph_target_without_mutating_globals(monkeypatch):

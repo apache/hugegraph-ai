@@ -46,6 +46,10 @@ from hugegraph_mcp.tools.schema_utils import (
     primary_key_names,
     schema_payload,
 )
+from hugegraph_mcp.write_limits import (
+    collect_write_limit_errors,
+    operation_count_from_list,
+)
 
 # ---- Gremlin execution helpers ----
 
@@ -155,11 +159,20 @@ def dry_run_graph_change_plan(
     delete 操作通过只读 Gremlin 查询验证 matched_count==1，
     delete_vertex cascade=false 时检查关联边。
     """
+    operations = _operations(change_plan)
+    limit_errors = collect_write_limit_errors(
+        operation_count_from_list(operations),
+        change_plan,
+    )
+    if limit_errors:
+        return {
+            "valid": False,
+            "errors": limit_errors,
+            "warnings": [],
+        }
     validation = validate_graph_change_plan(change_plan, live_schema)
     if not validation["valid"]:
         return validation
-
-    operations = _operations(change_plan)
     preview: list[dict[str, Any]] = []
     errors: list[ValidationError] = []
 

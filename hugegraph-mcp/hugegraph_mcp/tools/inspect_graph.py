@@ -14,7 +14,7 @@
 """图状态检视 — Agent 连接后的首个推荐工具。
 
 inspect_graph() 做尽力而为的状态检查：HugeGraph Server 连接、schema 摘要、
-点边计数、HugeGraph-AI 可用性。任何环节失败都不抛异常，
+可选点边计数、HugeGraph-AI 可用性。默认不执行全图 count。任何环节失败都不抛异常，
 而是作为 warning 包含在 ok 信封中返回。
 """
 
@@ -107,11 +107,15 @@ def _check_ai_status(cfg: MCPConfig) -> tuple[str, Any, list[str]]:
     return "unavailable", None, [message, *warnings]
 
 
-def inspect_graph(include_raw_schema: bool = False) -> dict[str, Any]:
-    """检视 HugeGraph 服务器状态、schema 摘要、点边计数和 AI 状态。
+def inspect_graph(
+    include_raw_schema: bool = False,
+    include_counts: bool = False,
+) -> dict[str, Any]:
+    """检视 HugeGraph 服务器状态、schema 摘要和 AI 状态。
 
-    这是 Agent 连接后的推荐第一个工具。全部失败信息作为 warnings 包含在 ok 信封中，
-    不会因为某个组件不可用而阻断整体返回。
+    这是 Agent 连接后的推荐第一个工具。默认不执行 g.V().count()/g.E().count()。
+    include_counts=true 时才计数；失败时 vertex_count/edge_count 仍为 null 并附 warning。
+    全部失败信息作为 warnings 包含在 ok 信封中，不会因为某个组件不可用而阻断整体返回。
     """
 
     start = time.time()
@@ -136,7 +140,7 @@ def inspect_graph(include_raw_schema: bool = False) -> dict[str, Any]:
         server_status = "unavailable"
         warnings.append(_warning_from_exception("HugeGraph Server is unavailable", exc))
 
-    if server_status == "available":
+    if include_counts and server_status == "available":
         vertex_count = _run_count_query("g.V().count()", "vertex", warnings)
         edge_count = _run_count_query("g.E().count()", "edge", warnings)
 
@@ -186,7 +190,8 @@ def _run_count_query(query: str, label: str, warnings: list[str]) -> int | None:
 def _next_actions(data: dict[str, Any]) -> list[str]:
     """根据当前状态给出下一步建议，引导 Agent 使用正确的后续工具。"""
     actions = [
-        "Use inspect_graph_tool with include_raw_schema=true for full schema details"
+        "Use inspect_graph_tool with include_raw_schema=true for full schema details",
+        "Use inspect_graph_tool with include_counts=true to fetch vertex/edge counts",
     ]
     if data.get("hugegraph_server_status") == "available":
         actions.append("Use execute_gremlin_read_tool for read-only graph exploration")

@@ -9,7 +9,8 @@ description: Route HugeGraph MCP operational checks to status, schema, permissio
 
 | Goal | Tool |
 | --- | --- |
-| Quick check connection, status, permissions, counts | `inspect_graph_tool(include_raw_schema=false)` |
+| Quick check connection, status, permissions | `inspect_graph_tool(include_raw_schema=false)` |
+| Fetch vertex/edge counts | `inspect_graph_tool(include_counts=true)` |
 | Inspect full schema, primary keys, indexes, edge endpoints | `inspect_graph_tool(include_raw_schema=true)` |
 | Check readonly, graph, or graphspace | `inspect_graph_tool(include_raw_schema=false)` |
 | Verify whether graph data exists | `execute_gremlin_read_tool(gremlin_query)` |
@@ -28,5 +29,5 @@ disabled AI call or an admin-gated tool.
 ```text
 Status check: inspect_graph_tool
 Schema audit: inspect_graph_tool(include_raw_schema=true)
-Data verification: inspect_graph_tool -> execute_gremlin_read_tool
+Data verification: inspect_graph_tool(include_counts=true) -> execute_gremlin_read_tool
 ```

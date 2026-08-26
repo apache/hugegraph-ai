@@ -170,6 +170,10 @@ def test_inspect_graph_tool_adds_contract_fields(monkeypatch):
     assert result["data"]["toolset"] == "v2_core"
     assert result["meta"]["mcp_tool_contract_version"] == "2.0"
     assert result["meta"]["toolset"] == "v2_core"
+    mock.assert_called_once_with(include_raw_schema=False, include_counts=False)
+
+    server.inspect_graph_tool(include_counts=True)
+    mock.assert_called_with(include_raw_schema=False, include_counts=True)
 
 
 def test_execute_gremlin_read_tool_routes_to_execute_gremlin_read(monkeypatch):

@@ -56,6 +56,11 @@ from hugegraph_mcp.tools.graph_data_validate import (
     _validate_mode_operations,
     validate_graph_change_plan,
 )
+from hugegraph_mcp.write_limits import (
+    graph_data_operation_count,
+    operation_count_from_list,
+    write_limit_envelope,
+)
 
 # Only export public entry points; import private helpers from graph_data_* modules.
 __all__ = [
@@ -120,6 +125,19 @@ def manage_graph_data(
             f"Unknown mode: {mode!r}. Use 'import' or 'delete'.",
             details={"mode": mode},
         )
+
+    if mode == "import":
+        limit_error = write_limit_envelope(
+            graph_data_operation_count(graph_data),
+            graph_data,
+        )
+    else:
+        limit_error = write_limit_envelope(
+            operation_count_from_list(_operations(plan)),
+            plan,
+        )
+    if limit_error is not None:
+        return limit_error
 
     if not dry_run and confirm:
         replay_error = replayed_plan_error(nonce)

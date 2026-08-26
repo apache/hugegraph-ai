@@ -2014,6 +2014,55 @@ def test_schema_field_table_rejects_non_object_property_key_user_data(monkeypatc
     )
 
 
+def test_schema_field_table_rejects_non_object_user_data_before_plan_for_all_supported_operations(
+    monkeypatch,
+):
+    cases = [
+        (
+            _empty_schema(),
+            {
+                "type": "create_property_key",
+                "name": "score",
+                "data_type": "INT",
+                "user_data": "invalid",
+            },
+        ),
+        (
+            _empty_schema(),
+            {
+                "type": "create_vertex_label",
+                "name": "person",
+                "id_strategy": "AUTOMATIC",
+                "user_data": ["invalid"],
+            },
+        ),
+        (
+            _schema(vertexlabels=[_live_vertex("person")]),
+            {
+                "type": "create_edge_label",
+                "name": "knows",
+                "source_label": "person",
+                "target_label": "person",
+                "user_data": 1,
+            },
+        ),
+    ]
+
+    for live_schema, operation in cases:
+        monkeypatch.setattr(
+            manage_schema_module.schema_tools,
+            "get_live_schema",
+            lambda live_schema=live_schema: live_schema,
+        )
+        result = manage_schema(mode="dry_run", operations=[operation])
+
+        _assert_dry_run_invalid(result)
+        assert any(
+            error["reason"] == "user_data must be an object"
+            for error in result["data"]["errors"]
+        )
+
+
 def test_schema_field_table_forwards_and_matches_label_options():
     builder = Mock()
     operation = {

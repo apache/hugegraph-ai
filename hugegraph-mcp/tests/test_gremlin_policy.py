@@ -175,6 +175,7 @@ def test_incomplete_or_unexplained_lexical_structure_is_uncertain():
         "g.V().count()/**/42",
         "g.V().count()/* comment */()",
         "g.V(:).count()",
+        "g.V().has('x', :::)",
         "g.V().count(),",
         "g.V().has(,'name')",
         "g.V().has('name', true,)",

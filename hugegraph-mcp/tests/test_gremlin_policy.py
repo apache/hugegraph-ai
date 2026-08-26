@@ -164,10 +164,22 @@ def test_comments_inside_strings_are_not_lexed_as_comments():
 def test_incomplete_or_unexplained_lexical_structure_is_uncertain():
     for query in [
         "g.V().count() /* unterminated",
+        "g.V().count() /* outer /* inner */",
+        "g.V().count(/* outer /* drop() */ */)",
         "g.V().has('name', 'unterminated)",
+        "g.V().has('name', 'line\nbreak')",
         "g.V().count() / stray",
         "g.V().count().",
         "g.V()count()",
+        "g.V()true",
+        "g.V().count()/**/42",
+        "g.V().count()/* comment */()",
+        "g.V(:).count()",
+        "g.V().count(),",
+        "g.V().has(,'name')",
+        "g.V().has('name', true,)",
+        "g.V().has('name', [1:])",
+        "g.V().dr/**/op()",
         "g.V().where(out())",
     ]:
         decision = check_gremlin_read(query)

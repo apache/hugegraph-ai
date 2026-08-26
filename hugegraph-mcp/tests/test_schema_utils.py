@@ -195,6 +195,25 @@ def test_normalized_schema_summary_binds_supported_schema_fields():
     ]
 
 
+def test_normalized_schema_summary_includes_supported_user_data_fields():
+    summary = normalized_schema_summary(
+        {
+            "schema": {
+                "propertykeys": [
+                    {"name": "score", "data_type": "INT", "user_data": {"u": 1}}
+                ],
+                "vertexlabels": [{"name": "person", "user_data": {"owner": "mcp"}}],
+                "edgelabels": [{"name": "knows", "user_data": {"owner": "mcp"}}],
+            }
+        },
+        include_user_data=True,
+    )
+
+    assert summary["propertykeys"][0]["user_data"] == {"u": 1}
+    assert summary["vertexlabels"][0]["user_data"] == {"owner": "mcp"}
+    assert summary["edgelabels"][0]["user_data"] == {"owner": "mcp"}
+
+
 def test_graph_data_validate_does_not_reverse_import_ingest_module():
     source = inspect.getsource(graph_data_validate)
 

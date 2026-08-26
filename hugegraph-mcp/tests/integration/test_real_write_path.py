@@ -127,6 +127,14 @@ def test_apply_schema_forwards_and_verifies_supported_fields(hugegraph_client):
             "enable_label_index": False,
             "user_data": {"owner": "mcp-integration"},
         },
+        {
+            "type": "create_edge_label",
+            "name": f"mcp_schema_edge_{suffix}",
+            "source_label": label_name,
+            "target_label": label_name,
+            "enable_label_index": True,
+            "user_data": {"owner": "mcp-integration-edge"},
+        },
     ]
 
     dry_run = server.apply_schema_tool(mode="dry_run", operations=operations)
@@ -153,9 +161,16 @@ def test_apply_schema_forwards_and_verifies_supported_fields(hugegraph_client):
     vertex_label = next(
         item for item in raw_schema["vertexlabels"] if item.get("name") == label_name
     )
+    edge_label = next(
+        item
+        for item in raw_schema["edgelabels"]
+        if item.get("name") == f"mcp_schema_edge_{suffix}"
+    )
     assert property_key.get("user_data") == {"owner": "mcp-integration"}
     assert vertex_label.get("enable_label_index") is False
     assert vertex_label.get("user_data") == {"owner": "mcp-integration"}
+    assert edge_label.get("enable_label_index") is True
+    assert edge_label.get("user_data") == {"owner": "mcp-integration-edge"}
 
 
 def test_create_edge_rejects_missing_endpoint(hugegraph_client):

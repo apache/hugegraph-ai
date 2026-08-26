@@ -112,6 +112,8 @@ class _GremlinToken:
 
     kind: Literal["identifier", "number", "string", "punctuation", "unknown"]
     value: str
+    start: int = 0
+    end: int = 0
 
 
 @dataclass(frozen=True)
@@ -168,6 +170,10 @@ def _consume_quoted(query: str, start: int) -> int | None:
                 return index + 3
         elif char == quote:
             return index + 1
+        elif char in "\r\n":
+            # Single/double quoted Groovy strings are not multiline; callers
+            # should not let a malformed literal hide code on the next line.
+            return None
         index += 1
 
     return None
@@ -211,6 +217,13 @@ def _lex_gremlin_query(query: str) -> _GremlinLexResult:
                 _append_masked(normalized, query[start:])
                 valid = False
                 break
+            # Groovy block comments are not nestable.  Treat a nested opener
+            # as ambiguous instead of allowing its apparent inner close to
+            # swallow executable tokens (for example ``/* /* */ drop()``).
+            if "/*" in query[index + 2 : end]:
+                _append_masked(normalized, query[start:])
+                valid = False
+                break
             index = end + 2
             _append_masked(normalized, query[start:index])
             continue
@@ -222,7 +235,7 @@ def _lex_gremlin_query(query: str) -> _GremlinLexResult:
                 _append_masked(normalized, query[start:])
                 valid = False
                 break
-            tokens.append(_GremlinToken("string", query[start:end]))
+            tokens.append(_GremlinToken("string", query[start:end], start, end))
             # Keep delimiters in the normalized form for compatibility with
             # cost-warning callers, but never expose literal contents as code.
             delimiter_length = 3 if query.startswith(char * 3, start) else 1
@@ -241,7 +254,7 @@ def _lex_gremlin_query(query: str) -> _GremlinLexResult:
             while index < length and _is_identifier_part(query[index]):
                 index += 1
             value = query[start:index]
-            tokens.append(_GremlinToken("identifier", value))
+            tokens.append(_GremlinToken("identifier", value, start, index))
             normalized.extend(value)
             continue
 
@@ -259,12 +272,12 @@ def _lex_gremlin_query(query: str) -> _GremlinLexResult:
                 else:
                     break
             value = query[start:index]
-            tokens.append(_GremlinToken("number", value))
+            tokens.append(_GremlinToken("number", value, start, index))
             normalized.extend(value)
             continue
 
         if char in _SAFE_PUNCTUATION:
-            tokens.append(_GremlinToken("punctuation", char))
+            tokens.append(_GremlinToken("punctuation", char, index, index + 1))
             normalized.append(char)
             index += 1
             continue
@@ -272,18 +285,113 @@ def _lex_gremlin_query(query: str) -> _GremlinLexResult:
         # Keep operators, interpolation markers, slashy literals, and unicode
         # syntax visible.  The analyzer will reject them as unexplained rather
         # than allowing a failed extraction to become ``safe``.
-        tokens.append(_GremlinToken("unknown", char))
+        tokens.append(_GremlinToken("unknown", char, index, index + 1))
         normalized.append(char)
         index += 1
 
     return _GremlinLexResult(tuple(tokens), valid, "".join(normalized))
 
 
+def _has_invalid_token_adjacency(tokens: tuple[_GremlinToken, ...]) -> bool:
+    """Reject token sequences that cannot be explained by the small grammar.
+
+    The scanner deliberately does not parse Groovy expressions.  It must still
+    avoid treating a literal left behind after a traversal (for example
+    ``g.V()true``) as an innocuous argument.  Checking delimiter/value
+    boundaries closes that fail-open gap while preserving ordinary traversal
+    arguments, lists, and maps.
+    """
+
+    closers = set(_CLOSE_TO_OPEN)
+    value_kinds = {"identifier", "number", "string"}
+    stack: list[str] = []
+    for index in range(1, len(tokens)):
+        previous = tokens[index - 1]
+        current = tokens[index]
+        previous_value = previous.value
+        current_value = current.value
+
+        # A completed expression may continue only as a traversal member,
+        # an enclosing delimiter, or a comma-separated outer argument.
+        if previous_value in closers and current_value not in {
+            ".",
+            ",",
+            ")",
+            "]",
+            "}",
+        }:
+            return True
+
+        # Adjacent values (including a value followed by a new call/index
+        # delimiter) indicate a missing comma/operator.  Operators are kept
+        # out of the safe punctuation set, so they remain uncertain elsewhere.
+        if (
+            (
+                previous.kind in {"number", "string"}
+                and (current.kind in value_kinds or current_value in {"(", "[", "{"})
+            )
+            or (previous.kind == "identifier" and current.kind in value_kinds)
+            or (
+                previous.kind == "identifier"
+                and previous.value.lower() in _ALLOWED_ARG_TOKENS
+                and current_value in {"(", "[", "{"}
+            )
+        ):
+            return True
+        if previous.kind == "identifier" and current.kind == "identifier":
+            return True
+
+        # Commas and map colons only have meaning inside an argument/list/map
+        # delimiter.  A separator cannot start or end a value; rejecting these
+        # malformed boundaries prevents punctuation-only residual source from
+        # being mistaken for a valid literal expression.
+        if current_value == ",":
+            if not stack or previous_value in {"(", "[", "{", ",", ":"}:
+                return True
+            if index + 1 >= len(tokens) or tokens[index + 1].value in {
+                ",",
+                ":",
+                ")",
+                "]",
+                "}",
+            }:
+                return True
+        if current_value == ":":
+            if not stack or stack[-1] != "[":
+                return True
+            # ``[:]`` is the one empty-map form in this small grammar.  Any
+            # other separator with no key/value on one side is malformed.
+            if previous_value in {",", ":", "(", "{"}:
+                return True
+            if index + 1 >= len(tokens):
+                return True
+            next_value = tokens[index + 1].value
+            if previous_value == "[":
+                return next_value != "]"
+            if next_value in {",", ":", ")", "}", "]"}:
+                return True
+
+        # Keep unary/binary minus conservative: a minus must have a numeric
+        # operand in this small literal grammar.  Other operators are already
+        # represented as unknown tokens and therefore fail closed.
+        if current_value == "-":
+            next_index = index + 1
+            if next_index >= len(tokens) or tokens[next_index].kind != "number":
+                return True
+
+        if current_value in _OPEN_TO_CLOSE:
+            stack.append(current_value)
+        elif current_value in closers and stack:
+            stack.pop()
+
+    return False
+
+
 def _analyze_tokens(lexed: _GremlinLexResult) -> _GremlinTokenAnalysis:
     tokens = lexed.tokens
     methods: list[str] = []
     has_write_method = False
-    uncertain = not lexed.valid or not tokens
+    uncertain = not lexed.valid or not tokens or _has_invalid_token_adjacency(tokens)
     stack: list[str] = []
 
     for index, token in enumerate(tokens):

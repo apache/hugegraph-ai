@@ -1538,7 +1538,7 @@ def test_manage_schema_plan_hash_schema_label_index_change_different_hash():
     assert first != second
 
 
-def test_manage_schema_plan_hash_schema_metadata_ignored_same_hash():
+def test_manage_schema_plan_hash_changes_when_supported_user_data_changes():
     operations = [_property_key()]
     schema = _schema(
         propertykeys=[{"name": "name", "data_type": "TEXT"}],
@@ -1562,6 +1562,33 @@ def test_manage_schema_plan_hash_schema_metadata_ignored_same_hash():
                 "properties": ["name"],
                 "primary_keys": ["name"],
                 "user_data": {"x": "y"},
+            }
+        ],
+    )
+    schema_with_metadata["server_time"] = "2026-05-26T00:00:00Z"
+
+    first = manage_schema_module.calculate_plan_hash(operations, schema)
+    second = manage_schema_module.calculate_plan_hash(operations, schema_with_metadata)
+
+    assert first != second
+
+
+def test_manage_schema_plan_hash_ignores_unrelated_schema_metadata():
+    operations = [_property_key()]
+    schema = _schema(
+        propertykeys=[{"name": "name", "data_type": "TEXT"}],
+        vertexlabels=[
+            {"name": "person", "properties": ["name"], "primary_keys": ["name"]}
+        ],
+    )
+    schema_with_metadata = _schema(
+        propertykeys=[{"id": 1, "name": "name", "data_type": "TEXT"}],
+        vertexlabels=[
+            {
+                "id": 99,
+                "name": "person",
+                "properties": ["name"],
+                "primary_keys": ["name"],
             }
         ],
     )
@@ -1963,6 +1990,30 @@ def test_schema_field_table_rejects_unimplemented_fields_before_dry_run(monkeypa
     )
 
 
+def test_schema_field_table_rejects_non_object_property_key_user_data(monkeypatch):
+    monkeypatch.setattr(
+        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
+    )
+
+    result = manage_schema(
+        mode="dry_run",
+        operations=[
+            {
+                "type": "create_property_key",
+                "name": "score",
+                "data_type": "INT",
+                "user_data": "silently-dropped",
+            }
+        ],
+    )
+
+    _assert_dry_run_invalid(result)
+    assert any(
+        error["reason"] == "user_data must be an object"
+        for error in result["data"]["errors"]
+    )
+
+
 def test_schema_field_table_forwards_and_matches_label_options():
     builder = Mock()
     operation = {
@@ -2060,6 +2111,88 @@ def test_schema_field_table_forwards_property_key_user_data():
         ]
     )
     assert manage_schema_module._operation_observed(operation, observed)
+
+
+def test_schema_field_table_post_read_rejects_supported_field_loss():
+    cases = [
+        (
+            {
+                "type": "create_property_key",
+                "name": "score",
+                "data_type": "INT",
+                "user_data": {"unit": "points"},
+            },
+            _schema(
+                propertykeys=[
+                    {
+                        "name": "score",
+                        "data_type": "INT",
+                        "cardinality": "SINGLE",
+                        "user_data": {},
+                    }
+                ]
+            ),
+        ),
+        (
+            {
+                "type": "create_vertex_label",
+                "name": "person",
+                "id_strategy": "AUTOMATIC",
+                "enable_label_index": True,
+                "user_data": {"owner": "mcp"},
+            },
+            _schema(
+                vertexlabels=[
+                    {
+                        "name": "person",
+                        "id_strategy": "AUTOMATIC",
+                        "enable_label_index": False,
+                        "user_data": {"owner": "mcp"},
+                    }
+                ]
+            ),
+        ),
+        (
+            {
+                "type": "create_edge_label",
+                "name": "knows",
+                "source_label": "person",
+                "target_label": "person",
+                "enable_label_index": True,
+                "user_data": {"owner": "mcp"},
+            },
+            _schema(
+                edgelabels=[
+                    {
+                        "name": "knows",
+                        "source_label": "person",
+                        "target_label": "person",
+                        "enable_label_index": True,
+                        "user_data": {},
+                    }
+                ]
+            ),
+        ),
+        (
+            {
+                "type": "create_vertex_label",
+                "name": "person",
+                "id_strategy": "AUTOMATIC",
+                "properties": [],
+            },
+            _schema(
+                vertexlabels=[
+                    {
+                        "name": "person",
+                        "id_strategy": "AUTOMATIC",
+                    }
+                ]
+            ),
+        ),
+    ]
+
+    for operation, observed in cases:
+        assert not manage_schema_module._operation_observed(operation, observed)
 
 
 def test_schema_field_table_forwards_property_key_aggregate_and_user_data():

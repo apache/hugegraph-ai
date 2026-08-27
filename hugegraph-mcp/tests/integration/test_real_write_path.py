@@ -173,11 +173,17 @@ def test_apply_schema_forwards_and_verifies_supported_fields(hugegraph_client):
         for item in raw_schema["edgelabels"]
         if item.get("name") == f"mcp_schema_edge_{suffix}"
     )
-    assert property_key.get("user_data") == {"owner": "mcp-integration"}
+    assert _user_data_without_server_metadata(property_key.get("user_data")) == {
+        "owner": "mcp-integration"
+    }
     assert vertex_label.get("enable_label_index") is False
-    assert vertex_label.get("user_data") == {"owner": "mcp-integration"}
+    assert _user_data_without_server_metadata(vertex_label.get("user_data")) == {
+        "owner": "mcp-integration"
+    }
     assert edge_label.get("enable_label_index") is True
-    assert edge_label.get("user_data") == {"owner": "mcp-integration-edge"}
+    assert _user_data_without_server_metadata(edge_label.get("user_data")) == {
+        "owner": "mcp-integration-edge"
+    }
 
 
 def test_create_edge_rejects_missing_endpoint(hugegraph_client):
@@ -909,6 +915,16 @@ def _extract_count(data):
     if isinstance(data, list):
         return _extract_count(data[0]) if data else 0
     return data
+
+
+def _user_data_without_server_metadata(value):
+    if not isinstance(value, dict):
+        return None
+    return {
+        key: item
+        for key, item in value.items()
+        if not (isinstance(key, str) and key.startswith("~"))
+    }
 
 
 def _env(name: str, default: str | None = None) -> str | None:

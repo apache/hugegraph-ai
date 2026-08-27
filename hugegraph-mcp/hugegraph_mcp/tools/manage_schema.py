@@ -49,7 +49,11 @@ from hugegraph_mcp.tools.schema_contract import (
     field_specs_for_operation,
     schema_collection_for_operation,
 )
-from hugegraph_mcp.tools.schema_utils import normalized_schema_summary, schema_payload
+from hugegraph_mcp.tools.schema_utils import (
+    normalized_schema_summary,
+    schema_payload,
+    user_data_without_server_metadata,
+)
 from hugegraph_mcp.write_limits import (
     collect_write_limit_errors,
     operation_count_from_list,
@@ -1645,7 +1649,12 @@ def _mapping_field_matches(
     # HugeGraph may omit an empty optional user_data object in its response.
     if actual is None and expected == {}:
         return True
-    return isinstance(actual, dict) and actual == expected
+    if not isinstance(actual, dict) or not isinstance(expected, dict):
+        return False
+    # HugeGraph adds reserved ``~...`` metadata (for example
+    # ``~create_time``).  Compare only caller-controlled user data so a
+    # successful create is not reported as a partial apply.
+    return user_data_without_server_metadata(actual) == expected
 
 
 def _scalar_field_matches(

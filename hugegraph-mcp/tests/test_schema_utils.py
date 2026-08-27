@@ -200,7 +200,11 @@ def test_normalized_schema_summary_includes_supported_user_data_fields():
         {
             "schema": {
                 "propertykeys": [
-                    {"name": "score", "data_type": "INT", "user_data": {"u": 1}}
+                    {
+                        "name": "score",
+                        "data_type": "INT",
+                        "user_data": {"u": 1, "~create_time": "server-value"},
+                    }
                 ],
                 "vertexlabels": [{"name": "person", "user_data": {"owner": "mcp"}}],
                 "edgelabels": [{"name": "knows", "user_data": {"owner": "mcp"}}],

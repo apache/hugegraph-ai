@@ -28,6 +28,7 @@ __all__ = [
     "property_names",
     "schema_name",
     "schema_payload",
+    "user_data_without_server_metadata",
 ]
 
 
@@ -98,6 +99,22 @@ def schema_payload(live_schema: dict[str, Any] | None) -> dict[str, Any] | None:
     else:
         raw = live_schema
     return raw if isinstance(raw, dict) else None
+
+
+def user_data_without_server_metadata(value: Any) -> dict[Any, Any] | None:
+    """Remove HugeGraph's reserved metadata keys from user-data mappings.
+
+    HugeGraph adds keys such as ``~create_time`` when a schema object is
+    created.  Those keys describe the server-side object and are not part of
+    the caller's requested user data.
+    """
+    if not isinstance(value, dict):
+        return None
+    return {
+        key: item
+        for key, item in value.items()
+        if not (isinstance(key, str) and key.startswith("~"))
+    }
 
 
 def edge_schema_endpoint_label(edge_schema: dict[str, Any], endpoint: str) -> Any:
@@ -178,6 +195,8 @@ def _normalize_schema_items(
                 continue
             if output_name in list_fields:
                 value = _normalize_named_list(value)
+            elif output_name == "user_data":
+                value = user_data_without_server_metadata(value)
             result[output_name] = value
         normalized.append(result)
 

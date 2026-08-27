@@ -2244,6 +2244,30 @@ def test_schema_field_table_post_read_rejects_supported_field_loss():
         assert not manage_schema_module._operation_observed(operation, observed)
 
 
+def test_schema_field_table_post_read_ignores_server_managed_user_data():
+    operation = {
+        "type": "create_property_key",
+        "name": "score",
+        "data_type": "INT",
+        "user_data": {"unit": "points"},
+    }
+    observed = _schema(
+        propertykeys=[
+            {
+                "name": "score",
+                "data_type": "INT",
+                "cardinality": "SINGLE",
+                "user_data": {
+                    "unit": "points",
+                    "~create_time": "2026-08-27 03:00:00.000",
+                },
+            }
+        ]
+    )
+
+    assert manage_schema_module._operation_observed(operation, observed)
+
+
 def test_schema_field_table_forwards_property_key_aggregate_and_user_data():
     builder = Mock()
     operation = {

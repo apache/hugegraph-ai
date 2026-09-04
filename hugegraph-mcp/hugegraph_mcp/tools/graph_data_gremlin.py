@@ -107,11 +107,9 @@ def _create_vertex_query(operation: dict[str, Any]) -> str:
 
 
 def _create_edge_query(operation: dict[str, Any]) -> str:
-    source_label = operation.get("source_label") or operation.get("outVLabel")
-    target_label = operation.get("target_label") or operation.get("inVLabel")
     query = (
-        f"g.V().hasLabel({_g(source_label)}){_has_steps(operation['source_match'])}.as('s')"
-        f".V().hasLabel({_g(target_label)}){_has_steps(operation['target_match'])}"
+        f"g.V({_g(operation['source_id'])}).as('s')"
+        f".V({_g(operation['target_id'])})"
         f".addE({_g(operation['label'])}).from('s')"
     )
     for prop, value in (operation.get("properties") or {}).items():
@@ -120,11 +118,26 @@ def _create_edge_query(operation: dict[str, Any]) -> str:
 
 
 def _delete_vertex_query(operation: dict[str, Any]) -> str:
-    return f"{_vertex_match_query(operation)}.drop()"
+    query = _delete_target_query(operation)
+    if operation.get("cascade", False) is False:
+        # The no-incident-edge precondition and drop execute in one Gremlin
+        # request instead of a client-side check-then-act sequence.
+        query += ".not(bothE())"
+    return f"{query}.drop()"
 
 
 def _delete_edge_query(operation: dict[str, Any]) -> str:
-    return f"{_edge_match_query(operation)}.drop()"
+    return f"{_delete_target_query(operation)}.drop()"
+
+
+def _delete_target_query(operation: dict[str, Any]) -> str:
+    op = str(operation.get("op") or operation.get("type"))
+    target_id = operation["target_id"]
+    if op == "delete_vertex":
+        return f"g.V({_g(target_id)})"
+    if op == "delete_edge":
+        return f"g.E({_g(target_id)})"
+    raise ValueError(f"Unsupported delete op: {op}")
 
 
 def _write_query(operation: dict[str, Any]) -> str:

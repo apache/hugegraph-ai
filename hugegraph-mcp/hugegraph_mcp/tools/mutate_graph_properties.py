@@ -18,20 +18,20 @@ from uuid import uuid4
 
 from pyhugegraph.client import PyHugeClient
 
+from hugegraph_mcp.backend_capabilities import (
+    BackendFeature,
+    CapabilityEvidence,
+    profile_for,
+)
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
-    issue_plan,
     mark_readonly_preview,
-    plan_hash_error,
-    replayed_plan_error,
-    verify_and_consume_plan,
 )
 from hugegraph_mcp.envelope import (
     ErrorType,
     envelope_err,
     envelope_ok,
-    sanitize_for_response,
 )
 from hugegraph_mcp.error_mapping import classify_hugegraph_exception
 from hugegraph_mcp.guard import Capability, guard
@@ -42,12 +42,14 @@ from hugegraph_mcp.plan_hash import (
     compute_plan_hash,
 )
 from hugegraph_mcp.tools.live_schema import current_live_schema
+from hugegraph_mcp.tools.property_validation import property_specs, property_value_error
 from hugegraph_mcp.tools.schema_utils import (
     normalized_schema_summary,
     property_cardinalities,
     property_names,
     schema_payload,
 )
+from hugegraph_mcp.write_plan import ApplyStatus, PlanStatus, aggregate_plan_status
 
 TARGETS = frozenset({"vertex", "edge"})
 OPERATIONS = frozenset({"append", "eliminate"})
@@ -80,8 +82,9 @@ def mutate_graph_properties(
 
     The dry-run reads live schema and the target object, validates property keys
     against the target label, previews before/after state, and binds a target
-    snapshot digest into plan_hash. Confirm re-reads schema and target; if either
-    changed, it returns TARGET_CHANGED or PLAN_HASH_MISMATCH before writing.
+    snapshot digest into plan_hash. Applying a confirmed mutation is disabled
+    until HugeGraph exposes a backend-enforced conditional property update. The
+    current append/eliminate REST endpoints cannot provide atomic compare-and-set.
     """
 
     validation_error = _validate_inputs(
@@ -92,11 +95,6 @@ def mutate_graph_properties(
     )
     if validation_error is not None:
         return validation_error
-
-    if not dry_run and confirm:
-        replay_error = replayed_plan_error(nonce, source="mutate_graph_properties_tool")
-        if replay_error is not None:
-            return replay_error
 
     live_schema, target_item, read_error = _read_schema_and_target(target=target, id=id)
     if read_error is not None:
@@ -144,15 +142,20 @@ def mutate_graph_properties(
         "after": preview["after"],
         "plan_hash": plan_hash_value,
         "plan_context": _plan_context_payload(plan_context),
-        "status": "planned",
-        "confirmable": True,
+        "status": PlanStatus.ISSUED.value,
+        "confirmable": False,
+        "cas_request": {
+            "target_type": target,
+            "target_id": id,
+            "expected_properties": preview["before"].get("properties", {}),
+            "desired_properties": preview["after"].get("properties", {}),
+            "operation_id": f"property-cas:{plan_hash_value[:24]}",
+        },
     }
 
     if dry_run:
-        warnings: list[str] = []
-        next_actions = [
-            "Review before/after, then call mutate_graph_properties_tool with dry_run=false, confirm=true, plan_hash, nonce, and expires_at.",
-        ]
+        warnings = ["Preview only: HugeGraph does not expose an atomic conditional property update."]
+        next_actions = ["Enable confirmation only after the backend provides compare-and-set for property replacement."]
         if MCPConfig.from_env().is_readonly():
             payload, warnings, next_actions = mark_readonly_preview(
                 payload,
@@ -162,10 +165,6 @@ def mutate_graph_properties(
                 ),
                 next_action="Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm.",
             )
-        else:
-            issue_error = issue_plan(plan_context, plan_hash_value)
-            if issue_error is not None:
-                return issue_error
         return envelope_ok(payload, warnings=warnings, next_actions=next_actions)
 
     violation = guard(Capability.DATA_WRITE)
@@ -176,62 +175,38 @@ def mutate_graph_properties(
         return confirm_required_error(
             message="Property mutations require confirm=True after dry_run.",
             suggestion=(
-                "Run dry_run=True, review the preview, then pass confirm=True "
-                "with plan_hash, nonce, and expires_at."
+                "Run dry_run=True, review the preview, then pass confirm=True with plan_hash, nonce, and expires_at."
             ),
             source="mutate_graph_properties_tool",
         )
 
-    expected_snapshot = _snapshot_from_nonce(nonce)
-    if (
-        expected_snapshot is not None
-        and expected_snapshot != preview["target_snapshot_digest"][:16]
-    ):
-        return envelope_err(
-            ErrorType.TARGET_CHANGED,
-            "Target changed since dry_run; property mutation was not applied.",
-            suggestion="Run dry_run=True again and review the new before/after preview.",
-            source="mutate_graph_properties_tool",
-            details={
-                "expected_target_snapshot_digest_prefix": expected_snapshot,
-                "current_target_snapshot_digest": preview["target_snapshot_digest"],
-            },
-            next_actions=["Call query_graph_data_tool to inspect the current target."],
-        )
-
-    valid, error_type, details = verify_and_consume_plan(
-        submitted_hash=plan_hash,
-        tool_name="mutate_graph_properties_tool",
-        mode="mutate",
-        payload_digest=_payload_digest(target, operation, id, properties),
-        schema_hash=_schema_hash(live_schema),
-        nonce=nonce,
-        expires_at=expires_at,
-        extra_context={
+    evidence = _property_cas_evidence()
+    return envelope_err(
+        ErrorType.FEATURE_DISABLED,
+        "Confirmed property mutation is disabled because HugeGraph does not expose atomic compare-and-set updates.",
+        suggestion=(
+            "Add a backend-enforced conditional property replacement API that compares "
+            "the expected state and writes the desired state in one atomic operation."
+        ),
+        source="mutate_graph_properties_tool",
+        details={
             "target": target,
-            "operation": operation,
-            "target_snapshot_digest": preview["target_snapshot_digest"],
+            "id": id,
+            "status": aggregate_plan_status([ApplyStatus.REJECTED]).value,
+            "required_capability": "conditional_property_compare_and_set",
+            "backend_capability": BackendFeature.PROPERTY_COMPARE_AND_SET.value,
+            "capability_status": evidence.status.value,
+            "capability_evidence": evidence.reason,
+            "write_attempted": False,
         },
+        next_actions=["Keep this plan as a preview; do not retry confirmation until backend CAS is available."],
     )
-    if not valid:
-        return plan_hash_error(
-            error_type=error_type,
-            details=details,
-            mismatch_message="Provided plan_hash does not match the current property mutation plan.",
-            suggestion="Run dry_run=True again and use the returned plan_hash.",
-            source="mutate_graph_properties_tool",
-        )
 
-    return _execute_and_verify(
-        target=target,
-        operation=operation,
-        id=id,
-        properties=properties,
-        before=target_item,
-        planned_after=preview["after"],
-        cardinalities=cardinalities,
-        payload=payload,
-    )
+
+def _property_cas_evidence() -> CapabilityEvidence:
+    """Return the locked capability evidence for the supported deployment."""
+
+    return profile_for("1.7.0", "rocksdb").evidence_for(BackendFeature.PROPERTY_COMPARE_AND_SET)
 
 
 def _validate_inputs(
@@ -282,7 +257,7 @@ def _read_schema_and_target(
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
     try:
         live_schema = current_live_schema()
-    except Exception as exc:  # noqa: BLE001 - return structured schema error
+    except Exception as exc:  # noqa: BLE001 - normalize external schema failure
         return (
             None,
             None,
@@ -298,10 +273,8 @@ def _read_schema_and_target(
 
     try:
         manager = _graph_manager()
-        raw_item = (
-            manager.getVertexById(id) if target == "vertex" else manager.getEdgeById(id)
-        )
-    except Exception as exc:  # noqa: BLE001 - classify client failure
+        raw_item = manager.getVertexById(id) if target == "vertex" else manager.getEdgeById(id)
+    except Exception as exc:  # noqa: BLE001 - normalize external graph failure
         classification = classify_hugegraph_exception(exc)
         return (
             live_schema,
@@ -383,14 +356,32 @@ def _validate_properties_against_schema(
             details={"label": label, "unknown_properties": unknown},
         )
     if operation == "append":
+        specs = property_specs(live_schema or {})
         for name, value in properties.items():
-            cardinality = cardinalities.get(name, "SINGLE")
-            if cardinality in {"LIST", "SET"} and not isinstance(value, list):
+            spec = specs.get(name)
+            value_error = property_value_error(
+                item_kind=target,
+                item_index=0,
+                property_name=name,
+                value=value,
+                spec=spec,
+            )
+            if value_error is not None:
+                data_type, cardinality = spec or (
+                    None,
+                    cardinalities.get(name, "SINGLE"),
+                )
+                suggestion = (
+                    f"Pass a JSON array whose elements match {data_type} for {cardinality} property {name!r}."
+                    if cardinality in {"LIST", "SET"}
+                    else f"Pass a value matching HugeGraph data type {data_type}."
+                )
                 return _validation_error(
-                    f"Property {name!r} requires a collection value for append.",
-                    f"Pass a JSON array for {cardinality} property {name!r}.",
+                    value_error,
+                    suggestion,
                     {
                         "property": name,
+                        "data_type": data_type,
                         "cardinality": cardinality,
                         "value_type": type(value).__name__,
                     },
@@ -442,159 +433,13 @@ def _apply_property_preview(
             if cardinality == "LIST":
                 after[name] = [*_existing_collection(after.get(name)), *value]
             elif cardinality == "SET":
-                after[name] = _stable_unique(
-                    [*_existing_collection(after.get(name)), *value]
-                )
+                after[name] = _stable_unique([*_existing_collection(after.get(name)), *value])
             else:
                 after[name] = value
         return after
     for key in properties:
         after.pop(key, None)
     return after
-
-
-def _execute_and_verify(
-    *,
-    target: str,
-    operation: str,
-    id: Any,
-    properties: dict[str, Any],
-    before: dict[str, Any],
-    planned_after: dict[str, Any],
-    cardinalities: dict[str, str],
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    try:
-        manager = _graph_manager()
-        if target == "vertex":
-            raw_result = (
-                manager.appendVertex(id, properties)
-                if operation == "append"
-                else manager.eliminateVertex(id, properties)
-            )
-        else:
-            raw_result = (
-                manager.appendEdge(id, properties)
-                if operation == "append"
-                else manager.eliminateEdge(id, properties)
-            )
-    except Exception as exc:  # noqa: BLE001 - classify client failure
-        classification = classify_hugegraph_exception(exc)
-        return envelope_err(
-            classification.error_type,
-            f"Property mutation execution failed: {exc!s}",
-            suggestion=classification.suggestion,
-            retryable=classification.retryable,
-            source="mutate_graph_properties_tool",
-            details={
-                "stage": "mutation_execute",
-                "error": str(exc),
-                "target": target,
-                "id": id,
-                "reason": classification.reason,
-            },
-        )
-
-    raw_result_item = _plain_item(raw_result)
-    if raw_result_item is None:
-        raw_result_item = planned_after
-
-    try:
-        manager = _graph_manager()
-        post_read = (
-            _plain_item(manager.getVertexById(id))
-            if target == "vertex"
-            else _plain_item(manager.getEdgeById(id))
-        )
-    except Exception as exc:  # noqa: BLE001 - classify client failure
-        return _post_write_verification_error(
-            message="Mutation returned from HugeGraph, but post-read verification failed.",
-            details={
-                "stage": "post_write_verification",
-                "status": "unknown",
-                "target": target,
-                "id": id,
-                "before": before,
-                "planned_after": planned_after,
-                "operation_result": raw_result_item,
-                "post_read_error": sanitize_for_response(str(exc)),
-            },
-            warnings=[
-                "Mutation returned from HugeGraph, but post-read verification failed."
-            ],
-            next_actions=["Call query_graph_data_tool to verify the target state."],
-        )
-
-    if post_read is None:
-        return _post_write_verification_error(
-            message="Mutation returned from HugeGraph, but the target was not found on post-read.",
-            details={
-                "stage": "post_write_verification",
-                "status": "unknown",
-                "target": target,
-                "id": id,
-                "before": before,
-                "planned_after": planned_after,
-                "operation_result": raw_result_item,
-                "post_read": None,
-            },
-            warnings=[
-                "Mutation returned from HugeGraph, but the target was not found on post-read."
-            ],
-            next_actions=[
-                "Call query_graph_data_tool to verify whether the target still exists."
-            ],
-        )
-
-    if not _properties_match(post_read, planned_after, cardinalities):
-        return _post_write_verification_error(
-            message="Post-read state did not match the planned preview.",
-            details={
-                "stage": "post_write_verification",
-                "status": "unknown",
-                "target": target,
-                "id": id,
-                "before": before,
-                "planned_after": planned_after,
-                "operation_result": raw_result_item,
-                "post_read": post_read,
-            },
-            warnings=["Post-read state did not match the planned preview."],
-            next_actions=["Call query_graph_data_tool to inspect the target state."],
-        )
-
-    result_payload = dict(payload)
-    result_payload.update(
-        {
-            "status": "applied",
-            "before": before,
-            "after": post_read,
-            "operation_result": raw_result_item,
-        }
-    )
-    return envelope_ok(
-        result_payload,
-        warnings=[],
-        next_actions=["Call query_graph_data_tool to inspect the updated target."],
-    )
-
-
-def _post_write_verification_error(
-    *,
-    message: str,
-    details: dict[str, Any],
-    warnings: list[str],
-    next_actions: list[str],
-) -> dict[str, Any]:
-    return envelope_err(
-        ErrorType.PARTIAL_APPLY,
-        message,
-        suggestion="Inspect the target state before retrying or issuing another write.",
-        source="mutate_graph_properties_tool",
-        details=details,
-        warnings=warnings,
-        next_actions=next_actions,
-    )
 
 
 def _build_mutation_plan_context(
@@ -627,16 +472,6 @@ def _nonce_with_snapshot(nonce: str | None, snapshot_digest: str) -> str:
     if "|ts:" in base:
         return base
     return f"{base}|ts:{snapshot_digest[:16]}"
-
-
-def _snapshot_from_nonce(nonce: str | None) -> str | None:
-    if nonce is None:
-        return None
-    marker = "|ts:"
-    value = str(nonce)
-    if marker not in value:
-        return None
-    return value.rsplit(marker, 1)[1] or None
 
 
 def _payload_digest(
@@ -681,25 +516,6 @@ def _find_label_schema(labels: Any, label_name: str) -> dict[str, Any] | None:
     return None
 
 
-def _properties_match(
-    post_read: dict[str, Any],
-    planned_after: dict[str, Any],
-    cardinalities: dict[str, str],
-) -> bool:
-    observed = post_read.get("properties") or {}
-    expected = planned_after.get("properties") or {}
-    if observed.keys() != expected.keys():
-        return False
-    for name, expected_value in expected.items():
-        observed_value = observed[name]
-        if cardinalities.get(name, "SINGLE") == "SET":
-            if not _set_values_match(observed_value, expected_value):
-                return False
-        elif observed_value != expected_value:
-            return False
-    return True
-
-
 def _existing_collection(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -712,17 +528,6 @@ def _stable_unique(values: list[Any]) -> list[Any]:
         if not any(existing == value for existing in result):
             result.append(value)
     return result
-
-
-def _set_values_match(observed: Any, expected: Any) -> bool:
-    if not isinstance(observed, list) or not isinstance(expected, list):
-        return observed == expected
-    observed_unique = _stable_unique(observed)
-    expected_unique = _stable_unique(expected)
-    return len(observed_unique) == len(expected_unique) and all(
-        any(observed_value == expected_value for observed_value in observed_unique)
-        for expected_value in expected_unique
-    )
 
 
 def _plain_item(item: Any) -> dict[str, Any] | None:

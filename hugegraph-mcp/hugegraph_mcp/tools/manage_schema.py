@@ -30,6 +30,7 @@ from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
     issue_plan,
     plan_hash_error,
+    record_write_outcome,
     replayed_plan_error,
     verify_and_consume_plan,
 )
@@ -42,6 +43,7 @@ from hugegraph_mcp.plan_hash import (
     compute_payload_digest,
     compute_plan_hash,
 )
+from hugegraph_mcp.plan_store import plan_store_from_config
 from hugegraph_mcp.tools.live_schema import current_live_schema
 from hugegraph_mcp.tools.schema_contract import (
     SUPPORTED_FIELDS,
@@ -54,11 +56,13 @@ from hugegraph_mcp.tools.schema_utils import (
     schema_payload,
     user_data_without_server_metadata,
 )
+from hugegraph_mcp.tools.schema_write_adapter import compile_schema_write_plan
 from hugegraph_mcp.write_limits import (
     collect_write_limit_errors,
     operation_count_from_list,
     write_limit_envelope,
 )
+from hugegraph_mcp.write_plan import ApplyReceipt, ApplyStatus, PlanStatus
 
 ALLOWED_OPERATION_TYPES = frozenset(
     {
@@ -90,9 +94,7 @@ IDENTIFIER_FIELDS = {
     "create_index_label": ("name", "base_label"),
 }
 
-UNSUPPORTED_EDGE_LABEL_FIELDS = frozenset(
-    {"parent_label", "parentLabel", "edgelabel_type", "edgeLabelType"}
-)
+UNSUPPORTED_EDGE_LABEL_FIELDS = frozenset({"parent_label", "parentLabel", "edgelabel_type", "edgeLabelType"})
 
 PROPERTY_KEY_DATA_TYPES = frozenset(
     {
@@ -111,12 +113,8 @@ PROPERTY_KEY_DATA_TYPES = frozenset(
     }
 )
 PROPERTY_KEY_CARDINALITIES = frozenset({"SINGLE", "SET", "LIST"})
-PROPERTY_KEY_AGGREGATE_TYPES = frozenset(
-    {"NONE", "OLD", "SUM", "MIN", "MAX", "SET", "LIST"}
-)
-VERTEX_LABEL_ID_STRATEGIES = frozenset(
-    {"PRIMARY_KEY", "CUSTOMIZE_STRING", "CUSTOMIZE_NUMBER", "AUTOMATIC"}
-)
+PROPERTY_KEY_AGGREGATE_TYPES = frozenset({"NONE", "OLD", "SUM", "MIN", "MAX", "SET", "LIST"})
+VERTEX_LABEL_ID_STRATEGIES = frozenset({"PRIMARY_KEY", "CUSTOMIZE_STRING", "CUSTOMIZE_NUMBER", "AUTOMATIC"})
 EDGE_LABEL_FREQUENCIES = frozenset({"SINGLE", "MULTIPLE"})
 
 PROPERTY_KEY_DATA_TYPE_METHODS = {
@@ -212,10 +210,7 @@ def _validate_supported_fields(
     unknown = [
         field
         for field in operation
-        if field not in supported
-        and not (
-            op_type == "create_edge_label" and field in UNSUPPORTED_EDGE_LABEL_FIELDS
-        )
+        if field not in supported and not (op_type == "create_edge_label" and field in UNSUPPORTED_EDGE_LABEL_FIELDS)
     ]
     if not unknown:
         return
@@ -275,9 +270,7 @@ def _validate_index_labels_field(
     if "index_labels" not in operation:
         return
     values = operation["index_labels"]
-    if not isinstance(values, list) or any(
-        not isinstance(value, str) or not value for value in values
-    ):
+    if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
         errors.append(
             _validation_error(
                 idx,
@@ -294,8 +287,7 @@ def _validate_index_labels_field(
             _validation_error(
                 idx,
                 operation,
-                "index_labels contains duplicate name(s): "
-                + ", ".join(duplicate_names),
+                "index_labels contains duplicate name(s): " + ", ".join(duplicate_names),
                 "Remove duplicate index label names from index_labels.",
             )
         )
@@ -364,10 +356,7 @@ def _collect_planned_creates(
                     idx,
                     operation,
                     f"duplicate {op_type} name {name} within the same batch",
-                    (
-                        f"Define each {create_type_to_label[op_type]} only once "
-                        "per schema operation batch."
-                    ),
+                    (f"Define each {create_type_to_label[op_type]} only once per schema operation batch."),
                 )
             )
             continue
@@ -579,14 +568,8 @@ def _validate_property_key_aggregate_cardinality(
         _validation_error(
             idx,
             operation,
-            (
-                f"aggregate_type {aggregate_type!r} is not allowed with "
-                f"cardinality {cardinality!r}"
-            ),
-            (
-                f"Use cardinality in {sorted(allowed_cardinalities)} for "
-                f"aggregate_type {aggregate_type!r}."
-            ),
+            (f"aggregate_type {aggregate_type!r} is not allowed with cardinality {cardinality!r}"),
+            (f"Use cardinality in {sorted(allowed_cardinalities)} for aggregate_type {aggregate_type!r}."),
         )
     )
 
@@ -682,8 +665,7 @@ def _validate_vertex_primary_keys(
             _validation_error(
                 idx,
                 operation,
-                "primary_keys must be included in properties: "
-                + ", ".join(missing_from_properties),
+                "primary_keys must be included in properties: " + ", ".join(missing_from_properties),
                 "Add each primary key to properties before using it as a primary key.",
             )
         )
@@ -694,8 +676,7 @@ def _validate_vertex_primary_keys(
             _validation_error(
                 idx,
                 operation,
-                "primary_keys references undefined property key(s): "
-                + ", ".join(missing_property_keys),
+                "primary_keys references undefined property key(s): " + ", ".join(missing_property_keys),
                 "Create these property keys first and rerun validation after they exist in the live schema.",
             )
         )
@@ -726,9 +707,7 @@ def _validation_warnings(operations: list[dict[str, Any]]) -> list[str]:
             and id_strategy != "PRIMARY_KEY"
             and not operation.get("primary_keys")
         ):
-            warnings.append(
-                f"operation {idx} (create_vertex_label) has no primary_keys definition"
-            )
+            warnings.append(f"operation {idx} (create_vertex_label) has no primary_keys definition")
     return warnings
 
 
@@ -843,16 +822,11 @@ def validate_schema_operations(
                         f"Add {field} to the {op_type} operation.",
                     )
                 )
-        if any(
-            field not in operation or operation[field] in (None, "")
-            for field in REQUIRED_FIELDS[op_type]
-        ):
+        if any(field not in operation or operation[field] in (None, "") for field in REQUIRED_FIELDS[op_type]):
             continue
 
         identifier_ok = all(
-            _validate_identifier_field(
-                idx=idx, operation=operation, field=field, errors=errors
-            )
+            _validate_identifier_field(idx=idx, operation=operation, field=field, errors=errors)
             for field in IDENTIFIER_FIELDS.get(op_type, ())
         )
         if not identifier_ok:
@@ -954,22 +928,14 @@ def validate_schema_operations(
                         "Use a new edge label name or remove this create_edge_label operation.",
                     )
                 )
-            unsupported_fields = sorted(
-                field for field in UNSUPPORTED_EDGE_LABEL_FIELDS if field in operation
-            )
+            unsupported_fields = sorted(field for field in UNSUPPORTED_EDGE_LABEL_FIELDS if field in operation)
             if unsupported_fields:
                 errors.append(
                     _validation_error(
                         idx,
                         operation,
-                        (
-                            "unsupported parent/sub edge label field(s): "
-                            f"{', '.join(unsupported_fields)}"
-                        ),
-                        (
-                            "Parent/sub edge labels are not supported by manage_schema; "
-                            "remove these fields."
-                        ),
+                        (f"unsupported parent/sub edge label field(s): {', '.join(unsupported_fields)}"),
+                        ("Parent/sub edge labels are not supported by manage_schema; remove these fields."),
                     )
                 )
             for field in ("source_label", "target_label"):
@@ -1062,15 +1028,9 @@ def validate_schema_operations(
                 errors=errors,
             )
 
-        if (
-            op_type == "create_property_key"
-            and name in planned_creates["property_keys"]
-        ):
+        if op_type == "create_property_key" and name in planned_creates["property_keys"]:
             available_property_keys.add(name)
-        elif (
-            op_type == "create_vertex_label"
-            and name in planned_creates["vertex_labels"]
-        ):
+        elif op_type == "create_vertex_label" and name in planned_creates["vertex_labels"]:
             available_vertex_labels.add(name)
         elif op_type == "create_edge_label" and name in planned_creates["edge_labels"]:
             available_edge_labels.add(name)
@@ -1112,9 +1072,7 @@ def _build_schema_plan_context(
     return context
 
 
-def calculate_plan_hash(
-    operations: list[dict[str, Any]], live_schema: dict[str, Any] | None = None
-) -> str:
+def calculate_plan_hash(operations: list[dict[str, Any]], live_schema: dict[str, Any] | None = None) -> str:
     """Compatibility wrapper backed by the unified target-bound PlanContext."""
 
     return compute_plan_hash(
@@ -1138,9 +1096,7 @@ def _plan_context_payload(plan_context: PlanContext) -> dict[str, Any]:
     }
 
 
-def _risk_warnings(
-    operations: list[dict[str, Any]], live_schema: dict[str, Any] | None = None
-) -> list[str]:
+def _risk_warnings(operations: list[dict[str, Any]], live_schema: dict[str, Any] | None = None) -> list[str]:
     warnings: list[str] = []
     live_schema = current_live_schema(live_schema)
     property_keys = _schema_items(live_schema, "propertykeys")
@@ -1152,9 +1108,7 @@ def _risk_warnings(
     created_vertex_labels = planned_creates["vertex_labels"]
     created_edge_labels = planned_creates["edge_labels"]
     indexed_labels = {
-        op.get("base_label")
-        for op in operations
-        if op.get("type") == "create_index_label" and op.get("base_label")
+        op.get("base_label") for op in operations if op.get("type") == "create_index_label" and op.get("base_label")
     }
 
     for operation in operations:
@@ -1218,10 +1172,7 @@ def _safe_fetch_live_schema() -> tuple[dict[str, Any] | None, dict[str, Any] | N
         return None, envelope_err(
             ErrorType.CONNECTION_FAILED,
             "Cannot read live schema from HugeGraph Server for schema validation.",
-            suggestion=(
-                "Ensure HugeGraph Server is running and credentials/graphspace are "
-                "correct, then retry."
-            ),
+            suggestion=("Ensure HugeGraph Server is running and credentials/graphspace are correct, then retry."),
             retryable=True,
             details={"stage": "schema_fetch", "error": str(exc)},
         )
@@ -1246,6 +1197,19 @@ def dry_run_schema_operations(
     validation = validate_schema_operations(operations, live_schema)
     if not validation["valid"]:
         return validation
+    if len(operations) != 1:
+        return {
+            "valid": False,
+            "errors": [
+                _validation_error(
+                    -1,
+                    operations,
+                    "a confirmable schema plan must contain exactly one create operation",
+                    "Create and confirm one schema object per plan.",
+                )
+            ],
+            "warnings": validation.get("warnings", []),
+        }
     apply_scope_errors = _validate_apply_scope(operations)
     if apply_scope_errors:
         return {
@@ -1266,8 +1230,7 @@ def dry_run_schema_operations(
         "plan_context": _plan_context_payload(plan_context),
         "confirmable": True,
         "mutation_summary": _mutation_summary(operations),
-        "warnings": validation.get("warnings", [])
-        + _risk_warnings(operations, live_schema),
+        "warnings": validation.get("warnings", []) + _risk_warnings(operations, live_schema),
     }
 
 
@@ -1284,8 +1247,11 @@ def _design_from_operations(operations: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _schema_manager():
+    cfg = MCPConfig.from_env()
     return build_hugegraph_client(
-        MCPConfig.from_env(), client_cls=PyHugeClient
+        cfg,
+        client_cls=PyHugeClient,
+        request_timeout_seconds=cfg.write_timeout_seconds,
     ).schema()
 
 
@@ -1295,58 +1261,89 @@ def apply_schema_operations(
     live_schema: dict[str, Any],
     stop_on_first_error: bool = True,
 ) -> dict[str, Any]:
-    """Apply P0a create operations and verify each operation by post-read schema."""
+    """Apply exactly one schema create and report ambiguous outcomes explicitly."""
 
-    manager = _schema_manager()
-    applied_operations: list[dict[str, Any]] = []
-    operation_results: list[dict[str, Any]] = []
+    if len(operations) != 1:
+        raise ValueError("A schema apply plan must contain exactly one operation")
 
-    for idx, operation in enumerate(operations):
-        try:
-            _apply_one_operation(manager, operation)
-            observed_schema = current_live_schema()
-        except Exception as exc:  # noqa: BLE001 - preserve partial-apply result
-            return _partial_apply_result(
-                operations=operations,
-                applied_operations=applied_operations,
-                operation_results=operation_results,
-                failed_operation=operation,
-                failed_operation_index=idx,
-                error=str(exc),
-            )
+    operation = operations[0]
+    existing_state, existing_object = _schema_object_state(operation, live_schema)
+    if existing_state == "identical":
+        return ApplyReceipt(
+            status=ApplyStatus.ALREADY_APPLIED,
+            operation=operation,
+            observed_state=existing_object,
+            reconciliation_required=False,
+        ).to_dict()
+    if existing_state == "conflict":
+        return ApplyReceipt(
+            status=ApplyStatus.CONFLICT,
+            operation=operation,
+            observed_state=existing_object,
+            reason="a different schema object already exists with the confirmed name",
+            reconciliation_required=False,
+        ).to_dict()
 
-        if not _operation_observed(operation, observed_schema):
-            failed = _partial_apply_result(
-                operations=operations,
-                applied_operations=applied_operations,
-                operation_results=operation_results,
-                failed_operation=operation,
-                failed_operation_index=idx,
-                error="post-read schema did not contain the created object",
-            )
-            if stop_on_first_error:
-                return failed
+    failure_stage = "schema create"
+    try:
+        # Client/manager construction belongs to the write attempt: once a
+        # confirmation has been consumed, any failure through verification
+        # must yield a durable, reconcilable outcome instead of escaping and
+        # leaving the plan indefinitely EXECUTING.
+        manager = _schema_manager()
+        _apply_one_operation(manager, operation)
+        failure_stage = "post-read schema"
+        observed_schema = current_live_schema()
+    except Exception as exc:  # noqa: BLE001 - request may already have committed
+        return ApplyReceipt(
+            status=ApplyStatus.UNKNOWN,
+            operation=operation,
+            reason=f"{failure_stage} failed: {exc}",
+            reconciliation_required=True,
+        ).to_dict()
 
-        applied_operations.append(operation)
-        operation_results.append(
-            {
-                "operation_index": idx,
-                "operation": operation,
-                "status": "applied",
-            }
-        )
-        live_schema = observed_schema
+    observed_state, observed_object = _schema_object_state(operation, observed_schema)
+    if observed_state == "conflict":
+        return ApplyReceipt(
+            status=ApplyStatus.CONFLICT,
+            operation=operation,
+            observed_state=observed_object,
+            reason="post-read found a different schema object with the confirmed name",
+            reconciliation_required=False,
+        ).to_dict()
+    if observed_state != "identical":
+        return ApplyReceipt(
+            status=ApplyStatus.UNKNOWN,
+            operation=operation,
+            observed_state=normalized_schema_summary(observed_schema, include_user_data=True),
+            reason="post-read schema did not match the confirmed object",
+            reconciliation_required=True,
+        ).to_dict()
 
-    return {
-        "status": "applied",
-        "valid": True,
-        "applied_operations": applied_operations,
-        "operation_results": operation_results,
-        "mutation_summary": _mutation_summary(applied_operations),
-        "schema_summary": normalized_schema_summary(
-            live_schema, include_user_data=True
-        ),
-    }
+    receipt = ApplyReceipt(
+        status=ApplyStatus.APPLIED,
+        operation=operation,
+        observed_state=observed_object,
+        reconciliation_required=False,
+    ).to_dict()
+    # Preserve the existing public success fields for one compatibility cycle;
+    # their status is sourced exclusively from the canonical receipt.
+    receipt.update(
+        {
+            "valid": True,
+            "applied_operations": operations,
+            "operation_results": [
+                {
+                    "operation_index": 0,
+                    "operation": operation,
+                    "status": receipt["status"],
+                }
+            ],
+            "mutation_summary": _mutation_summary(operations),
+            "schema_summary": normalized_schema_summary(observed_schema, include_user_data=True),
+        }
+    )
+    return receipt
 
 
 def _apply_one_operation(manager, operation: dict[str, Any]) -> None:
@@ -1354,9 +1351,7 @@ def _apply_one_operation(manager, operation: dict[str, Any]) -> None:
     field_specs = field_specs_for_operation(op_type)
     apply_fields = apply_fields_for_operation(op_type)
     if not field_specs or any(field not in apply_fields for field in operation):
-        raise ValueError(
-            f"Unsupported or non-forwardable schema field(s) for {op_type}"
-        )
+        raise ValueError(f"Unsupported or non-forwardable schema field(s) for {op_type}")
     if op_type == "create_property_key":
         builder = manager.propertyKey(operation["name"])
         _apply_property_key_options(builder, operation)
@@ -1401,9 +1396,7 @@ def _apply_property_key_options(builder, operation: dict[str, Any]) -> None:
         else:
             method_name = PROPERTY_KEY_AGGREGATE_METHODS.get(normalized)
             if method_name is None:
-                raise ValueError(
-                    f"Unsupported property key aggregate_type: {aggregate_type}"
-                )
+                raise ValueError(f"Unsupported property key aggregate_type: {aggregate_type}")
             getattr(builder, method_name)()
 
     _forward_parameter_fields(
@@ -1426,9 +1419,7 @@ def _set_builder_parameter(
         raise ValueError(f"Unsupported {op_type} field: {field}")
     setter = getattr(builder, "add_parameter", None)
     if not callable(setter):
-        raise TypeError(
-            f"Schema builder cannot forward supported {op_type} field: {field}"
-        )
+        raise TypeError(f"Schema builder cannot forward supported {op_type} field: {field}")
     setter(field, value)
 
 
@@ -1442,11 +1433,7 @@ def _forward_parameter_fields(
     """Forward every table-declared parameter field present in an operation."""
 
     for field, spec in field_specs_for_operation(op_type).items():
-        if (
-            field in operation
-            and field not in exclude
-            and spec.apply_mode == "parameter"
-        ):
+        if field in operation and field not in exclude and spec.apply_mode == "parameter":
             _set_builder_parameter(builder, op_type, field, operation[field])
 
 
@@ -1466,10 +1453,7 @@ def _apply_vertex_label_options(builder, operation: dict[str, Any]) -> None:
     if "enable_label_index" in operation:
         method = getattr(builder, "enableLabelIndex", None)
         if not callable(method):
-            raise ValueError(
-                "Schema builder cannot forward supported create_vertex_label field: "
-                "enable_label_index"
-            )
+            raise ValueError("Schema builder cannot forward supported create_vertex_label field: enable_label_index")
         method(operation["enable_label_index"])
     _forward_parameter_fields(builder, "create_vertex_label", operation)
 
@@ -1493,10 +1477,7 @@ def _apply_edge_label_options(builder, operation: dict[str, Any]) -> None:
     if "enable_label_index" in operation:
         method = getattr(builder, "enableLabelIndex", None)
         if not callable(method):
-            raise ValueError(
-                "Schema builder cannot forward supported create_edge_label field: "
-                "enable_label_index"
-            )
+            raise ValueError("Schema builder cannot forward supported create_edge_label field: enable_label_index")
         method(operation["enable_label_index"])
     _forward_parameter_fields(builder, "create_edge_label", operation)
 
@@ -1505,14 +1486,22 @@ def _operation_observed(
     operation: dict[str, Any],
     live_schema: dict[str, Any] | None,
 ) -> bool:
-    schema = (
-        (live_schema or {}).get("schema") if isinstance(live_schema, dict) else None
-    )
+    state, _ = _schema_object_state(operation, live_schema)
+    return state == "identical"
+
+
+def _schema_object_state(
+    operation: dict[str, Any],
+    live_schema: dict[str, Any] | None,
+) -> tuple[str, dict[str, Any] | None]:
+    """Classify a schema object's name-bound state for create/reconcile."""
+
+    schema = (live_schema or {}).get("schema") if isinstance(live_schema, dict) else None
     if not isinstance(schema, dict):
         schema = live_schema if isinstance(live_schema, dict) else {}
     collection = schema_collection_for_operation(_operation_type(operation))
     if collection is None:
-        return False
+        return "missing", None
 
     name_spec = field_specs_for_operation(_operation_type(operation)).get("name")
     observed = _find_schema_item(
@@ -1522,8 +1511,10 @@ def _operation_observed(
         name_aliases=name_spec.aliases if name_spec else ("name",),
     )
     if observed is None:
-        return False
-    return _operation_fields_match(operation, observed)
+        return "missing", None
+    if _operation_fields_match(operation, observed):
+        return "identical", observed
+    return "conflict", observed
 
 
 def _find_schema_item(
@@ -1615,9 +1606,7 @@ def _enum_field_matches(
     )
     if observed_value is None:
         return False
-    return _canonical_enum_value(field, observed_value) == _canonical_enum_value(
-        field, str(expected).upper()
-    )
+    return _canonical_enum_value(field, observed_value) == _canonical_enum_value(field, str(expected).upper())
 
 
 def _string_field_matches(
@@ -1628,10 +1617,7 @@ def _string_field_matches(
 ) -> bool:
     if field not in operation:
         return True
-    return (
-        _field_value(observed, *(aliases or (field, _camel_case_schema_field(field))))
-        == operation[field]
-    )
+    return _field_value(observed, *(aliases or (field, _camel_case_schema_field(field)))) == operation[field]
 
 
 def _mapping_field_matches(
@@ -1643,9 +1629,7 @@ def _mapping_field_matches(
     if field not in operation:
         return True
     expected = operation[field]
-    actual = _field_value(
-        observed, *(aliases or (field, _camel_case_schema_field(field), "userdata"))
-    )
+    actual = _field_value(observed, *(aliases or (field, _camel_case_schema_field(field), "userdata")))
     # HugeGraph may omit an empty optional user_data object in its response.
     if actual is None and expected == {}:
         return True
@@ -1665,10 +1649,7 @@ def _scalar_field_matches(
 ) -> bool:
     if field not in operation:
         return True
-    return (
-        _field_value(observed, *(aliases or (field, _camel_case_schema_field(field))))
-        == operation[field]
-    )
+    return _field_value(observed, *(aliases or (field, _camel_case_schema_field(field)))) == operation[field]
 
 
 def _camel_case_schema_field(field: str) -> str:
@@ -1690,9 +1671,7 @@ def _supported_field_matches(
     if spec.kind == "enum":
         default = None
         default = spec.default
-        return _enum_field_matches(
-            observed, operation, field, default=default, aliases=aliases
-        )
+        return _enum_field_matches(observed, operation, field, default=default, aliases=aliases)
     if spec.kind == "list":
         return _list_field_matches(observed, operation, field, aliases)
     if spec.kind == "mapping":
@@ -1705,9 +1684,7 @@ def _supported_field_matches(
     return field in {"type", "name"}
 
 
-def _operation_fields_match(
-    operation: dict[str, Any], observed: dict[str, Any]
-) -> bool:
+def _operation_fields_match(operation: dict[str, Any], observed: dict[str, Any]) -> bool:
     op_type = _operation_type(operation)
     if op_type not in SUPPORTED_FIELDS:
         return False
@@ -1719,56 +1696,15 @@ def _operation_fields_match(
         return False
 
     fields = {
-        field
-        for field in field_specs_for_operation(op_type)
-        if field in operation and field not in {"type", "name"}
+        field for field in field_specs_for_operation(op_type) if field in operation and field not in {"type", "name"}
     }
     # These options have always had an apply-time default. Keep checking the
     # effective value even when the caller omitted the optional field.
     for field, spec in field_specs_for_operation(op_type).items():
-        if (
-            field not in {"type", "name"}
-            and field not in operation
-            and spec.default is not None
-        ):
+        if field not in {"type", "name"} and field not in operation and spec.default is not None:
             fields.add(field)
 
-    return all(
-        _supported_field_matches(op_type, field, operation, observed)
-        for field in fields
-    )
-
-
-def _partial_apply_result(
-    *,
-    operations: list[dict[str, Any]],
-    applied_operations: list[dict[str, Any]],
-    operation_results: list[dict[str, Any]],
-    failed_operation: dict[str, Any],
-    failed_operation_index: int,
-    error: str,
-) -> dict[str, Any]:
-    remaining_operations = operations[failed_operation_index:]
-    return {
-        "status": "partial" if applied_operations else "failed",
-        "valid": False,
-        "applied_operations": applied_operations,
-        "operation_results": operation_results,
-        "failed_operation": failed_operation,
-        "failed_operation_index": failed_operation_index,
-        "error": error,
-        "remaining_operations": remaining_operations,
-        "recovery_suggestions": _recovery_suggestions(),
-        "mutation_summary": _mutation_summary(applied_operations),
-    }
-
-
-def _recovery_suggestions() -> list[str]:
-    return [
-        "Call inspect_schema_tool to observe the current schema state.",
-        "Remove already-applied operations and dry-run the remaining operations again.",
-        "Do not retry the original full batch without checking which operations were applied.",
-    ]
+    return all(_supported_field_matches(op_type, field, operation, observed) for field in fields)
 
 
 def manage_schema(
@@ -1831,6 +1767,23 @@ def manage_schema(
             issue_error = issue_plan(plan_context, result["plan_hash"])
             if issue_error is not None:
                 return issue_error
+            try:
+                canonical_plan = compile_schema_write_plan(
+                    operations[0],
+                    plan_context=plan_context,
+                    live_schema=live_schema,
+                )
+                plan_store_from_config().save_plan(canonical_plan)
+            except Exception as exc:  # noqa: BLE001 - fail closed at persistence boundary
+                return envelope_err(
+                    ErrorType.SERVER_ERROR,
+                    "The schema create plan could not be persisted safely.",
+                    retryable=False,
+                    details={"reason": type(exc).__name__},
+                )
+            result["plan_id"] = canonical_plan.plan_id
+            result["status"] = canonical_plan.status.value
+            result["expires_at"] = canonical_plan.expires_at
         if result.get("valid") and MCPConfig.from_env().is_readonly():
             result["confirmable"] = False
             result["readonly_preview_only"] = True
@@ -1843,15 +1796,22 @@ def manage_schema(
                         "Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirming writes."
                     )
                 ],
-                next_actions=[
-                    "Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm."
-                ],
+                next_actions=["Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm."],
             )
         return envelope_ok(
             result,
-            next_actions=[
-                "Review schema preview, then call apply_schema_tool(mode='apply', confirm=true, plan_hash, nonce, expires_at)."
-            ]
+            warnings=list(result.get("warnings", []))
+            + (
+                [
+                    (
+                        "LEGACY_CONFIRMATION_DEPRECATED: use plan_id with confirm_write_tool; "
+                        "plan_hash, nonce, and expires_at will be removed after one release."
+                    )
+                ]
+                if result.get("valid") and result.get("plan_id")
+                else []
+            ),
+            next_actions=["Review schema preview, then call confirm_write_tool with plan_id."]
             if result.get("valid")
             else ["Fix validation errors and rerun apply_schema_tool(mode='dry_run')."],
         )
@@ -1871,9 +1831,7 @@ def manage_schema(
                 "Schema operations are not valid for P0a apply.",
                 details={"errors": dry_run_result.get("errors", [])},
                 warnings=dry_run_result.get("warnings", []),
-                next_actions=[
-                    "Fix validation errors and rerun apply_schema_tool(mode='dry_run')."
-                ],
+                next_actions=["Fix validation errors and rerun apply_schema_tool(mode='dry_run')."],
             )
         violation = guard(Capability.SCHEMA_WRITE)
         if violation is not None:
@@ -1882,8 +1840,7 @@ def manage_schema(
             return confirm_required_error(
                 message="Schema apply requires confirm=True after dry_run.",
                 suggestion=(
-                    "Run mode='dry_run', review the plan, then pass confirm=True "
-                    "with plan_hash, nonce, and expires_at."
+                    "Run mode='dry_run', review the plan, then pass confirm=True with plan_hash, nonce, and expires_at."
                 ),
             )
         valid, error_type, details = verify_and_consume_plan(
@@ -1904,15 +1861,76 @@ def manage_schema(
             )
 
         apply_result = apply_schema_operations(operations, live_schema=live_schema)
-        if apply_result.get("status") in {"failed", "partial"}:
+        try:
+            result_status = ApplyStatus(apply_result["status"])
+        except (KeyError, TypeError, ValueError) as exc:
+            apply_result = ApplyReceipt(
+                status=ApplyStatus.UNKNOWN,
+                operation=operations[0],
+                reason=f"schema executor returned a non-canonical receipt: {exc}",
+                reconciliation_required=True,
+            ).to_dict()
+            result_status = ApplyStatus.UNKNOWN
+        if result_status is ApplyStatus.UNKNOWN:
+            record_write_outcome(
+                plan_hash=plan_hash,
+                status=PlanStatus.UNKNOWN,
+                receipt=apply_result,
+            )
             return envelope_err(
-                ErrorType.PARTIAL_APPLY,
-                "Schema apply did not complete all operations.",
+                ErrorType.WRITE_OUTCOME_UNKNOWN,
+                "The schema create may have committed; reconcile before retrying.",
+                suggestion="Inspect the schema and compare it with the confirmed operation before issuing another write.",
+                retryable=False,
                 details=apply_result,
-                next_actions=apply_result.get("recovery_suggestions", []),
+                next_actions=["Call inspect_schema_tool and reconcile the confirmed schema object."],
+            )
+        if result_status is ApplyStatus.CONFLICT:
+            if not record_write_outcome(
+                plan_hash=plan_hash,
+                status=PlanStatus.CONFLICT,
+                receipt=apply_result,
+            ):
+                return envelope_err(
+                    ErrorType.WRITE_OUTCOME_UNKNOWN,
+                    "The schema conflict was observed, but its durable receipt could not be recorded.",
+                    retryable=False,
+                    details={
+                        "status": ApplyStatus.UNKNOWN.value,
+                        "reconciliation_required": True,
+                    },
+                )
+            return envelope_err(
+                ErrorType.WRITE_CONFLICT,
+                "A different schema object exists with the confirmed name.",
+                retryable=False,
+                details=apply_result,
+            )
+        persisted_status = (
+            PlanStatus.ALREADY_APPLIED if result_status is ApplyStatus.ALREADY_APPLIED else PlanStatus.APPLIED
+        )
+        if not record_write_outcome(
+            plan_hash=plan_hash,
+            status=persisted_status,
+            receipt=apply_result,
+        ):
+            return envelope_err(
+                ErrorType.WRITE_OUTCOME_UNKNOWN,
+                "The schema create completed, but its durable receipt could not be recorded.",
+                retryable=False,
+                details={
+                    "status": ApplyStatus.UNKNOWN.value,
+                    "reconciliation_required": True,
+                },
             )
         return envelope_ok(
             apply_result,
+            warnings=[
+                (
+                    "LEGACY_CONFIRMATION_DEPRECATED: use plan_id with confirm_write_tool; "
+                    "plan_hash, nonce, and expires_at will be removed after one release."
+                )
+            ],
             next_actions=["Call inspect_schema_tool to verify the applied schema."],
         )
 

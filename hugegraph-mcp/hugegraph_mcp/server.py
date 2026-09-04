@@ -18,92 +18,45 @@ server.py 只负责参数校验和 mode 分发，具体业务逻辑委托给 too
 """
 
 import logging
-import logging.handlers
 import os
 import time
 from typing import Any
 
-# ---- Startup patch: prevent module-level pyhugegraph logging from writing files. ----
-# pyhugegraph creates a RotatingFileHandler under 'logs/' during import. In MCP
-# stdio mode this would corrupt the JSON protocol stream, so intercept makedirs
-# and RotatingFileHandler.
+from fastmcp import FastMCP
 
-_original_makedirs = os.makedirs
-
-
-def _safe_makedirs(name, mode=0o777, exist_ok=False):
-    if _is_logs_dir(name):
-        return None
-    return _original_makedirs(name, mode, exist_ok)
-
-
-def _is_logs_dir(name) -> bool:
-    try:
-        path = os.fspath(name)
-    except TypeError:
-        return False
-    return os.path.basename(os.path.normpath(path)).lower() == "logs"
-
-
-_OriginalRotatingFileHandler = logging.handlers.RotatingFileHandler
-
-
-class _NoOpFileHandler(logging.NullHandler):
-    """无操作日志处理器 — 用于禁用文件日志记录。"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-
-
-def _patched_rotating_handler(filename, *args, **kwargs):
-    if _is_logs_file(filename):
-        return _NoOpFileHandler()
-    return _OriginalRotatingFileHandler(filename, *args, **kwargs)
-
-
-def _is_logs_file(filename) -> bool:
-    try:
-        path = os.path.normpath(os.fspath(filename))
-    except TypeError:
-        return False
-    return any(part.lower() == "logs" for part in path.split(os.sep))
-
-
-logging.handlers.RotatingFileHandler = _patched_rotating_handler
-
-os.makedirs = _safe_makedirs
-
-try:
-    # ---- Safely import pyhugegraph-dependent modules within the patch scope. ----
-    from fastmcp import FastMCP
-
-    from hugegraph_mcp.config import MCPConfig
-    from hugegraph_mcp.envelope import ErrorType, envelope_err
-    from hugegraph_mcp.gremlin_tools import execute_gremlin_read, execute_gremlin_write
-    from hugegraph_mcp.guard import Capability
-    from hugegraph_mcp.tools.extract_graph_data import extract_graph_data
-    from hugegraph_mcp.tools.generate_gremlin import generate_gremlin
-    from hugegraph_mcp.tools.inspect_graph import inspect_graph
-    from hugegraph_mcp.tools.inspect_schema import inspect_schema
-    from hugegraph_mcp.tools.manage_graph_data import manage_graph_data
-    from hugegraph_mcp.tools.manage_schema import manage_schema
-    from hugegraph_mcp.tools.mutate_graph_properties import mutate_graph_properties
-    from hugegraph_mcp.tools.query_graph_data import query_graph_data
-    from hugegraph_mcp.tools.refresh_vid_embeddings import refresh_vid_embeddings
-finally:
-    os.makedirs = _original_makedirs
-    logging.handlers.RotatingFileHandler = _OriginalRotatingFileHandler
+from hugegraph_mcp.backend_capabilities import BackendFeature, profile_for
+from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.envelope import ErrorType, envelope_err
+from hugegraph_mcp.gremlin_tools import execute_gremlin_read, execute_gremlin_write
+from hugegraph_mcp.guard import Capability
+from hugegraph_mcp.reconciler import reconcile_write
+from hugegraph_mcp.tools.extract_graph_data import extract_graph_data
+from hugegraph_mcp.tools.generate_gremlin import generate_gremlin
+from hugegraph_mcp.tools.inspect_graph import inspect_graph
+from hugegraph_mcp.tools.inspect_schema import inspect_schema
+from hugegraph_mcp.tools.manage_graph_data import manage_graph_data
+from hugegraph_mcp.tools.manage_schema import manage_schema
+from hugegraph_mcp.tools.mutate_graph_properties import mutate_graph_properties
+from hugegraph_mcp.tools.query_graph_data import query_graph_data
+from hugegraph_mcp.tools.refresh_vid_embeddings import refresh_vid_embeddings
+from hugegraph_mcp.write_contract import resolve_optional_legacy_locator
+from hugegraph_mcp.write_executor import confirm_write, get_write_status
 
 READONLY = MCPConfig.from_env().is_readonly()
 MCP_TOOL_CONTRACT_VERSION = "2.0"
 DEFAULT_TOOLSET = "v2_core"
+VALID_TOOLSETS = frozenset({"v1", DEFAULT_TOOLSET})
+LOGGER = logging.getLogger("hugegraph_mcp.server")
 
 mcp = FastMCP("HugeGraph MCP")
 
 
 def _active_toolset() -> str:
     value = os.getenv("HUGEGRAPH_MCP_TOOLSET", DEFAULT_TOOLSET).strip()
-    return "v1" if value == "v1" else DEFAULT_TOOLSET
+    if value in VALID_TOOLSETS:
+        return value
+    LOGGER.error("Invalid HUGEGRAPH_MCP_TOOLSET value %r; falling back to v1", value)
+    return "v1"
 
 
 def _register_v2_core_tool(func):
@@ -151,6 +104,47 @@ def _call_public_tool(tool_name: str, func, *args, **kwargs) -> dict[str, Any]:
     )
 
 
+def _call_legacy_write_tool(
+    tool_name: str,
+    func,
+    *args,
+    plan_hash: str | None,
+    nonce: str | None,
+    expires_at: float | None,
+    **kwargs,
+) -> dict[str, Any]:
+    """Validate the deprecated locator before delegating to a write workflow."""
+
+    start = time.perf_counter()
+    resolution, error = resolve_optional_legacy_locator(
+        plan_hash=plan_hash,
+        nonce=nonce,
+        expires_at=expires_at,
+    )
+    if error is not None:
+        return _align_public_tool_envelope(
+            error,
+            tool_name=tool_name,
+            duration_ms=(time.perf_counter() - start) * 1000.0,
+        )
+
+    result = _call_public_tool(
+        tool_name,
+        func,
+        *args,
+        plan_hash=plan_hash,
+        nonce=nonce,
+        expires_at=expires_at,
+        **kwargs,
+    )
+    if resolution is not None:
+        result["warnings"] = [
+            *(result.get("warnings") or []),
+            *resolution.warnings,
+        ]
+    return result
+
+
 def _is_admin_mode_enabled() -> bool:
     return MCPConfig.from_env().admin_mode
 
@@ -164,10 +158,7 @@ def _admin_gate(tool_name: str, *, requires_write: bool = False) -> dict | None:
         if requires_write:
             enable_env["readonly"] = "HUGEGRAPH_MCP_READONLY"
             required_env["HUGEGRAPH_MCP_READONLY"] = "false"
-            suggestion = (
-                f"Set HUGEGRAPH_MCP_ADMIN_MODE=true and HUGEGRAPH_MCP_READONLY=false "
-                f"to enable {tool_name}."
-            )
+            suggestion = f"Set HUGEGRAPH_MCP_ADMIN_MODE=true and HUGEGRAPH_MCP_READONLY=false to enable {tool_name}."
         return envelope_err(
             ErrorType.FEATURE_DISABLED,
             f"{tool_name} is an admin/debug tool and is disabled by default.",
@@ -202,6 +193,45 @@ def _admin_gate(tool_name: str, *, requires_write: bool = False) -> dict | None:
     return None
 
 
+_RAW_GREMLIN_HARD_BUDGET_FEATURES = (
+    BackendFeature.READONLY_PRINCIPAL,
+    BackendFeature.GREMLIN_EVALUATION_TIMEOUT,
+    BackendFeature.REST_GREMLIN_WAIT_TIMEOUT,
+    BackendFeature.GREMLIN_RESULT_ITEM_LIMIT,
+    BackendFeature.HTTP_STREAMING_RESPONSE_LIMIT,
+)
+
+
+def _raw_gremlin_hard_budget_gate(tool_name: str) -> dict | None:
+    """Fail closed until the complete raw-query safety contract is verified.
+
+    The only evidence-backed deployment profile currently supported by this
+    package lacks both a general server result cap and a streaming client byte
+    cap. Post-materialization output guards cannot substitute for either.
+    """
+    profile = profile_for("1.7.0", "rocksdb")
+    evidence = {
+        feature.value: {
+            "status": profile.status_for(feature).value,
+            "reason": profile.evidence_for(feature).reason,
+        }
+        for feature in _RAW_GREMLIN_HARD_BUDGET_FEATURES
+    }
+    return envelope_err(
+        ErrorType.FEATURE_DISABLED,
+        f"{tool_name} is disabled because the raw Gremlin hard-budget contract is incomplete.",
+        suggestion="Use structured MCP query tools; generating Gremlin with execute=false remains available.",
+        source=tool_name,
+        details={
+            "tool": tool_name,
+            "required_capabilities": evidence,
+            "integration_contract_verified": False,
+            "post_materialization_limits_are_hard_budgets": False,
+        },
+        duration_ms=0.0,
+    )
+
+
 # ========== Tool 1: inspect graph status and schema ==========
 
 
@@ -231,6 +261,36 @@ def inspect_graph_tool(
     meta["toolset"] = _active_toolset()
     result["meta"] = meta
     return result
+
+
+@_register_v2_core_tool
+def get_write_status_tool(plan_id: str) -> dict:
+    """Return the durable plan, operation, and receipt outcome by plan_id."""
+    return _call_public_tool(
+        "get_write_status_tool",
+        get_write_status,
+        plan_id=plan_id,
+    )
+
+
+@_register_v2_core_tool
+def confirm_write_tool(plan_id: str) -> dict:
+    """Confirm exactly one immutable server-persisted plan by plan_id only."""
+    return _call_public_tool(
+        "confirm_write_tool",
+        confirm_write,
+        plan_id=plan_id,
+    )
+
+
+@_register_v2_core_tool
+def reconcile_write_tool(plan_id: str) -> dict:
+    """Reconcile an UNKNOWN or PARTIAL plan by plan_id using read-only checks."""
+    return _call_public_tool(
+        "reconcile_write_tool",
+        reconcile_write,
+        plan_id=plan_id,
+    )
 
 
 @_register_v2_core_tool
@@ -309,15 +369,21 @@ def generate_gremlin_tool(
     query: str,
     execute: bool = False,
     output_types: list[str] | None = None,
-    limit_policy: str = "warn",
+    limit_policy: str = "reject_unbounded",
 ) -> dict:
-    """V1 稳定工具：自然语言 → Gremlin 生成。
+    """Generate Gremlin without executing it. Capability: GENERATE.
 
-    默认不执行（execute=false），返回生成的 Gremlin 查询。
-    设置 execute=true 可执行生成的只读 Gremlin。Capability: GENERATE.
-    limit_policy 仅在 execute=true 时传给只读执行：warn、reject_unbounded、
-    auto_append。auto_append 会返回 original_gremlin/executed_gremlin/rewrite_reason。
+    Every public raw Gremlin execution path is disabled until the hard resource
+    budget contract is verified, so execute=true currently returns
+    FEATURE_DISABLED. limit_policy remains as a compatibility parameter.
     """
+    if execute:
+        blocked = _raw_gremlin_hard_budget_gate("generate_gremlin_tool(execute=true)")
+        if blocked:
+            return blocked
+        blocked = _admin_gate("generate_gremlin_tool(execute=true)")
+        if blocked:
+            return blocked
     return _call_public_tool(
         "generate_gremlin_tool",
         generate_gremlin,
@@ -329,17 +395,19 @@ def generate_gremlin_tool(
 
 
 @mcp.tool()
-def execute_gremlin_read_tool(gremlin_query: str, limit_policy: str = "warn") -> dict:
-    """V1 稳定工具：执行只读 Gremlin 遍历查询。
+def execute_gremlin_read_tool(gremlin_query: str, limit_policy: str = "reject_unbounded") -> dict:
+    """Registered compatibility tool; raw read execution is currently disabled.
 
-    Capability: READ.
-    经过 GremlinPolicy 安全检查后执行。
-    limit_policy values:
-    - warn: execute and return cost warnings for unbounded reads.
-    - reject_unbounded: reject safe but unbounded reads before execution.
-    - auto_append: append .limit(100) to simple unbounded g.V()/g.E() queries and
-      return original_gremlin/executed_gremlin/rewrite_reason.
+    Public raw Gremlin remains FEATURE_DISABLED until the deployment proves the
+    complete server timeout/result cap, streaming byte cap, and readonly-principal
+    contract. Use query_graph_data_tool for executable bounded reads.
     """
+    blocked = _raw_gremlin_hard_budget_gate("execute_gremlin_read_tool")
+    if blocked:
+        return blocked
+    blocked = _admin_gate("execute_gremlin_read_tool")
+    if blocked:
+        return blocked
     return _call_public_tool(
         "execute_gremlin_read_tool",
         execute_gremlin_read,
@@ -398,9 +466,10 @@ def apply_schema_tool(
     mode values:
     - design: schema design guidance; operations optional.
     - validate: validate operations against live schema.
-    - dry_run: validate P0a create operations and return plan_hash/nonce/expires_at.
-    - apply: P0a only. Requires confirm=true, plan_hash, nonce, expires_at from
-      dry_run. Supports create_property_key, create_vertex_label, create_edge_label.
+    - dry_run: validate exactly one P0a create operation and issue a persisted plan.
+    - apply: deprecated compatibility confirmation for one create operation.
+      New clients confirm the returned plan_id with confirm_write_tool.
+      Supports create_property_key, create_vertex_label, create_edge_label.
       Rejects create_index_label, schema append/eliminate, remove/drop.
     """
     start = time.perf_counter()
@@ -413,7 +482,7 @@ def apply_schema_tool(
             details={"mode": mode, "tool": "apply_schema_tool"},
             duration_ms=(time.perf_counter() - start) * 1000.0,
         )
-    return _call_public_tool(
+    return _call_legacy_write_tool(
         "apply_schema_tool",
         manage_schema,
         mode=mode,
@@ -441,13 +510,11 @@ def mutate_graph_properties_tool(
 
     Capability: DATA_WRITE.
     target values: vertex, edge.
-    operation values: append, eliminate. Both require the same chain:
-    dry_run=true -> review before/after and plan_hash -> dry_run=false,
-    confirm=true with plan_hash, nonce, and expires_at.
-    The confirm step re-reads schema and target; changed targets return
-    TARGET_CHANGED and are not mutated.
+    operation values: append, eliminate. Dry-run returns a before/after preview
+    with confirmable=false. Confirmed mutation returns FEATURE_DISABLED because
+    HugeGraph 1.7.0 lacks a backend-enforced atomic compare-and-set update.
     """
-    return _call_public_tool(
+    return _call_legacy_write_tool(
         "mutate_graph_properties_tool",
         mutate_graph_properties,
         target=target,
@@ -478,11 +545,11 @@ def import_graph_data_tool(
     nonce: str | None = None,
     expires_at: float | None = None,
 ) -> dict:
-    """V1 图数据导入入口。
+    """Extract or plan structured graph data import.
 
-    mode="extract": 自然语言文本 → 候选 graph_data
-    mode="ingest": MCP 本地校验+dry_run/confirm+Gremlin 导入 graph_data
-    mode="table": 当前 MCP contract 不支持（返回 FEATURE_DISABLED）
+    mode="extract" returns candidate graph_data without writing.
+    mode="ingest" validates locally and issues an immutable plan_id; confirm it
+    with confirm_write_tool. mode="table" returns FEATURE_DISABLED.
     """
     start = time.perf_counter()
 
@@ -510,7 +577,7 @@ def import_graph_data_tool(
                 source="import_graph_data_tool",
                 duration_ms=(time.perf_counter() - start) * 1000.0,
             )
-        return _call_public_tool(
+        return _call_legacy_write_tool(
             "import_graph_data_tool",
             manage_graph_data,
             mode="import",
@@ -557,12 +624,14 @@ def delete_graph_data_tool(
     nonce: str | None = None,
     expires_at: float | None = None,
 ) -> dict:
-    """V1 稳定工具：受控删除图数据。
+    """Preview exact delete_vertex or delete_edge operations.
 
-    只支持精确 delete_vertex/delete_edge change_plan。
-    必须经过 dry_run -> plan_hash -> confirm；不支持批量条件删除或级联删除。
+    An exact edge delete can be confirmed by plan_id after dry-run. Isolated
+    vertex deletion is preview-only and confirmation returns FEATURE_DISABLED
+    because the backend lacks an atomic no-incident-edge condition. Bulk
+    conditional and cascade deletion are unsupported.
     """
-    return _call_public_tool(
+    return _call_legacy_write_tool(
         "delete_graph_data_tool",
         manage_graph_data,
         mode="delete",
@@ -594,11 +663,13 @@ def refresh_vid_embeddings_tool(confirm: bool = False) -> dict:
 
 @mcp.tool()
 def execute_gremlin_write_tool(gremlin_query: str) -> dict:
-    """Break-glass direct Gremlin write for an isolated trusted admin transport.
+    """Disabled direct Gremlin write pending a verified hard-budget contract.
 
-    This is the sole write-safety-chain exception: it has no preview, dry-run,
-    plan hash, or confirmation step. It requires admin mode and readonly=false.
+    Admin mode and readonly=false remain necessary but are not sufficient.
     """
+    blocked = _raw_gremlin_hard_budget_gate("execute_gremlin_write_tool")
+    if blocked:
+        return blocked
     blocked = _admin_gate("execute_gremlin_write_tool", requires_write=True)
     if blocked:
         return blocked

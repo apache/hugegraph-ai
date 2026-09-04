@@ -40,20 +40,18 @@ validate_graph_payload() 对 vertices/edges 做全面 schema 校验：
 import json
 from copy import deepcopy
 from typing import Any
-from uuid import uuid4
 
 from hugegraph_mcp.config import MCPConfig
-from hugegraph_mcp.confirmable_workflow import (
-    issue_plan,
-    mark_readonly_preview,
-    plan_hash_error,
-    replayed_plan_error,
-    verify_and_consume_plan,
-)
+from hugegraph_mcp.confirmable_workflow import mark_readonly_preview
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.guard import Capability, guard
-from hugegraph_mcp.hugegraph_ai_client import post
 from hugegraph_mcp.tools.live_schema import fetch_live_schema_or_none
+from hugegraph_mcp.tools.property_validation import (
+    property_specs as _property_specs,
+)
+from hugegraph_mcp.tools.property_validation import (
+    property_value_error as _property_value_error,
+)
 from hugegraph_mcp.tools.schema_utils import (
     edge_schema_endpoint_label as _edge_schema_endpoint_label,
 )
@@ -69,96 +67,7 @@ from hugegraph_mcp.tools.schema_utils import (
 from hugegraph_mcp.tools.schema_utils import (
     schema_payload as _schema_payload,
 )
-
-_DATA_TYPE_ALIASES = {"INTEGER": "INT", "BOOL": "BOOLEAN"}
-_SUPPORTED_DATA_TYPES = {
-    "TEXT",
-    "UUID",
-    "INT",
-    "LONG",
-    "DOUBLE",
-    "FLOAT",
-    "BOOLEAN",
-    "DATE",
-    "BYTE",
-    "BLOB",
-    "OBJECT",
-}
-_SUPPORTED_CARDINALITIES = {"SINGLE", "LIST", "SET"}
-
-
-def _property_specs(raw_schema: dict[str, Any]) -> dict[str, tuple[str, str]]:
-    specs: dict[str, tuple[str, str]] = {}
-    normalized_schema = normalized_schema_summary(raw_schema) or {}
-    for prop in normalized_schema.get("propertykeys", []):
-        if not isinstance(prop, dict):
-            continue
-        name = prop.get("name")
-        data_type = prop.get("data_type")
-        if isinstance(name, str) and isinstance(data_type, str):
-            cardinality = prop.get("cardinality") or "SINGLE"
-            normalized_data_type = data_type.strip().upper()
-            specs[name] = (
-                _DATA_TYPE_ALIASES.get(normalized_data_type, normalized_data_type),
-                str(cardinality).strip().upper(),
-            )
-    return specs
-
-
-def _value_matches_type(value: Any, data_type: str) -> bool:
-    if value is None:
-        return True
-    if data_type in {"TEXT", "UUID"}:
-        return isinstance(value, str)
-    if data_type in {"INT", "LONG", "BYTE"}:
-        return isinstance(value, int) and not isinstance(value, bool)
-    if data_type in {"FLOAT", "DOUBLE"}:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
-    if data_type == "BOOLEAN":
-        return isinstance(value, bool)
-    if data_type in {"DATE", "BLOB"}:
-        return isinstance(value, str)
-    if data_type == "OBJECT":
-        return isinstance(value, dict)
-    return False
-
-
-def _property_value_error(
-    *,
-    item_kind: str,
-    item_index: int,
-    property_name: str,
-    value: Any,
-    spec: tuple[str, str] | None,
-) -> str | None:
-    if spec is None:
-        return None
-
-    data_type, cardinality = spec
-    prefix = f"{item_kind} {item_index} property '{property_name}'"
-    if data_type not in _SUPPORTED_DATA_TYPES:
-        return f"{prefix} unsupported data_type '{data_type}'"
-    if cardinality not in _SUPPORTED_CARDINALITIES:
-        return f"{prefix} unsupported cardinality '{cardinality}'"
-    if cardinality in {"LIST", "SET"}:
-        if value is None:
-            return None
-        if not isinstance(value, list):
-            return (
-                f"{prefix} expects {cardinality} of {data_type}, "
-                f"got {type(value).__name__}"
-            )
-        for element_index, element in enumerate(value):
-            if element is None or not _value_matches_type(element, data_type):
-                return (
-                    f"{prefix} element {element_index} expects {data_type}, "
-                    f"got {type(element).__name__}"
-                )
-        return None
-
-    if not _value_matches_type(value, data_type):
-        return f"{prefix} expects {data_type}, got {type(value).__name__}"
-    return None
+from hugegraph_mcp.write_plan import ApplyStatus, PlanStatus, aggregate_plan_status
 
 
 def _indexed_labels(raw_schema: dict[str, Any]) -> dict[str, set[str]]:
@@ -217,18 +126,12 @@ def _endpoint_identities(
         if _identity_value_present(explicit_id):
             identities.append((label, "id", explicit_id))
         if primary_keys:
-            missing = [
-                pk
-                for pk in primary_keys
-                if pk not in value or not _identity_value_present(value.get(pk))
-            ]
+            missing = [pk for pk in primary_keys if pk not in value or not _identity_value_present(value.get(pk))]
             if missing:
                 if identities:
                     return identities, None
                 return identities, missing[0]
-            identities.append(
-                (label, "pk", tuple(value.get(pk) for pk in primary_keys))
-            )
+            identities.append((label, "pk", tuple(value.get(pk) for pk in primary_keys)))
         return identities, None
 
     if _identity_value_present(value):
@@ -259,10 +162,7 @@ def _canonical_json_key(value: Any) -> str:
 
 def _normalize_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return {
-            key: _normalize_value(value[key])
-            for key in sorted(value, key=lambda item: str(item))
-        }
+        return {key: _normalize_value(value[key]) for key in sorted(value, key=lambda item: str(item))}
     if isinstance(value, list):
         return [_normalize_value(item) for item in value]
     return value
@@ -281,7 +181,7 @@ def _vertex_sort_key(
         props = vertex.get("properties")
         primary_keys = schema_primary_keys.get(label, [])
         if isinstance(props, dict) and primary_keys:
-            identity = props.get(primary_keys[0])
+            identity = tuple(props.get(primary_key) for primary_key in primary_keys)
         elif isinstance(props, dict) and props:
             first_key = min(props, key=lambda item: str(item))
             identity = props.get(first_key)
@@ -353,9 +253,7 @@ def _schema_vertex_info(raw_schema: dict[str, Any]) -> dict[str, dict[str, Any]]
             info[name] = {
                 "id": vertex_label.get("id"),
                 "id_strategy": str(
-                    vertex_label.get("id_strategy")
-                    or vertex_label.get("idStrategy")
-                    or "PRIMARY_KEY"
+                    vertex_label.get("id_strategy") or vertex_label.get("idStrategy") or "PRIMARY_KEY"
                 ).upper(),
                 "primary_keys": _primary_key_names(vertex_label),
             }
@@ -392,9 +290,7 @@ def _vertex_backend_id(
     primary_keys = vertex_info.get(label, {}).get("primary_keys", [])
     if not primary_keys:
         return None
-    if not all(
-        pk in props and _identity_value_present(props.get(pk)) for pk in primary_keys
-    ):
+    if not all(pk in props and _identity_value_present(props.get(pk)) for pk in primary_keys):
         return None
 
     values = tuple(props.get(pk) for pk in primary_keys)
@@ -409,9 +305,7 @@ def _vertex_identity_map(
     # A vertex may have an explicit ID, a PRIMARY_KEY backend ID, and a primary-key
     # tuple; resolving any of them must target the same backend vertex.
     vertex_info = _schema_vertex_info(raw_schema)
-    schema_primary_keys = {
-        label: info.get("primary_keys", []) for label, info in vertex_info.items()
-    }
+    schema_primary_keys = {label: info.get("primary_keys", []) for label, info in vertex_info.items()}
     identities: dict[tuple[str, str, Any], Any] = {}
 
     for vertex in vertices:
@@ -435,10 +329,7 @@ def _vertex_identity_map(
         if (
             isinstance(props, dict)
             and primary_keys
-            and all(
-                pk in props and _identity_value_present(props.get(pk))
-                for pk in primary_keys
-            )
+            and all(pk in props and _identity_value_present(props.get(pk)) for pk in primary_keys)
         ):
             values = tuple(props.get(pk) for pk in primary_keys)
             identities[(label, "pk", values)] = backend_id or explicit_id
@@ -470,10 +361,7 @@ def _endpoint_backend_id(
             return explicit_id
 
         primary_keys = schema_primary_keys.get(label, [])
-        if primary_keys and all(
-            pk in value and _identity_value_present(value.get(pk))
-            for pk in primary_keys
-        ):
+        if primary_keys and all(pk in value and _identity_value_present(value.get(pk)) for pk in primary_keys):
             values = tuple(value.get(pk) for pk in primary_keys)
             return _canonical_primary_key_id(label, values, vertex_info)
         return None
@@ -579,9 +467,7 @@ def validate_graph_payload(
                 schema_vlabels.add(name)
                 schema_props[name] = _property_names(vl.get("properties", []))
                 schema_primary_keys[name] = _primary_key_names(vl)
-                schema_id_strategies[name] = str(
-                    vl.get("id_strategy") or vl.get("idStrategy") or "PRIMARY_KEY"
-                ).upper()
+                schema_id_strategies[name] = str(vl.get("id_strategy") or vl.get("idStrategy") or "PRIMARY_KEY").upper()
         for el in raw.get("edgelabels", []):
             if not isinstance(el, dict):
                 continue
@@ -611,17 +497,9 @@ def validate_graph_payload(
                 schema_prop_names = schema_props.get(label, set())
                 for prop_name, prop_value in props.items():
                     if prop_value is None or prop_value == "":
-                        warnings.append(
-                            f"vertex {idx} property '{prop_name}' has empty value"
-                        )
-                    if (
-                        schema_available
-                        and label in schema_props
-                        and prop_name not in schema_prop_names
-                    ):
-                        errors.append(
-                            f"vertex {idx} property '{prop_name}' does not exist on label '{label}'"
-                        )
+                        warnings.append(f"vertex {idx} property '{prop_name}' has empty value")
+                    if schema_available and label in schema_props and prop_name not in schema_prop_names:
+                        errors.append(f"vertex {idx} property '{prop_name}' does not exist on label '{label}'")
                     value_error = _property_value_error(
                         item_kind="vertex",
                         item_index=idx,
@@ -636,9 +514,7 @@ def validate_graph_payload(
             explicit_id = vertex.get("id")
             if id_strategy == "CUSTOMIZE_STRING":
                 if not _identity_value_present(explicit_id):
-                    errors.append(
-                        f"vertex {idx} missing required id for CUSTOMIZE_STRING label '{label}'"
-                    )
+                    errors.append(f"vertex {idx} missing required id for CUSTOMIZE_STRING label '{label}'")
                 elif not isinstance(explicit_id, str):
                     errors.append(
                         f"vertex {idx} id for CUSTOMIZE_STRING label '{label}' must be a string, "
@@ -646,9 +522,7 @@ def validate_graph_payload(
                     )
             elif id_strategy == "CUSTOMIZE_NUMBER":
                 if not _identity_value_present(explicit_id):
-                    errors.append(
-                        f"vertex {idx} missing required id for CUSTOMIZE_NUMBER label '{label}'"
-                    )
+                    errors.append(f"vertex {idx} missing required id for CUSTOMIZE_NUMBER label '{label}'")
                 elif not isinstance(explicit_id, int) or isinstance(explicit_id, bool):
                     errors.append(
                         f"vertex {idx} id for CUSTOMIZE_NUMBER label '{label}' must be an integer, "
@@ -661,13 +535,8 @@ def validate_graph_payload(
                     props = {}
                 for pk in primary_keys:
                     if pk not in props or not _identity_value_present(props.get(pk)):
-                        errors.append(
-                            f"vertex {idx} missing primary key value for label '{label}': {pk}"
-                        )
-                if all(
-                    pk in props and _identity_value_present(props.get(pk))
-                    for pk in primary_keys
-                ):
+                        errors.append(f"vertex {idx} missing primary key value for label '{label}': {pk}")
+                if all(pk in props and _identity_value_present(props.get(pk)) for pk in primary_keys):
                     identity = (
                         label,
                         "pk",
@@ -704,11 +573,13 @@ def validate_graph_payload(
             tgt_label, target = _edge_endpoint(edge, "target")
             if _has_mixed_endpoint_forms(edge, "source"):
                 errors.append(
-                    f"edge {idx} mixes source and outV endpoint forms; use either source/source_label or outV/outVLabel, not both"
+                    f"edge {idx} mixes source and outV endpoint forms; use either "
+                    "source/source_label or outV/outVLabel, not both"
                 )
             if _has_mixed_endpoint_forms(edge, "target"):
                 errors.append(
-                    f"edge {idx} mixes target and inV endpoint forms; use either target/target_label or inV/inVLabel, not both"
+                    f"edge {idx} mixes target and inV endpoint forms; use either "
+                    "target/target_label or inV/inVLabel, not both"
                 )
             if label in (None, ""):
                 errors.append(f"edge {idx} missing required field: label")
@@ -719,46 +590,34 @@ def validate_graph_payload(
             if label:
                 edge_labels.add(label)
                 if schema_available and label not in schema_elabels:
-                    errors.append(
-                        f"edge {idx} label '{label}' does not exist in schema"
-                    )
+                    errors.append(f"edge {idx} label '{label}' does not exist in schema")
             if schema_available:
                 if src_label and src_label not in schema_vlabels:
-                    errors.append(
-                        f"edge {idx} source_label '{src_label}' does not exist in schema"
-                    )
+                    errors.append(f"edge {idx} source_label '{src_label}' does not exist in schema")
                 if tgt_label and tgt_label not in schema_vlabels:
-                    errors.append(
-                        f"edge {idx} target_label '{tgt_label}' does not exist in schema"
-                    )
+                    errors.append(f"edge {idx} target_label '{tgt_label}' does not exist in schema")
             if label and label in schema_elabels:
                 schema_edge = schema_elabels[label]
                 expected_src = _edge_schema_endpoint_label(schema_edge, "source")
                 expected_tgt = _edge_schema_endpoint_label(schema_edge, "target")
                 if src_label and expected_src and src_label != expected_src:
                     errors.append(
-                        f"edge {idx} source_label '{src_label}' does not match edge label '{label}' source_label '{expected_src}'"
+                        f"edge {idx} source_label '{src_label}' does not match edge "
+                        f"label '{label}' source_label '{expected_src}'"
                     )
                 if tgt_label and expected_tgt and tgt_label != expected_tgt:
                     errors.append(
-                        f"edge {idx} target_label '{tgt_label}' does not match edge label '{label}' target_label '{expected_tgt}'"
+                        f"edge {idx} target_label '{tgt_label}' does not match edge "
+                        f"label '{label}' target_label '{expected_tgt}'"
                     )
             props = edge.get("properties")
             if isinstance(props, dict):
                 schema_prop_names = schema_eprops.get(label, set())
                 for prop_name, prop_value in props.items():
                     if prop_value is None or prop_value == "":
-                        warnings.append(
-                            f"edge {idx} property '{prop_name}' has empty value"
-                        )
-                    if (
-                        schema_available
-                        and label in schema_eprops
-                        and prop_name not in schema_prop_names
-                    ):
-                        errors.append(
-                            f"edge {idx} property '{prop_name}' does not exist on label '{label}'"
-                        )
+                        warnings.append(f"edge {idx} property '{prop_name}' has empty value")
+                    if schema_available and label in schema_eprops and prop_name not in schema_prop_names:
+                        errors.append(f"edge {idx} property '{prop_name}' does not exist on label '{label}'")
                     value_error = _property_value_error(
                         item_kind="edge",
                         item_index=idx,
@@ -769,10 +628,11 @@ def validate_graph_payload(
                     if value_error:
                         errors.append(value_error)
             if source is None and target is None:
-                continue
-            if source is None:
+                errors.append(f"edge {idx} missing source endpoint")
+                errors.append(f"edge {idx} missing target endpoint")
+            elif source is None:
                 errors.append(f"edge {idx} has target but missing source")
-            if target is None:
+            elif target is None:
                 errors.append(f"edge {idx} has source but missing target")
             for endpoint_name, endpoint_label, endpoint_value in (
                 ("source", src_label, source),
@@ -789,7 +649,8 @@ def validate_graph_payload(
                     # Report an error when an endpoint object lacks a primary key; do not fall back
                     # to string matching, which could silently write invalid dangling edges.
                     errors.append(
-                        f"edge {idx} {endpoint_name} endpoint missing primary key for label '{endpoint_label}': {missing_pk}"
+                        f"edge {idx} {endpoint_name} endpoint missing primary key "
+                        f"for label '{endpoint_label}': {missing_pk}"
                     )
                     continue
                 if not identities:
@@ -801,9 +662,7 @@ def validate_graph_payload(
                     )
                     continue
                 matched_vertex_indices = {
-                    vertex_identity_index[identity]
-                    for identity in identities
-                    if identity in vertex_identity_index
+                    vertex_identity_index[identity] for identity in identities if identity in vertex_identity_index
                 }
                 if len(matched_vertex_indices) > 1:
                     errors.append(
@@ -904,11 +763,6 @@ def ingest_graph_data_via_ai(
     dry_run=False + confirm=True + plan_hash 匹配: 执行写入
     nonce/expires_at: dry_run 返回的 plan_context 中的字段，confirm 时必须传回
     """
-    if not dry_run and confirm:
-        replay_error = replayed_plan_error(nonce)
-        if replay_error is not None:
-            return replay_error
-
     from hugegraph_mcp.write_limits import (
         graph_data_operation_count,
         write_limit_envelope,
@@ -982,7 +836,8 @@ def ingest_graph_data_via_ai(
             },
             "mutation_summary": mutation_summary,
             "warnings": warnings,
-            "confirmable": True,
+            "confirmable": False,
+            "preview_only": True,
         }
         next_actions: list[str] = []
         if MCPConfig.from_env().is_readonly():
@@ -992,15 +847,16 @@ def ingest_graph_data_via_ai(
                     "This dry-run was generated while HUGEGRAPH_MCP_READONLY=true. "
                     "Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirming."
                 ),
-                next_action=(
-                    "Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm."
-                ),
+                next_action=("Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm."),
             )
             warnings = list(warnings) + readonly_warnings
-        else:
-            issue_error = issue_plan(plan_context, plan_hash_value)
-            if issue_error is not None:
-                return issue_error
+        warnings = list(warnings) + [
+            (
+                "Legacy HugeGraph-AI graph import is preview-only because it has no "
+                "durable per-operation receipts or verified create-if-absent semantics."
+            )
+        ]
+        next_actions.append("Do not confirm this import until atomic graph-create capabilities are verified.")
         return envelope_ok(payload, warnings=warnings, next_actions=next_actions)
 
     violation = guard(Capability.DATA_WRITE)
@@ -1011,103 +867,44 @@ def ingest_graph_data_via_ai(
         return envelope_err(
             ErrorType.CONFIRM_REQUIRED,
             "Graph data import requires confirm=True after a dry_run.",
-            suggestion="Run dry_run=True, review mutation_summary and warnings, then pass confirm=True with the returned plan_hash.",
-        )
-
-    # Validate against the target by rereading config and schema and recomputing the hash.
-    # nonce must be returned from the plan_context produced by dry_run.
-    valid, error_type, details = verify_and_consume_plan(
-        submitted_hash=plan_hash,
-        tool_name="ingest_graph_data",
-        mode="import",
-        payload_digest=payload_digest,
-        schema_hash=schema_hash,
-        nonce=nonce or plan_context.nonce,
-        expires_at=expires_at,
-    )
-    if not valid:
-        return plan_hash_error(
-            error_type=error_type,
-            details=details,
-            mismatch_message=(
-                "Plan hash mismatch: config, schema, or payload has changed since dry_run."
-            ),
-            expired_message=(
-                "Plan has expired. Run dry_run=True again and use the returned plan_hash."
-            ),
-            suggestion="Run dry_run=True again and use the returned plan_hash.",
-        )
-
-    batch_id = f"batch-{uuid4().hex[:12]}"
-    request_id = f"req-{uuid4().hex[:12]}"
-    cfg = MCPConfig.from_env()
-    planned = mutation_summary
-
-    import_data = _prepare_graph_import_data(graph_data, live_schema)
-    # Actual writes still use HugeGraph-AI's graph-import HTTP endpoint. MCP handles
-    # schema validation, safety confirmation, and payload normalization rather than
-    # invoking the hugegraph-llm import flow directly.
-    try:
-        ai_result = post(
-            "/graph-import",
-            json={"data": json.dumps(import_data, sort_keys=True), "schema": cfg.graph},
-        )
-    except Exception as exc:  # noqa: BLE001 - normalize import boundary failures
-        return envelope_err(
-            ErrorType.FLOW_EXECUTION_FAILED,
-            f"Import execution failed: {exc}",
-            details=_import_error_result(
-                planned=planned, batch_id=batch_id, request_id=request_id, cfg=cfg
+            suggestion=(
+                "Run dry_run=True, review mutation_summary and warnings, then pass "
+                "confirm=True with the returned plan_hash."
             ),
         )
-
-    if not ai_result.get("ok"):
-        # M5: Normalize AI error responses instead of passing through raw results.
-        return envelope_err(
-            ErrorType.FLOW_EXECUTION_FAILED,
-            "HugeGraph-AI import returned an error.",
-            details=_normalize_import_result(
-                ai_result=None,
-                planned=planned,
-                batch_id=batch_id,
-                request_id=request_id,
-                cfg=cfg,
-            ),
-        )
-
-    import_result = _unwrap_ai_payload(ai_result.get("data"))
-    if isinstance(import_result, dict) and import_result.get("ok") is False:
-        return envelope_err(
-            ErrorType.FLOW_EXECUTION_FAILED,
-            "HugeGraph-AI import returned an error in payload.",
-            details=_normalize_import_result(
-                ai_result=None,
-                planned=planned,
-                batch_id=batch_id,
-                request_id=request_id,
-                cfg=cfg,
-            ),
-        )
-
-    # M5: Normalize the import result.
-    normalized = _normalize_import_result(
-        ai_result=import_result,
-        planned=planned,
-        batch_id=batch_id,
-        request_id=request_id,
-        cfg=cfg,
+    return envelope_err(
+        ErrorType.FEATURE_DISABLED,
+        "Legacy HugeGraph-AI graph import execution is disabled.",
+        suggestion=(
+            "Use dry_run for validation only. Enable graph import only after the "
+            "canonical workflow has verified atomic create adapters."
+        ),
+        retryable=False,
     )
 
-    if normalized.get("status") != "success":
-        return envelope_err(
-            ErrorType.FLOW_EXECUTION_FAILED,
-            "Graph data import did not complete successfully.",
-            retryable=bool(normalized.get("retryable")),
-            details=normalized,
-            warnings=normalized.get("warnings", []),
-        )
 
-    return envelope_ok(normalized, warnings=normalized.get("warnings", []))
+def _unknown_import_result(
+    *,
+    planned: dict[str, int],
+    batch_id: str,
+    request_id: str,
+    cfg: MCPConfig,
+    cause: Any,
+) -> dict[str, Any]:
+    return {
+        "status": PlanStatus.UNKNOWN.value,
+        "planned": planned,
+        "batch_id": batch_id,
+        "request_id": request_id,
+        "target": {
+            "graph_url": cfg.url,
+            "graph_name": cfg.graph,
+            "graphspace": cfg.graphspace or "DEFAULT",
+        },
+        "cause": cause,
+        "retryable": False,
+        "reconciliation_required": True,
+    }
 
 
 def _mutation_summary(graph_data: dict[str, Any]) -> dict[str, int]:
@@ -1134,7 +931,8 @@ def _normalize_import_result(
 ) -> dict[str, Any]:
     """将 AI 导入结果规范化为 V1 标准格式。
 
-    M5: success / partial / degraded / error
+    The remote service's legacy success/partial/degraded/error vocabulary is
+    interpreted as evidence, then exposed through the canonical plan state model.
     """
     target = {
         "graph_url": cfg.url,
@@ -1142,11 +940,10 @@ def _normalize_import_result(
         "graphspace": cfg.graphspace or "DEFAULT",
     }
 
-    if ai_result is None or (
-        isinstance(ai_result, dict) and ai_result.get("ok") is False
-    ):
+    if ai_result is None or (isinstance(ai_result, dict) and ai_result.get("ok") is False):
         return {
-            "status": "error",
+            "status": PlanStatus.UNKNOWN.value,
+            "import_classification": "error",
             "planned": planned,
             "written": {"vertices": 0, "edges": 0},
             "failed_items": [],
@@ -1172,25 +969,15 @@ def _normalize_import_result(
         if failed_items:
             written = {"vertices": 0, "edges": 0}
             status = "error" if remote_success is False else "degraded"
-            warnings.append(
-                "HugeGraph-AI import returned failures without explicit written counts."
-            )
+            warnings.append("HugeGraph-AI import returned failures without explicit written counts.")
         elif remote_success is False:
             written = {"vertices": 0, "edges": 0}
             status = "error"
-            warnings.append(
-                "HugeGraph-AI import reported failure without explicit written counts."
-            )
+            warnings.append("HugeGraph-AI import reported failure without explicit written counts.")
         else:
             written = {"vertices": 0, "edges": 0}
-            status = (
-                remote_status
-                if remote_status in {"partial", "error", "degraded"}
-                else "degraded"
-            )
-            warnings.append(
-                "HugeGraph-AI import did not return explicit written counts; write outcome is unknown."
-            )
+            status = remote_status if remote_status in {"partial", "error", "degraded"} else "degraded"
+            warnings.append("HugeGraph-AI import did not return explicit written counts; write outcome is unknown.")
     elif remote_success is False and (written["vertices"] > 0 or written["edges"] > 0):
         status = "partial"
     elif remote_success is False:
@@ -1208,11 +995,18 @@ def _normalize_import_result(
 
     if count_source == "total":
         warnings.append(
-            "HugeGraph-AI import returned only a total written count; vertices/edges were estimated from the planned import order."
+            "HugeGraph-AI import returned only a total written count; vertices/edges "
+            "were estimated from the planned import order."
         )
 
+    canonical_status = _canonical_import_status(
+        classification=status,
+        count_source=count_source,
+        written=written,
+    )
     return {
-        "status": status,
+        "status": canonical_status.value,
+        "import_classification": status,
         "planned": planned,
         "written": written,
         "failed_items": failed_items,
@@ -1220,7 +1014,7 @@ def _normalize_import_result(
         "retryable": False,
         "compensation_suggestions": (
             ["Review failed_items, inspect graph state, and run a fresh dry-run."]
-            if status in {"partial", "degraded", "error"}
+            if canonical_status is not PlanStatus.APPLIED
             else []
         ),
         "target": target,
@@ -1229,9 +1023,26 @@ def _normalize_import_result(
     }
 
 
-def _extract_written_counts(
-    ai_result: Any, planned: dict[str, int]
-) -> tuple[dict[str, int] | None, str | None]:
+def _canonical_import_status(
+    *,
+    classification: str,
+    count_source: str | None,
+    written: dict[str, int],
+) -> PlanStatus:
+    """Convert legacy import evidence into the shared write state model."""
+
+    if classification == "success":
+        operation_statuses = [ApplyStatus.APPLIED]
+    elif classification == "partial":
+        operation_statuses = [ApplyStatus.APPLIED, ApplyStatus.REJECTED]
+    elif classification == "error" and count_source is not None and not any(written.values()):
+        operation_statuses = [ApplyStatus.REJECTED]
+    else:
+        operation_statuses = [ApplyStatus.UNKNOWN]
+    return aggregate_plan_status(operation_statuses)
+
+
+def _extract_written_counts(ai_result: Any, planned: dict[str, int]) -> tuple[dict[str, int] | None, str | None]:
     """从 AI 结果中提取写入计数。
 
     返回 (counts, source)，无法识别时 counts 为 None。source="total" 表示
@@ -1332,7 +1143,8 @@ def _import_error_result(
 ) -> dict[str, Any]:
     """构建导入执行错误的规范化结果。"""
     return {
-        "status": "error",
+        "status": PlanStatus.UNKNOWN.value,
+        "import_classification": "error",
         "planned": planned,
         "written": {"vertices": 0, "edges": 0},
         "failed_items": [],

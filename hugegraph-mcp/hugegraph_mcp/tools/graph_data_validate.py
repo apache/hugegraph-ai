@@ -19,6 +19,7 @@ Schema checks, property field validation, primary key match verification.
 from typing import Any
 
 from hugegraph_mcp.tools.graph_data_mapping import GraphChangePlan
+from hugegraph_mcp.tools.property_validation import property_specs, property_value_error
 from hugegraph_mcp.tools.schema_utils import (
     edge_schema_endpoint_label as _edge_schema_endpoint_label,
 )
@@ -162,6 +163,38 @@ def _validate_field_map(
         )
 
 
+def _validate_property_values(
+    *,
+    idx: int,
+    operation: dict[str, Any],
+    item_kind: str,
+    specs: dict[str, tuple[str, str]],
+    errors: list[ValidationError],
+) -> None:
+    """Validate create-operation values with the shared schema validator."""
+
+    values = operation.get("properties")
+    if not isinstance(values, dict):
+        return
+    for name, value in values.items():
+        value_error = property_value_error(
+            item_kind=item_kind,
+            item_index=idx,
+            property_name=name,
+            value=value,
+            spec=specs.get(name),
+        )
+        if value_error is not None:
+            errors.append(
+                _validation_error(
+                    idx,
+                    operation,
+                    value_error,
+                    "Use a JSON value compatible with the live HugeGraph property schema.",
+                )
+            )
+
+
 def _validate_primary_key_match(
     *,
     idx: int,
@@ -183,9 +216,7 @@ def _validate_primary_key_match(
         return
     if match.get("id") not in (None, ""):
         return
-    missing = [
-        pk for pk in primary_keys if pk not in match or match.get(pk) in (None, "")
-    ]
+    missing = [pk for pk in primary_keys if pk not in match or match.get(pk) in (None, "")]
     if missing:
         errors.append(
             _validation_error(
@@ -206,7 +237,7 @@ def validate_graph_change_plan(
 ) -> dict[str, Any]:
     """校验 change_plan 中的操作是否与 live schema 兼容。
 
-    检查项：op 类型白名单、label 存在性、properties/match 字段合法性、
+    检查项: op 类型白名单、label 存在性、properties/match 字段合法性、
     主键匹配、边端点合法性。
     """
     errors: list[ValidationError] = []
@@ -226,9 +257,7 @@ def validate_graph_change_plan(
             "warnings": [],
         }
 
-    if isinstance(change_plan, dict) and not isinstance(
-        change_plan.get("operations"), list
-    ):
+    if isinstance(change_plan, dict) and not isinstance(change_plan.get("operations"), list):
         return {
             "valid": False,
             "errors": [
@@ -248,17 +277,10 @@ def validate_graph_change_plan(
     # lookups, while ensuring validation always uses one schema snapshot.
     vertex_labels = _vertex_labels(raw_schema)
     edge_labels = _edge_labels(raw_schema)
-    vertex_properties = {
-        label: _property_names(schema.get("properties"))
-        for label, schema in vertex_labels.items()
-    }
-    edge_properties = {
-        label: _property_names(schema.get("properties"))
-        for label, schema in edge_labels.items()
-    }
-    primary_keys = {
-        label: _primary_key_names(schema) for label, schema in vertex_labels.items()
-    }
+    vertex_properties = {label: _property_names(schema.get("properties")) for label, schema in vertex_labels.items()}
+    edge_properties = {label: _property_names(schema.get("properties")) for label, schema in edge_labels.items()}
+    primary_keys = {label: _primary_key_names(schema) for label, schema in vertex_labels.items()}
+    specs = property_specs(raw_schema)
 
     for idx, operation in enumerate(operations):
         if not isinstance(operation, dict):
@@ -320,9 +342,7 @@ def validate_graph_change_plan(
             allowed = vertex_properties.get(label, set())
             pks = primary_keys.get(label, [])
             if not pks:
-                warnings.append(
-                    f"operation {idx} references vertex label '{label}' with no primary_keys"
-                )
+                warnings.append(f"operation {idx} references vertex label '{label}' with no primary_keys")
             # properties/match may reference only properties defined for the label.
             # First apply the field allowlist, then enforce stricter op constraints.
             _validate_field_map(
@@ -332,6 +352,14 @@ def validate_graph_change_plan(
                 allowed_properties=allowed,
                 errors=errors,
             )
+            if op == "create_vertex":
+                _validate_property_values(
+                    idx=idx,
+                    operation=operation,
+                    item_kind="vertex",
+                    specs=specs,
+                    errors=errors,
+                )
             _validate_field_map(
                 idx=idx,
                 operation=operation,
@@ -369,10 +397,7 @@ def validate_graph_change_plan(
                 ("source_label", source_label),
                 ("target_label", target_label),
             ):
-                if (
-                    not isinstance(endpoint_label, str)
-                    or endpoint_label not in vertex_labels
-                ):
+                if not isinstance(endpoint_label, str) or endpoint_label not in vertex_labels:
                     errors.append(
                         _validation_error(
                             idx,
@@ -409,6 +434,14 @@ def validate_graph_change_plan(
                 allowed_properties=allowed,
                 errors=errors,
             )
+            if op == "create_edge":
+                _validate_property_values(
+                    idx=idx,
+                    operation=operation,
+                    item_kind="edge",
+                    specs=specs,
+                    errors=errors,
+                )
             if isinstance(source_label, str) and source_label in vertex_labels:
                 _validate_primary_key_match(
                     idx=idx,
@@ -448,10 +481,8 @@ def validate_graph_change_plan(
 # ---- Mode operation constraints ----
 
 
-def _validate_mode_operations(
-    mode: str, change_plan: GraphChangePlan
-) -> dict[str, Any]:
-    """确保 mode 下的所有操作类型匹配，例如 import 模式不允许删除。"""
+def _validate_mode_operations(mode: str, change_plan: GraphChangePlan) -> dict[str, Any]:
+    """确保 mode 下的所有操作类型匹配, 例如 import 模式不允许删除。"""
     allowed = MODE_OPS.get(mode)
     if allowed is None:
         return {

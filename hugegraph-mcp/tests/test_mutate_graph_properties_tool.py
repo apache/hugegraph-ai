@@ -11,7 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import Mock
 
 from hugegraph_mcp.tools import mutate_graph_properties as mutate_module
 
@@ -24,11 +23,12 @@ def _schema():
                 {"name": "age", "data_type": "INT", "cardinality": "SINGLE"},
                 {"name": "aliases", "data_type": "TEXT", "cardinality": "LIST"},
                 {"name": "tags", "data_type": "TEXT", "cardinality": "SET"},
+                {"name": "weight", "data_type": "DOUBLE", "cardinality": "SINGLE"},
             ],
             "vertexlabels": [
                 {
                     "name": "person",
-                    "properties": ["name", "age", "aliases", "tags"],
+                    "properties": ["name", "age", "aliases", "tags", "weight"],
                     "primary_keys": ["name"],
                 }
             ],
@@ -85,11 +85,7 @@ class FakeGraphManager:
         self.eliminate_calls.append((vertex_id, properties))
         self.vertex = {
             **self.vertex,
-            "properties": {
-                key: value
-                for key, value in self.vertex["properties"].items()
-                if key not in properties
-            },
+            "properties": {key: value for key, value in self.vertex["properties"].items() if key not in properties},
         }
         return self.vertex
 
@@ -106,8 +102,7 @@ class PostReadFailureManager(FakeGraphManager):
     def __init__(self):
         super().__init__()
         self.post_read_error = RuntimeError(
-            "post read failed: Authorization: Bearer abc123 "
-            "token=xyz http://user:pass@example.com"
+            "post read failed: Authorization: Bearer abc123 token=xyz http://user:pass@example.com"
         )
 
     def getVertexById(self, vertex_id):
@@ -189,9 +184,7 @@ class ReorderedSetGraphManager(CollectionGraphManager):
                 **item,
                 "properties": {
                     **item["properties"],
-                    self.property_name: list(
-                        reversed(item["properties"][self.property_name])
-                    ),
+                    self.property_name: list(reversed(item["properties"][self.property_name])),
                 },
             }
         return item
@@ -202,6 +195,7 @@ def _patch_schema(monkeypatch):
 
 
 def test_mutate_dry_run_returns_snapshot_bound_plan(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     _patch_schema(monkeypatch)
     manager = FakeGraphManager()
     monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
@@ -214,20 +208,26 @@ def test_mutate_dry_run_returns_snapshot_bound_plan(monkeypatch):
     )
 
     assert result["ok"] is True
-    assert result["data"]["status"] == "planned"
+    assert result["data"]["status"] == "ISSUED"
     assert result["data"]["before"]["properties"] == {"name": "Alice"}
     assert result["data"]["after"]["properties"] == {"name": "Alice", "age": 30}
     assert result["data"]["plan_hash"]
+    assert result["data"]["confirmable"] is False
     assert "|ts:" in result["data"]["plan_context"]["nonce"]
+    assert "atomic conditional property update" in result["warnings"][0]
+    assert result["data"]["cas_request"] == {
+        "target_type": "vertex",
+        "target_id": "1:alice",
+        "expected_properties": {"name": "Alice"},
+        "desired_properties": {"name": "Alice", "age": 30},
+        "operation_id": (f"property-cas:{result['data']['plan_hash'][:24]}"),
+    }
 
 
-def test_mutate_readonly_preview_does_not_issue_plan(monkeypatch):
+def test_mutate_readonly_preview_is_not_confirmable(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
     _patch_schema(monkeypatch)
     monkeypatch.setattr(mutate_module, "_graph_manager", FakeGraphManager)
-    issue = Mock()
-    monkeypatch.setattr(mutate_module, "issue_plan", issue)
-
     result = mutate_module.mutate_graph_properties(
         target="vertex",
         operation="append",
@@ -238,7 +238,6 @@ def test_mutate_readonly_preview_does_not_issue_plan(monkeypatch):
     assert result["ok"] is True
     assert result["data"]["confirmable"] is False
     assert result["data"]["readonly_preview_only"] is True
-    issue.assert_not_called()
 
 
 def test_list_append_preview_preserves_order_and_duplicates(monkeypatch):
@@ -330,7 +329,25 @@ def test_collection_append_rejects_non_json_array_before_write(monkeypatch):
     assert "JSON array" in tuple_result["error"]["suggestion"]
 
 
-def test_set_append_post_read_ignores_server_order(monkeypatch):
+def test_mutation_rejects_double_overflow_without_raising(monkeypatch):
+    _patch_schema(monkeypatch)
+    manager = FakeGraphManager()
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
+
+    result = mutate_module.mutate_graph_properties(
+        target="vertex",
+        operation="append",
+        id="1:alice",
+        properties={"weight": 10**1000},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "expects DOUBLE, got int" in result["error"]["message"]
+    assert manager.append_calls == []
+
+
+def test_vertex_confirm_fails_closed_without_atomic_backend_cas(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     _patch_schema(monkeypatch)
     manager = ReorderedSetGraphManager(property_name="tags", values=["a"])
@@ -355,11 +372,14 @@ def test_set_append_post_read_ignores_server_order(monkeypatch):
         expires_at=context["expires_at"],
     )
 
-    assert result["ok"] is True
-    assert manager.append_calls == [("1:alice", {"tags": ["b", "a"]})]
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    assert result["error"]["details"]["status"] == "REJECTED"
+    assert result["error"]["details"]["write_attempted"] is False
+    assert manager.append_calls == []
 
 
-def test_edge_set_append_post_read_ignores_server_order(monkeypatch):
+def test_edge_confirm_fails_closed_without_atomic_backend_cas(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     _patch_schema(monkeypatch)
     manager = CollectionGraphManager(target="edge", property_name="tags", values=["a"])
@@ -384,8 +404,10 @@ def test_edge_set_append_post_read_ignores_server_order(monkeypatch):
         expires_at=context["expires_at"],
     )
 
-    assert result["ok"] is True
-    assert manager.append_calls == [("edge-1", {"tags": ["b", "a"]})]
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    assert result["error"]["details"]["write_attempted"] is False
+    assert manager.append_calls == []
 
 
 def test_eliminate_collection_still_removes_entire_property(monkeypatch):
@@ -421,7 +443,63 @@ def test_mutate_rejects_unknown_property(monkeypatch):
     assert result["error"]["details"]["unknown_properties"] == ["missing"]
 
 
-def test_mutate_confirm_rejects_cardinality_change_since_dry_run(monkeypatch):
+def test_mutate_rejects_wrong_scalar_type_before_preview(monkeypatch):
+    _patch_schema(monkeypatch)
+    manager = FakeGraphManager()
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
+
+    result = mutate_module.mutate_graph_properties(
+        target="vertex",
+        operation="append",
+        id="1:alice",
+        properties={"age": True},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "expects INT, got bool" in result["error"]["message"]
+    assert manager.append_calls == []
+
+
+def test_mutate_rejects_invalid_collection_element_before_preview(monkeypatch):
+    _patch_schema(monkeypatch)
+    manager = CollectionGraphManager(property_name="tags", values=["a"])
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
+
+    result = mutate_module.mutate_graph_properties(
+        target="vertex",
+        operation="append",
+        id="1:alice",
+        properties={"tags": ["b", 1]},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert "element 1 expects TEXT, got int" in result["error"]["message"]
+    assert manager.append_calls == []
+
+
+def test_mutate_rejects_malformed_uuid_before_preview(monkeypatch):
+    schema = _schema()
+    schema["schema"]["propertykeys"].append({"name": "uid", "data_type": "UUID", "cardinality": "SINGLE"})
+    schema["schema"]["vertexlabels"][0]["properties"].append("uid")
+    monkeypatch.setattr(mutate_module, "current_live_schema", lambda: schema)
+    manager = FakeGraphManager()
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
+
+    result = mutate_module.mutate_graph_properties(
+        target="vertex",
+        operation="append",
+        id="1:alice",
+        properties={"uid": "not-a-uuid"},
+    )
+
+    assert result["ok"] is False
+    assert "expects UUID, got str" in result["error"]["message"]
+    assert manager.append_calls == []
+
+
+def test_mutate_confirm_remains_disabled_after_schema_change(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     live_schema = _schema()
     monkeypatch.setattr(mutate_module, "current_live_schema", lambda: live_schema)
@@ -450,7 +528,7 @@ def test_mutate_confirm_rejects_cardinality_change_since_dry_run(monkeypatch):
     )
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "PLAN_HASH_MISMATCH"
+    assert result["error"]["type"] == "FEATURE_DISABLED"
     assert manager.append_calls == []
 
 
@@ -488,7 +566,7 @@ def test_mutate_missing_edge_returns_not_found(monkeypatch):
     assert result["error"]["details"]["reason"] == "not_found"
 
 
-def test_mutate_confirm_applies_after_valid_plan(monkeypatch):
+def test_mutate_confirm_does_not_consume_plan_or_execute(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     _patch_schema(monkeypatch)
     manager = FakeGraphManager()
@@ -513,248 +591,15 @@ def test_mutate_confirm_applies_after_valid_plan(monkeypatch):
         expires_at=context["expires_at"],
     )
 
-    assert result["ok"] is True
-    assert result["data"]["status"] == "applied"
-    assert manager.append_calls == [("1:alice", {"age": 30})]
-
-
-def test_mutate_replayed_confirmation_does_not_execute_twice(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _patch_schema(monkeypatch)
-    manager = FakeGraphManager()
-    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
-    dry_run = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-        nonce="mutation-replay",
-    )
-    context = dry_run["data"]["plan_context"]
-    arguments = {
-        "target": "vertex",
-        "operation": "append",
-        "id": "1:alice",
-        "properties": {"age": 30},
-        "dry_run": False,
-        "confirm": True,
-        "plan_hash": dry_run["data"]["plan_hash"],
-        "nonce": context["nonce"],
-        "expires_at": context["expires_at"],
-    }
-
-    first = mutate_module.mutate_graph_properties(**arguments)
-    second = mutate_module.mutate_graph_properties(**arguments)
-
-    assert first["ok"] is True
-    assert second["ok"] is False
-    assert second["error"]["type"] == "PLAN_ALREADY_USED"
-    assert manager.vertex["properties"]["age"] == 30
-    assert manager.append_calls == [("1:alice", {"age": 30})]
-
-
-def test_mutate_confirm_maps_execution_errors_with_hugegraph_classifier(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _patch_schema(monkeypatch)
-    manager = ExecutionFailureManager()
-    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
-
-    dry_run = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-    )
-    context = dry_run["data"]["plan_context"]
-    arguments = {
-        "target": "vertex",
-        "operation": "append",
-        "id": "1:alice",
-        "properties": {"age": 30},
-        "dry_run": False,
-        "confirm": True,
-        "plan_hash": dry_run["data"]["plan_hash"],
-        "nonce": context["nonce"],
-        "expires_at": context["expires_at"],
-    }
-    result = mutate_module.mutate_graph_properties(**arguments)
-
     assert result["ok"] is False
-    assert result["error"]["type"] == "NOT_FOUND"
-    assert result["error"]["retryable"] is False
-    assert result["error"]["details"]["stage"] == "mutation_execute"
-    assert result["error"]["details"]["reason"] == "not_found"
-
-    replay = mutate_module.mutate_graph_properties(**arguments)
-    assert replay["ok"] is False
-    assert replay["error"]["type"] == "PLAN_ALREADY_USED"
-    assert manager.append_calls == [("1:alice", {"age": 30})]
-
-
-def test_mutate_confirm_sanitizes_post_read_error(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _patch_schema(monkeypatch)
-    manager = PostReadFailureManager()
-    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
-
-    dry_run = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-    )
-    context = dry_run["data"]["plan_context"]
-    result = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-        dry_run=False,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
-
-    assert result["ok"] is False
-    assert result["error"]["type"] == "PARTIAL_APPLY"
-    assert result["error"]["details"]["stage"] == "post_write_verification"
-    assert result["error"]["details"]["status"] == "unknown"
-    response_text = str(result)
-    assert "abc123" not in response_text
-    assert "token=xyz" not in response_text
-    assert "user:pass" not in response_text
-    assert result["warnings"] == [
-        "Mutation returned from HugeGraph, but post-read verification failed."
-    ]
-    assert result["next_actions"] == [
-        "Call query_graph_data_tool to verify the target state."
-    ]
-
-
-def test_mutate_confirm_returns_error_when_post_read_is_missing(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _patch_schema(monkeypatch)
-    manager = PostReadMissingManager()
-    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
-
-    dry_run = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-    )
-    context = dry_run["data"]["plan_context"]
-    result = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-        dry_run=False,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
-
-    assert result["ok"] is False
-    assert result["error"]["type"] == "PARTIAL_APPLY"
-    assert result["error"]["details"]["stage"] == "post_write_verification"
-    assert result["error"]["details"]["post_read"] is None
-    assert result["warnings"] == [
-        "Mutation returned from HugeGraph, but the target was not found on post-read."
-    ]
-    assert result["next_actions"] == [
-        "Call query_graph_data_tool to verify whether the target still exists."
-    ]
-
-
-def test_mutate_confirm_returns_error_when_post_read_mismatches_plan(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _patch_schema(monkeypatch)
-    manager = PostReadMismatchManager()
-    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
-
-    dry_run = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-    )
-    context = dry_run["data"]["plan_context"]
-    result = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-        dry_run=False,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
-
-    assert result["ok"] is False
-    assert result["error"]["type"] == "PARTIAL_APPLY"
-    assert result["error"]["details"]["stage"] == "post_write_verification"
-    assert result["error"]["details"]["planned_after"]["properties"]["age"] == 30
-    assert result["error"]["details"]["post_read"]["properties"]["age"] == 31
-    assert result["warnings"] == ["Post-read state did not match the planned preview."]
-
-
-def test_mutate_confirm_detects_target_changed(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _patch_schema(monkeypatch)
-    manager = FakeGraphManager(
-        changed_vertex={
-            "id": "1:alice",
-            "label": "person",
-            "type": "vertex",
-            "properties": {"name": "Alice", "age": 99},
-        }
-    )
-    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
-
-    dry_run = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-    )
-    context = dry_run["data"]["plan_context"]
-    result = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-        dry_run=False,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
-
-    assert result["ok"] is False
-    assert result["error"]["type"] == "TARGET_CHANGED"
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    assert result["error"]["details"]["backend_capability"] == ("property_compare_and_set")
+    assert result["error"]["details"]["capability_status"] == ("verified_unsupported")
     assert manager.append_calls == []
 
     from hugegraph_mcp.confirmation_store import ConfirmationStore
 
     assert ConfirmationStore.from_config().has_consumed(context["nonce"]) is False
-    manager.changed_vertex = None
-    retry_after_restore = mutate_module.mutate_graph_properties(
-        target="vertex",
-        operation="append",
-        id="1:alice",
-        properties={"age": 30},
-        dry_run=False,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
-    assert retry_after_restore["ok"] is True
-    assert manager.append_calls == [("1:alice", {"age": 30})]
 
 
 def test_mutate_confirm_requires_non_readonly(monkeypatch):

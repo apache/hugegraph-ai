@@ -11,13 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import re
 from unittest.mock import Mock
 
 import pytest
-
-from hugegraph_mcp import server
 from hugegraph_mcp.envelope import envelope_ok
 from hugegraph_mcp.tools import ingest_graph_data as ingest_graph_data_module
 from hugegraph_mcp.tools import manage_graph_data as manage_graph_data_module
@@ -64,9 +61,7 @@ def _live_schema():
 
 
 def _mock_schema(monkeypatch):
-    monkeypatch.setattr(
-        ingest_graph_data_module, "_fetch_live_schema", lambda: _live_schema()
-    )
+    monkeypatch.setattr(ingest_graph_data_module, "_fetch_live_schema", lambda: _live_schema())
 
 
 def test_ingest_graph_data_accepts_string_property_schema(monkeypatch):
@@ -114,12 +109,8 @@ def test_ingest_graph_data_dry_run_same_input_same_hash(monkeypatch):
     monkeypatch.setattr("hugegraph_mcp.plan_hash.time.time", lambda: 1000)
 
     # Same nonce + same payload + same expiry window = same hash.
-    first = ingest_graph_data_module.ingest_graph_data(
-        _graph_data(), nonce="fixed_nonce"
-    )
-    second = ingest_graph_data_module.ingest_graph_data(
-        _graph_data(), nonce="fixed_nonce"
-    )
+    first = ingest_graph_data_module.ingest_graph_data(_graph_data(), nonce="fixed_nonce")
+    second = ingest_graph_data_module.ingest_graph_data(_graph_data(), nonce="fixed_nonce")
 
     assert first["data"]["plan_hash"] == second["data"]["plan_hash"]
 
@@ -131,9 +122,7 @@ def test_ingest_graph_data_plan_hash_includes_schema(monkeypatch):
     schema_with_age_text["schema"]["propertykeys"][1]["data_type"] = "TEXT"
 
     first = ingest_graph_data_module.calculate_plan_hash(graph_data, schema)
-    second = ingest_graph_data_module.calculate_plan_hash(
-        graph_data, schema_with_age_text
-    )
+    second = ingest_graph_data_module.calculate_plan_hash(graph_data, schema_with_age_text)
 
     assert first != second
 
@@ -142,9 +131,7 @@ def test_ingest_plan_hash_schema_field_order_same_hash():
     graph_data = _graph_data()
     schema = _live_schema()
     reordered_schema = _live_schema()
-    reordered_schema["schema"]["propertykeys"] = list(
-        reversed(reordered_schema["schema"]["propertykeys"])
-    )
+    reordered_schema["schema"]["propertykeys"] = list(reversed(reordered_schema["schema"]["propertykeys"]))
     reordered_schema["schema"]["vertexlabels"][0]["properties"] = [
         {"name": "age"},
         {"name": "name"},
@@ -152,6 +139,27 @@ def test_ingest_plan_hash_schema_field_order_same_hash():
 
     first = ingest_graph_data_module.calculate_plan_hash(graph_data, schema)
     second = ingest_graph_data_module.calculate_plan_hash(graph_data, reordered_schema)
+
+    assert first == second
+
+
+def test_ingest_plan_hash_composite_primary_key_vertex_order_same_hash():
+    schema = _live_schema()
+    schema["schema"]["vertexlabels"][0]["primary_keys"] = ["name", "age"]
+    graph_data = {
+        "vertices": [
+            {"label": "person", "properties": {"name": "Alice", "age": 42}},
+            {"label": "person", "properties": {"name": "Alice", "age": 31}},
+        ],
+        "edges": [],
+    }
+    reordered_graph_data = {
+        "vertices": list(reversed(graph_data["vertices"])),
+        "edges": [],
+    }
+
+    first = ingest_graph_data_module.calculate_plan_hash(graph_data, schema)
+    second = ingest_graph_data_module.calculate_plan_hash(reordered_graph_data, schema)
 
     assert first == second
 
@@ -205,9 +213,7 @@ def test_ingest_plan_hash_schema_id_strategy_change_different_hash():
         ),
     ],
 )
-def test_validate_graph_payload_rejects_invalid_customize_id(
-    id_strategy, vertex_id, expected_error
-):
+def test_validate_graph_payload_rejects_invalid_customize_id(id_strategy, vertex_id, expected_error):
     schema = _live_schema()
     vertex_label = schema["schema"]["vertexlabels"][0]
     vertex_label["id_strategy"] = id_strategy
@@ -216,9 +222,7 @@ def test_validate_graph_payload_rejects_invalid_customize_id(
     if vertex_id is not None:
         vertex["id"] = vertex_id
 
-    result = ingest_graph_data_module.validate_graph_payload(
-        {"vertices": [vertex], "edges": []}, live_schema=schema
-    )
+    result = ingest_graph_data_module.validate_graph_payload({"vertices": [vertex], "edges": []}, live_schema=schema)
 
     assert result["valid"] is False
     assert any(expected_error in error for error in result["errors"])
@@ -235,15 +239,11 @@ def test_validate_graph_payload_rejects_invalid_customize_id(
 def test_validate_graph_payload_accepts_uuid_property(cardinality, value):
     schema = _live_schema()
     schema["schema"]["vertexlabels"][0]["properties"].append({"name": "uid"})
-    schema["schema"]["propertykeys"].append(
-        {"name": "uid", "data_type": "UUID", "cardinality": cardinality}
-    )
+    schema["schema"]["propertykeys"].append({"name": "uid", "data_type": "UUID", "cardinality": cardinality})
 
     result = ingest_graph_data_module.validate_graph_payload(
         {
-            "vertices": [
-                {"label": "person", "properties": {"name": "Alice", "uid": value}}
-            ],
+            "vertices": [{"label": "person", "properties": {"name": "Alice", "uid": value}}],
             "edges": [],
         },
         live_schema=schema,
@@ -255,15 +255,11 @@ def test_validate_graph_payload_accepts_uuid_property(cardinality, value):
 def test_validate_graph_payload_rejects_non_string_uuid():
     schema = _live_schema()
     schema["schema"]["vertexlabels"][0]["properties"].append({"name": "uid"})
-    schema["schema"]["propertykeys"].append(
-        {"name": "uid", "data_type": "UUID", "cardinality": "SINGLE"}
-    )
+    schema["schema"]["propertykeys"].append({"name": "uid", "data_type": "UUID", "cardinality": "SINGLE"})
 
     result = ingest_graph_data_module.validate_graph_payload(
         {
-            "vertices": [
-                {"label": "person", "properties": {"name": "Alice", "uid": 1}}
-            ],
+            "vertices": [{"label": "person", "properties": {"name": "Alice", "uid": 1}}],
             "edges": [],
         },
         live_schema=schema,
@@ -271,6 +267,70 @@ def test_validate_graph_payload_rejects_non_string_uuid():
 
     assert result["valid"] is False
     assert any("expects UUID, got int" in error for error in result["errors"])
+
+
+def test_validate_graph_payload_rejects_malformed_uuid():
+    schema = _live_schema()
+    schema["schema"]["vertexlabels"][0]["properties"].append({"name": "uid"})
+    schema["schema"]["propertykeys"].append({"name": "uid", "data_type": "UUID", "cardinality": "SINGLE"})
+
+    result = ingest_graph_data_module.validate_graph_payload(
+        {
+            "vertices": [
+                {
+                    "label": "person",
+                    "properties": {"name": "Alice", "uid": "not-a-uuid"},
+                }
+            ],
+            "edges": [],
+        },
+        live_schema=schema,
+    )
+
+    assert result["valid"] is False
+    assert any("expects UUID, got str" in error for error in result["errors"])
+
+
+def test_validate_graph_payload_rejects_out_of_range_integer():
+    schema = _live_schema()
+
+    result = ingest_graph_data_module.validate_graph_payload(
+        {
+            "vertices": [
+                {
+                    "label": "person",
+                    "properties": {"name": "Alice", "age": 2**31},
+                }
+            ],
+            "edges": [],
+        },
+        live_schema=schema,
+    )
+
+    assert result["valid"] is False
+    assert any("expects INT, got int" in error for error in result["errors"])
+
+
+def test_validate_graph_payload_rejects_double_overflow_without_raising():
+    schema = _live_schema()
+    schema["schema"]["vertexlabels"][0]["properties"].append({"name": "weight"})
+    schema["schema"]["propertykeys"].append({"name": "weight", "data_type": "DOUBLE", "cardinality": "SINGLE"})
+
+    result = ingest_graph_data_module.validate_graph_payload(
+        {
+            "vertices": [
+                {
+                    "label": "person",
+                    "properties": {"name": "Alice", "weight": 10**1000},
+                }
+            ],
+            "edges": [],
+        },
+        live_schema=schema,
+    )
+
+    assert result["valid"] is False
+    assert "vertex 0 property 'weight' expects DOUBLE, got int" in result["errors"]
 
 
 @pytest.mark.parametrize(
@@ -310,9 +370,7 @@ def test_ingest_plan_hash_schema_metadata_ignored_same_hash():
     schema_with_metadata["server_time"] = "2026-05-26T00:00:00Z"
 
     first = ingest_graph_data_module.calculate_plan_hash(graph_data, schema)
-    second = ingest_graph_data_module.calculate_plan_hash(
-        graph_data, schema_with_metadata
-    )
+    second = ingest_graph_data_module.calculate_plan_hash(graph_data, schema_with_metadata)
 
     assert first == second
 
@@ -357,9 +415,7 @@ def test_ingest_graph_data_validate_invalid(monkeypatch):
 def test_ingest_graph_data_rejects_when_live_schema_unavailable(monkeypatch):
     monkeypatch.setattr(ingest_graph_data_module, "_fetch_live_schema", lambda: None)
 
-    result = ingest_graph_data_module.ingest_graph_data(
-        {"vertices": [{"label": "x"}], "edges": []}
-    )
+    result = ingest_graph_data_module.ingest_graph_data({"vertices": [{"label": "x"}], "edges": []})
 
     assert result["ok"] is False
     assert result["error"]["type"] == "CONNECTION_FAILED"
@@ -385,9 +441,7 @@ def test_ingest_graph_data_schema_mismatch(monkeypatch):
 
     assert result["ok"] is False
     assert result["error"]["type"] == "SCHEMA_MISMATCH"
-    assert any(
-        "source_label 'ghost'" in e for e in result["error"]["details"]["errors"]
-    )
+    assert any("source_label 'ghost'" in e for e in result["error"]["details"]["errors"])
 
 
 def test_validate_graph_payload_rejects_labels_when_live_schema_is_empty():
@@ -435,9 +489,7 @@ def test_ingest_graph_data_rejects_property_type_mismatch(monkeypatch):
 
     assert result["ok"] is False
     assert result["error"]["type"] == "SCHEMA_MISMATCH"
-    assert any(
-        "property 'age' expects INT" in e for e in result["error"]["details"]["errors"]
-    )
+    assert any("property 'age' expects INT" in e for e in result["error"]["details"]["errors"])
 
 
 def _collection_schema():
@@ -502,9 +554,7 @@ def test_ingest_graph_data_accepts_vertex_list_and_edge_set_properties(monkeypat
     assert result["data"]["mutation_summary"] == {"vertices": 2, "edges": 1}
 
 
-@pytest.mark.parametrize(
-    "property_keys_field", ["propertykeys", "property_keys", "propertyKeys"]
-)
+@pytest.mark.parametrize("property_keys_field", ["propertykeys", "property_keys", "propertyKeys"])
 def test_validate_graph_payload_accepts_property_key_collection_aliases(
     property_keys_field,
 ):
@@ -549,10 +599,7 @@ def test_validate_graph_payload_preserves_top_level_none_but_rejects_none_elemen
 
     assert allowed["valid"] is True
     assert rejected["valid"] is False
-    assert (
-        "vertex 0 property 'aliases' element 1 expects TEXT, got NoneType"
-        in rejected["errors"]
-    )
+    assert "vertex 0 property 'aliases' element 1 expects TEXT, got NoneType" in rejected["errors"]
     assert all("Al" not in error for error in rejected["errors"])
 
 
@@ -563,14 +610,10 @@ def test_validate_graph_payload_preserves_top_level_none_but_rejects_none_elemen
         ("data_type", "DECIMAL", "unsupported data_type 'DECIMAL'"),
     ],
 )
-def test_validate_graph_payload_rejects_unsupported_property_spec(
-    field, value, expected
-):
+def test_validate_graph_payload_rejects_unsupported_property_spec(field, value, expected):
     schema = _collection_schema()
     aliases = next(
-        item
-        for item in schema["schema"]["propertykeys"]
-        if (item.get("name") or item.get("propertyName")) == "aliases"
+        item for item in schema["schema"]["propertykeys"] if (item.get("name") or item.get("propertyName")) == "aliases"
     )
     aliases[field] = value
     if field == "cardinality":
@@ -614,9 +657,7 @@ def test_validate_graph_payload_rejects_scalar_for_collection_property():
     )
 
     assert result["valid"] is False
-    assert (
-        "vertex 0 property 'aliases' expects LIST of TEXT, got str" in result["errors"]
-    )
+    assert "vertex 0 property 'aliases' expects LIST of TEXT, got str" in result["errors"]
 
 
 def test_validate_graph_payload_rejects_tuple_for_collection_property():
@@ -629,10 +670,7 @@ def test_validate_graph_payload_rejects_tuple_for_collection_property():
     )
 
     assert result["valid"] is False
-    assert (
-        "vertex 0 property 'aliases' expects LIST of TEXT, got tuple"
-        in result["errors"]
-    )
+    assert "vertex 0 property 'aliases' expects LIST of TEXT, got tuple" in result["errors"]
 
 
 def test_validate_graph_payload_rejects_invalid_collection_element_without_value():
@@ -659,9 +697,7 @@ def test_validate_graph_payload_rejects_bool_in_int_collection():
     )
 
     assert result["valid"] is False
-    assert (
-        "vertex 0 property 'scores' element 1 expects INT, got bool" in result["errors"]
-    )
+    assert "vertex 0 property 'scores' element 1 expects INT, got bool" in result["errors"]
 
 
 def test_validate_graph_payload_accepts_boolean_collection_and_rejects_wrong_element():
@@ -679,10 +715,7 @@ def test_validate_graph_payload_accepts_boolean_collection_and_rejects_wrong_ele
 
     assert valid["valid"] is True
     assert invalid["valid"] is False
-    assert (
-        "vertex 0 property 'flags' element 1 expects BOOLEAN, got int"
-        in invalid["errors"]
-    )
+    assert "vertex 0 property 'flags' element 1 expects BOOLEAN, got int" in invalid["errors"]
 
 
 def test_validate_graph_payload_rejects_list_for_single_property():
@@ -708,16 +741,25 @@ def test_manage_graph_data_import_accepts_collections_in_dry_run(monkeypatch):
     monkeypatch.setattr(
         manage_graph_data_module.gremlin_tools,
         "execute_gremlin_read",
-        lambda _query: {"data": [0], "total": 1, "is_read": True},
+        lambda query: {
+            "data": [] if ".id()" in query else [0],
+            "total": 0 if ".id()" in query else 1,
+            "is_read": True,
+        },
     )
 
+    graph_data = _collection_graph_data()
+    graph_data["vertices"][0]["id"] = "alice"
+    graph_data["vertices"][1]["id"] = "bob"
     result = manage_graph_data_module.manage_graph_data(
         mode="import",
-        graph_data=_collection_graph_data(),
+        graph_data=graph_data,
     )
 
     assert result["ok"] is True
-    assert result["data"]["confirmable"] is True
+    assert result["data"]["confirmable"] is False
+    assert "plan_id" not in result["data"]
+    assert len(result["data"]["workflow_preview"]["operations"]) == 3
     assert result["data"]["plan_hash"]
     assert result["data"]["mutation_summary"] == {
         "create_edge": 1,
@@ -725,7 +767,7 @@ def test_manage_graph_data_import_accepts_collections_in_dry_run(monkeypatch):
     }
 
 
-def test_public_import_graph_data_rejects_invalid_collection_before_execute(
+def test_manage_import_rejects_invalid_collection_before_execute(
     monkeypatch,
 ):
     graph_data = _collection_graph_data()
@@ -738,20 +780,14 @@ def test_public_import_graph_data_rejects_invalid_collection_before_execute(
     )
     monkeypatch.setattr(manage_graph_data_module, "execute_graph_change_plan", execute)
 
-    result = server.import_graph_data_tool(
-        mode="ingest",
+    result = manage_graph_data_module.manage_graph_data(
+        mode="import",
         graph_data=graph_data,
-        dry_run=False,
-        confirm=True,
     )
 
     assert result["ok"] is False
     assert result["error"]["type"] == "SCHEMA_MISMATCH"
-    assert result["error"]["source"] == "import_graph_data_tool"
-    assert (
-        "vertex 0 property 'aliases' expects LIST of TEXT, got str"
-        in result["error"]["details"]["errors"]
-    )
+    assert "vertex 0 property 'aliases' expects LIST of TEXT, got str" in result["error"]["details"]["errors"]
     execute.assert_not_called()
 
 
@@ -765,8 +801,7 @@ def test_ingest_graph_data_rejects_missing_schema_primary_key(monkeypatch):
     assert result["ok"] is False
     assert result["error"]["type"] == "SCHEMA_MISMATCH"
     assert any(
-        "vertex 0 missing primary key value for label 'person': name" in e
-        for e in result["error"]["details"]["errors"]
+        "vertex 0 missing primary key value for label 'person': name" in e for e in result["error"]["details"]["errors"]
     )
 
 
@@ -858,6 +893,26 @@ def test_validate_graph_payload_rejects_mixed_target_endpoint_forms():
     assert any("mixes target and inV endpoint forms" in e for e in result["errors"])
 
 
+def test_validate_graph_payload_rejects_edge_with_both_endpoints_missing():
+    result = ingest_graph_data_module.validate_graph_payload(
+        {
+            "vertices": [],
+            "edges": [
+                {
+                    "label": "knows",
+                    "source_label": "person",
+                    "target_label": "person",
+                }
+            ],
+        },
+        live_schema=_live_schema(),
+    )
+
+    assert result["valid"] is False
+    assert "edge 0 missing source endpoint" in result["errors"]
+    assert "edge 0 missing target endpoint" in result["errors"]
+
+
 def test_ingest_graph_data_rejects_edge_endpoint_missing_primary_key(monkeypatch):
     _mock_schema(monkeypatch)
 
@@ -913,9 +968,7 @@ def test_validate_graph_payload_rejects_ambiguous_scalar_endpoint():
     )
 
     assert result["valid"] is False
-    assert any(
-        "source scalar endpoint is ambiguous" in error for error in result["errors"]
-    )
+    assert any("source scalar endpoint is ambiguous" in error for error in result["errors"])
 
 
 def test_ingest_graph_data_dry_run_rejects_too_many_operations_before_plan(
@@ -923,9 +976,7 @@ def test_ingest_graph_data_dry_run_rejects_too_many_operations_before_plan(
 ):
     _mock_schema(monkeypatch)
     graph_data = {
-        "vertices": [
-            {"label": "person", "properties": {"name": f"n{idx}"}} for idx in range(201)
-        ],
+        "vertices": [{"label": "person", "properties": {"name": f"n{idx}"}} for idx in range(201)],
         "edges": [],
     }
 
@@ -1020,9 +1071,7 @@ def test_ingest_graph_data_rejects_edge_label_mismatch(monkeypatch):
     errors = result["error"]["details"]["errors"]
     assert any("edge 0 label 'likes' does not exist in schema" in e for e in errors)
     assert any("edge 1 target_label 'ghost'" in e for e in errors)
-    assert any(
-        "does not match edge label 'knows' target_label 'person'" in e for e in errors
-    )
+    assert any("does not match edge label 'knows' target_label 'person'" in e for e in errors)
 
 
 def test_ingest_graph_data_warns_for_labels_without_schema_index(monkeypatch):
@@ -1035,9 +1084,7 @@ def test_ingest_graph_data_warns_for_labels_without_schema_index(monkeypatch):
     result = ingest_graph_data_module.ingest_graph_data(_graph_data())
 
     assert result["ok"] is True
-    assert (
-        "no edge index found in schema for label: knows" in result["data"]["warnings"]
-    )
+    assert "no edge index found in schema for label: knows" in result["data"]["warnings"]
 
 
 def test_ingest_graph_data_missing_confirm(monkeypatch):
@@ -1071,7 +1118,7 @@ def test_ingest_graph_data_plan_hash_mismatch(monkeypatch):
     )
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "PLAN_HASH_MISMATCH"
+    assert result["error"]["type"] == "FEATURE_DISABLED"
 
 
 def test_ingest_graph_data_plan_hash_expired(monkeypatch):
@@ -1091,7 +1138,7 @@ def test_ingest_graph_data_plan_hash_expired(monkeypatch):
     )
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "PLAN_EXPIRED"
+    assert result["error"]["type"] == "FEATURE_DISABLED"
 
 
 def test_ingest_graph_data_readonly(monkeypatch):
@@ -1113,7 +1160,7 @@ def test_ingest_graph_data_readonly_preview_does_not_issue_plan(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
     issue = Mock()
-    monkeypatch.setattr(ingest_graph_data_module, "issue_plan", issue)
+    monkeypatch.setattr(ingest_graph_data_module, "issue_plan", issue, raising=False)
 
     result = ingest_graph_data_module.ingest_graph_data(_graph_data())
 
@@ -1126,12 +1173,8 @@ def test_ingest_graph_data_readonly_preview_does_not_issue_plan(monkeypatch):
 def test_ingest_graph_data_success(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    post = Mock(
-        return_value=envelope_ok(
-            {"ok": True, "data": {"written": {"vertices": 2, "edges": 1}}}
-        )
-    )
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    post = Mock(return_value=envelope_ok({"ok": True, "data": {"written": {"vertices": 2, "edges": 1}}}))
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
     dry_run = ingest_graph_data_module.ingest_graph_data(graph_data)
 
@@ -1146,37 +1189,18 @@ def test_ingest_graph_data_success(monkeypatch):
         expires_at=plan_ctx["expires_at"],
     )
 
-    assert result["ok"] is True
-    assert result["data"]["batch_id"].startswith("batch-")
-    assert result["data"]["status"] == "success"
-    assert result["data"]["planned"] == {"vertices": 2, "edges": 1}
-    assert result["data"]["written"] == {"vertices": 2, "edges": 1}
-    post.assert_called_once()
-    assert post.call_args.args == ("/graph-import",)
-    assert post.call_args.kwargs["json"]["schema"] == "hugegraph"
-    import_payload = json.loads(post.call_args.kwargs["json"]["data"])
-    assert import_payload["vertices"][0]["id"] == "1:Alice"
-    assert import_payload["vertices"][1]["id"] == "1:Bob"
-    assert import_payload["edges"][0]["outV"] == "1:Alice"
-    assert import_payload["edges"][0]["outVLabel"] == "person"
-    assert import_payload["edges"][0]["inV"] == "1:Bob"
-    assert import_payload["edges"][0]["inVLabel"] == "person"
-    assert import_payload["edges"][0]["properties"] == {}
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    post.assert_not_called()
 
 
 def test_ingest_graph_data_replayed_confirmation_does_not_post_twice(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    post = Mock(
-        return_value=envelope_ok(
-            {"ok": True, "data": {"written": {"vertices": 2, "edges": 1}}}
-        )
-    )
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    post = Mock(return_value=envelope_ok({"ok": True, "data": {"written": {"vertices": 2, "edges": 1}}}))
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
-    dry_run = ingest_graph_data_module.ingest_graph_data(
-        graph_data, nonce="ingest-replay"
-    )
+    dry_run = ingest_graph_data_module.ingest_graph_data(graph_data, nonce="ingest-replay")
     context = dry_run["data"]["plan_context"]
     arguments = {
         "graph_data": graph_data,
@@ -1190,23 +1214,20 @@ def test_ingest_graph_data_replayed_confirmation_does_not_post_twice(monkeypatch
     first = ingest_graph_data_module.ingest_graph_data(**arguments)
     second = ingest_graph_data_module.ingest_graph_data(**arguments)
 
-    assert first["ok"] is True
+    assert first["ok"] is False
+    assert first["error"]["type"] == "FEATURE_DISABLED"
     assert second["ok"] is False
-    assert second["error"]["type"] == "PLAN_ALREADY_USED"
-    assert "already been used" in second["error"]["message"]
-    assert "Inspect the current target state" in second["error"]["suggestion"]
-    post.assert_called_once()
+    assert second["error"]["type"] == "FEATURE_DISABLED"
+    post.assert_not_called()
 
 
 def test_ingest_partial_apply_consumes_confirmation(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     post = Mock(return_value=envelope_ok({"inserted": 2}))
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
-    dry_run = ingest_graph_data_module.ingest_graph_data(
-        graph_data, nonce="ingest-partial"
-    )
+    dry_run = ingest_graph_data_module.ingest_graph_data(graph_data, nonce="ingest-partial")
     context = dry_run["data"]["plan_context"]
     arguments = {
         "graph_data": graph_data,
@@ -1221,18 +1242,19 @@ def test_ingest_partial_apply_consumes_confirmation(monkeypatch):
     replay = ingest_graph_data_module.ingest_graph_data(**arguments)
 
     assert partial["ok"] is False
-    assert partial["error"]["details"]["status"] == "partial"
+    assert partial["error"]["type"] == "FEATURE_DISABLED"
     assert partial["error"]["retryable"] is False
     assert replay["ok"] is False
-    assert replay["error"]["type"] == "PLAN_ALREADY_USED"
-    post.assert_called_once()
+    assert replay["error"]["type"] == "FEATURE_DISABLED"
+    assert replay["error"]["retryable"] is False
+    post.assert_not_called()
 
 
 def test_ingest_graph_data_degrades_when_ai_omits_counts(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     post = Mock(return_value=envelope_ok({"message": "import finished"}))
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
     dry_run = ingest_graph_data_module.ingest_graph_data(graph_data)
     plan_ctx = dry_run["data"]["plan_context"]
@@ -1247,19 +1269,16 @@ def test_ingest_graph_data_degrades_when_ai_omits_counts(monkeypatch):
     )
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "FLOW_EXECUTION_FAILED"
-    details = result["error"]["details"]
-    assert details["status"] == "degraded"
-    assert details["written"] == {"vertices": 0, "edges": 0}
+    assert result["error"]["type"] == "FEATURE_DISABLED"
     assert result["error"]["retryable"] is False
-    assert any("write outcome is unknown" in w for w in result["warnings"])
+    post.assert_not_called()
 
 
 def test_ingest_graph_data_splits_total_written_count(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     post = Mock(return_value=envelope_ok({"inserted": 2}))
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
     dry_run = ingest_graph_data_module.ingest_graph_data(graph_data)
     plan_ctx = dry_run["data"]["plan_context"]
@@ -1274,16 +1293,15 @@ def test_ingest_graph_data_splits_total_written_count(monkeypatch):
     )
 
     assert result["ok"] is False
-    assert result["error"]["details"]["status"] == "partial"
-    assert result["error"]["details"]["written"] == {"vertices": 2, "edges": 0}
-    assert any("total written count" in w for w in result["warnings"])
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    post.assert_not_called()
 
 
 def test_ingest_graph_data_does_not_promote_ai_failure_without_counts(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     post = Mock(return_value=envelope_ok({"success": False, "status": "partial"}))
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
     dry_run = ingest_graph_data_module.ingest_graph_data(graph_data)
     plan_ctx = dry_run["data"]["plan_context"]
@@ -1298,15 +1316,50 @@ def test_ingest_graph_data_does_not_promote_ai_failure_without_counts(monkeypatc
     )
 
     assert result["ok"] is False
-    assert result["error"]["details"]["status"] == "error"
-    assert result["error"]["details"]["written"] == {"vertices": 0, "edges": 0}
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    post.assert_not_called()
+
+
+def test_ingest_graph_data_maps_proven_zero_writes_to_rejected(monkeypatch):
+    _mock_schema(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    post = Mock(
+        return_value=envelope_ok(
+            {
+                "success": False,
+                "written": {"vertices": 0, "edges": 0},
+            }
+        )
+    )
+    monkeypatch.setattr(
+        ingest_graph_data_module,
+        "post",
+        post,
+        raising=False,
+    )
+    graph_data = _graph_data()
+    dry_run = ingest_graph_data_module.ingest_graph_data(graph_data)
+    context = dry_run["data"]["plan_context"]
+
+    result = ingest_graph_data_module.ingest_graph_data(
+        graph_data,
+        dry_run=False,
+        confirm=True,
+        plan_hash=dry_run["data"]["plan_hash"],
+        nonce=context["nonce"],
+        expires_at=context["expires_at"],
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    post.assert_not_called()
 
 
 def test_ingest_graph_data_does_not_promote_failed_items_without_counts(monkeypatch):
     _mock_schema(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     post = Mock(return_value=envelope_ok({"failed_items": [{"index": 0}]}))
-    monkeypatch.setattr(ingest_graph_data_module, "post", post)
+    monkeypatch.setattr(ingest_graph_data_module, "post", post, raising=False)
     graph_data = _graph_data()
     dry_run = ingest_graph_data_module.ingest_graph_data(graph_data)
     plan_ctx = dry_run["data"]["plan_context"]
@@ -1321,5 +1374,5 @@ def test_ingest_graph_data_does_not_promote_failed_items_without_counts(monkeypa
     )
 
     assert result["ok"] is False
-    assert result["error"]["details"]["status"] == "degraded"
-    assert result["error"]["details"]["failed_items"] == [{"index": 0}]
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    post.assert_not_called()

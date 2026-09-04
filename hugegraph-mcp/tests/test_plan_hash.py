@@ -19,7 +19,13 @@ import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from hugegraph_mcp.confirmable_workflow import verify_and_consume_plan
+from hugegraph_mcp.confirmable_workflow import (
+    get_write_status,
+    load_issued_plan,
+    record_write_outcome,
+    replayed_plan_error,
+    verify_and_consume_plan,
+)
 from hugegraph_mcp.confirmation_store import (
     ConfirmationAlreadyUsedError,
     ConfirmationPlanExpiredError,
@@ -33,6 +39,7 @@ from hugegraph_mcp.plan_hash import (
     compute_plan_hash,
     verify_plan_hash,
 )
+from hugegraph_mcp.write_plan import ApplyStatus, PlanStatus
 
 
 def _confirmation_args(context, plan_hash, **overrides):
@@ -60,28 +67,20 @@ def _issue(context, plan_hash):
 
 def test_plan_hash_changes_when_graph_url_changes(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_URL", "http://server-a:8080")
-    _ctx_a, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _ctx_a, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     monkeypatch.setenv("HUGEGRAPH_URL", "http://server-b:8080")
-    _ctx_b, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _ctx_b, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     assert hash_a != hash_b
 
 
 def test_plan_hash_changes_when_graph_name_changes(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_GRAPH", "graph_a")
-    _, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     monkeypatch.setenv("HUGEGRAPH_GRAPH", "graph_b")
-    _, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     assert hash_a != hash_b
     assert len(hash_a) == 32
@@ -89,54 +88,38 @@ def test_plan_hash_changes_when_graph_name_changes(monkeypatch):
 
 def test_plan_hash_changes_when_graphspace_changes(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_GRAPHSPACE", "space_a")
-    _, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     monkeypatch.setenv("HUGEGRAPH_GRAPHSPACE", "space_b")
-    _, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     assert hash_a != hash_b
 
 
 def test_plan_hash_changes_when_principal_changes(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_USER", "alice")
-    _, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     monkeypatch.setenv("HUGEGRAPH_USER", "bob")
-    _, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     assert hash_a != hash_b
 
 
 def test_plan_hash_changes_when_readonly_changes(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
-    _, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    _, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123"
-    )
+    _, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="abc123")
 
     assert hash_a != hash_b
 
 
 def test_plan_hash_changes_when_payload_changes(monkeypatch):
-    _, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="aaa"
-    )
+    _, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="aaa")
 
-    _, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="bbb"
-    )
+    _, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="bbb")
 
     assert hash_a != hash_b
 
@@ -155,21 +138,15 @@ def test_plan_hash_changes_when_tool_name_changes():
         nonce="mynonce",
         expires_at=1000,
     )
-    other_tool_context = PlanContext(
-        **{**context.__dict__, "tool_name": "delete_graph_data_tool"}
-    )
+    other_tool_context = PlanContext(**{**context.__dict__, "tool_name": "delete_graph_data_tool"})
 
     assert compute_plan_hash(context) != compute_plan_hash(other_tool_context)
 
 
 def test_plan_hash_changes_when_schema_hash_changes(monkeypatch):
-    _, hash_a = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc", schema_hash="schema1"
-    )
+    _, hash_a = build_plan_context(tool_name="test", mode="import", payload_digest="abc", schema_hash="schema1")
 
-    _, hash_b = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc", schema_hash="schema2"
-    )
+    _, hash_b = build_plan_context(tool_name="test", mode="import", payload_digest="abc", schema_hash="schema2")
 
     assert hash_a != hash_b
 
@@ -189,9 +166,7 @@ def test_plan_hash_changes_when_extra_context_changes():
         expires_at=1000,
         extra_context={"target": "import"},
     )
-    other_context = PlanContext(
-        **{**context.__dict__, "extra_context": {"target": "delete"}}
-    )
+    other_context = PlanContext(**{**context.__dict__, "extra_context": {"target": "delete"}})
 
     assert compute_plan_hash(context) != compute_plan_hash(other_context)
 
@@ -221,9 +196,7 @@ def test_verify_plan_hash_accepts_matching_hash(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_USER", "testuser")
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
 
-    context, plan_hash = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce"
-    )
+    context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce")
 
     valid, error_type, _details = verify_plan_hash(
         submitted_hash=plan_hash,
@@ -240,9 +213,7 @@ def test_verify_plan_hash_accepts_matching_hash(monkeypatch):
 
 def test_verify_plan_hash_rejects_mismatched_hash(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_URL", "http://test:8080")
-    context, _ = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce"
-    )
+    context, _ = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce")
 
     valid, error_type, details = verify_plan_hash(
         submitted_hash="wrong_hash",
@@ -319,9 +290,7 @@ def test_verify_plan_hash_rejects_missing_nonce(monkeypatch):
 
 
 def test_verify_plan_hash_rejects_missing_expires_at(monkeypatch):
-    context, plan_hash = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce"
-    )
+    context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce")
 
     valid, error_type, _details = verify_plan_hash(
         submitted_hash=plan_hash,
@@ -345,9 +314,7 @@ def test_compute_payload_digest_is_stable():
 
 
 def test_plan_context_is_frozen():
-    context, _ = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc"
-    )
+    context, _ = build_plan_context(tool_name="test", mode="import", payload_digest="abc")
 
     try:
         context.tool_name = "other"
@@ -359,9 +326,7 @@ def test_plan_context_is_frozen():
 def test_verify_plan_hash_rejects_expired_plan(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_URL", "http://test:8080")
 
-    _context, plan_hash = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce"
-    )
+    _context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce")
 
     # Set expires_at to the past
     valid, error_type, _details = verify_plan_hash(
@@ -378,9 +343,7 @@ def test_verify_plan_hash_rejects_expired_plan(monkeypatch):
 
 
 def test_verify_plan_hash_rejects_extended_expires_at(monkeypatch):
-    context, plan_hash = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce"
-    )
+    context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce")
 
     valid, error_type, _details = verify_plan_hash(
         submitted_hash=plan_hash,
@@ -397,9 +360,7 @@ def test_verify_plan_hash_rejects_extended_expires_at(monkeypatch):
 
 def test_verify_and_consume_rejects_replay_across_store_instances(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    context, plan_hash = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="once"
-    )
+    context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="once")
     _issue(context, plan_hash)
 
     first = verify_and_consume_plan(**_confirmation_args(context, plan_hash))
@@ -463,6 +424,107 @@ def test_server_issued_plan_survives_store_recreation(monkeypatch):
     )
 
 
+def test_server_issued_plan_payload_is_immutable_and_survives_restart(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    context, plan_hash = build_plan_context(
+        tool_name="test",
+        mode="delete",
+        payload_digest="compiled",
+        nonce="compiled-plan",
+    )
+    payload = {"operations": [{"op": "delete_vertex", "target_id": 7}]}
+    ConfirmationStore.from_config().issue(
+        nonce=context.nonce,
+        plan_hash=plan_hash,
+        expires_at=context.expires_at,
+        plan_payload=payload,
+    )
+    payload["operations"][0]["target_id"] = 8
+
+    loaded, error = load_issued_plan(
+        nonce=context.nonce,
+        plan_hash=plan_hash,
+        expires_at=context.expires_at,
+    )
+
+    assert error is None
+    assert loaded == {"operations": [{"op": "delete_vertex", "target_id": 7}]}
+
+
+def test_load_issued_plan_rejects_non_finite_expiry_without_raising():
+    for expires_at in (float("nan"), float("inf"), "invalid"):
+        payload, error = load_issued_plan(
+            nonce="nonce",
+            plan_hash="hash",
+            expires_at=expires_at,
+        )
+
+        assert payload is None
+        assert error["ok"] is False
+        assert error["error"]["type"] == "PLAN_HASH_MISMATCH"
+
+
+def test_consumed_plan_persists_unknown_until_receipt_is_recorded(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    context, plan_hash = build_plan_context(
+        tool_name="test",
+        mode="delete",
+        payload_digest="durable-operation",
+        nonce="durable-operation",
+    )
+    ConfirmationStore.from_config().issue(
+        nonce=context.nonce,
+        plan_hash=plan_hash,
+        expires_at=context.expires_at,
+        plan_payload={"operations": [{"op": "delete_vertex", "target_id": 7}]},
+    )
+
+    assert verify_and_consume_plan(**_confirmation_args(context, plan_hash))[0]
+    persisted = ConfirmationStore.from_config().operation_for_plan(plan_hash)
+    assert persisted is not None
+    assert persisted["status"] == PlanStatus.EXECUTING.value
+    replay = replayed_plan_error(context.nonce)
+    assert replay["error"]["type"] == "WRITE_OUTCOME_UNKNOWN"
+    assert replay["error"]["details"]["status"] == PlanStatus.UNKNOWN.value
+    assert get_write_status(plan_hash)["data"]["status"] == PlanStatus.UNKNOWN.value
+
+    assert record_write_outcome(
+        plan_hash=plan_hash,
+        status=ApplyStatus.APPLIED,
+        receipt={"status": ApplyStatus.APPLIED.value},
+    )
+    status = get_write_status(plan_hash)
+    assert status["data"]["status"] == PlanStatus.APPLIED.value
+    assert status["data"]["receipt"] == {"status": ApplyStatus.APPLIED.value}
+    assert "plan" not in status["data"]
+
+
+def test_confirmation_store_persists_plan_status_enum_value(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    context, plan_hash = build_plan_context(
+        tool_name="test",
+        mode="delete",
+        payload_digest="enum-status",
+        nonce="enum-status",
+    )
+    ConfirmationStore.from_config().issue(
+        nonce=context.nonce,
+        plan_hash=plan_hash,
+        expires_at=context.expires_at,
+    )
+    assert verify_and_consume_plan(**_confirmation_args(context, plan_hash))[0]
+
+    assert record_write_outcome(
+        plan_hash=plan_hash,
+        status=PlanStatus.CONFLICT,
+        receipt={"status": ApplyStatus.CONFLICT.value},
+    )
+
+    operation = ConfirmationStore.from_config().operation_for_plan(plan_hash)
+    assert operation is not None
+    assert operation["status"] == PlanStatus.CONFLICT.value
+
+
 def test_existing_consumed_only_database_is_migrated(monkeypatch):
     store = ConfirmationStore.from_config()
     store._prepare_storage()
@@ -504,16 +566,12 @@ def test_confirmation_nonce_is_global_across_payloads(monkeypatch):
 
 def test_concurrent_confirmation_has_exactly_one_winner(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    context, plan_hash = build_plan_context(
-        tool_name="test", mode="import", payload_digest="abc123", nonce="race"
-    )
+    context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="race")
     _issue(context, plan_hash)
     args = _confirmation_args(context, plan_hash)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(
-            executor.map(lambda _: verify_and_consume_plan(**args), range(8))
-        )
+        results = list(executor.map(lambda _: verify_and_consume_plan(**args), range(8)))
 
     assert sum(result[0] for result in results) == 1
     assert sum(result[1] == ErrorType.PLAN_ALREADY_USED for result in results) == 7
@@ -547,9 +605,7 @@ def test_expired_plan_does_not_consume_nonce(monkeypatch):
     _issue(expired_context, expired_hash)
     monkeypatch.setattr("hugegraph_mcp.plan_hash.time.time", lambda: 1002)
     monkeypatch.setattr("hugegraph_mcp.confirmation_store.time.time", lambda: 1002)
-    expired = verify_and_consume_plan(
-        **_confirmation_args(expired_context, expired_hash)
-    )
+    expired = verify_and_consume_plan(**_confirmation_args(expired_context, expired_hash))
 
     valid_context, valid_hash = build_plan_context(
         tool_name="test",
@@ -571,9 +627,7 @@ def test_readonly_plan_does_not_consume_nonce(monkeypatch):
     )
     _issue(readonly_context, readonly_hash)
 
-    blocked = verify_and_consume_plan(
-        **_confirmation_args(readonly_context, readonly_hash)
-    )
+    blocked = verify_and_consume_plan(**_confirmation_args(readonly_context, readonly_hash))
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     writable_context, writable_hash = build_plan_context(
         tool_name="test",
@@ -582,9 +636,7 @@ def test_readonly_plan_does_not_consume_nonce(monkeypatch):
         nonce="after-readonly-write",
     )
     _issue(writable_context, writable_hash)
-    allowed = verify_and_consume_plan(
-        **_confirmation_args(writable_context, writable_hash)
-    )
+    allowed = verify_and_consume_plan(**_confirmation_args(writable_context, writable_hash))
 
     assert blocked[1] == ErrorType.READONLY_VIOLATION
     assert allowed == (True, None, None)
@@ -660,9 +712,7 @@ def test_confirmation_store_lazily_cleans_expired_records(monkeypatch):
     store.consume(nonce="cleanup-trigger", plan_hash="trigger", expires_at=other_expiry)
 
     with sqlite3.connect(store.database_path) as connection:
-        rows = connection.execute(
-            "SELECT plan_hash FROM consumed_confirmations ORDER BY plan_hash"
-        ).fetchall()
+        rows = connection.execute("SELECT plan_hash FROM consumed_confirmations ORDER BY plan_hash").fetchall()
 
     assert rows == [("new",), ("trigger",)]
 
@@ -681,9 +731,7 @@ def test_confirmation_cleanup_failure_does_not_block_current_nonce(monkeypatch):
         expires_at=expires_at,
     )
     monkeypatch.setattr(store, "_cleanup_expired", fail_cleanup)
-    store.consume(
-        nonce="cleanup-failure-current", plan_hash="current", expires_at=expires_at
-    )
+    store.consume(nonce="cleanup-failure-current", plan_hash="current", expires_at=expires_at)
     try:
         store.consume(
             nonce="cleanup-failure-current",
@@ -695,9 +743,7 @@ def test_confirmation_cleanup_failure_does_not_block_current_nonce(monkeypatch):
         pass
 
 
-def test_unavailable_confirmation_store_fails_closed_without_internal_details(
-    monkeypatch, tmp_path
-):
+def test_unavailable_confirmation_store_fails_closed_without_internal_details(monkeypatch, tmp_path):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     unusable = tmp_path / "not-a-directory"
     unusable.write_text("occupied", encoding="utf-8")

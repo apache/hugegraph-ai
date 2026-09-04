@@ -14,6 +14,7 @@
 import re
 from unittest.mock import Mock
 
+import pytest
 from hugegraph_mcp.tools import manage_schema as manage_schema_module
 from hugegraph_mcp.tools.manage_schema import manage_schema
 
@@ -158,9 +159,7 @@ def _edge_label(
     return operation
 
 
-def _index_label(
-    name="personByAge", base_type="VERTEX", base_label="person", fields=None
-):
+def _index_label(name="personByAge", base_type="VERTEX", base_label="person", fields=None):
     operation = {
         "type": "create_index_label",
         "name": name,
@@ -217,9 +216,7 @@ def test_manage_schema_design_does_not_fetch_live_schema(monkeypatch):
     def raise_connection_error():
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", raise_connection_error
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", raise_connection_error)
 
     result = manage_schema(
         mode="design",
@@ -237,9 +234,7 @@ def test_manage_schema_design_does_not_fetch_live_schema(monkeypatch):
 
 
 def test_manage_schema_validate_valid(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(mode="validate", operations=[_property_key()])
 
@@ -254,9 +249,7 @@ def test_manage_schema_validate_returns_connection_failed_when_schema_unreachabl
     def raise_connection_error():
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", raise_connection_error
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", raise_connection_error)
 
     result = manage_schema(mode="validate", operations=[_property_key()])
 
@@ -267,9 +260,7 @@ def test_manage_schema_validate_returns_connection_failed_when_schema_unreachabl
 
 
 def test_manage_schema_validate_invalid_missing_name(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -283,9 +274,7 @@ def test_manage_schema_validate_invalid_missing_name(monkeypatch):
 
 
 def test_manage_schema_validate_rejects_delete(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -385,9 +374,7 @@ def test_manage_schema_validate_rejects_primary_key_label_without_primary_keys(
 
     assert result["ok"] is True
     assert result["data"]["valid"] is False
-    assert result["data"]["errors"][0]["reason"] == (
-        "primary_keys is required when id_strategy is PRIMARY_KEY"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("primary_keys is required when id_strategy is PRIMARY_KEY")
 
 
 def test_manage_schema_validate_rejects_primary_key_not_in_properties(monkeypatch):
@@ -404,9 +391,7 @@ def test_manage_schema_validate_rejects_primary_key_not_in_properties(monkeypatc
 
     assert result["ok"] is True
     assert result["data"]["valid"] is False
-    assert result["data"]["errors"][0]["reason"] == (
-        "primary_keys must be included in properties: age"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("primary_keys must be included in properties: age")
 
 
 def test_manage_schema_validate_rejects_unknown_primary_key_property(monkeypatch):
@@ -418,9 +403,7 @@ def test_manage_schema_validate_rejects_unknown_primary_key_property(monkeypatch
 
     result = manage_schema(
         mode="validate",
-        operations=[
-            _vertex_label("person", properties=["name", "age"], primary_keys=["age"])
-        ],
+        operations=[_vertex_label("person", properties=["name", "age"], primary_keys=["age"])],
     )
 
     assert result["ok"] is True
@@ -445,9 +428,7 @@ def test_manage_schema_validate_rejects_non_string_primary_key(monkeypatch):
 
     assert result["ok"] is True
     assert result["data"]["valid"] is False
-    assert result["data"]["errors"][0]["reason"] == (
-        "primary_keys must contain non-empty string names"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("primary_keys must contain non-empty string names")
 
 
 def test_manage_schema_validate_rejects_duplicate_primary_key(monkeypatch):
@@ -459,16 +440,12 @@ def test_manage_schema_validate_rejects_duplicate_primary_key(monkeypatch):
 
     result = manage_schema(
         mode="validate",
-        operations=[
-            _vertex_label("person", properties=["name"], primary_keys=["name", "name"])
-        ],
+        operations=[_vertex_label("person", properties=["name"], primary_keys=["name", "name"])],
     )
 
     assert result["ok"] is True
     assert result["data"]["valid"] is False
-    assert result["data"]["errors"][0]["reason"] == (
-        "primary_keys contains duplicate name(s): name"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("primary_keys contains duplicate name(s): name")
 
 
 def test_manage_schema_validate_accepts_automatic_id_without_primary_keys(monkeypatch):
@@ -480,9 +457,7 @@ def test_manage_schema_validate_accepts_automatic_id_without_primary_keys(monkey
 
     result = manage_schema(
         mode="validate",
-        operations=[
-            _vertex_label("person", properties=["name"], id_strategy="AUTOMATIC")
-        ],
+        operations=[_vertex_label("person", properties=["name"], id_strategy="AUTOMATIC")],
     )
 
     assert result["ok"] is True
@@ -525,9 +500,7 @@ def test_manage_schema_dry_run_returns_connection_failed_when_schema_unreachable
     def raise_connection_error():
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", raise_connection_error
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", raise_connection_error)
 
     result = manage_schema(mode="dry_run", operations=[_property_key()])
 
@@ -546,9 +519,7 @@ def test_manage_schema_rejects_unknown_mode_as_validation_error():
 
 
 def test_same_batch_pk_to_vertex_label(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -564,9 +535,7 @@ def test_same_batch_pk_to_vertex_label(monkeypatch):
 
 
 def test_same_batch_vertex_to_edge_label(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -584,9 +553,7 @@ def test_same_batch_vertex_to_edge_label(monkeypatch):
 
 
 def test_same_batch_later_vertex_label_is_not_available_to_earlier_edge(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -601,15 +568,11 @@ def test_same_batch_later_vertex_label_is_not_available_to_earlier_edge(monkeypa
     assert result["ok"] is True
     assert result["data"]["valid"] is False
     assert "plan_hash" not in result["data"]
-    assert result["data"]["errors"][0]["reason"] == (
-        "target_label references undefined vertex label: software"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("target_label references undefined vertex label: software")
 
 
 def test_same_batch_label_to_index(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -626,9 +589,7 @@ def test_same_batch_label_to_index(monkeypatch):
 
 
 def test_same_batch_full_chain(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -658,9 +619,7 @@ def test_same_batch_full_chain(monkeypatch):
 
 
 def test_same_batch_unknown_reference(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -676,9 +635,7 @@ def test_same_batch_unknown_reference(monkeypatch):
 
 
 def test_same_batch_duplicate_definition(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -689,15 +646,11 @@ def test_same_batch_duplicate_definition(monkeypatch):
     assert result["data"]["valid"] is False
     error = result["data"]["errors"][0]
     assert error["operation_index"] == 1
-    assert error["reason"] == (
-        "duplicate create_property_key name age within the same batch"
-    )
+    assert error["reason"] == ("duplicate create_property_key name age within the same batch")
 
 
 def test_same_batch_edge_missing_endpoint(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="validate",
@@ -716,9 +669,7 @@ def test_same_batch_edge_missing_endpoint(monkeypatch):
 
 
 def test_manage_schema_dry_run(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(mode="dry_run", operations=[_property_key()])
 
@@ -731,9 +682,7 @@ def test_manage_schema_dry_run(monkeypatch):
 
 def test_manage_schema_readonly_preview_does_not_issue_plan(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
     issue = Mock()
     monkeypatch.setattr(manage_schema_module, "issue_plan", issue)
 
@@ -834,14 +783,14 @@ def test_dry_run_rejects_non_string_id_strategy(monkeypatch):
     )
 
     _assert_dry_run_invalid(result)
-    assert result["data"]["errors"][0]["reason"] == (
-        "id_strategy must be a string, got int"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("id_strategy must be a string, got int")
 
 
 def test_dry_run_accepts_all_valid_id_strategies(monkeypatch):
     monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
+        manage_schema_module.schema_tools,
+        "get_live_schema",
+        lambda: _schema(propertykeys=[_live_pk("name")]),
     )
 
     for id_strategy in manage_schema_module.VERTEX_LABEL_ID_STRATEGIES:
@@ -854,7 +803,7 @@ def test_dry_run_accepts_all_valid_id_strategies(monkeypatch):
             operation["primary_keys"] = ["name"]
         result = manage_schema(
             mode="dry_run",
-            operations=[_property_key("name"), operation],
+            operations=[operation],
             nonce=f"id-{id_strategy}",
         )
 
@@ -864,15 +813,11 @@ def test_dry_run_accepts_all_valid_id_strategies(monkeypatch):
 
 
 def test_dry_run_rejects_invalid_data_type_enum(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
-        operations=[
-            {"type": "create_property_key", "name": "age", "data_type": "FOOBAR"}
-        ],
+        operations=[{"type": "create_property_key", "name": "age", "data_type": "FOOBAR"}],
     )
 
     _assert_dry_run_invalid(result)
@@ -880,9 +825,7 @@ def test_dry_run_rejects_invalid_data_type_enum(monkeypatch):
 
 
 def test_dry_run_rejects_non_string_data_type(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -890,15 +833,11 @@ def test_dry_run_rejects_non_string_data_type(monkeypatch):
     )
 
     _assert_dry_run_invalid(result)
-    assert (
-        result["data"]["errors"][0]["reason"] == "data_type must be a string, got int"
-    )
+    assert result["data"]["errors"][0]["reason"] == "data_type must be a string, got int"
 
 
 def test_dry_run_rejects_invalid_cardinality_enum(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -917,9 +856,7 @@ def test_dry_run_rejects_invalid_cardinality_enum(monkeypatch):
 
 
 def test_dry_run_rejects_invalid_aggregate_type_when_provided(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     invalid = manage_schema(
         mode="dry_run",
@@ -934,24 +871,18 @@ def test_dry_run_rejects_invalid_aggregate_type_when_provided(monkeypatch):
     )
     valid = manage_schema(
         mode="dry_run",
-        operations=[
-            {"type": "create_property_key", "name": "score", "data_type": "INT"}
-        ],
+        operations=[{"type": "create_property_key", "name": "score", "data_type": "INT"}],
     )
 
     _assert_dry_run_invalid(invalid)
-    assert invalid["data"]["errors"][0]["reason"] == (
-        "unsupported aggregate_type: 'AVG'"
-    )
+    assert invalid["data"]["errors"][0]["reason"] == ("unsupported aggregate_type: 'AVG'")
     assert valid["ok"] is True
     assert valid["data"]["valid"] is True
     assert "plan_hash" in valid["data"]
 
 
 def test_dry_run_accepts_hugegraph_1_7_aggregate_types(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     for aggregate_type in ("NONE", "OLD", "SUM", "MIN", "MAX", "SET", "LIST"):
         cardinality = aggregate_type if aggregate_type in {"SET", "LIST"} else "SINGLE"
@@ -975,9 +906,7 @@ def test_dry_run_accepts_hugegraph_1_7_aggregate_types(monkeypatch):
 
 
 def test_dry_run_rejects_invalid_aggregate_cardinality_combination(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -993,16 +922,11 @@ def test_dry_run_rejects_invalid_aggregate_cardinality_combination(monkeypatch):
     )
 
     _assert_dry_run_invalid(result)
-    assert (
-        result["data"]["errors"][0]["reason"]
-        == "aggregate_type 'SET' is not allowed with cardinality 'SINGLE'"
-    )
+    assert result["data"]["errors"][0]["reason"] == "aggregate_type 'SET' is not allowed with cardinality 'SINGLE'"
 
 
 def test_dry_run_accepts_set_aggregate_with_set_cardinality(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -1071,9 +995,7 @@ def test_dry_run_rejects_unsupported_parent_sub_edge_fields(monkeypatch):
         result = manage_schema(mode="dry_run", operations=[operation])
 
         _assert_dry_run_invalid(result)
-        assert result["data"]["errors"][0]["reason"] == (
-            f"unsupported parent/sub edge label field(s): {field}"
-        )
+        assert result["data"]["errors"][0]["reason"] == (f"unsupported parent/sub edge label field(s): {field}")
 
 
 def test_dry_run_rejects_nullable_and_sort_key_contract_violations(monkeypatch):
@@ -1167,7 +1089,7 @@ def test_dry_run_accepts_nullable_and_sort_keys_subset_of_properties(monkeypatch
     )
 
     result = manage_schema(
-        mode="dry_run",
+        mode="validate",
         operations=[
             _vertex_label(
                 "person_v",
@@ -1188,7 +1110,7 @@ def test_dry_run_accepts_nullable_and_sort_keys_subset_of_properties(monkeypatch
 
     assert result["ok"] is True
     assert result["data"]["valid"] is True
-    assert "plan_hash" in result["data"]
+    assert "plan_hash" not in result["data"]
 
 
 def test_dry_run_rejects_non_string_name(monkeypatch):
@@ -1198,9 +1120,7 @@ def test_dry_run_rejects_non_string_name(monkeypatch):
         lambda: _schema(
             propertykeys=[_live_pk("name")],
             vertexlabels=[_live_vertex("person")],
-            edgelabels=[
-                _live_edge("knows", source_label="person", target_label="person")
-            ],
+            edgelabels=[_live_edge("knows", source_label="person", target_label="person")],
         ),
     )
     operations = [
@@ -1224,27 +1144,19 @@ def test_dry_run_rejects_non_string_name(monkeypatch):
         result = manage_schema(mode="dry_run", operations=[operation])
 
         _assert_dry_run_invalid(result)
-        assert result["data"]["errors"][0]["reason"].startswith(
-            "name must be a non-empty string"
-        )
+        assert result["data"]["errors"][0]["reason"].startswith("name must be a non-empty string")
 
 
 def test_dry_run_rejects_blank_name(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
-        operations=[
-            {"type": "create_property_key", "name": "   ", "data_type": "TEXT"}
-        ],
+        operations=[{"type": "create_property_key", "name": "   ", "data_type": "TEXT"}],
     )
 
     _assert_dry_run_invalid(result)
-    assert result["data"]["errors"][0]["reason"] == (
-        "name must be a non-empty string, got '   '"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("name must be a non-empty string, got '   '")
 
 
 def test_dry_run_rejects_non_string_source_or_target_label(monkeypatch):
@@ -1279,12 +1191,8 @@ def test_dry_run_rejects_non_string_source_or_target_label(monkeypatch):
 
     _assert_dry_run_invalid(invalid_source)
     _assert_dry_run_invalid(blank_target)
-    assert invalid_source["data"]["errors"][0]["reason"].startswith(
-        "source_label must be a non-empty string"
-    )
-    assert blank_target["data"]["errors"][0]["reason"].startswith(
-        "target_label must be a non-empty string"
-    )
+    assert invalid_source["data"]["errors"][0]["reason"].startswith("source_label must be a non-empty string")
+    assert blank_target["data"]["errors"][0]["reason"].startswith("target_label must be a non-empty string")
 
 
 def test_dry_run_rejects_non_string_base_label(monkeypatch):
@@ -1307,15 +1215,11 @@ def test_dry_run_rejects_non_string_base_label(monkeypatch):
     )
 
     _assert_dry_run_invalid(result)
-    assert result["data"]["errors"][0]["reason"] == (
-        "base_label must be a non-empty string, got 123"
-    )
+    assert result["data"]["errors"][0]["reason"] == ("base_label must be a non-empty string, got 123")
 
 
 def test_dry_run_accepts_valid_property_key_enums(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     for data_type in manage_schema_module.PROPERTY_KEY_DATA_TYPES:
         result = manage_schema(
@@ -1388,15 +1292,11 @@ def test_enum_tables_stay_in_sync_with_apply_methods():
     assert manage_schema_module.VERTEX_LABEL_ID_STRATEGIES == frozenset(
         manage_schema_module.VERTEX_LABEL_ID_STRATEGY_METHODS
     )
-    assert manage_schema_module.EDGE_LABEL_FREQUENCIES == frozenset(
-        manage_schema_module.EDGE_LABEL_FREQUENCY_METHODS
-    )
+    assert manage_schema_module.EDGE_LABEL_FREQUENCIES == frozenset(manage_schema_module.EDGE_LABEL_FREQUENCY_METHODS)
 
 
 def test_invalid_enum_input_never_reaches_apply_stage_error(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -1417,9 +1317,7 @@ def test_invalid_enum_input_never_reaches_apply_stage_error(monkeypatch):
 
 
 def test_manage_schema_dry_run_same_ops_same_hash(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     first = manage_schema(mode="dry_run", operations=[_property_key()], nonce="same")
     second = manage_schema(mode="dry_run", operations=[_property_key()], nonce="same")
@@ -1428,9 +1326,7 @@ def test_manage_schema_dry_run_same_ops_same_hash(monkeypatch):
 
 
 def test_manage_schema_dry_run_without_nonce_gets_fresh_hash(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     first = manage_schema(mode="dry_run", operations=[_property_key()])
     second = manage_schema(mode="dry_run", operations=[_property_key()])
@@ -1439,9 +1335,7 @@ def test_manage_schema_dry_run_without_nonce_gets_fresh_hash(monkeypatch):
 
 
 def test_manage_schema_dry_run_different_ops_different_hash(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     first = manage_schema(mode="dry_run", operations=[_property_key("age")])
     second = manage_schema(mode="dry_run", operations=[_property_key("score")])
@@ -1542,9 +1436,7 @@ def test_manage_schema_plan_hash_changes_when_supported_user_data_changes():
     operations = [_property_key()]
     schema = _schema(
         propertykeys=[{"name": "name", "data_type": "TEXT"}],
-        vertexlabels=[
-            {"name": "person", "properties": ["name"], "primary_keys": ["name"]}
-        ],
+        vertexlabels=[{"name": "person", "properties": ["name"], "primary_keys": ["name"]}],
     )
     schema_with_metadata = _schema(
         propertykeys=[
@@ -1577,9 +1469,7 @@ def test_manage_schema_plan_hash_ignores_unrelated_schema_metadata():
     operations = [_property_key()]
     schema = _schema(
         propertykeys=[{"name": "name", "data_type": "TEXT"}],
-        vertexlabels=[
-            {"name": "person", "properties": ["name"], "primary_keys": ["name"]}
-        ],
+        vertexlabels=[{"name": "person", "properties": ["name"], "primary_keys": ["name"]}],
     )
     schema_with_metadata = _schema(
         propertykeys=[{"id": 1, "name": "name", "data_type": "TEXT"}],
@@ -1635,12 +1525,8 @@ def test_manage_schema_apply_happy_path(monkeypatch):
     def live_schema():
         return state
 
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", live_schema
-    )
-    monkeypatch.setattr(
-        manage_schema_module, "_schema_manager", lambda: RecordingPropertyManager(state)
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", live_schema)
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", lambda: RecordingPropertyManager(state))
 
     dry_run = manage_schema(
         mode="dry_run",
@@ -1658,31 +1544,27 @@ def test_manage_schema_apply_happy_path(monkeypatch):
     )
 
     assert result["ok"] is True
-    assert result["data"]["status"] == "applied"
+    assert result["data"]["status"] == "APPLIED"
     assert result["data"]["applied_operations"] == [_property_key()]
 
 
 def test_manage_schema_replayed_confirmation_does_not_apply_twice(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     state = _empty_schema()
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", lambda: state
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", lambda: state)
     apply_calls = []
 
     def fake_apply(operations, *, live_schema):
         apply_calls.append((operations, live_schema))
         state["schema"]["propertykeys"].append(_live_pk("age"))
         return {
-            "status": "applied",
+            "status": "APPLIED",
             "valid": True,
             "applied_operations": operations,
         }
 
     monkeypatch.setattr(manage_schema_module, "apply_schema_operations", fake_apply)
-    dry_run = manage_schema(
-        mode="dry_run", operations=[_property_key()], nonce="schema-replay"
-    )
+    dry_run = manage_schema(mode="dry_run", operations=[_property_key()], nonce="schema-replay")
     context = dry_run["data"]["plan_context"]
     arguments = {
         "mode": "apply",
@@ -1708,23 +1590,19 @@ def test_manage_schema_unconsumed_schema_drift_does_not_consume_nonce(monkeypatc
 
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     state = _empty_schema()
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", lambda: state
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", lambda: state)
     apply_calls = []
 
     def fake_apply(operations, *, live_schema):
         apply_calls.append((operations, live_schema))
         return {
-            "status": "applied",
+            "status": "APPLIED",
             "valid": True,
             "applied_operations": operations,
         }
 
     monkeypatch.setattr(manage_schema_module, "apply_schema_operations", fake_apply)
-    dry_run = manage_schema(
-        mode="dry_run", operations=[_property_key()], nonce="schema-stale"
-    )
+    dry_run = manage_schema(mode="dry_run", operations=[_property_key()], nonce="schema-stale")
     context = dry_run["data"]["plan_context"]
     arguments = {
         "mode": "apply",
@@ -1756,34 +1634,27 @@ def test_manage_schema_apply_canonicalizes_property_key_post_read_enums(monkeypa
     def live_schema():
         return state
 
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", live_schema
-    )
-    monkeypatch.setattr(
-        manage_schema_module, "_schema_manager", lambda: RecordingPropertyManager(state)
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", live_schema)
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", lambda: RecordingPropertyManager(state))
 
-    operations = [
-        _property_key("age", "INTEGER"),
-        _property_key("active", "BOOL"),
-    ]
-    dry_run = manage_schema(
-        mode="dry_run",
-        operations=operations,
-        nonce="schema-canonical-enums",
-    )
-    context = dry_run["data"]["plan_context"]
-    result = manage_schema(
-        mode="apply",
-        operations=operations,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
+    for index, operation in enumerate([_property_key("age", "INTEGER"), _property_key("active", "BOOL")]):
+        dry_run = manage_schema(
+            mode="dry_run",
+            operations=[operation],
+            nonce=f"schema-canonical-enums-{index}",
+        )
+        context = dry_run["data"]["plan_context"]
+        result = manage_schema(
+            mode="apply",
+            operations=[operation],
+            confirm=True,
+            plan_hash=dry_run["data"]["plan_hash"],
+            nonce=context["nonce"],
+            expires_at=context["expires_at"],
+        )
+        assert result["ok"] is True
+        assert result["data"]["status"] == "APPLIED"
 
-    assert result["ok"] is True
-    assert result["data"]["status"] == "applied"
     assert state["schema"]["propertykeys"] == [
         {"name": "age", "data_type": "INT", "cardinality": "SINGLE"},
         {"name": "active", "data_type": "BOOLEAN", "cardinality": "SINGLE"},
@@ -1856,9 +1727,7 @@ def test_manage_schema_apply_fails_when_post_read_fields_do_not_match(monkeypatc
         "data_type": "INT",
         "aggregate_type": "SUM",
     }
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", live_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", live_schema)
     monkeypatch.setattr(manage_schema_module, "_schema_manager", lambda: FakeManager())
 
     dry_run = manage_schema(
@@ -1877,10 +1746,11 @@ def test_manage_schema_apply_fails_when_post_read_fields_do_not_match(monkeypatc
     )
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "PARTIAL_APPLY"
-    assert result["error"]["details"]["status"] == "failed"
-    assert result["error"]["details"]["failed_operation"] == operation
-    assert "post-read schema" in result["error"]["details"]["error"]
+    assert result["error"]["type"] == "WRITE_CONFLICT"
+    assert result["error"]["retryable"] is False
+    assert result["error"]["details"]["status"] == "CONFLICT"
+    assert result["error"]["details"]["operation"] == operation
+    assert "post-read" in result["error"]["details"]["reason"]
 
 
 def test_operation_observed_checks_vertex_and_edge_declared_fields():
@@ -1931,16 +1801,10 @@ def test_operation_observed_checks_vertex_and_edge_declared_fields():
 
 def test_operation_observed_checks_apply_defaults_for_omitted_fields():
     property_operation = _property_key("age")
-    property_schema = _schema(
-        propertykeys=[{"name": "age", "data_type": "INT", "cardinality": "LIST"}]
-    )
-    assert not manage_schema_module._operation_observed(
-        property_operation, property_schema
-    )
+    property_schema = _schema(propertykeys=[{"name": "age", "data_type": "INT", "cardinality": "LIST"}])
+    assert not manage_schema_module._operation_observed(property_operation, property_schema)
 
-    vertex_operation = _vertex_label(
-        "person", properties=["name"], primary_keys=["name"]
-    )
+    vertex_operation = _vertex_label("person", properties=["name"], primary_keys=["name"])
     vertex_schema = _schema(
         vertexlabels=[
             {
@@ -1959,17 +1823,13 @@ def test_operation_observed_rejects_fields_outside_contract():
         _property_key("age"),
         ttl=3600,
     )
-    schema = _schema(
-        propertykeys=[{"name": "age", "data_type": "INT", "cardinality": "SINGLE"}]
-    )
+    schema = _schema(propertykeys=[{"name": "age", "data_type": "INT", "cardinality": "SINGLE"}])
 
     assert not manage_schema_module._operation_observed(operation, schema)
 
 
 def test_schema_field_table_rejects_unimplemented_fields_before_dry_run(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -1985,15 +1845,12 @@ def test_schema_field_table_rejects_unimplemented_fields_before_dry_run(monkeypa
 
     _assert_dry_run_invalid(result)
     assert any(
-        error["reason"] == "unsupported field(s) for create_vertex_label: ttl"
-        for error in result["data"]["errors"]
+        error["reason"] == "unsupported field(s) for create_vertex_label: ttl" for error in result["data"]["errors"]
     )
 
 
 def test_schema_field_table_rejects_non_object_property_key_user_data(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="dry_run",
@@ -2008,10 +1865,7 @@ def test_schema_field_table_rejects_non_object_property_key_user_data(monkeypatc
     )
 
     _assert_dry_run_invalid(result)
-    assert any(
-        error["reason"] == "user_data must be an object"
-        for error in result["data"]["errors"]
-    )
+    assert any(error["reason"] == "user_data must be an object" for error in result["data"]["errors"])
 
 
 def test_schema_field_table_rejects_non_object_user_data_before_plan_for_all_supported_operations(
@@ -2057,10 +1911,7 @@ def test_schema_field_table_rejects_non_object_user_data_before_plan_for_all_sup
         result = manage_schema(mode="dry_run", operations=[operation])
 
         _assert_dry_run_invalid(result)
-        assert any(
-            error["reason"] == "user_data must be an object"
-            for error in result["data"]["errors"]
-        )
+        assert any(error["reason"] == "user_data must be an object" for error in result["data"]["errors"])
 
 
 def test_schema_field_table_forwards_and_matches_label_options():
@@ -2284,92 +2135,29 @@ def test_schema_field_table_forwards_property_key_aggregate_and_user_data():
     builder.add_parameter.assert_any_call("user_data", {"unit": "points"})
 
 
-def test_manage_schema_apply_partial_failure(monkeypatch):
+def test_manage_schema_dry_run_rejects_multi_operation_apply_plan(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    state = _empty_schema()
-
-    def live_schema():
-        return state
-
-    class PropertyBuilder:
-        def __init__(self, name):
-            self.name = name
-            self.data_type = None
-            self.cardinality = None
-
-        def asInt(self):
-            self.data_type = "INT"
-            return self
-
-        def valueSingle(self):
-            self.cardinality = "SINGLE"
-            return self
-
-        def create(self):
-            state["schema"]["propertykeys"].append(
-                {
-                    "name": self.name,
-                    "data_type": self.data_type,
-                    "cardinality": self.cardinality,
-                }
-            )
-            return "ok"
-
-    class VertexBuilder:
-        def __init__(self, name):
-            self.name = name
-
-        def usePrimaryKeyId(self):
-            return self
-
-        def properties(self, *args):
-            return self
-
-        def primaryKeys(self, *args):
-            return self
-
-        def create(self):
-            raise RuntimeError("builder failed")
-
-    class FakeManager:
-        def propertyKey(self, name):
-            return PropertyBuilder(name)
-
-        def vertexLabel(self, name):
-            return VertexBuilder(name)
-
-    operations = [
-        _property_key(),
-        _vertex_label("person", properties=["age"], primary_keys=["age"]),
-    ]
     monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", live_schema
+        manage_schema_module.schema_tools,
+        "get_live_schema",
+        lambda: _schema(propertykeys=[_live_pk("age")]),
     )
-    monkeypatch.setattr(manage_schema_module, "_schema_manager", lambda: FakeManager())
+    operations = [
+        _vertex_label("person", properties=["age"], primary_keys=["age"]),
+        _vertex_label("software", properties=["age"], primary_keys=["age"]),
+    ]
 
-    dry_run = manage_schema(mode="dry_run", operations=operations, nonce="partial")
-    context = dry_run["data"]["plan_context"]
-    result = manage_schema(
-        mode="apply",
-        operations=operations,
-        confirm=True,
-        plan_hash=dry_run["data"]["plan_hash"],
-        nonce=context["nonce"],
-        expires_at=context["expires_at"],
-    )
+    result = manage_schema(mode="dry_run", operations=operations)
 
-    assert result["ok"] is False
-    assert result["error"]["type"] == "PARTIAL_APPLY"
-    assert result["error"]["details"]["status"] == "partial"
-    assert result["error"]["details"]["applied_operations"] == [_property_key()]
-    assert "inspect_schema_tool" in result["next_actions"][0]
+    assert result["ok"] is True
+    assert result["data"]["valid"] is False
+    assert "exactly one create operation" in result["data"]["errors"][0]["reason"]
+    assert "plan_hash" not in result["data"]
 
 
 def test_manage_schema_apply_hash_mismatch(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     result = manage_schema(
         mode="apply",
@@ -2386,9 +2174,7 @@ def test_manage_schema_apply_hash_mismatch(monkeypatch):
 
 def test_manage_schema_apply_readonly_blocks_after_valid_plan(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
     dry_run = manage_schema(
         mode="dry_run",
@@ -2410,9 +2196,7 @@ def test_manage_schema_apply_readonly_blocks_after_valid_plan(monkeypatch):
 
 
 def test_manage_schema_dry_run_rejects_too_many_operations_before_plan(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
     issue = Mock()
     monkeypatch.setattr(manage_schema_module, "issue_plan", issue)
     operations = [_property_key(f"pk_{idx}") for idx in range(201)]
@@ -2427,9 +2211,7 @@ def test_manage_schema_dry_run_rejects_too_many_operations_before_plan(monkeypat
 
 
 def test_manage_schema_dry_run_rejects_oversized_payload_before_plan(monkeypatch):
-    monkeypatch.setattr(
-        manage_schema_module.schema_tools, "get_live_schema", _empty_schema
-    )
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
     issue = Mock()
     monkeypatch.setattr(manage_schema_module, "issue_plan", issue)
     operations = [
@@ -2448,3 +2230,223 @@ def test_manage_schema_dry_run_rejects_oversized_payload_before_plan(monkeypatch
     assert "MAX_PAYLOAD_BYTES" in result["error"]["details"]["errors"][0]["reason"]
     assert "plan_hash" not in (result.get("data") or {})
     issue.assert_not_called()
+
+
+def test_apply_schema_operations_requires_exactly_one_operation():
+    with pytest.raises(ValueError, match="exactly one operation"):
+        manage_schema_module.apply_schema_operations([], live_schema=_empty_schema())
+
+    with pytest.raises(ValueError, match="exactly one operation"):
+        manage_schema_module.apply_schema_operations(
+            [_property_key("age"), _property_key("score")],
+            live_schema=_empty_schema(),
+        )
+
+
+def test_apply_schema_operations_returns_already_applied_for_identical_object(monkeypatch):
+    manager = Mock()
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", manager)
+
+    result = manage_schema_module.apply_schema_operations(
+        [_property_key()],
+        live_schema=_schema(propertykeys=[{"name": "age", "data_type": "INT", "cardinality": "SINGLE"}]),
+    )
+
+    assert result["status"] == "ALREADY_APPLIED"
+    assert result["observed_state"]["name"] == "age"
+    assert result["reconciliation_required"] is False
+    manager.assert_not_called()
+
+
+def test_apply_schema_operations_returns_conflict_for_different_existing_object(monkeypatch):
+    manager = Mock()
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", manager)
+
+    result = manage_schema_module.apply_schema_operations(
+        [_property_key()],
+        live_schema=_schema(propertykeys=[{"name": "age", "data_type": "TEXT", "cardinality": "SINGLE"}]),
+    )
+
+    assert result["status"] == "CONFLICT"
+    assert result["observed_state"]["data_type"] == "TEXT"
+    assert result["reconciliation_required"] is False
+    manager.assert_not_called()
+
+
+def test_apply_schema_operations_manager_construction_failure_is_unknown(monkeypatch):
+    def fail_manager():
+        raise ConnectionError("manager unavailable")
+
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", fail_manager)
+
+    result = manage_schema_module.apply_schema_operations(
+        [_property_key()],
+        live_schema=_empty_schema(),
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["reconciliation_required"] is True
+    assert "manager unavailable" in result["reason"]
+
+
+def test_apply_schema_operations_transport_failure_is_unknown(monkeypatch):
+    class FailingBuilder(RecordingPropertyBuilder):
+        def create(self):
+            raise TimeoutError("response lost")
+
+    class FailingManager:
+        def propertyKey(self, name):
+            return FailingBuilder(name)
+
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", FailingManager)
+
+    result = manage_schema_module.apply_schema_operations(
+        [_property_key()],
+        live_schema=_empty_schema(),
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["reconciliation_required"] is True
+    assert "response lost" in result["reason"]
+
+
+def test_apply_schema_operations_post_read_failure_is_unknown(monkeypatch):
+    monkeypatch.setattr(
+        manage_schema_module,
+        "_schema_manager",
+        lambda: RecordingPropertyManager(),
+    )
+
+    def fail_post_read():
+        raise ConnectionError("read unavailable")
+
+    monkeypatch.setattr(manage_schema_module, "current_live_schema", fail_post_read)
+
+    result = manage_schema_module.apply_schema_operations(
+        [_property_key()],
+        live_schema=_empty_schema(),
+    )
+
+    assert result["status"] == "UNKNOWN"
+    assert result["reconciliation_required"] is True
+    assert result["reason"] == "post-read schema failed: read unavailable"
+
+
+def test_schema_manager_uses_write_timeout(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "47")
+    captured = {}
+    schema_manager = object()
+
+    class FakeClient:
+        def schema(self):
+            return schema_manager
+
+    def fake_build(cfg, *, client_cls, request_timeout_seconds):
+        captured["cfg"] = cfg
+        captured["client_cls"] = client_cls
+        captured["request_timeout_seconds"] = request_timeout_seconds
+        return FakeClient()
+
+    monkeypatch.setattr(manage_schema_module, "build_hugegraph_client", fake_build)
+
+    assert manage_schema_module._schema_manager() is schema_manager
+    assert captured["request_timeout_seconds"] == 47.0
+
+
+def test_manage_schema_persists_unknown_receipt_when_manager_construction_fails(monkeypatch):
+    from hugegraph_mcp.confirmation_store import ConfirmationStore
+
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
+
+    def fail_manager():
+        raise ConnectionError("manager unavailable")
+
+    monkeypatch.setattr(manage_schema_module, "_schema_manager", fail_manager)
+    dry_run = manage_schema(
+        mode="dry_run",
+        operations=[_property_key()],
+        nonce="schema-manager-failure",
+    )
+    context = dry_run["data"]["plan_context"]
+
+    result = manage_schema(
+        mode="apply",
+        operations=[_property_key()],
+        confirm=True,
+        plan_hash=dry_run["data"]["plan_hash"],
+        nonce=context["nonce"],
+        expires_at=context["expires_at"],
+    )
+
+    persisted = ConfirmationStore.from_config().operation_for_plan(dry_run["data"]["plan_hash"])
+    assert result["ok"] is False
+    assert result["error"]["type"] == "WRITE_OUTCOME_UNKNOWN"
+    assert persisted["status"] == "UNKNOWN"
+    assert persisted["receipt"]["status"] == "UNKNOWN"
+    assert "manager unavailable" in persisted["receipt"]["reason"]
+
+
+def test_apply_schema_operations_success_uses_canonical_receipt(monkeypatch):
+    state = _empty_schema()
+    monkeypatch.setattr(
+        manage_schema_module,
+        "_schema_manager",
+        lambda: RecordingPropertyManager(state),
+    )
+    monkeypatch.setattr(manage_schema_module, "current_live_schema", lambda: state)
+
+    result = manage_schema_module.apply_schema_operations(
+        [_property_key()],
+        live_schema=_empty_schema(),
+    )
+
+    assert result["status"] == "APPLIED"
+    assert result["operation"] == _property_key()
+    assert result["observed_state"] == {
+        "name": "age",
+        "data_type": "INT",
+        "cardinality": "SINGLE",
+    }
+    assert result["reconciliation_required"] is False
+    assert result["operation_results"][0]["status"] == result["status"]
+
+
+def test_manage_schema_rejects_lowercase_executor_status_as_unknown(monkeypatch):
+    from hugegraph_mcp.confirmation_store import ConfirmationStore
+
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
+    monkeypatch.setattr(
+        manage_schema_module,
+        "apply_schema_operations",
+        lambda operations, *, live_schema: {"status": "applied"},
+    )
+    dry_run = manage_schema(
+        mode="dry_run",
+        operations=[_property_key()],
+        nonce="schema-noncanonical-receipt",
+    )
+    context = dry_run["data"]["plan_context"]
+
+    result = manage_schema(
+        mode="apply",
+        operations=[_property_key()],
+        confirm=True,
+        plan_hash=dry_run["data"]["plan_hash"],
+        nonce=context["nonce"],
+        expires_at=context["expires_at"],
+    )
+
+    persisted = ConfirmationStore.from_config().operation_for_plan(dry_run["data"]["plan_hash"])
+    assert result["ok"] is False
+    assert result["error"]["type"] == "WRITE_OUTCOME_UNKNOWN"
+    assert result["error"]["details"]["status"] == "UNKNOWN"
+    assert persisted["status"] == "UNKNOWN"
+    assert persisted["receipt"]["status"] == "UNKNOWN"
+    assert "non-canonical receipt" in persisted["receipt"]["reason"]
+
+
+def test_schema_batch_partial_compatibility_helpers_are_removed():
+    assert not hasattr(manage_schema_module, "_partial_apply_result")
+    assert not hasattr(manage_schema_module, "_recovery_suggestions")

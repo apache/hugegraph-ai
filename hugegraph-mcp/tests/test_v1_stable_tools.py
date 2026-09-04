@@ -18,11 +18,11 @@ import logging
 import warnings
 from unittest.mock import Mock
 
+import pytest
 from fastmcp import Client
-
 from hugegraph_mcp import server
-from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
-from hugegraph_mcp.guard import Capability
+from hugegraph_mcp.envelope import envelope_ok
+from hugegraph_mcp.write_contract import LEGACY_DEPRECATION_CODE
 
 
 async def _list_mcp_tools():
@@ -55,8 +55,11 @@ V1_TOOL_NAMES = {
 }
 
 V2_CORE_TOOL_NAMES = V1_TOOL_NAMES | {
+    "confirm_write_tool",
+    "get_write_status_tool",
     "inspect_schema_tool",
     "query_graph_data_tool",
+    "reconcile_write_tool",
     "mutate_graph_properties_tool",
 }
 
@@ -119,6 +122,30 @@ def test_public_tool_contract_can_reload_as_v1(monkeypatch):
         importlib.reload(server_module)
 
 
+def test_invalid_and_empty_toolsets_fail_closed_to_v1(monkeypatch, caplog):
+    import importlib
+
+    import hugegraph_mcp.server as server_module
+
+    async def _tool_names():
+        list_tools = getattr(server_module.mcp, "_mcp_list_tools", None)
+        if list_tools is None:
+            list_tools = server_module.mcp._list_tools
+        tools = await list_tools()
+        return {tool.name for tool in tools}
+
+    try:
+        with caplog.at_level(logging.ERROR, logger="hugegraph_mcp.server"):
+            for value in ("typo", ""):
+                monkeypatch.setenv("HUGEGRAPH_MCP_TOOLSET", value)
+                importlib.reload(server_module)
+                assert asyncio.run(_tool_names()) == V1_TOOL_NAMES
+        assert any("Invalid HUGEGRAPH_MCP_TOOLSET" in message for message in caplog.messages)
+    finally:
+        monkeypatch.delenv("HUGEGRAPH_MCP_TOOLSET", raising=False)
+        importlib.reload(server_module)
+
+
 def test_public_tool_argument_models_do_not_emit_schema_shadow_warning():
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
@@ -132,13 +159,12 @@ def test_public_tool_argument_models_do_not_emit_schema_shadow_warning():
 
 
 def test_server_import_restores_logging_globals():
-    assert logging.handlers.RotatingFileHandler is server._OriginalRotatingFileHandler
     assert logging.root.manager.disable < logging.CRITICAL
 
 
-def test_generate_gremlin_tool_routes_to_generate_gremlin(monkeypatch):
-    expected = envelope_ok({"gremlin": "g.V().count()"})
-    mock = Mock(return_value=expected)
+def test_generate_gremlin_tool_execute_fails_closed_even_for_admin(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
+    mock = Mock()
     monkeypatch.setattr(server, "generate_gremlin", mock)
 
     result = server.generate_gremlin_tool(
@@ -148,13 +174,28 @@ def test_generate_gremlin_tool_routes_to_generate_gremlin(monkeypatch):
     )
 
     _assert_v1_envelope_shape(result)
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    assert "hard-budget contract is incomplete" in result["error"]["message"]
+    assert result["error"]["details"]["post_materialization_limits_are_hard_budgets"] is False
+    mock.assert_not_called()
+
+
+def test_generate_gremlin_tool_still_generates_without_execution(monkeypatch):
+    expected = envelope_ok({"gremlin": "g.V().count()"})
+    mock = Mock(return_value=expected)
+    monkeypatch.setattr(server, "generate_gremlin", mock)
+
+    result = server.generate_gremlin_tool(query="count vertices", execute=False)
+
+    _assert_v1_envelope_shape(result)
     assert result["ok"] is True
     assert result["data"] == expected["data"]
     mock.assert_called_once_with(
         query="count vertices",
-        execute=True,
-        output_types=["vertex"],
-        limit_policy="warn",
+        execute=False,
+        output_types=None,
+        limit_policy="reject_unbounded",
     )
 
 
@@ -176,17 +217,21 @@ def test_inspect_graph_tool_adds_contract_fields(monkeypatch):
     mock.assert_called_with(include_raw_schema=False, include_counts=True)
 
 
-def test_execute_gremlin_read_tool_routes_to_execute_gremlin_read(monkeypatch):
-    expected = envelope_ok({"data": [1, 2, 3]})
-    mock = Mock(return_value=expected)
+def test_execute_gremlin_read_tool_fails_closed_even_for_admin(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
+    mock = Mock()
     monkeypatch.setattr(server, "execute_gremlin_read", mock)
 
     result = server.execute_gremlin_read_tool(gremlin_query="g.V().limit(3)")
 
     _assert_v1_envelope_shape(result)
-    assert result["ok"] is True
-    assert result["data"] == expected["data"]
-    mock.assert_called_once_with("g.V().limit(3)", limit_policy="warn")
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    capabilities = result["error"]["details"]["required_capabilities"]
+    assert result["error"]["details"]["integration_contract_verified"] is False
+    assert capabilities["gremlin_result_item_limit"]["status"] == "unknown"
+    assert capabilities["http_streaming_response_limit"]["status"] == "verified_unsupported"
+    mock.assert_not_called()
 
 
 def test_extract_graph_data_tool_routes_to_extract_graph_data(monkeypatch):
@@ -228,9 +273,7 @@ def test_apply_schema_tool_validate_routes_to_manage_schema(monkeypatch):
     mock = Mock(return_value=expected)
     monkeypatch.setattr(server, "manage_schema", mock)
 
-    result = server.apply_schema_tool(
-        mode="validate", operations=[{"op": "add_vertex_label"}]
-    )
+    result = server.apply_schema_tool(mode="validate", operations=[{"op": "add_vertex_label"}])
 
     _assert_v1_envelope_shape(result)
     assert result["ok"] is True
@@ -250,9 +293,7 @@ def test_apply_schema_tool_dry_run_routes_to_manage_schema(monkeypatch):
     mock = Mock(return_value=expected)
     monkeypatch.setattr(server, "manage_schema", mock)
 
-    result = server.apply_schema_tool(
-        mode="dry_run", operations=[{"op": "add_vertex_label"}]
-    )
+    result = server.apply_schema_tool(mode="dry_run", operations=[{"op": "add_vertex_label"}])
 
     _assert_v1_envelope_shape(result)
     assert result["ok"] is True
@@ -283,6 +324,7 @@ def test_apply_schema_tool_apply_routes_in_v2_core(monkeypatch):
 
     _assert_v1_envelope_shape(result)
     assert result["ok"] is True
+    assert result["warnings"][0].startswith(LEGACY_DEPRECATION_CODE)
     mock.assert_called_once_with(
         mode="apply",
         operations=[{"type": "create_property_key", "name": "age"}],
@@ -291,6 +333,69 @@ def test_apply_schema_tool_apply_routes_in_v2_core(monkeypatch):
         nonce="nonce",
         expires_at=9999999999,
     )
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "dependency_name", "arguments"),
+    [
+        (
+            "apply_schema_tool",
+            "manage_schema",
+            {
+                "mode": "dry_run",
+                "operations": [{"type": "create_property_key", "name": "age"}],
+            },
+        ),
+        (
+            "mutate_graph_properties_tool",
+            "mutate_graph_properties",
+            {
+                "target": "vertex",
+                "operation": "append",
+                "id": "1",
+                "properties": {"age": 42},
+            },
+        ),
+        (
+            "import_graph_data_tool",
+            "manage_graph_data",
+            {"mode": "ingest", "graph_data": {"vertices": [], "edges": []}},
+        ),
+        (
+            "delete_graph_data_tool",
+            "manage_graph_data",
+            {"change_plan": {"operations": []}},
+        ),
+    ],
+)
+def test_legacy_write_wrappers_reject_partial_locator_before_business_logic(
+    monkeypatch,
+    tool_name,
+    dependency_name,
+    arguments,
+):
+    mock = Mock()
+    monkeypatch.setattr(server, dependency_name, mock)
+
+    result = getattr(server, tool_name)(**arguments, plan_hash="hash-only")
+
+    _assert_v1_envelope_shape(result)
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert result["error"]["source"] == tool_name
+    mock.assert_not_called()
+
+
+def test_canonical_confirm_wrapper_passes_only_plan_id(monkeypatch):
+    expected = envelope_ok({"plan_id": "wp-1", "status": "APPLIED"})
+    mock = Mock(return_value=expected)
+    monkeypatch.setattr(server, "confirm_write", mock)
+
+    result = server.confirm_write_tool(plan_id="wp-1")
+
+    _assert_v1_envelope_shape(result)
+    assert result["ok"] is True
+    mock.assert_called_once_with(plan_id="wp-1")
 
 
 def test_apply_schema_tool_apply_returns_feature_disabled_in_v1(monkeypatch):
@@ -366,13 +471,9 @@ def test_generate_gremlin_tool_aligns_error_source(monkeypatch):
     assert result["error"]["source"] == "generate_gremlin_tool"
 
 
-def test_execute_gremlin_read_tool_aligns_error_source(monkeypatch):
-    expected = envelope_err(
-        ErrorType.UNSAFE_GREMLIN,
-        "Unsafe query",
-        source="gremlin_tools",
-    )
-    mock = Mock(return_value=expected)
+def test_execute_gremlin_read_tool_reports_hard_budget_gate_source(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
+    mock = Mock()
     monkeypatch.setattr(server, "execute_gremlin_read", mock)
 
     result = server.execute_gremlin_read_tool(gremlin_query="g.addV('person')")
@@ -380,9 +481,21 @@ def test_execute_gremlin_read_tool_aligns_error_source(monkeypatch):
     _assert_v1_envelope_shape(result)
     assert result["ok"] is False
     assert result["error"]["source"] == "execute_gremlin_read_tool"
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    mock.assert_not_called()
 
 
-def test_admin_gate_blocks_write_tool_by_default(monkeypatch):
+def test_raw_gremlin_execution_is_disabled_by_default(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "false")
+
+    direct = server.execute_gremlin_read_tool(gremlin_query="g.V().limit(1)")
+    generated = server.generate_gremlin_tool(query="one vertex", execute=True)
+
+    assert direct["error"]["type"] == "FEATURE_DISABLED"
+    assert generated["error"]["type"] == "FEATURE_DISABLED"
+
+
+def test_hard_budget_gate_blocks_write_tool_by_default(monkeypatch):
     monkeypatch.delenv("HUGEGRAPH_MCP_TOOLSET", raising=False)
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "false")
 
@@ -390,20 +503,9 @@ def test_admin_gate_blocks_write_tool_by_default(monkeypatch):
 
     assert result["ok"] is False
     assert result["error"]["type"] == "FEATURE_DISABLED"
-    assert (
-        result["error"]["message"]
-        == "execute_gremlin_write_tool is an admin/debug tool and is disabled by default."
-    )
-    assert (
-        result["error"]["suggestion"]
-        == "Set HUGEGRAPH_MCP_ADMIN_MODE=true and HUGEGRAPH_MCP_READONLY=false "
-        "to enable execute_gremlin_write_tool."
-    )
-    assert result["error"]["details"]["toolset"] == "v2_core"
-    assert result["error"]["details"]["required_env"] == {
-        "HUGEGRAPH_MCP_ADMIN_MODE": "true",
-        "HUGEGRAPH_MCP_READONLY": "false",
-    }
+    assert "hard-budget contract is incomplete" in result["error"]["message"]
+    assert "structured MCP query tools" in result["error"]["suggestion"]
+    assert result["error"]["details"]["post_materialization_limits_are_hard_budgets"] is False
     assert "V1" not in result["error"]["message"]
     assert "V1" not in result["error"]["suggestion"]
     assert "V1" not in str(result["error"]["details"])
@@ -418,12 +520,10 @@ def test_admin_gate_blocks_refresh_embeddings_by_default(monkeypatch):
     assert result["ok"] is False
     assert result["error"]["type"] == "FEATURE_DISABLED"
     assert (
-        result["error"]["message"]
-        == "refresh_vid_embeddings_tool is an admin/debug tool and is disabled by default."
+        result["error"]["message"] == "refresh_vid_embeddings_tool is an admin/debug tool and is disabled by default."
     )
     assert (
-        result["error"]["suggestion"]
-        == "Set HUGEGRAPH_MCP_ADMIN_MODE=true and HUGEGRAPH_MCP_READONLY=false "
+        result["error"]["suggestion"] == "Set HUGEGRAPH_MCP_ADMIN_MODE=true and HUGEGRAPH_MCP_READONLY=false "
         "to enable refresh_vid_embeddings_tool."
     )
     assert result["error"]["details"]["toolset"] == "v2_core"
@@ -436,31 +536,29 @@ def test_admin_gate_blocks_refresh_embeddings_by_default(monkeypatch):
     assert "V1" not in str(result["error"]["details"])
 
 
-def test_admin_gate_allows_write_tool_when_enabled(monkeypatch):
+def test_raw_write_fails_closed_even_when_admin_and_writes_enabled(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    expected = envelope_ok({"data": "ok"})
-    mock = Mock(return_value=expected)
+    mock = Mock()
     monkeypatch.setattr(server, "execute_gremlin_write", mock)
 
     result = server.execute_gremlin_write_tool(gremlin_query="g.addV('test')")
 
     _assert_v1_envelope_shape(result)
-    assert result["ok"] is True
-    assert result["data"] == expected["data"]
-    mock.assert_called_once_with("g.addV('test')", capability=Capability.DEBUG_WRITE)
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    assert "hard-budget contract is incomplete" in result["error"]["message"]
+    mock.assert_not_called()
 
 
-def test_execute_gremlin_write_tool_documents_break_glass_contract():
+def test_execute_gremlin_write_tool_documents_disabled_contract():
     doc = server.execute_gremlin_write_tool.__doc__ or ""
 
-    assert "Break-glass" in doc
-    assert "sole write-safety-chain exception" in doc
-    assert "no preview" in doc
-    assert "isolated trusted admin transport" in doc
+    assert "disabled" in doc.lower()
+    assert "hard-budget" in doc
 
 
-def test_admin_gate_blocks_write_tool_when_readonly(monkeypatch):
+def test_hard_budget_gate_precedes_write_readonly_check(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "true")
     mock = Mock()
@@ -469,12 +567,9 @@ def test_admin_gate_blocks_write_tool_when_readonly(monkeypatch):
     result = server.execute_gremlin_write_tool(gremlin_query="g.addV('test')")
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "READONLY_VIOLATION"
+    assert result["error"]["type"] == "FEATURE_DISABLED"
     assert result["error"]["source"] == "execute_gremlin_write_tool"
-    assert result["error"]["details"]["required_env"] == {
-        "HUGEGRAPH_MCP_ADMIN_MODE": "true",
-        "HUGEGRAPH_MCP_READONLY": "false",
-    }
+    assert result["error"]["details"]["post_materialization_limits_are_hard_budgets"] is False
     mock.assert_not_called()
 
 
@@ -501,31 +596,29 @@ def test_admin_gate_reads_current_env_after_import(monkeypatch):
 
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    expected = envelope_ok({"data": "ok"})
-    mock = Mock(return_value=expected)
-    monkeypatch.setattr(server, "execute_gremlin_write", mock)
-
-    result = server.execute_gremlin_write_tool(gremlin_query="g.addV('test')")
-
-    _assert_v1_envelope_shape(result)
-    assert result["ok"] is True
-    assert result["data"] == expected["data"]
-    mock.assert_called_once_with("g.addV('test')", capability=Capability.DEBUG_WRITE)
-
-
-def test_execute_gremlin_write_tool_wraps_unexpected_exceptions(monkeypatch):
-    monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
-    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    mock = Mock(side_effect=RuntimeError("boom"))
+    mock = Mock()
     monkeypatch.setattr(server, "execute_gremlin_write", mock)
 
     result = server.execute_gremlin_write_tool(gremlin_query="g.addV('test')")
 
     _assert_v1_envelope_shape(result)
     assert result["ok"] is False
-    assert result["error"]["type"] == "FLOW_EXECUTION_FAILED"
-    assert result["error"]["source"] == "execute_gremlin_write_tool"
-    assert "boom" in result["error"]["message"]
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    mock.assert_not_called()
+
+
+def test_execute_gremlin_write_tool_does_not_reach_executor(monkeypatch):
+    monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
+    monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
+    mock = Mock(side_effect=RuntimeError("must not execute"))
+    monkeypatch.setattr(server, "execute_gremlin_write", mock)
+
+    result = server.execute_gremlin_write_tool(gremlin_query="g.addV('test')")
+
+    _assert_v1_envelope_shape(result)
+    assert result["ok"] is False
+    assert result["error"]["type"] == "FEATURE_DISABLED"
+    mock.assert_not_called()
 
 
 def test_refresh_vid_embeddings_tool_wraps_unexpected_exceptions(monkeypatch):

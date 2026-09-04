@@ -153,6 +153,9 @@ markers = [
     "contract: public contract tests; may use mocks but verify stable behavior",
     "integration: tests requiring a real local service such as HugeGraph",
     "hugegraph: tests requiring HugeGraph Server",
+    "live: requires a real HugeGraph Server",
+    "real_hugegraph: requires a real HugeGraph Server",
+    "llm: requires HugeGraph-AI or an external LLM provider",
     "smoke: end-to-end-ish high-value smoke over production pipeline boundaries",
     "external: tests requiring external provider credentials or non-HugeGraph services",
     "slow: long-running tests excluded from default local loops",
@@ -180,6 +183,7 @@ ignore = [
     "N802",    # invalid-function-name (API compatibility)
     "C901",    # complexity (non-critical for now)
     "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring (Chinese prose)
     "RUF003", # ambiguous-unicode-character-comment
 ]
 # No need to ignore E501 (line-too-long), `ruff format` will handle it automatically.
@@ -190,7 +194,7 @@ ignore = [
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["hugegraph_llm", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]
+known-first-party = ["hugegraph_llm", "hugegraph_mcp", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]
 
 [tool.ruff.format]
 quote-style = "double"

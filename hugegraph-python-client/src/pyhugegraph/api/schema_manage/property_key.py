@@ -139,6 +139,10 @@ class PropertyKey(HugeParamsBase):
             property_keys["data_type"] = dic["data_type"]
         if "cardinality" in dic:
             property_keys["cardinality"] = dic["cardinality"]
+        if "aggregate_type" in dic:
+            property_keys["aggregate_type"] = dic["aggregate_type"]
+        if dic.get("user_data"):
+            property_keys["user_data"] = dic["user_data"]
         path = "schema/propertykeys"
         self.clean_parameter_holder()
         if response := self._sess.request(path, "POST", data=json.dumps(property_keys)):

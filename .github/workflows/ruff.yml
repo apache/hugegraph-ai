@@ -7,6 +7,9 @@ on:
       - "release-*"
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,7 +43,7 @@ jobs:
 
       - name: Install dev dependencies
         run: |
-          uv sync --extra dev
+          uv sync --extra dev --extra llm --extra python-client
 
       - name: Check code formatting with Ruff
         run: |
@@ -88,4 +91,4 @@ jobs:
         run: uv run ty check hugegraph-llm/src hugegraph-python-client/src
         continue-on-error: true
         # TODO: extend scope to hugegraph-ml once heavy optional deps (DGL, PyTorch) are handled
-        # TODO: add graph-mcp once the module is introduced
+        # TODO: add graph-mcp after its type-check baseline is established

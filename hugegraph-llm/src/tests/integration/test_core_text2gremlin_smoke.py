@@ -51,12 +51,20 @@ def test_text2gremlin_smoke_normalizes_fake_llm_output():
         schema_input="hugegraph",
         gremlin_prompt_input=None,
         requested_outputs=["template_gremlin", "invalid_output"],
+        graph_client_config={
+            "url": "http://graph.example:8080",
+            "graph": "hugegraph",
+            "user": "admin",
+            "pwd": "secret",
+            "graphspace": "DEFAULT",
+        },
     )
 
     assert result["result"] == "g.V().has('quality_person', 'name', 'marko')"
     assert result["raw_result"] == "g.V().hasLabel('quality_person')"
     assert prepared.example_num == 10
     assert prepared.requested_outputs == ["template_gremlin"]
+    assert prepared.graph_client_config["url"] == "http://graph.example:8080"
 
 
 def test_text2gremlin_smoke_invalid_query_fails_explicitly():

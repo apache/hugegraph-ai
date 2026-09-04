@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import threading
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -286,23 +288,13 @@ def test_rag_api_invalid_request_body_returns_validation_shape():
     assert response.json()["detail"][0]["loc"][-1] == "query"
 
 
-def test_rag_client_config_updates_only_explicit_graph_fields(monkeypatch):
+def test_rag_accepts_client_config_without_mutating_globals(monkeypatch):
     monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
     monkeypatch.setattr(huge_settings, "graph_name", "original_graph")
     monkeypatch.setattr(huge_settings, "graph_user", "original_user")
     monkeypatch.setattr(huge_settings, "graph_pwd", "original_pwd")
     monkeypatch.setattr(huge_settings, "graph_space", "original_space")
-    observed_settings = {}
-
-    def rag_answer_func(**_kwargs):
-        observed_settings["graph_url"] = huge_settings.graph_url
-        observed_settings["graph_name"] = huge_settings.graph_name
-        observed_settings["graph_user"] = huge_settings.graph_user
-        observed_settings["graph_pwd"] = huge_settings.graph_pwd
-        observed_settings["graph_space"] = huge_settings.graph_space
-        return ("raw", "vector", "graph", "graph_vector")
-
-    client, callbacks = _make_test_client(rag_answer_func=Mock(side_effect=rag_answer_func))
+    client, callbacks = _make_test_client()
 
     response = client.post(
         "/rag",
@@ -316,18 +308,152 @@ def test_rag_client_config_updates_only_explicit_graph_fields(monkeypatch):
 
     assert response.status_code == status.HTTP_200_OK
     callbacks["rag_answer_func"].assert_called_once()
-    assert observed_settings == {
-        "graph_url": "http://override:8080",
-        "graph_name": "original_graph",
-        "graph_user": "original_user",
-        "graph_pwd": "original_pwd",
-        "graph_space": "original_space",
+    assert huge_settings.graph_url == "http://original:8080"
+    assert huge_settings.graph_name == "original_graph"
+    assert huge_settings.graph_user == "original_user"
+    assert huge_settings.graph_pwd == "original_pwd"
+    assert huge_settings.graph_space == "original_space"
+
+
+def test_graph_rag_accepts_client_config_without_mutating_globals(monkeypatch):
+    monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
+    monkeypatch.setattr(huge_settings, "graph_name", "original_graph")
+    monkeypatch.setattr(huge_settings, "graph_user", "original_user")
+    monkeypatch.setattr(huge_settings, "graph_pwd", "original_pwd")
+    monkeypatch.setattr(huge_settings, "graph_space", "original_space")
+    client, callbacks = _make_test_client()
+    response = client.post(
+        "/rag/graph",
+        json={
+            "query": "find vertices",
+            "client_config": {
+                "url": "http://override:8080",
+            },
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    callbacks["graph_rag_recall_func"].assert_called_once()
+    assert huge_settings.graph_url == "http://original:8080"
+    assert huge_settings.graph_name == "original_graph"
+    assert huge_settings.graph_user == "original_user"
+    assert huge_settings.graph_pwd == "original_pwd"
+    assert huge_settings.graph_space == "original_space"
+
+
+def test_text2gremlin_passes_configured_graph_target_without_mutating_globals(monkeypatch):
+    monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
+    monkeypatch.setattr(huge_settings, "graph_name", "original_graph")
+    monkeypatch.setattr(huge_settings, "graph_user", "original_user")
+    monkeypatch.setattr(huge_settings, "graph_pwd", "original_pwd")
+    monkeypatch.setattr(huge_settings, "graph_space", "original_space")
+    callback = Mock(return_value={"template_gremlin": "g.V()"})
+    client, _ = _make_test_client(gremlin_generate_selective_func=callback)
+
+    response = client.post(
+        "/text2gremlin",
+        json={
+            "query": "find vertices",
+            "client_config": {
+                "graph": "original_graph",
+                "gs": "original_space",
+            },
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    callback.assert_called_once()
+    call = callback.call_args.kwargs
+    assert call["schema_input"] == "original_graph"
+    assert call["graph_client_config"] == {
+        "url": "http://original:8080",
+        "graph": "original_graph",
+        "user": "original_user",
+        "pwd": "original_pwd",
+        "graphspace": "original_space",
     }
     assert huge_settings.graph_url == "http://original:8080"
     assert huge_settings.graph_name == "original_graph"
     assert huge_settings.graph_user == "original_user"
     assert huge_settings.graph_pwd == "original_pwd"
     assert huge_settings.graph_space == "original_space"
+
+
+@pytest.mark.parametrize(
+    "client_config, expected_field",
+    [
+        ({"graph": "other_graph"}, "graph"),
+        ({"gs": "other_space"}, "gs"),
+        ({"user": "other_user"}, "user"),
+        ({"pwd": "other_pwd"}, "pwd"),
+    ],
+)
+def test_text2gremlin_rejects_changed_graph_target(monkeypatch, client_config, expected_field):
+    monkeypatch.setattr(huge_settings, "graph_name", "original_graph")
+    monkeypatch.setattr(huge_settings, "graph_space", "original_space")
+    callback = Mock()
+    client, _ = _make_test_client(gremlin_generate_selective_func=callback)
+
+    response = client.post(
+        "/text2gremlin",
+        json={"query": "find vertices", "client_config": client_config},
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert expected_field in response.json()["detail"]
+    callback.assert_not_called()
+
+
+def test_text2gremlin_rejects_changed_graph_url(monkeypatch):
+    monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
+    callback = Mock()
+    client, _ = _make_test_client(gremlin_generate_selective_func=callback)
+
+    response = client.post(
+        "/text2gremlin",
+        json={
+            "query": "find vertices",
+            "client_config": {"url": "http://attacker:8080"},
+        },
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "must match" in response.json()["detail"]
+    callback.assert_not_called()
+
+
+def test_text2gremlin_accepts_equivalent_graph_url(monkeypatch):
+    monkeypatch.setattr(huge_settings, "graph_url", "127.0.0.1:8080")
+    callback = Mock(return_value={"template_gremlin": "g.V()"})
+    client, _ = _make_test_client(gremlin_generate_selective_func=callback)
+
+    response = client.post(
+        "/text2gremlin",
+        json={
+            "query": "find vertices",
+            "client_config": {"url": "http://127.0.0.1:8080/"},
+        },
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert callback.call_args.kwargs["graph_client_config"]["url"] == "127.0.0.1:8080"
+
+
+def test_text2gremlin_rejects_malformed_graph_url(monkeypatch):
+    monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
+    callback = Mock()
+    client, _ = _make_test_client(gremlin_generate_selective_func=callback)
+
+    response = client.post(
+        "/text2gremlin",
+        json={
+            "query": "find vertices",
+            "client_config": {"url": "http://[::1"},
+        },
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    callback.assert_not_called()
 
 
 def test_llm_config_rejects_unsupported_provider_without_mutating(monkeypatch):
@@ -406,6 +532,70 @@ def test_rerank_config_rolls_back_provider_type_on_apply_failure(monkeypatch):
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     assert _snapshot_llm_fields(rollback_fields) == original_values
     callbacks["apply_reranker_conf"].assert_called_once()
+
+
+def test_llm_config_rolls_back_on_failed_status(monkeypatch):
+    monkeypatch.setattr(llm_settings, "chat_llm_type", "ollama/local")
+    monkeypatch.setattr(llm_settings, "extract_llm_type", "ollama/local")
+    monkeypatch.setattr(llm_settings, "text2gql_llm_type", "ollama/local")
+    client, _ = _make_test_client(apply_llm_conf=Mock(return_value=status.HTTP_500_INTERNAL_SERVER_ERROR))
+
+    response = client.post(
+        "/config/llm",
+        json={
+            "llm_type": "openai",
+            "api_key": "new-key",
+            "api_base": "https://api.example.test",
+            "language_model": "model",
+            "max_tokens": "1024",
+        },
+    )
+
+    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+    assert llm_settings.chat_llm_type == "ollama/local"
+    assert llm_settings.extract_llm_type == "ollama/local"
+    assert llm_settings.text2gql_llm_type == "ollama/local"
+
+
+def test_llm_config_updates_are_serialized():
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+
+    def apply_llm_conf(api_key, *_args, **_kwargs):
+        if api_key == "first-key":
+            first_entered.set()
+            assert release_first.wait(timeout=2)
+        else:
+            second_entered.set()
+        return status.HTTP_200_OK
+
+    client, _ = _make_test_client(apply_llm_conf=apply_llm_conf)
+    payload = {
+        "llm_type": "openai",
+        "api_base": "https://api.example.test",
+        "language_model": "model",
+        "max_tokens": "1024",
+    }
+    responses = {}
+
+    def configure(name):
+        responses[name] = client.post("/config/llm", json={**payload, "api_key": f"{name}-key"})
+
+    first = threading.Thread(target=configure, args=("first",))
+    second = threading.Thread(target=configure, args=("second",))
+    first.start()
+    assert first_entered.wait(timeout=2)
+    second.start()
+    time.sleep(0.05)
+    assert not second_entered.is_set()
+    release_first.set()
+    first.join(timeout=2)
+    second.join(timeout=2)
+
+    assert second_entered.is_set()
+    assert responses["first"].status_code == status.HTTP_201_CREATED
+    assert responses["second"].status_code == status.HTTP_201_CREATED
 
 
 def test_text2gremlin_callback_exception_returns_stable_response():

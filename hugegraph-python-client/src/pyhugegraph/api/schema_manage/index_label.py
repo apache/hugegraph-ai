@@ -41,10 +41,11 @@ class IndexLabel(HugeParamsBase):
     @decorator_params
     def by(self, *args) -> "IndexLabel":
         if "fields" not in self._parameter_holder.get_keys():
-            self._parameter_holder.set("fields", set())
-        s = self._parameter_holder.get_value("fields")
+            self._parameter_holder.set("fields", [])
+        fields = self._parameter_holder.get_value("fields")
         for item in args:
-            s.add(item)
+            if item not in fields:
+                fields.append(item)
         return self
 
     @decorator_params
@@ -87,7 +88,7 @@ class IndexLabel(HugeParamsBase):
             "base_type": dic["base_type"],
             "base_value": dic["base_value"],
             "index_type": dic["index_type"],
-            "fields": list(dic["fields"]),
+            "fields": dic["fields"],
         }
         path = "schema/indexlabels"
         self.clean_parameter_holder()

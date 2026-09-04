@@ -19,7 +19,7 @@ from enum import Enum
 from typing import List, Literal, Optional
 
 from fastapi import Query
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hugegraph_llm.config import prompt
 
@@ -167,3 +167,27 @@ class GremlinGenerateRequest(BaseModel):
             if missing:
                 raise ValueError(f"Prompt template is missing required placeholders: {', '.join(missing)}")
         return v
+
+
+class GraphExtractRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    text: str
+    graph_schema: Optional[str] = Field(default=None, alias="schema")
+    example_prompt: Optional[str] = None
+    language: str = "zh"
+
+
+class GraphImportRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    data: str
+    graph_schema: Optional[str] = Field(default=None, alias="schema")
+
+
+class VidEmbeddingsRefreshRequest(BaseModel):
+    pass
+
+
+class GraphIndexInfoRequest(BaseModel):
+    pass

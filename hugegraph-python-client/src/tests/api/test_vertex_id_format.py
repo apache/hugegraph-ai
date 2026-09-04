@@ -23,7 +23,11 @@ from uuid import UUID
 import pytest
 from pyhugegraph.api.graph import GraphManager
 from pyhugegraph.api.traverser import TraverserManager
-from pyhugegraph.utils.id_format import format_vertex_id, format_vertex_id_path
+from pyhugegraph.utils.id_format import (
+    format_edge_id_path,
+    format_vertex_id,
+    format_vertex_id_path,
+)
 
 pytestmark = [pytest.mark.unit]
 
@@ -82,6 +86,10 @@ def test_format_vertex_id_path_quotes_json_literal_as_one_url_segment():
     )
 
 
+def test_format_edge_id_path_quotes_edge_id_as_one_url_segment():
+    assert format_edge_id_path("S1:alice>11>knows>S2:bob") == "S1%3Aalice%3E11%3Eknows%3ES2%3Abob"
+
+
 def test_graph_vertex_path_formats_json_literal_ids():
     session = FakeSession(
         responses=[
@@ -101,6 +109,33 @@ def test_graph_vertex_path_formats_json_literal_ids():
     assert session.calls[2][0] == "graph/vertices/%22a%2Fb%3Fc%23d%26e%22"
 
 
+def test_graph_edge_id_paths_encode_reserved_characters():
+    edge_id = "S1:alice>11>knows>S2:bob"
+    session = FakeSession(
+        responses=[
+            {"id": edge_id, "label": "knows", "properties": {}},
+            {"id": edge_id, "label": "knows", "properties": {"city": "Beijing"}},
+            {"id": edge_id, "label": "knows", "properties": {}},
+            {},
+        ]
+    )
+    graph = GraphManager(session)
+
+    graph.getEdgeById(edge_id)
+    graph.appendEdge(edge_id, {"city": "Beijing"})
+    graph.eliminateEdge(edge_id, {"city": "Beijing"})
+    graph.removeEdgeById(edge_id)
+
+    encoded = "S1%3Aalice%3E11%3Eknows%3ES2%3Abob"
+    assert session.calls[0][0] == f"graph/edges/{encoded}"
+    assert session.calls[1][0] == f"graph/edges/{encoded}?action=append"
+    assert session.calls[1][1] == "PUT"
+    assert session.calls[2][0] == f"graph/edges/{encoded}?action=eliminate"
+    assert session.calls[2][1] == "PUT"
+    assert session.calls[3][0] == f"graph/edges/{encoded}"
+    assert session.calls[3][1] == "DELETE"
+
+
 def test_graph_edge_page_formats_and_encodes_vertex_id_query():
     session = FakeSession(
         responses=[
@@ -115,6 +150,71 @@ def test_graph_edge_page_formats_and_encodes_vertex_id_query():
 
     assert session.calls[0][0] == "graph/edges?vertex_id=%22person%3Amarko%22&direction=OUT&label=knows&page"
     assert session.calls[1][0] == "graph/edges?vertex_id=123&direction=OUT&label=knows&page"
+
+
+def test_graph_page_queries_urlencode_reserved_query_values():
+    properties = {"name": "Alice & Bob", "city": "A/B?C#D"}
+    session = FakeSession(
+        responses=[
+            {"vertices": [], "page": "next/1?x=y&z"},
+            {"vertices": [], "page": "condition/next?x=1"},
+            {"edges": [], "page": None},
+        ]
+    )
+    graph = GraphManager(session)
+
+    _, vertex_page = graph.getVertexByPage(
+        label="person/team",
+        limit=10,
+        page="page/1?cursor=a&b",
+        properties=properties,
+    )
+    _, condition_page = graph.getVertexByConditionWithPage(
+        label="person/team",
+        limit=5,
+        page="page/2?cursor=c&d",
+        properties=properties,
+    )
+    graph.getEdgeByPage(
+        label="knows/team",
+        vertex_id="person:alice/bob",
+        direction="OUT/IN",
+        limit=3,
+        page="edge/page?x=1&y=2",
+        properties=properties,
+    )
+
+    assert session.calls[0][0] == (
+        "graph/vertices?"
+        "label=person%2Fteam&"
+        "properties=%7B%22name%22%3A+%22Alice+%26+Bob%22%2C+%22city%22%3A+%22A%2FB%3FC%23D%22%7D&"
+        "page=page%2F1%3Fcursor%3Da%26b&limit=10"
+    )
+    assert session.calls[1][0] == (
+        "graph/vertices?"
+        "label=person%2Fteam&"
+        "properties=%7B%22name%22%3A+%22Alice+%26+Bob%22%2C+%22city%22%3A+%22A%2FB%3FC%23D%22%7D&"
+        "limit=5&page=page%2F2%3Fcursor%3Dc%26d"
+    )
+    assert session.calls[2][0] == (
+        "graph/edges?"
+        "vertex_id=%22person%3Aalice%2Fbob%22&direction=OUT%2FIN&label=knows%2Fteam&"
+        "properties=%7B%22name%22%3A+%22Alice+%26+Bob%22%2C+%22city%22%3A+%22A%2FB%3FC%23D%22%7D&"
+        "page=edge%2Fpage%3Fx%3D1%26y%3D2&limit=3"
+    )
+    assert vertex_page == "next/1?x=y&z"
+    assert condition_page == "condition/next?x=1"
+
+
+def test_graph_edges_by_id_encodes_repeated_edge_id_query_params():
+    edge_id = "S1:alice>11>knows>S2:bob"
+    session = FakeSession(responses=[{"edges": [{"id": edge_id}]}])
+    graph = GraphManager(session)
+
+    edges = graph.getEdgesById([edge_id])
+
+    assert [edge.id for edge in edges] == [edge_id]
+    assert session.calls[0][0] == "traversers/edges?ids=S1%3Aalice%3E11%3Eknows%3ES2%3Abob"
 
 
 def test_graph_vertices_by_id_formats_repeated_json_literal_query_params():

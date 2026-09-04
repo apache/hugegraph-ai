@@ -16,9 +16,17 @@
 # under the License.
 
 
-__all__ = ["huge_settings", "admin_settings", "llm_settings", "resource_path", "index_settings"]
+__all__ = [
+    "huge_settings",
+    "admin_settings",
+    "llm_settings",
+    "resource_path",
+    "index_settings",
+    "runtime_config_lock",
+]
 
 import os
+import threading
 
 from .admin_config import AdminConfig
 from .hugegraph_config import HugeGraphConfig
@@ -33,6 +41,7 @@ prompt.ensure_yaml_file_exists()
 huge_settings = HugeGraphConfig()
 admin_settings = AdminConfig()
 index_settings = IndexConfig()
+runtime_config_lock = threading.RLock()
 
 package_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 resource_path = os.path.join(package_path, "resources")

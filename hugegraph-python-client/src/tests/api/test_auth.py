@@ -140,7 +140,11 @@ class TestAuthManager(unittest.TestCase):
         # HugeGraph 1.7.0+ returns target_resources as a keyed map such as
         # {"VERTEX#person": [{...}]}; older payloads used a list shape.
         target_resources = target["target_resources"]
-        self.assertEqual(target_resources["VERTEX#person"][0]["properties"]["city"], "Shanghai")
+        if isinstance(target_resources, dict):
+            properties = target_resources["VERTEX#person"][0]["properties"]
+        else:
+            properties = target_resources[0]["properties"]
+        self.assertEqual(properties["city"], "Shanghai")
 
         # Delete the target
         self.auth.delete_target(target["id"])

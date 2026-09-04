@@ -127,27 +127,34 @@ def http(method: str, path: str) -> Callable:
                 # Remove 'self' from the arguments used to format the pathinfo
                 all_kwargs.pop("self")
 
-                # Graphspace-scoped auth paths require a graphspace: HugeGraph 1.7.0+
-                # only mounts UserAPI/AccessAPI/BelongAPI/TargetAPI under
-                # /graphspaces/{graphspace}/auth/..., so we fail fast when the
-                # session lacks one rather than producing an unreachable URL.
+                # Auth endpoints moved from /auth/... to
+                # /graphspaces/{graphspace}/auth/... in HugeGraph 1.7.0. Keep
+                # one set of manager methods while routing pre-1.7 sessions to
+                # the legacy path.
                 if "{graphspace}" in path:
                     graphspace_arg = all_kwargs.get("graphspace")
                     graphspace_cfg = getattr(self.session.cfg, "graphspace", None)
                     gs_supported = getattr(self.session.cfg, "gs_supported", False)
-
-                    if not (graphspace_arg or (graphspace_cfg and gs_supported)):
-                        raise ValueError(
-                            "graphspace is required for auth endpoints on HugeGraph 1.7.0+. "
-                            "Ensure gs_supported is True and graphspace is configured."
-                        )
-
                     prefix = "/graphspaces/{graphspace}"
                     if not path.startswith(prefix + "/"):
                         raise ValueError(f"Expected graphspace-prefixed path, got: {path}")
 
-                    all_kwargs["graphspace"] = graphspace_arg or graphspace_cfg
-                    formatted_path = path.format(**all_kwargs)
+                    if not gs_supported and path.startswith(prefix + "/auth/"):
+                        formatted_path = path.removeprefix(prefix).format(**all_kwargs)
+                    elif graphspace_arg:
+                        # Some server-level APIs, such as ServicesManager, take
+                        # graphspace explicitly even when the client session is
+                        # not configured for graphspace-scoped graph requests.
+                        all_kwargs["graphspace"] = graphspace_arg
+                        formatted_path = path.format(**all_kwargs)
+                    elif graphspace_cfg and gs_supported:
+                        all_kwargs["graphspace"] = graphspace_cfg
+                        formatted_path = path.format(**all_kwargs)
+                    else:
+                        raise ValueError(
+                            "graphspace is required for this endpoint. "
+                            "Pass graphspace explicitly or configure a supported graphspace session."
+                        )
                 else:
                     formatted_path = path.format(**all_kwargs)
             else:

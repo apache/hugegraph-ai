@@ -79,7 +79,7 @@ class TestSemanticIdQuery(unittest.TestCase):
         with patch("os.path.join", return_value=self.test_dir):
             query = SemanticIdQuery(
                 self.embedding,
-                self.mock_vector_store_class,  # 传递 vector_index 参数
+                self.mock_vector_store_class,  # Pass the vector_index parameter.
                 by="query",
                 topk_per_query=3,
             )

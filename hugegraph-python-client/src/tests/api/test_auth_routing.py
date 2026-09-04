@@ -21,7 +21,13 @@ from urllib.parse import urljoin
 import pytest
 import requests
 from pyhugegraph.api.auth import AuthManager
+from pyhugegraph.api.common import HugeParamsBase
+from pyhugegraph.api.schema_manage.edge_label import EdgeLabel
+from pyhugegraph.api.services import ServicesManager
+from pyhugegraph.structure.services_data import ServiceCreateParameters
+from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.huge_requests import HGraphSession
+from pyhugegraph.utils.huge_router import http
 
 pytestmark = pytest.mark.contract
 
@@ -58,6 +64,15 @@ class DummySession:
         return {"url": self.last, "method": method}
 
 
+class DummySchemaSession:
+    def __init__(self):
+        self.requests = []
+
+    def request(self, path: str, method: str = "GET", validator=None, **kwargs):
+        self.requests.append({"path": path, "method": method, **kwargs})
+        return {"ok": True}
+
+
 @pytest.mark.parametrize(
     "endpoint, method_call, args, expected_subpath",
     [
@@ -80,28 +95,77 @@ def test_graphspace_scoped_endpoints_use_graphspace(endpoint, method_call, args,
     auth = AuthManager(sess)
 
     getattr(auth, method_call)(*args)
-    assert expected_subpath in sess.last
+    assert sess.last == f"http://127.0.0.1:8080/{expected_subpath}"
 
 
 @pytest.mark.parametrize(
-    "endpoint, method_call, args",
+    "method_call, args, expected_subpath",
     [
-        ("users", "list_users", ()),
-        ("users", "get_user", ("u1",)),
-        ("accesses", "list_accesses", ()),
-        ("accesses", "get_accesses", ("a1",)),
-        ("targets", "list_targets", ()),
-        ("belongs", "list_belongs", ()),
+        ("list_users", (), "auth/users"),
+        ("get_user", ("u1",), "auth/users/u1"),
+        ("list_accesses", (), "auth/accesses"),
+        ("get_accesses", ("a1",), "auth/accesses/a1"),
+        ("list_targets", (), "auth/targets"),
+        ("list_belongs", (), "auth/belongs"),
     ],
 )
-def test_graphspace_scoped_endpoints_require_graphspace(endpoint, method_call, args):
-    # HugeGraph 1.7.0+ requires graphspace for these auth endpoints.
+def test_auth_endpoints_use_legacy_paths_without_graphspace(method_call, args, expected_subpath):
     cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
     sess = DummySession(cfg)
     auth = AuthManager(sess)
 
-    with pytest.raises(ValueError, match="graphspace is required for auth endpoints"):
-        getattr(auth, method_call)(*args)
+    getattr(auth, method_call)(*args)
+
+    assert sess.last == f"http://127.0.0.1:8080/{expected_subpath}"
+
+
+def test_legacy_auth_ignores_explicit_graphspace_placeholder_argument():
+    class ExplicitGraphspaceAuth(HugeParamsBase):
+        @http("GET", "/graphspaces/{graphspace}/auth/users")
+        def list_users(self, graphspace):
+            return self._invoke_request()
+
+    cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
+    sess = DummySession(cfg)
+
+    ExplicitGraphspaceAuth(sess).list_users("SPACE_X")
+
+    assert sess.last == "http://127.0.0.1:8080/auth/users"
+
+
+@pytest.mark.parametrize(
+    "method_call, args",
+    [
+        ("list_users", ()),
+        ("get_user", ("u1",)),
+        ("list_accesses", ()),
+        ("get_accesses", ("a1",)),
+        ("list_targets", ()),
+        ("list_belongs", ()),
+    ],
+)
+def test_graphspace_auth_requires_graphspace_when_supported(method_call, args):
+    cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=True, graph_name="g")
+    sess = DummySession(cfg)
+
+    with pytest.raises(ValueError, match="graphspace is required for this endpoint"):
+        getattr(AuthManager(sess), method_call)(*args)
+
+
+def test_services_use_explicit_graphspace_without_graphspace_session():
+    cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
+    sess = DummySession(cfg)
+    services = ServicesManager(sess)
+
+    services.get_service("SPACE_X", "svc")
+    assert sess.last == "http://127.0.0.1:8080/graphspaces/SPACE_X/services/svc"
+
+    services.list_services("SPACE_X")
+    assert sess.last == "http://127.0.0.1:8080/graphspaces/SPACE_X/services"
+
+    body = ServiceCreateParameters(name="svc", description="test service")
+    services.create_services("SPACE_X", body)
+    assert sess.last == "http://127.0.0.1:8080/graphspaces/SPACE_X/services"
 
 
 def test_groups_are_server_level():
@@ -118,6 +182,73 @@ def test_groups_are_server_level():
     auth2 = AuthManager(sess2)
     auth2.list_groups()
     assert "auth/groups" in sess2.last
+
+
+class _VersionResponse:
+    def __init__(self, core: str):
+        self._core = core
+
+    def json(self):
+        return {"versions": {"core": self._core}}
+
+
+def test_hgraph_config_does_not_auto_enable_graphspace_before_1_7(monkeypatch):
+    monkeypatch.setattr(
+        "pyhugegraph.utils.huge_config.requests.get",
+        lambda *_args, **_kwargs: _VersionResponse("1.6.0"),
+    )
+
+    cfg = HGraphConfig("127.0.0.1:8080", "admin", "pwd", "hugegraph")
+
+    assert cfg.version == [1, 6, 0]
+    assert cfg.graphspace is None
+    assert cfg.gs_supported is False
+
+    sess = DummySession(cfg)
+    AuthManager(sess).list_users()
+    assert sess.last == "http://127.0.0.1:8080/auth/users"
+
+    response = mock.Mock(spec=requests.Response)
+    response.status_code = 200
+    response.json.return_value = {"users": []}
+    response.raise_for_status.return_value = None
+    raw_session = mock.Mock()
+    raw_session.get.return_value = response
+    real_session = HGraphSession(cfg, session=raw_session)
+
+    AuthManager(real_session).list_users()
+
+    requested_url = raw_session.get.call_args.args[0]
+    assert requested_url == "http://127.0.0.1:8080/auth/users"
+
+
+def test_hgraph_config_auto_enables_default_graphspace_for_1_7(monkeypatch):
+    monkeypatch.setattr(
+        "pyhugegraph.utils.huge_config.requests.get",
+        lambda *_args, **_kwargs: _VersionResponse("1.7.0"),
+    )
+
+    cfg = HGraphConfig("127.0.0.1:8080", "admin", "pwd", "hugegraph")
+
+    assert cfg.version == [1, 7, 0]
+    assert cfg.graphspace == "DEFAULT"
+    assert cfg.gs_supported is True
+
+
+def test_edge_label_parent_emits_sub_edge_payload():
+    sess = DummySchemaSession()
+    edge_label = EdgeLabel(sess)
+    edge_label.create_parameter_holder()
+    edge_label.add_parameter("name", "knows_more")
+    edge_label.add_parameter("not_exist", True)
+
+    edge_label.sourceLabel("person").targetLabel("person").parent("knows").create()
+
+    request = sess.requests[-1]
+    assert request["path"] == "schema/edgelabels"
+    assert request["method"] == "POST"
+    assert '"parent_label": "knows"' in request["data"]
+    assert '"edgelabel_type": "SUB"' in request["data"]
 
 
 def test_session_debug_log_redacts_sensitive_kwargs():

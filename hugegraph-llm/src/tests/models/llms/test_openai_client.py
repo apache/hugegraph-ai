@@ -257,7 +257,7 @@ class TestOpenAIClient(unittest.TestCase):
     @patch("hugegraph_llm.models.llms.openai.OpenAI")
     def test_generate_authentication_error(self, mock_openai_class):
         """Test generate method with authentication error."""
-        # Setup mock client to raise OpenAI 的认证错误
+        # Set up the mock client to raise an OpenAI authentication error.
         from openai import AuthenticationError
 
         mock_client = MagicMock()
@@ -276,7 +276,7 @@ class TestOpenAIClient(unittest.TestCase):
         # Test the method
         openai_client = OpenAIClient(model_name="gpt-3.5-turbo")
 
-        # 调用后应返回认证失败的错误消息
+        # The call should return an authentication failure message.
         result = openai_client.generate(prompt="What is the capital of France?")
         self.assertEqual(result, "Error: The provided OpenAI API key is invalid")
 

@@ -46,11 +46,15 @@ class GremlinExecuteNode(BaseNode):
 
         tmpl_q = data_json.get("result", "")
         raw_q = data_json.get("raw_result", "")
+        graph_connection = getattr(self.wk_input, "graph_client_config", None)
 
         if need_template:
             try:
                 safe_q = _ensure_limit(tmpl_q)
-                data_json["template_exec_res"] = run_gremlin_query(query=safe_q)
+                data_json["template_exec_res"] = run_gremlin_query(
+                    query=safe_q,
+                    connection=graph_connection,
+                )
             except Exception as exc:  # pylint: disable=broad-except
                 data_json["template_exec_res"] = f"{exc}"
         else:
@@ -59,7 +63,10 @@ class GremlinExecuteNode(BaseNode):
         if need_raw:
             try:
                 safe_q = _ensure_limit(raw_q)
-                data_json["raw_exec_res"] = run_gremlin_query(query=safe_q)
+                data_json["raw_exec_res"] = run_gremlin_query(
+                    query=safe_q,
+                    connection=graph_connection,
+                )
             except Exception as exc:  # pylint: disable=broad-except
                 data_json["raw_exec_res"] = f"{exc}"
         else:

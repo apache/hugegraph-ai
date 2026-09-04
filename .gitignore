@@ -41,6 +41,9 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# Exception: allow .spec/ directory to be tracked
+!.spec/
+!.spec/**
 
 # Installer logs
 pip-log.txt

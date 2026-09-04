@@ -35,7 +35,7 @@ class WordExtract:
     ):
         self._llm = llm
         self._query = text
-        # 未传入值或者其他值，默认使用英文
+        # Use English by default when the value is missing or unsupported.
         lang_raw = llm_settings.language.lower()
         self._language = "chinese" if lang_raw == "cn" else "english"
 

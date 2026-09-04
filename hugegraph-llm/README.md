@@ -60,6 +60,8 @@ docker-compose -f docker-compose-network.yml ps
 # RAG Service: http://localhost:8001
 ```
 
+The Compose configuration publishes the RAG service only on the host loopback interface by default.
+
 ### Option 2: Individual Docker Containers
 
 For more control over individual components:
@@ -80,7 +82,7 @@ docker run -itd --name=server -p 8080:8080 --network hugegraph-net hugegraph/hug
 docker pull hugegraph/rag:latest
 docker run -itd --name rag \
   -v /path/to/your/hugegraph-llm/.env:/home/work/hugegraph-llm/.env \
-  -p 8001:8001 --network hugegraph-net hugegraph/rag
+  -p 127.0.0.1:8001:8001 --network hugegraph-net hugegraph/rag
 
 # 4. Monitor logs
 docker logs -f rag
@@ -116,6 +118,12 @@ python -m hugegraph_llm.demo.rag_demo.app
 # 6. (Optional) Custom host/port
 python -m hugegraph_llm.demo.rag_demo.app --host 127.0.0.1 --port 18001
 ```
+
+The Docker deployment publishes the RAG service on the host port by default, and the HTTP API is unauthenticated by
+default. Before using this deployment outside a trusted local environment, either enable the built-in Bearer
+authentication with `ENABLE_LOGIN=true` and a strong, non-default `USER_TOKEN`, or configure reverse proxy
+authentication. Also restrict access with a firewall or trusted network. The source launcher can still be bound to
+loopback explicitly with `--host 127.0.0.1`.
 
 #### Additional Setup (Optional)
 
@@ -181,6 +189,16 @@ The system supports both English and Chinese prompts. To switch languages:
 > [!NOTE]
 > Configuration changes are automatically saved when using the web interface. For manual changes, simply refresh the page to load updates.
 
+### Legacy Thin API writes
+
+The compatibility endpoints `POST /graph-import` and
+`POST /vid-embeddings/refresh` are disabled by default. They are intended only
+for authenticated internal callers. To enable them, set `ENABLE_LOGIN=true`,
+replace the default `USER_TOKEN=4321` with a strong random secret, and set
+`HUGEGRAPH_LLM_ENABLE_THIN_WRITES=true`. Send the configured `USER_TOKEN` as a
+Bearer token. Prefer the HugeGraph MCP guarded write tools for user-facing
+workflows.
+
 **LLM Provider Support**: This project uses [LiteLLM](https://docs.litellm.ai/docs/providers) for multi-provider LLM support.
 
 ### Programmatic Examples (new workflow engine)
@@ -194,13 +212,13 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 
 scheduler = SchedulerSingleton.get_instance()
 res = scheduler.schedule_flow(
-  "rag_graph_only",
-  query="Tell me about Al Pacino.",
-  graph_only_answer=True,
-  vector_only_answer=False,
-  raw_answer=False,
-  gremlin_tmpl_num=-1,
-  gremlin_prompt=None,
+    "rag_graph_only",
+    query="Tell me about Al Pacino.",
+    graph_only_answer=True,
+    vector_only_answer=False,
+    raw_answer=False,
+    gremlin_tmpl_num=-1,
+    gremlin_prompt=None,
 )
 
 print(res.get("graph_only_answer"))
@@ -213,10 +231,7 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 
 scheduler = SchedulerSingleton.get_instance()
 res = scheduler.schedule_flow(
-  "rag_vector_only",
-  query="Summarize the career of Ada Lovelace.",
-  vector_only_answer=True,
-  vector_search=True
+    "rag_vector_only", query="Summarize the career of Ada Lovelace.", vector_only_answer=True, vector_search=True
 )
 
 print(res.get("vector_only_answer"))
@@ -229,12 +244,12 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 
 scheduler = SchedulerSingleton.get_instance()
 response = scheduler.schedule_flow(
-  "text2gremlin",
-  "find people who worked with Alan Turing",
-  2,  # example_num
-  "hugegraph",  # schema_input (graph name or schema)
-  None,  # gremlin_prompt_input (optional)
-  ["template_gremlin", "raw_gremlin"],
+    "text2gremlin",
+    "find people who worked with Alan Turing",
+    2,  # example_num
+    "hugegraph",  # schema_input (graph name or schema)
+    None,  # gremlin_prompt_input (optional)
+    ["template_gremlin", "raw_gremlin"],
 )
 
 print(response.get("template_gremlin"))

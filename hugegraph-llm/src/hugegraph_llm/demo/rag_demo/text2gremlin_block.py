@@ -341,6 +341,7 @@ def gremlin_generate_selective(
     schema_input: str,
     gremlin_prompt_input: str,
     requested_outputs: Optional[List[str]] = None,
+    graph_client_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     response_dict = SchedulerSingleton.get_instance().schedule_flow(
         FlowName.TEXT2GREMLIN,
@@ -349,6 +350,7 @@ def gremlin_generate_selective(
         schema_input,
         gremlin_prompt_input,
         requested_outputs,
+        graph_client_config,
     )
 
     return response_dict

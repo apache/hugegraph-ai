@@ -57,7 +57,7 @@ class MockEmbedding(BaseEmbedding):
 
 
 class VectorIndex:
-    """模拟的VectorIndex类"""
+    """Mock VectorIndex class."""
 
     def __init__(self, dimension=1536):
         self.dimension = dimension
@@ -72,5 +72,5 @@ class VectorIndex:
         return len(self.documents)
 
     def search(self, query_vector, top_k=5):
-        # 简单地返回前top_k个文档
+        # Simply return the first top_k documents.
         return self.documents[: min(top_k, len(self.documents))]

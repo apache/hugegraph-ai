@@ -19,11 +19,7 @@ from hugegraph_mcp.tools import refresh_vid_embeddings as refresh_vid_embeddings
 
 def test_refresh_vid_embeddings_success(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
-    post = Mock(
-        return_value=envelope_ok(
-            {"ok": True, "data": {"added": 3, "removed": 1, "summary": "done"}}
-        )
-    )
+    post = Mock(return_value=envelope_ok({"ok": True, "data": {"added": 3, "removed": 1, "summary": "done"}}))
     monkeypatch.setattr(refresh_vid_embeddings_module, "post", post)
 
     result = refresh_vid_embeddings_module.refresh_vid_embeddings(confirm=True)

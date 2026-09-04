@@ -1,7 +1,15 @@
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
 # this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Unified plan-ID confirmation and executor dispatch."""
 
@@ -183,7 +191,7 @@ class WriteExecutor:
             )
             try:
                 receipt = adapter(claimed_plan, operation, attempt)
-            except Exception as exc:  # noqa: BLE001 - persist ambiguous adapter outcome
+            except Exception as exc:
                 receipt = ApplyReceipt(
                     plan_id=plan_id,
                     operation_id=operation.operation_id,
@@ -270,10 +278,10 @@ DEFAULT_WRITE_EXECUTOR_REGISTRY = WriteExecutorRegistry()
 
 # Graph adapters are registered here, after the registry type is defined, to
 # keep the adapter module independent of executor orchestration.
-from hugegraph_mcp.tools.graph_write_adapter import (
+from hugegraph_mcp.tools.graph_write_adapter import (  # noqa: E402
     register_graph_write_adapters,
 )
-from hugegraph_mcp.tools.schema_write_adapter import (
+from hugegraph_mcp.tools.schema_write_adapter import (  # noqa: E402
     register_schema_write_adapters,
 )
 
@@ -287,7 +295,7 @@ def confirm_write(plan_id: str) -> dict:
 
         cfg = MCPConfig.from_env()
         store = plan_store_from_config(cfg)
-    except Exception as exc:  # noqa: BLE001 - public tool must remain enveloped
+    except Exception as exc:
         return envelope_err(
             ErrorType.SERVER_ERROR,
             "The durable plan store is unavailable.",
@@ -304,7 +312,7 @@ def confirm_write(plan_id: str) -> dict:
 def get_write_status(plan_id: str) -> dict:
     try:
         store = plan_store_from_config()
-    except Exception as exc:  # noqa: BLE001 - public tool must remain enveloped
+    except Exception as exc:
         return envelope_err(
             ErrorType.SERVER_ERROR,
             "The durable plan store is unavailable.",

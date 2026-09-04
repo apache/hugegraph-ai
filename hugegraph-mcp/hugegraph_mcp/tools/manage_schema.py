@@ -946,7 +946,10 @@ def validate_schema_operations(
                             idx,
                             operation,
                             f"{field} references undefined vertex label: {label}",
-                            "Create the referenced vertex label first and rerun validation after it exists in the live schema.",
+                            (
+                                "Create the referenced vertex label first and rerun validation "
+                                "after it exists in the live schema."
+                            ),
                         )
                     )
             if operation.get("frequency") not in (None, ""):
@@ -998,7 +1001,10 @@ def validate_schema_operations(
                             idx,
                             operation,
                             f"base_label references undefined vertex label: {base_label}",
-                            "Create the referenced vertex label first and rerun validation after it exists in the live schema.",
+                            (
+                                "Create the referenced vertex label first and rerun validation "
+                                "after it exists in the live schema."
+                            ),
                         )
                     )
             elif base_type == "EDGE":
@@ -1008,7 +1014,10 @@ def validate_schema_operations(
                             idx,
                             operation,
                             f"base_label references undefined edge label: {base_label}",
-                            "Create the referenced edge label first and rerun validation after it exists in the live schema.",
+                            (
+                                "Create the referenced edge label first and rerun validation "
+                                "after it exists in the live schema."
+                            ),
                         )
                     )
             else:
@@ -1168,7 +1177,7 @@ def _mutation_summary(operations: list[dict[str, Any]]) -> str:
 def _safe_fetch_live_schema() -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     try:
         return current_live_schema(), None
-    except Exception as exc:  # noqa: BLE001 - return structured schema error
+    except Exception as exc:
         return None, envelope_err(
             ErrorType.CONNECTION_FAILED,
             "Cannot read live schema from HugeGraph Server for schema validation.",
@@ -1294,7 +1303,7 @@ def apply_schema_operations(
         _apply_one_operation(manager, operation)
         failure_stage = "post-read schema"
         observed_schema = current_live_schema()
-    except Exception as exc:  # noqa: BLE001 - request may already have committed
+    except Exception as exc:
         return ApplyReceipt(
             status=ApplyStatus.UNKNOWN,
             operation=operation,
@@ -1774,7 +1783,7 @@ def manage_schema(
                     live_schema=live_schema,
                 )
                 plan_store_from_config().save_plan(canonical_plan)
-            except Exception as exc:  # noqa: BLE001 - fail closed at persistence boundary
+            except Exception as exc:
                 return envelope_err(
                     ErrorType.SERVER_ERROR,
                     "The schema create plan could not be persisted safely.",
@@ -1789,12 +1798,12 @@ def manage_schema(
             result["readonly_preview_only"] = True
             return envelope_ok(
                 result,
-                warnings=list(result.get("warnings", []))
-                + [
+                warnings=[
+                    *result.get("warnings", []),
                     (
                         "This dry-run was generated while HUGEGRAPH_MCP_READONLY=true. "
                         "Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirming writes."
-                    )
+                    ),
                 ],
                 next_actions=["Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm."],
             )
@@ -1880,7 +1889,9 @@ def manage_schema(
             return envelope_err(
                 ErrorType.WRITE_OUTCOME_UNKNOWN,
                 "The schema create may have committed; reconcile before retrying.",
-                suggestion="Inspect the schema and compare it with the confirmed operation before issuing another write.",
+                suggestion=(
+                    "Inspect the schema and compare it with the confirmed operation before issuing another write."
+                ),
                 retryable=False,
                 details=apply_result,
                 next_actions=["Call inspect_schema_tool and reconcile the confirmed schema object."],

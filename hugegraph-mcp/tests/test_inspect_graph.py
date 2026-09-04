@@ -66,9 +66,7 @@ def _patch_ai_available(monkeypatch, inspect_graph_module):
 def test_inspect_graph_basic(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     execute_read = Mock(
         side_effect=[
             {"data": [3], "total": 1, "duration_ms": 1, "is_read": True},
@@ -96,9 +94,7 @@ def test_inspect_graph_basic(monkeypatch):
 def test_inspect_graph_include_counts_true(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     execute_read = Mock(
         side_effect=[
             {"data": [3], "total": 1, "duration_ms": 1, "is_read": True},
@@ -124,9 +120,7 @@ def test_inspect_graph_ai_status_uses_unified_health_check_config(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_PASSWORD", "secret")
     monkeypatch.setenv("HUGEGRAPH_AI_URL", "http://ai.example:18001")
     monkeypatch.setenv("HUGEGRAPH_MCP_TIMEOUT_SECONDS", "9")
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     monkeypatch.setattr(
         inspect_graph_module,
         "execute_gremlin_read",
@@ -152,9 +146,7 @@ def test_inspect_graph_ai_status_uses_unified_health_check_config(monkeypatch):
 def test_inspect_graph_nested_count_result(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     execute_read = Mock(
         side_effect=[
             {
@@ -229,9 +221,7 @@ def test_inspect_graph_server_unavailable(monkeypatch):
 def test_inspect_graph_ai_unavailable(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     monkeypatch.setattr(
         inspect_graph_module,
         "execute_gremlin_read",
@@ -261,9 +251,7 @@ def test_inspect_graph_ai_unavailable(monkeypatch):
 def test_inspect_graph_ai_available_when_openapi_fallback_works(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     monkeypatch.setattr(
         inspect_graph_module,
         "execute_gremlin_read",
@@ -281,9 +269,7 @@ def test_inspect_graph_ai_available_when_openapi_fallback_works(monkeypatch):
                     "health_endpoint": "/openapi.json",
                     "openapi": "3.1.0",
                 },
-                "warnings": [
-                    "/graph-index-info: HugeGraph-AI graph index info is unavailable"
-                ],
+                "warnings": ["/graph-index-info: HugeGraph-AI graph index info is unavailable"],
             }
         ),
     )
@@ -299,9 +285,7 @@ def test_inspect_graph_ai_available_when_openapi_fallback_works(monkeypatch):
 def test_inspect_graph_requires_explicit_vid_index_status(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     monkeypatch.setattr(
         inspect_graph_module,
         "execute_gremlin_read",
@@ -332,9 +316,7 @@ def test_inspect_graph_requires_explicit_vid_index_status(monkeypatch):
 def test_inspect_graph_includes_next_actions(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     monkeypatch.setattr(
         inspect_graph_module,
         "execute_gremlin_read",
@@ -345,26 +327,16 @@ def test_inspect_graph_includes_next_actions(monkeypatch):
     result = inspect_graph_module.inspect_graph()
 
     assert result["next_actions"]
-    assert any(
-        "inspect_graph_tool with include_raw_schema=true" in action
-        for action in result["next_actions"]
-    )
-    assert any(
-        "inspect_graph_tool with include_counts=true" in action
-        for action in result["next_actions"]
-    )
-    assert any(
-        "execute_gremlin_read_tool" in action for action in result["next_actions"]
-    )
+    assert any("inspect_graph_tool with include_raw_schema=true" in action for action in result["next_actions"])
+    assert any("inspect_graph_tool with include_counts=true" in action for action in result["next_actions"])
+    assert any("execute_gremlin_read_tool" in action for action in result["next_actions"])
     assert not any("query_graph_tool" in action for action in result["next_actions"])
 
 
 def test_inspect_graph_readonly_flag(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result(readonly=True)
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result(readonly=True))
     monkeypatch.setattr(
         inspect_graph_module,
         "execute_gremlin_read",
@@ -381,9 +353,7 @@ def test_inspect_graph_readonly_flag(monkeypatch):
 def test_inspect_graph_include_counts_failure_keeps_null(monkeypatch):
     from hugegraph_mcp.tools import inspect_graph as inspect_graph_module
 
-    monkeypatch.setattr(
-        inspect_graph_module, "get_live_schema", lambda: _schema_result()
-    )
+    monkeypatch.setattr(inspect_graph_module, "get_live_schema", lambda: _schema_result())
     execute_read = Mock(side_effect=RuntimeError("timeout"))
     monkeypatch.setattr(inspect_graph_module, "execute_gremlin_read", execute_read)
     _patch_ai_available(monkeypatch, inspect_graph_module)

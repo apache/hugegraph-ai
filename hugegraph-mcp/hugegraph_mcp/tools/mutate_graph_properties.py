@@ -257,7 +257,7 @@ def _read_schema_and_target(
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
     try:
         live_schema = current_live_schema()
-    except Exception as exc:  # noqa: BLE001 - normalize external schema failure
+    except Exception as exc:
         return (
             None,
             None,
@@ -274,7 +274,7 @@ def _read_schema_and_target(
     try:
         manager = _graph_manager()
         raw_item = manager.getVertexById(id) if target == "vertex" else manager.getEdgeById(id)
-    except Exception as exc:  # noqa: BLE001 - normalize external graph failure
+    except Exception as exc:
         classification = classify_hugegraph_exception(exc)
         return (
             live_schema,

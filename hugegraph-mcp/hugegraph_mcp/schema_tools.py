@@ -40,21 +40,13 @@ def _simple_schema(schema: dict[str, Any]) -> dict[str, Any]:
     if schema.get("vertexlabels"):
         mini_schema["vertexlabels"] = []
         for vertex in schema["vertexlabels"]:
-            new_vertex = {
-                key: vertex[key]
-                for key in ("id", "name", "properties")
-                if key in vertex
-            }
+            new_vertex = {key: vertex[key] for key in ("id", "name", "properties") if key in vertex}
             mini_schema["vertexlabels"].append(new_vertex)
 
     if schema.get("edgelabels"):
         mini_schema["edgelabels"] = []
         for edge in schema["edgelabels"]:
-            new_edge = {
-                key: edge[key]
-                for key in ("name", "source_label", "target_label", "properties")
-                if key in edge
-            }
+            new_edge = {key: edge[key] for key in ("name", "source_label", "target_label", "properties") if key in edge}
             mini_schema["edgelabels"].append(new_edge)
 
     return mini_schema

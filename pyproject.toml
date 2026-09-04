@@ -183,6 +183,7 @@ ignore = [
     "N802",    # invalid-function-name (API compatibility)
     "C901",    # complexity (non-critical for now)
     "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring (Chinese prose)
     "RUF003", # ambiguous-unicode-character-comment
 ]
 # No need to ignore E501 (line-too-long), `ruff format` will handle it automatically.

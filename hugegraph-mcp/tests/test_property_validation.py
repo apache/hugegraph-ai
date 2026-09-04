@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import pytest
+
 from hugegraph_mcp.tools.property_validation import (
     property_specs,
     property_value_error,

@@ -50,8 +50,7 @@ def generate_gremlin(
         {
             output_type if isinstance(output_type, str) else repr(output_type)
             for output_type in (output_types or [])
-            if not isinstance(output_type, str)
-            or output_type not in _GENERATION_OUTPUT_TYPES
+            if not isinstance(output_type, str) or output_type not in _GENERATION_OUTPUT_TYPES
         }
     )
     if invalid_output_types:
@@ -105,16 +104,10 @@ def generate_gremlin(
     if not requested:
         gremlin_candidates.append(ai_data.get("gremlin"))
     gremlin = next(
-        (
-            candidate
-            for candidate in gremlin_candidates
-            if isinstance(candidate, str) and candidate.strip()
-        ),
+        (candidate for candidate in gremlin_candidates if isinstance(candidate, str) and candidate.strip()),
         None,
     )
-    requires_gremlin = not requested or bool(
-        requested & {"template_gremlin", "raw_gremlin"}
-    )
+    requires_gremlin = not requested or bool(requested & {"template_gremlin", "raw_gremlin"})
     if requires_gremlin and gremlin is None:
         return envelope_err(
             ErrorType.FLOW_EXECUTION_FAILED,

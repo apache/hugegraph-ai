@@ -41,13 +41,9 @@ def collect_write_limit_errors(
             {
                 "operation_index": -1,
                 "operation": None,
-                "reason": (
-                    f"operation count {operation_count} exceeds "
-                    f"MAX_OPERATIONS ({MAX_OPERATIONS})"
-                ),
+                "reason": (f"operation count {operation_count} exceeds MAX_OPERATIONS ({MAX_OPERATIONS})"),
                 "suggestion": (
-                    f"Split the request so it contains at most {MAX_OPERATIONS} "
-                    "operations, then retry dry-run."
+                    f"Split the request so it contains at most {MAX_OPERATIONS} operations, then retry dry-run."
                 ),
                 "error_type": ErrorType.VALIDATION_ERROR.value,
             }
@@ -58,14 +54,8 @@ def collect_write_limit_errors(
             {
                 "operation_index": -1,
                 "operation": None,
-                "reason": (
-                    f"payload size {size} exceeds MAX_PAYLOAD_BYTES "
-                    f"({MAX_PAYLOAD_BYTES})"
-                ),
-                "suggestion": (
-                    "Reduce the JSON payload to at most 1 MiB (1048576 bytes), "
-                    "then retry dry-run."
-                ),
+                "reason": (f"payload size {size} exceeds MAX_PAYLOAD_BYTES ({MAX_PAYLOAD_BYTES})"),
+                "suggestion": ("Reduce the JSON payload to at most 1 MiB (1048576 bytes), then retry dry-run."),
                 "error_type": ErrorType.VALIDATION_ERROR.value,
             }
         )

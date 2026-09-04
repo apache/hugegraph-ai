@@ -1,7 +1,15 @@
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
 # this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Read-only reconciliation for ambiguous persisted write outcomes."""
 
@@ -167,10 +175,10 @@ class WriteReconciler:
 
 DEFAULT_RECONCILE_READERS = ReconcileReaderRegistry()
 
-from hugegraph_mcp.tools.graph_write_adapter import (
+from hugegraph_mcp.tools.graph_write_adapter import (  # noqa: E402
     register_graph_reconcile_readers,
 )
-from hugegraph_mcp.tools.schema_write_adapter import (
+from hugegraph_mcp.tools.schema_write_adapter import (  # noqa: E402
     register_schema_reconcile_readers,
 )
 
@@ -181,7 +189,7 @@ register_schema_reconcile_readers(DEFAULT_RECONCILE_READERS)
 def reconcile_write(plan_id: str) -> dict:
     try:
         store = plan_store_from_config()
-    except Exception as exc:  # noqa: BLE001 - public tool must remain enveloped
+    except Exception as exc:
         return envelope_err(
             ErrorType.SERVER_ERROR,
             "The durable plan store is unavailable.",

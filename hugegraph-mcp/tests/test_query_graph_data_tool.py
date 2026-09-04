@@ -30,10 +30,10 @@ class Edge:
     id = "edge-1"
     label = "knows"
     type = "edge"
-    outV = "1:alice"
-    outVLabel = "person"
-    inV = "1:bob"
-    inVLabel = "person"
+    outV = "1:alice"  # noqa: N815 - HugeGraph wire field
+    outVLabel = "person"  # noqa: N815 - HugeGraph wire field
+    inV = "1:bob"  # noqa: N815 - HugeGraph wire field
+    inVLabel = "person"  # noqa: N815 - HugeGraph wire field
     properties: ClassVar[dict[str, int]] = {"since": 2024}
 
 
@@ -57,12 +57,8 @@ class FakeGraphManager:
         self.calls.append(("getVertexByCondition", label, limit, page, properties))
         return [Vertex()]
 
-    def getVertexByConditionWithPage(
-        self, label="", limit=0, page=None, properties=None
-    ):
-        self.calls.append(
-            ("getVertexByConditionWithPage", label, limit, page, properties)
-        )
+    def getVertexByConditionWithPage(self, label="", limit=0, page=None, properties=None):
+        self.calls.append(("getVertexByConditionWithPage", label, limit, page, properties))
         return [Vertex()], "condition-next"
 
     def getEdgeById(self, edge_id):
@@ -82,9 +78,7 @@ class FakeGraphManager:
         page=None,
         properties=None,
     ):
-        self.calls.append(
-            ("getEdgeByPage", label, vertex_id, direction, limit, page, properties)
-        )
+        self.calls.append(("getEdgeByPage", label, vertex_id, direction, limit, page, properties))
         return [Edge()], "edge-next"
 
 
@@ -240,9 +234,7 @@ def test_query_rejects_limit_over_500():
     ],
 )
 @pytest.mark.parametrize("limit", ["abc", 0, -1, query_module.MAX_LIMIT + 1])
-def test_query_by_id_operations_reject_invalid_limit_before_manager_call(
-    monkeypatch, operation, operation_args, limit
-):
+def test_query_by_id_operations_reject_invalid_limit_before_manager_call(monkeypatch, operation, operation_args, limit):
     manager = FakeGraphManager()
     manager_factory = Mock(return_value=manager)
     monkeypatch.setattr(query_module, "_graph_manager", manager_factory)
@@ -317,9 +309,7 @@ def test_query_edge_page_by_vertex_without_page(monkeypatch):
 
     assert result["ok"] is True
     assert result["data"]["next_page"] == "edge-next"
-    assert manager.calls == [
-        ("getEdgeByPage", "knows", "1:alice", "OUT", 5, None, None)
-    ]
+    assert manager.calls == [("getEdgeByPage", "knows", "1:alice", "OUT", 5, None, None)]
 
 
 def test_query_edge_page_by_vertex_allows_empty_page(monkeypatch):
@@ -370,9 +360,7 @@ def test_query_vertex_condition_returns_next_page(monkeypatch):
 
     assert result["ok"] is True
     assert result["data"]["next_page"] == "condition-next"
-    assert manager.calls == [
-        ("getVertexByConditionWithPage", "person", 5, "p1", {"name": "Alice"})
-    ]
+    assert manager.calls == [("getVertexByConditionWithPage", "person", 5, "p1", {"name": "Alice"})]
 
 
 def test_query_vertex_condition_supports_legacy_client_without_page(monkeypatch):
@@ -418,9 +406,7 @@ def test_query_no_index_returns_no_index(monkeypatch):
 def test_query_not_indexed_message_returns_no_index(monkeypatch):
     class BrokenManager:
         def getVertexByCondition(self, **kwargs):
-            raise RuntimeError(
-                "The property key 'name' is not indexed and may not match secondary condition"
-            )
+            raise RuntimeError("The property key 'name' is not indexed and may not match secondary condition")
 
     monkeypatch.setattr(query_module, "_graph_manager", lambda: BrokenManager())
 

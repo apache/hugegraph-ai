@@ -850,11 +850,12 @@ def ingest_graph_data_via_ai(
                 next_action=("Set HUGEGRAPH_MCP_READONLY=false and rerun dry_run before confirm."),
             )
             warnings = list(warnings) + readonly_warnings
-        warnings = list(warnings) + [
+        warnings = [
+            *warnings,
             (
                 "Legacy HugeGraph-AI graph import is preview-only because it has no "
                 "durable per-operation receipts or verified create-if-absent semantics."
-            )
+            ),
         ]
         next_actions.append("Do not confirm this import until atomic graph-create capabilities are verified.")
         return envelope_ok(payload, warnings=warnings, next_actions=next_actions)

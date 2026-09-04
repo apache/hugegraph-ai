@@ -83,11 +83,7 @@ def query_graph_data(
     normalized_direction = _normalize_direction(direction)
 
     try:
-        normalized_ids = (
-            _normalize_ids(ids, warnings, target=target)
-            if operation == "get_by_ids"
-            else []
-        )
+        normalized_ids = _normalize_ids(ids, warnings, target=target) if operation == "get_by_ids" else []
         manager = _graph_manager()
         result, next_page = _execute_query(
             manager=manager,
@@ -102,7 +98,7 @@ def query_graph_data(
             vertex_id=vertex_id,
             direction=normalized_direction,
         )
-    except Exception as exc:  # noqa: BLE001 - return structured query error
+    except Exception as exc:
         return _query_error(exc)
 
     items = _normalize_items(result)
@@ -443,9 +439,7 @@ def _plain_item(item: Any) -> dict[str, Any]:
     return result
 
 
-def _normalize_ids(
-    ids: list[Any] | None, warnings: list[str], *, target: str
-) -> list[Any]:
+def _normalize_ids(ids: list[Any] | None, warnings: list[str], *, target: str) -> list[Any]:
     seen: set[str] = set()
     normalized: list[Any] = []
     duplicate_count = 0

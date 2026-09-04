@@ -94,10 +94,7 @@ def schema_payload(live_schema: dict[str, Any] | None) -> dict[str, Any] | None:
     # itself; unwrap it in one shared entry point instead of in each tool.
     if live_schema is None or not isinstance(live_schema, dict):
         return None
-    if "schema" in live_schema:
-        raw = live_schema.get("schema")
-    else:
-        raw = live_schema
+    raw = live_schema.get("schema") if "schema" in live_schema else live_schema
     return raw if isinstance(raw, dict) else None
 
 
@@ -110,11 +107,7 @@ def user_data_without_server_metadata(value: Any) -> dict[Any, Any] | None:
     """
     if not isinstance(value, dict):
         return None
-    return {
-        key: item
-        for key, item in value.items()
-        if not (isinstance(key, str) and key.startswith("~"))
-    }
+    return {key: item for key, item in value.items() if not (isinstance(key, str) and key.startswith("~"))}
 
 
 def edge_schema_endpoint_label(edge_schema: dict[str, Any], endpoint: str) -> Any:
@@ -171,11 +164,7 @@ def _normalize_schema_items(
         list_fields = {
             field
             for field, spec in field_specs.items()
-            if (
-                spec.include_in_summary
-                and spec.kind == "list"
-                and (include_user_data or spec.kind != "mapping")
-            )
+            if (spec.include_in_summary and spec.kind == "list" and (include_user_data or spec.kind != "mapping"))
         }
 
     normalized: list[dict[str, Any]] = []

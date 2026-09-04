@@ -318,7 +318,7 @@ def test_plan_context_is_frozen():
 
     try:
         context.tool_name = "other"
-        assert False, "Should be frozen"
+        raise AssertionError("Should be frozen")
     except AttributeError:
         pass
 
@@ -398,7 +398,7 @@ def test_confirmation_store_rejects_far_future_expiry(monkeypatch):
             plan_hash="client-computed",
             expires_at=int(time.time()) + 601,
         )
-        assert False, "Plans beyond the server TTL must not be issued"
+        raise AssertionError("Plans beyond the server TTL must not be issued")
     except ConfirmationPlanExpiredError:
         pass
 
@@ -738,7 +738,7 @@ def test_confirmation_cleanup_failure_does_not_block_current_nonce(monkeypatch):
             plan_hash="current",
             expires_at=expires_at,
         )
-        assert False, "The current nonce must remain globally single-use"
+        raise AssertionError("The current nonce must remain globally single-use")
     except ConfirmationAlreadyUsedError:
         pass
 

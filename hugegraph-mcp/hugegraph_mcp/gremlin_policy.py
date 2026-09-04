@@ -399,9 +399,7 @@ def _analyze_tokens(lexed: _GremlinLexResult) -> _GremlinTokenAnalysis:
             uncertain = True
             continue
 
-        if token.kind == "string" and any(
-            marker in token.value for marker in _DYNAMIC_MARKERS
-        ):
+        if token.kind == "string" and any(marker in token.value for marker in _DYNAMIC_MARKERS):
             # GStrings can interpolate arbitrary Groovy expressions.  Treat
             # them as ambiguous even though their contents are not code tokens.
             uncertain = True
@@ -532,16 +530,12 @@ def _extract_method_names(query_without_strings: str) -> list[str]:
     return list(_analyze_tokens(lexed).method_names)
 
 
-def _has_unsafe_write_steps(
-    query_without_strings: str, lowered_methods: list[str]
-) -> bool:
+def _has_unsafe_write_steps(query_without_strings: str, lowered_methods: list[str]) -> bool:
     del lowered_methods  # The shared lexer is the source of truth.
     return _analyze_tokens(_lex_gremlin_query(query_without_strings)).has_write_method
 
 
-def _has_dynamic_construction_markers(
-    original_query: str, query_without_strings: str
-) -> bool:
+def _has_dynamic_construction_markers(original_query: str, query_without_strings: str) -> bool:
     del query_without_strings
     # Analyze the original source so interpolation and dynamic member markers
     # that occur inside a quoted literal are still visible to this compatibility
@@ -598,10 +592,7 @@ class GremlinPolicy:
                 classification="unsafe",
                 reason="Query contains write or mutate operations.",
                 error_type="UNSAFE_GREMLIN",
-                suggestion=(
-                    "Use execute_gremlin_write for write operations "
-                    "when write access is enabled."
-                ),
+                suggestion=("Use execute_gremlin_write for write operations when write access is enabled."),
             )
 
         # classification == "uncertain"
@@ -640,39 +631,27 @@ def gremlin_cost_warnings(gremlin_query: str) -> list[str]:
     """轻量成本边界检查：只产 warning 不阻断。非完整 parser，仅挡明显风险。"""
 
     query_without_strings = _strip_string_literals(gremlin_query)
-    methods = [
-        method.lower() for method in _extract_method_names(query_without_strings)
-    ]
+    methods = [method.lower() for method in _extract_method_names(query_without_strings)]
     method_set = set(methods)
     warnings: list[str] = []
 
     if method_set.isdisjoint({"limit", "range", "count"}):
-        warnings.append(
-            "Unbounded traversal: result set is not limited; consider adding "
-            ".limit() or .range()."
-        )
+        warnings.append("Unbounded traversal: result set is not limited; consider adding .limit() or .range().")
 
     if "repeat" in method_set:
         if "times" not in method_set:
-            warnings.append(
-                "repeat() without times() may recurse without an explicit depth bound."
-            )
+            warnings.append("repeat() without times() may recurse without an explicit depth bound.")
         else:
             max_times = _parse_repeat_threshold()
             match = re.search(r"times\(\s*(\d+)\s*\)", query_without_strings)
             if match is not None:
                 depth = int(match.group(1))
                 if depth > max_times:
-                    warnings.append(
-                        f"repeat().times(n) depth {depth} exceeds recommended "
-                        f"maximum {max_times}."
-                    )
+                    warnings.append(f"repeat().times(n) depth {depth} exceeds recommended maximum {max_times}.")
 
-    if any(
-        method in method_set for method in ("path", "group", "profile")
-    ) and method_set.isdisjoint({"limit", "range"}):
-        warnings.append(
-            "Heavy step (path/group/profile) without limit/range may be expensive."
-        )
+    if any(method in method_set for method in ("path", "group", "profile")) and method_set.isdisjoint(
+        {"limit", "range"}
+    ):
+        warnings.append("Heavy step (path/group/profile) without limit/range may be expensive.")
 
     return list(dict.fromkeys(warnings))

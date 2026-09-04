@@ -17,6 +17,16 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from pyhugegraph.utils.exceptions import (
+    DataFormatError,
+    InvalidParameterError,
+    NotAuthorizedError,
+    NotFoundError,
+    ResponseParseError,
+    ServerError,
+    ServiceUnavailableError,
+)
+
 from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
     mark_readonly_preview,
@@ -33,15 +43,6 @@ from hugegraph_mcp.error_mapping import (
     classify_hugegraph_exception,
 )
 from hugegraph_mcp.gremlin_tools import execute_gremlin_read, execute_gremlin_write
-from pyhugegraph.utils.exceptions import (
-    DataFormatError,
-    InvalidParameterError,
-    NotAuthorizedError,
-    NotFoundError,
-    ResponseParseError,
-    ServerError,
-    ServiceUnavailableError,
-)
 
 
 def test_connection_error_handling():

@@ -33,9 +33,7 @@ def test_import_graph_data_tool_extract_routes_to_extract(monkeypatch):
 
     assert result["ok"] is True
     assert "duration_ms" in result["meta"]
-    assert calls == [
-        ("Alice knows Bob.", {"vertexlabels": ["person"]}, "extract people")
-    ]
+    assert calls == [("Alice knows Bob.", {"vertexlabels": ["person"]}, "extract people")]
 
 
 def test_import_graph_data_tool_ingest_routes_to_mcp_import(monkeypatch):
@@ -172,10 +170,7 @@ def test_import_graph_data_tool_table_returns_feature_disabled():
     assert result["ok"] is False
     assert result["error"]["type"] == "FEATURE_DISABLED"
     assert result["error"]["source"] == "import_graph_data_tool"
-    assert (
-        result["error"]["message"]
-        == "Table import is not supported by the current MCP contract."
-    )
+    assert result["error"]["message"] == "Table import is not supported by the current MCP contract."
     assert "import_graph_data_tool(mode='extract')" in result["error"]["suggestion"]
     assert "import_graph_data_tool(mode='ingest')" in result["error"]["suggestion"]
     assert "V1" not in result["error"]["message"]

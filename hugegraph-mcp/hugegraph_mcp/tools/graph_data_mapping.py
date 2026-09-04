@@ -178,18 +178,8 @@ def _edge_endpoint_match(
         if explicit_endpoint:
             primary_key = single_primary_keys.get(endpoint_label)
             primary_key_value = primary_key_values.get(identity_key)
-            if (
-                primary_key_value is None
-                and isinstance(fallback_id, str)
-                and ":" in fallback_id
-            ):
-                primary_key_value = primary_key_values.get(
-                    (endpoint_label, fallback_id.split(":", 1)[1])
-                )
+            if primary_key_value is None and isinstance(fallback_id, str) and ":" in fallback_id:
+                primary_key_value = primary_key_values.get((endpoint_label, fallback_id.split(":", 1)[1]))
             if primary_key is not None:
-                return {
-                    primary_key: primary_key_value
-                    if primary_key_value is not None
-                    else fallback_id
-                }
+                return {primary_key: primary_key_value if primary_key_value is not None else fallback_id}
     return {"id": fallback_id}

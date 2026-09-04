@@ -15,6 +15,7 @@ import re
 from unittest.mock import Mock
 
 import pytest
+
 from hugegraph_mcp.tools import manage_schema as manage_schema_module
 from hugegraph_mcp.tools.manage_schema import manage_schema
 
@@ -336,7 +337,7 @@ def test_manage_schema_validate_rejects_unknown_edge_endpoint(monkeypatch):
     assert result["data"]["valid"] is False
     error = result["data"]["errors"][0]
     assert error["operation_index"] == 0
-    assert "target_label references undefined vertex label: software" == error["reason"]
+    assert error["reason"] == "target_label references undefined vertex label: software"
 
 
 def test_manage_schema_validate_rejects_duplicate_vertex_label(monkeypatch):
@@ -1279,20 +1280,22 @@ def test_dry_run_accepts_valid_edge_frequencies(monkeypatch):
 
 
 def test_enum_tables_stay_in_sync_with_apply_methods():
-    assert manage_schema_module.PROPERTY_KEY_DATA_TYPES == frozenset(
-        manage_schema_module.PROPERTY_KEY_DATA_TYPE_METHODS
+    assert (
+        frozenset(manage_schema_module.PROPERTY_KEY_DATA_TYPE_METHODS) == manage_schema_module.PROPERTY_KEY_DATA_TYPES
     )
-    assert manage_schema_module.PROPERTY_KEY_CARDINALITIES == frozenset(
-        manage_schema_module.PROPERTY_KEY_CARDINALITY_METHODS
+    assert (
+        frozenset(manage_schema_module.PROPERTY_KEY_CARDINALITY_METHODS)
+        == manage_schema_module.PROPERTY_KEY_CARDINALITIES
     )
-    assert manage_schema_module.PROPERTY_KEY_AGGREGATE_TYPES == (
+    assert (
         frozenset(manage_schema_module.PROPERTY_KEY_AGGREGATE_METHODS)
         | manage_schema_module.PROPERTY_KEY_DIRECT_AGGREGATE_TYPES
+    ) == manage_schema_module.PROPERTY_KEY_AGGREGATE_TYPES
+    assert (
+        frozenset(manage_schema_module.VERTEX_LABEL_ID_STRATEGY_METHODS)
+        == manage_schema_module.VERTEX_LABEL_ID_STRATEGIES
     )
-    assert manage_schema_module.VERTEX_LABEL_ID_STRATEGIES == frozenset(
-        manage_schema_module.VERTEX_LABEL_ID_STRATEGY_METHODS
-    )
-    assert manage_schema_module.EDGE_LABEL_FREQUENCIES == frozenset(manage_schema_module.EDGE_LABEL_FREQUENCY_METHODS)
+    assert frozenset(manage_schema_module.EDGE_LABEL_FREQUENCY_METHODS) == manage_schema_module.EDGE_LABEL_FREQUENCIES
 
 
 def test_invalid_enum_input_never_reaches_apply_stage_error(monkeypatch):

@@ -303,7 +303,7 @@ def _execute_gremlin_with_error_handling(client, gremlin_query: str, operation_t
                             or error_json.get("error")
                             or str(error_json)
                         )
-            except Exception:  # noqa: BLE001, S110 - best-effort error-body parsing
+            except Exception:
                 pass
 
             if detail_message:
@@ -385,7 +385,7 @@ def _execute_gremlin_with_error_handling(client, gremlin_query: str, operation_t
             "operation_type": operation_type,
         }
 
-    except Exception as e:  # noqa: BLE001 - normalize every client failure
+    except Exception as e:
         duration_ms = (time.perf_counter() - start) * 1000.0
         message = f"Unexpected error: {e!s}"
         if _is_no_index_error(message):

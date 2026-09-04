@@ -103,14 +103,10 @@ def test_generate_gremlin_returns_match_result_without_requiring_gremlin(monkeyp
     monkeypatch.setattr(generate_gremlin_module, "post", post)
     monkeypatch.setattr(generate_gremlin_module, "execute_gremlin_read", execute_read)
 
-    result = generate_gremlin_module.generate_gremlin(
-        "count vertices", output_types=["match_result"]
-    )
+    result = generate_gremlin_module.generate_gremlin("count vertices", output_types=["match_result"])
 
     assert result["ok"] is True
-    assert result["data"]["match_result"] == [
-        {"query": "count", "gremlin": "g.V().count()"}
-    ]
+    assert result["data"]["match_result"] == [{"query": "count", "gremlin": "g.V().count()"}]
     assert result["data"]["gremlin"] is None
     assert result["data"]["is_readonly"] is False
     assert result["data"]["executed"] is False
@@ -153,9 +149,7 @@ def test_generate_gremlin_rejects_execution_output_types_before_ai_call(monkeypa
 
     assert result["ok"] is False
     assert result["error"]["type"] == "VALIDATION_ERROR"
-    assert result["error"]["details"]["invalid_output_types"] == [
-        "raw_execution_result"
-    ]
+    assert result["error"]["details"]["invalid_output_types"] == ["raw_execution_result"]
     post.assert_not_called()
     execute_read.assert_not_called()
 
@@ -164,9 +158,7 @@ def test_generate_gremlin_rejects_non_string_output_type(monkeypatch):
     post = Mock()
     monkeypatch.setattr(generate_gremlin_module, "post", post)
 
-    result = generate_gremlin_module.generate_gremlin(
-        "count vertices", output_types=[1]
-    )
+    result = generate_gremlin_module.generate_gremlin("count vertices", output_types=[1])
 
     assert result["ok"] is False
     assert result["error"]["type"] == "VALIDATION_ERROR"
@@ -174,11 +166,7 @@ def test_generate_gremlin_rejects_non_string_output_type(monkeypatch):
 
 
 def test_generate_gremlin_rejects_missing_gremlin(monkeypatch):
-    post = Mock(
-        return_value=envelope_ok(
-            {"requires_index": False, "assumptions": ["no query generated"]}
-        )
-    )
+    post = Mock(return_value=envelope_ok({"requires_index": False, "assumptions": ["no query generated"]}))
     execute_read = Mock()
     monkeypatch.setattr(generate_gremlin_module, "post", post)
     monkeypatch.setattr(generate_gremlin_module, "execute_gremlin_read", execute_read)
@@ -303,9 +291,7 @@ def test_generate_gremlin_propagates_execute_failure(monkeypatch):
     assert result["ok"] is False
     assert result["error"]["type"] == "NO_INDEX"
     assert result["error"]["details"]["gremlin"] == "g.V().has('name','Alice')"
-    assert result["error"]["details"]["execution_error"]["message"] == (
-        "Query requires an index"
-    )
+    assert result["error"]["details"]["execution_error"]["message"] == ("Query requires an index")
 
 
 def test_generate_gremlin_unsafe_no_execute(monkeypatch):
@@ -318,10 +304,7 @@ def test_generate_gremlin_unsafe_no_execute(monkeypatch):
 
     assert result["ok"] is False
     assert result["error"]["type"] == "UNSAFE_GREMLIN"
-    assert (
-        result["error"]["message"]
-        == "Generated Gremlin is not safe to execute automatically"
-    )
+    assert result["error"]["message"] == "Generated Gremlin is not safe to execute automatically"
     assert result["error"]["details"]["classification"] == "unsafe"
     execute_read.assert_not_called()
 

@@ -89,7 +89,7 @@ def _call_public_tool(tool_name: str, func, *args, **kwargs) -> dict[str, Any]:
     start = time.perf_counter()
     try:
         result = func(*args, **kwargs)
-    except Exception as exc:  # noqa: BLE001 - tool boundary returns an envelope
+    except Exception as exc:
         return envelope_err(
             ErrorType.FLOW_EXECUTION_FAILED,
             f"{tool_name} failed: {exc!s}",

@@ -15,6 +15,7 @@ from unittest.mock import Mock
 
 import pytest
 import requests
+
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.hugegraph_ai_client import get, health_check, post, request
 

@@ -45,9 +45,7 @@ def test_uncertain_query_returns_blocked():
     assert decision.allowed is False
     assert decision.classification == "uncertain"
     assert decision.error_type == "UNSAFE_GREMLIN"
-    assert (
-        "ambiguous" in decision.reason.lower() or "unknown" in decision.reason.lower()
-    )
+    assert "ambiguous" in decision.reason.lower() or "unknown" in decision.reason.lower()
 
 
 def test_decision_is_frozen_dataclass():
@@ -56,7 +54,7 @@ def test_decision_is_frozen_dataclass():
     assert isinstance(decision, GremlinDecision)
     try:
         decision.allowed = False
-        assert False, "Should be frozen"
+        raise AssertionError("Should be frozen")
     except AttributeError:
         pass
 

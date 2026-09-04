@@ -17,6 +17,9 @@
 {vertices: [...], edges: [...]} 图数据，供用户审阅后再导入。
 """
 
+# The extraction prompt contains intentionally long, copy-pasteable JSON contracts.
+# ruff: noqa: E501
+
 import hashlib
 import json
 from typing import Any

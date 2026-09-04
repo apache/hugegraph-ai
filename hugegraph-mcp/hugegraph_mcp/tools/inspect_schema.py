@@ -32,9 +32,7 @@ FILTER_KINDS = frozenset({"property_key", "vertex_label", "edge_label", "index_l
 
 
 def _schema_manager():
-    return build_hugegraph_client(
-        MCPConfig.from_env(), client_cls=PyHugeClient
-    ).schema()
+    return build_hugegraph_client(MCPConfig.from_env(), client_cls=PyHugeClient).schema()
 
 
 def inspect_schema(
@@ -75,16 +73,12 @@ def inspect_schema(
                 ],
             )
         relations = _safe_get_relations(manager) if include_relations else []
-    except Exception as exc:  # noqa: BLE001 - return structured dependency error
+    except Exception as exc:
         return _schema_dependency_error(exc)
 
     raw_payload = schema_payload(raw_schema) or raw_schema
     summary = _build_summary(raw_payload, include_index_labels=include_index_labels)
-    all_summary = (
-        summary
-        if include_index_labels
-        else _build_summary(raw_payload, include_index_labels=True)
-    )
+    all_summary = summary if include_index_labels else _build_summary(raw_payload, include_index_labels=True)
     filtered = _filter_schema(raw_payload, filter_kind, filter_name, all_summary)
     if filtered is None:
         return envelope_err(
@@ -139,9 +133,7 @@ def _validate_filter(
         return envelope_err(
             ErrorType.VALIDATION_ERROR,
             f"Unsupported filter_kind: {filter_kind!r}.",
-            suggestion=(
-                "Use one of: property_key, vertex_label, edge_label, index_label."
-            ),
+            suggestion=("Use one of: property_key, vertex_label, edge_label, index_label."),
             source="inspect_schema_tool",
             details={"filter_kind": filter_kind},
         )
@@ -151,7 +143,7 @@ def _validate_filter(
 def _safe_get_relations(manager) -> list[str]:
     try:
         relations = manager.getRelations()
-    except Exception:  # noqa: BLE001 - relations are optional
+    except Exception:
         return []
     return [str(item) for item in relations or []]
 
@@ -173,19 +165,11 @@ def _build_summary(
     *,
     include_index_labels: bool,
 ) -> dict[str, Any]:
-    property_keys = [
-        _normalize_schema_item(item) for item in _items(raw_schema, "propertykeys")
-    ]
-    vertex_labels = [
-        _normalize_vertex_label(item) for item in _items(raw_schema, "vertexlabels")
-    ]
-    edge_labels = [
-        _normalize_edge_label(item) for item in _items(raw_schema, "edgelabels")
-    ]
+    property_keys = [_normalize_schema_item(item) for item in _items(raw_schema, "propertykeys")]
+    vertex_labels = [_normalize_vertex_label(item) for item in _items(raw_schema, "vertexlabels")]
+    edge_labels = [_normalize_edge_label(item) for item in _items(raw_schema, "edgelabels")]
     index_labels = (
-        [_normalize_schema_item(item) for item in _items(raw_schema, "indexlabels")]
-        if include_index_labels
-        else []
+        [_normalize_schema_item(item) for item in _items(raw_schema, "indexlabels")] if include_index_labels else []
     )
     return {
         "property_key_count": len(property_keys),
@@ -224,9 +208,7 @@ def _filter_schema(
         "edge_label": "edgelabels",
         "index_label": "indexlabels",
     }[filter_kind]
-    normalized = [
-        _normalize_kind_item(filter_kind, item) for item in _items(raw_schema, key)
-    ]
+    normalized = [_normalize_kind_item(filter_kind, item) for item in _items(raw_schema, key)]
     if filter_name is None:
         return normalized
     for item in normalized:

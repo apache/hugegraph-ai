@@ -14,8 +14,9 @@
 import logging
 from dataclasses import FrozenInstanceError
 
-import hugegraph_mcp.config as config_module
 import pytest
+
+import hugegraph_mcp.config as config_module
 from hugegraph_mcp.config import MCPConfig, config
 
 CONFIG_ENV_VARS = (

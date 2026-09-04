@@ -332,7 +332,7 @@ def manage_graph_data(
                     tool_name=plan_tool_name,
                 )
                 plan_store_from_config().save_plan(canonical_plan)
-            except Exception as exc:  # noqa: BLE001 - fail closed at persistence boundary
+            except Exception as exc:
                 return envelope_err(
                     ErrorType.FEATURE_DISABLED,
                     "The graph change cannot be persisted as an executable atomic plan.",

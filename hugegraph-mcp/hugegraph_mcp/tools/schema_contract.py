@@ -72,9 +72,7 @@ def _field(
 # validation but is not a field returned by HugeGraph's schema GET response.
 SUPPORTED_FIELD_SPECS: dict[str, dict[str, SchemaFieldSpec]] = {
     "create_property_key": {
-        "type": _field(
-            "type", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
+        "type": _field("type", kind="identity", include_in_summary=False, apply_mode="identity"),
         "name": _field(
             "name",
             "property_name",
@@ -92,20 +90,12 @@ SUPPORTED_FIELD_SPECS: dict[str, dict[str, SchemaFieldSpec]] = {
             default="SINGLE",
             apply_mode="typed",
         ),
-        "aggregate_type": _field(
-            "aggregate_type", "aggregateType", kind="enum", apply_mode="typed"
-        ),
-        "user_data": _field(
-            "user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"
-        ),
+        "aggregate_type": _field("aggregate_type", "aggregateType", kind="enum", apply_mode="typed"),
+        "user_data": _field("user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"),
     },
     "create_vertex_label": {
-        "type": _field(
-            "type", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
-        "name": _field(
-            "name", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
+        "type": _field("type", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "name": _field("name", kind="identity", include_in_summary=False, apply_mode="identity"),
         "id_strategy": _field(
             "id_strategy",
             "idStrategy",
@@ -114,61 +104,31 @@ SUPPORTED_FIELD_SPECS: dict[str, dict[str, SchemaFieldSpec]] = {
             apply_mode="typed",
         ),
         "properties": _field("properties", kind="list", apply_mode="typed"),
-        "primary_keys": _field(
-            "primary_keys", "primaryKeys", kind="list", apply_mode="typed"
-        ),
-        "nullable_keys": _field(
-            "nullable_keys", "nullableKeys", kind="list", apply_mode="typed"
-        ),
-        "index_labels": _field(
-            "index_labels", "indexLabels", kind="list", apply_mode="parameter"
-        ),
-        "enable_label_index": _field(
-            "enable_label_index", "enableLabelIndex", kind="boolean", apply_mode="typed"
-        ),
-        "user_data": _field(
-            "user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"
-        ),
+        "primary_keys": _field("primary_keys", "primaryKeys", kind="list", apply_mode="typed"),
+        "nullable_keys": _field("nullable_keys", "nullableKeys", kind="list", apply_mode="typed"),
+        "index_labels": _field("index_labels", "indexLabels", kind="list", apply_mode="parameter"),
+        "enable_label_index": _field("enable_label_index", "enableLabelIndex", kind="boolean", apply_mode="typed"),
+        "user_data": _field("user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"),
     },
     "create_edge_label": {
-        "type": _field(
-            "type", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
-        "name": _field(
-            "name", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
-        "source_label": _field(
-            "source_label", "sourceLabel", kind="scalar", apply_mode="link"
-        ),
-        "target_label": _field(
-            "target_label", "targetLabel", kind="scalar", apply_mode="link"
-        ),
+        "type": _field("type", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "name": _field("name", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "source_label": _field("source_label", "sourceLabel", kind="scalar", apply_mode="link"),
+        "target_label": _field("target_label", "targetLabel", kind="scalar", apply_mode="link"),
         "properties": _field("properties", kind="list", apply_mode="typed"),
-        "nullable_keys": _field(
-            "nullable_keys", "nullableKeys", kind="list", apply_mode="typed"
-        ),
+        "nullable_keys": _field("nullable_keys", "nullableKeys", kind="list", apply_mode="typed"),
         "sort_keys": _field("sort_keys", "sortKeys", kind="list", apply_mode="typed"),
         "frequency": _field("frequency", kind="enum", apply_mode="typed"),
-        "enable_label_index": _field(
-            "enable_label_index", "enableLabelIndex", kind="boolean", apply_mode="typed"
-        ),
-        "user_data": _field(
-            "user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"
-        ),
+        "enable_label_index": _field("enable_label_index", "enableLabelIndex", kind="boolean", apply_mode="typed"),
+        "user_data": _field("user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"),
     },
     # Index creation is validate-only for P0a, but it still has a closed
     # validate/hash contract so fields cannot be silently accepted and dropped.
     "create_index_label": {
-        "type": _field(
-            "type", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
-        "name": _field(
-            "name", kind="identity", include_in_summary=False, apply_mode="identity"
-        ),
+        "type": _field("type", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "name": _field("name", kind="identity", include_in_summary=False, apply_mode="identity"),
         "base_type": _field("base_type", "baseType", kind="enum"),
-        "base_label": _field(
-            "base_label", "baseLabel", "base_value", "baseValue", kind="scalar"
-        ),
+        "base_label": _field("base_label", "baseLabel", "base_value", "baseValue", kind="scalar"),
         "fields": _field("fields", kind="list"),
         "index_type": _field("index_type", "indexType", kind="enum"),
         "unique": _field("unique", kind="boolean"),
@@ -214,11 +174,7 @@ def field_specs_for_kind(kind: str) -> dict[str, SchemaFieldSpec]:
 def apply_fields_for_operation(op_type: str) -> frozenset[str]:
     """Return fields with an explicit builder-forwarding contract."""
 
-    return frozenset(
-        field
-        for field, spec in field_specs_for_operation(op_type).items()
-        if spec.apply_mode != "none"
-    )
+    return frozenset(field for field, spec in field_specs_for_operation(op_type).items() if spec.apply_mode != "none")
 
 
 def schema_collection_for_operation(op_type: str) -> str | None:

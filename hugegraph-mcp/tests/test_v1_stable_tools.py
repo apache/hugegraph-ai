@@ -20,6 +20,7 @@ from unittest.mock import Mock
 
 import pytest
 from fastmcp import Client
+
 from hugegraph_mcp import server
 from hugegraph_mcp.envelope import envelope_ok
 from hugegraph_mcp.write_contract import LEGACY_DEPRECATION_CODE

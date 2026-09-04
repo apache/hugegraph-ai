@@ -24,9 +24,7 @@ class FakePyHugeClient:
     last_init_kwargs: dict | None = None
     schema_data: dict | None = None
 
-    def __init__(
-        self, url: str, graph: str, user: str, pwd: str, graphspace=None, timeout=None
-    ):
+    def __init__(self, url: str, graph: str, user: str, pwd: str, graphspace=None, timeout=None):
         FakePyHugeClient.last_init_kwargs = {
             "url": url,
             "graph": graph,
@@ -136,9 +134,7 @@ def test_current_live_schema_respects_explicit_empty_schema(monkeypatch):
     from hugegraph_mcp.tools.live_schema import current_live_schema
 
     def fail_fetch():
-        raise AssertionError(
-            "current_live_schema should not fetch when schema is provided"
-        )
+        raise AssertionError("current_live_schema should not fetch when schema is provided")
 
     empty_schema = {}
     monkeypatch.setattr(schema_tools, "get_live_schema", fail_fetch)

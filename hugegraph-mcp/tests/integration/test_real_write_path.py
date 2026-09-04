@@ -21,12 +21,13 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+from pyhugegraph.client import PyHugeClient
+
 from hugegraph_mcp import server
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.hugegraph_client import build_hugegraph_client
 from hugegraph_mcp.tools import manage_graph_data as manage_graph_data_module
 from hugegraph_mcp.tools.graph_data_gremlin import _g
-from pyhugegraph.client import PyHugeClient
 
 pytestmark = [pytest.mark.integration, pytest.mark.real_hugegraph]
 
@@ -51,7 +52,7 @@ def hugegraph_client(monkeypatch):
         try:
             client.schema().getSchema()
             break
-        except Exception as exc:  # noqa: BLE001 - service startup is asynchronous
+        except Exception as exc:
             last_error = exc
             time.sleep(1.0)
     else:
@@ -605,7 +606,7 @@ def test_rocksdb_isolates_conditional_vertex_delete_from_concurrent_edge_add(
         start.wait(timeout=10.0)
         try:
             result = _extract_count(_exec(client, query))
-        except Exception as exc:  # noqa: BLE001 - record concurrent backend outcome
+        except Exception as exc:
             return None, str(exc)
         return result, None
 
@@ -1103,7 +1104,7 @@ def _wait_for_schema_visibility(
             ):
                 _write_and_drop_schema_probe(client, names, custom_id=custom_id)
                 return
-        except Exception as exc:  # noqa: BLE001 - retry until service is ready
+        except Exception as exc:
             last_error = exc
         time.sleep(0.1)
     pytest.fail(f"Timed out waiting for HugeGraph schema visibility: {names.vertex_label}, last_error={last_error}")

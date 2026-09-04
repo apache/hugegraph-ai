@@ -136,7 +136,7 @@ def inspect_graph(
         schema_summary = simple_schema
         raw_schema = schema_result.get("schema")
         readonly = schema_result.get("readonly")
-    except Exception as exc:  # noqa: BLE001 - inspect is best effort
+    except Exception as exc:
         server_status = "unavailable"
         warnings.append(_warning_from_exception("HugeGraph Server is unavailable", exc))
 
@@ -152,9 +152,7 @@ def inspect_graph(
         "graphspace": cfg.graphspace,
         "hugegraph_server_status": server_status,
         "hugegraph_ai_status": ai_status,
-        "vid_embedding_status": "available"
-        if _has_graph_index_info(graph_index_info)
-        else "unknown",
+        "vid_embedding_status": "available" if _has_graph_index_info(graph_index_info) else "unknown",
         "schema_summary": schema_summary,
         "vertex_count": vertex_count,
         "edge_count": edge_count,
@@ -182,7 +180,7 @@ def _run_count_query(query: str, label: str, warnings: list[str]) -> int | None:
         if count is None:
             warnings.append(f"Failed to fetch {label} count")
         return count
-    except Exception as exc:  # noqa: BLE001 - inspect is best effort
+    except Exception as exc:
         warnings.append(_warning_from_exception(f"Failed to fetch {label} count", exc))
         return None
 
@@ -198,7 +196,5 @@ def _next_actions(data: dict[str, Any]) -> list[str]:
     else:
         actions.append("Check HugeGraph Server URL, graph name, and credentials")
     if data.get("hugegraph_ai_status") != "available":
-        actions.append(
-            "Check HugeGraph-AI URL if embedding or graph index features are needed"
-        )
+        actions.append("Check HugeGraph-AI URL if embedding or graph index features are needed")
     return actions

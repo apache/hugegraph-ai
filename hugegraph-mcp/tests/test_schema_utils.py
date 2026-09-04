@@ -110,9 +110,7 @@ def test_property_cardinalities_supports_wrappers_and_field_aliases():
         }
     ) == {"name": "SINGLE", "aliases": "LIST", "tags": "SET"}
 
-    assert property_cardinalities(
-        {"propertykeys": [{"name": "values", "cardinality": "LIST"}]}
-    ) == {"values": "LIST"}
+    assert property_cardinalities({"propertykeys": [{"name": "values", "cardinality": "LIST"}]}) == {"values": "LIST"}
 
 
 def test_normalized_schema_summary_binds_property_key_cardinality_aliases():
@@ -128,9 +126,7 @@ def test_normalized_schema_summary_binds_property_key_cardinality_aliases():
                 ]
             }
         }
-    )["propertykeys"] == [
-        {"name": "aliases", "data_type": "TEXT", "cardinality": "LIST"}
-    ]
+    )["propertykeys"] == [{"name": "aliases", "data_type": "TEXT", "cardinality": "LIST"}]
 
 
 def test_normalized_schema_summary_binds_supported_schema_fields():

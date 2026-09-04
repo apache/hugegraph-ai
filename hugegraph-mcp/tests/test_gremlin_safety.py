@@ -90,9 +90,7 @@ def test_newly_denied_high_risk_steps():
     ]
 
     for query in queries:
-        assert classify_gremlin_read_safety(query) == "unsafe", (
-            f"Expected unsafe: {query}"
-        )
+        assert classify_gremlin_read_safety(query) == "unsafe", f"Expected unsafe: {query}"
 
 
 def test_side_effect_accumulators_are_uncertain():
@@ -105,6 +103,4 @@ def test_side_effect_accumulators_are_uncertain():
     ]
 
     for query in queries:
-        assert classify_gremlin_read_safety(query) == "uncertain", (
-            f"Expected uncertain: {query}"
-        )
+        assert classify_gremlin_read_safety(query) == "uncertain", f"Expected uncertain: {query}"

@@ -74,10 +74,12 @@ def test_envelope_err_defaults():
 
 
 def test_envelope_err_all_error_types():
-    assert len(ErrorType) == 24
+    assert len(ErrorType) == 26
     assert ErrorType.VALIDATION_ERROR.value == "VALIDATION_ERROR"
     assert ErrorType.PLAN_EXPIRED.value == "PLAN_EXPIRED"
     assert ErrorType.PLAN_ALREADY_USED.value == "PLAN_ALREADY_USED"
+    assert ErrorType.WRITE_CONFLICT.value == "WRITE_CONFLICT"
+    assert ErrorType.WRITE_OUTCOME_UNKNOWN.value == "WRITE_OUTCOME_UNKNOWN"
     assert ErrorType.NOT_FOUND.value == "NOT_FOUND"
     assert ErrorType.FEATURE_DISABLED.value == "FEATURE_DISABLED"
     assert ErrorType.QUERY_SYNTAX_ERROR.value == "QUERY_SYNTAX_ERROR"

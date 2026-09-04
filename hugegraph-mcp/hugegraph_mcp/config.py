@@ -16,10 +16,12 @@
 环境变量优先级高于默认值，避免硬编码连接信息。"""
 
 import logging
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_VALUES = frozenset({"0", "false", "no", "off"})
@@ -38,13 +40,42 @@ CONFIG_ENV_NAMES = (
     "HUGEGRAPH_MCP_ALLOW_AI",
     "HUGEGRAPH_MCP_ADMIN_MODE",
     "HUGEGRAPH_MCP_TIMEOUT_SECONDS",
+    "HUGEGRAPH_AI_TIMEOUT_SECONDS",
+    "HUGEGRAPH_CONNECT_TIMEOUT_SECONDS",
+    "HUGEGRAPH_READ_TIMEOUT_SECONDS",
+    "HUGEGRAPH_WRITE_TIMEOUT_SECONDS",
+    "HUGEGRAPH_MCP_MAX_RESULT_ITEMS",
+    "HUGEGRAPH_MCP_MAX_RESULT_BYTES",
+    "HUGEGRAPH_MCP_PLAN_STORE",
+    "HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT",
     "HUGEGRAPH_MCP_STATE_DIR",
     "XDG_STATE_HOME",
 )
 _CONFIG_CACHE: tuple[tuple[tuple[str, str | None], ...], "MCPConfig"] | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
+class _NumericFieldSpec:
+    """Parsing and operational bounds for one numeric environment setting."""
+
+    kind: Literal["integer", "numeric"]
+    default: int | float
+    minimum: int | float
+    maximum: int | float
+
+
+_NUMERIC_FIELD_SPECS = {
+    "connect_timeout_seconds": _NumericFieldSpec("numeric", 0.5, 0.001, 86_400.0),
+    "read_timeout_seconds": _NumericFieldSpec("numeric", 15.0, 0.001, 86_400.0),
+    "write_timeout_seconds": _NumericFieldSpec("numeric", 15.0, 0.001, 86_400.0),
+    "timeout_seconds": _NumericFieldSpec("integer", 30, 1, 86_400),
+    "max_result_items": _NumericFieldSpec("integer", 100, 1, 1_000_000),
+    "max_result_bytes": _NumericFieldSpec("integer", 1_048_576, 1, 1_073_741_824),
+    "write_instance_count": _NumericFieldSpec("integer", 1, 1, 1024),
+}
+
+
+@dataclass(frozen=True)
 class MCPConfig:
     """MCP 服务器统一配置，所有字段从环境变量读取，有合理默认值。"""
 
@@ -59,10 +90,15 @@ class MCPConfig:
     ai_graph_url: str | None = None
     allow_ai: bool = False
     admin_mode: bool = False
+    connect_timeout_seconds: float = 0.5
+    read_timeout_seconds: float = 15.0
+    write_timeout_seconds: float = 15.0
     timeout_seconds: int = 30
-    state_dir: Path = field(
-        default_factory=lambda: Path.home() / ".local" / "state" / "hugegraph-mcp"
-    )
+    max_result_items: int = 100
+    max_result_bytes: int = 1_048_576
+    plan_store_backend: str = "sqlite"
+    write_instance_count: int = 1
+    state_dir: Path = field(default_factory=lambda: Path.home() / ".local" / "state" / "hugegraph-mcp")
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
@@ -84,20 +120,14 @@ class MCPConfig:
 
         warnings: list[str] = []
 
-        path_graphspace, path_graph = _parse_graph_path(
-            env.get("HUGEGRAPH_GRAPH_PATH", "DEFAULT/hugegraph")
-        )
+        path_graphspace, path_graph = _parse_graph_path(env.get("HUGEGRAPH_GRAPH_PATH", "DEFAULT/hugegraph"))
         graphspace = path_graphspace
         graph = path_graph
 
         split_graphspace = env.get("HUGEGRAPH_GRAPHSPACE")
         split_graph = env.get("HUGEGRAPH_GRAPH")
-        if env.get("HUGEGRAPH_GRAPH_PATH") is not None and (
-            split_graphspace is not None or split_graph is not None
-        ):
-            warnings.append(
-                "HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH"
-            )
+        if env.get("HUGEGRAPH_GRAPH_PATH") is not None and (split_graphspace is not None or split_graph is not None):
+            warnings.append("HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH")
 
         if split_graphspace is not None:
             graphspace = _non_empty(split_graphspace, "DEFAULT")
@@ -135,7 +165,35 @@ class MCPConfig:
             ai_graph_url=_optional_non_empty(env.get("HUGEGRAPH_AI_GRAPH_URL")),
             allow_ai=allow_ai,
             admin_mode=admin_mode,
-            timeout_seconds=_parse_int(env.get("HUGEGRAPH_MCP_TIMEOUT_SECONDS"), 30),
+            connect_timeout_seconds=_parse_numeric_field(
+                env.get("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS"),
+                "connect_timeout_seconds",
+            ),
+            read_timeout_seconds=_parse_numeric_field(
+                env.get("HUGEGRAPH_READ_TIMEOUT_SECONDS"),
+                "read_timeout_seconds",
+            ),
+            write_timeout_seconds=_parse_numeric_field(
+                env.get("HUGEGRAPH_WRITE_TIMEOUT_SECONDS"),
+                "write_timeout_seconds",
+            ),
+            timeout_seconds=_parse_numeric_field(
+                env.get("HUGEGRAPH_AI_TIMEOUT_SECONDS") or env.get("HUGEGRAPH_MCP_TIMEOUT_SECONDS"),
+                "timeout_seconds",
+            ),
+            max_result_items=_parse_numeric_field(
+                env.get("HUGEGRAPH_MCP_MAX_RESULT_ITEMS"),
+                "max_result_items",
+            ),
+            max_result_bytes=_parse_numeric_field(
+                env.get("HUGEGRAPH_MCP_MAX_RESULT_BYTES"),
+                "max_result_bytes",
+            ),
+            plan_store_backend=(env.get("HUGEGRAPH_MCP_PLAN_STORE", "sqlite").strip().lower() or "invalid"),
+            write_instance_count=_parse_numeric_field(
+                env.get("HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT"),
+                "write_instance_count",
+            ),
             state_dir=_state_dir(env),
             warnings=tuple(warnings),
         )
@@ -150,6 +208,9 @@ class MCPConfig:
 
     def is_readonly(self) -> bool:
         return self.readonly
+
+    def has_safe_write_store(self) -> bool:
+        return self.plan_store_backend == "sqlite" and self.write_instance_count == 1
 
 
 def _parse_graph_path(graph_path: str) -> tuple[str, str]:
@@ -178,22 +239,28 @@ def _parse_bool(
     return safe_default
 
 
-def _parse_int(value: str | None, default: int) -> int:
+def _parse_numeric_field(value: str | None, field_name: str) -> int | float:
+    spec = _NUMERIC_FIELD_SPECS[field_name]
     if value is None or value.strip() == "":
-        return default
+        return spec.default
     try:
-        parsed = int(value)
+        parsed = int(value) if spec.kind == "integer" else float(value)
     except ValueError:
-        LOGGER.warning(
-            "Invalid integer config value %r; using default %s", value, default
-        )
-        return default
-    if parsed <= 0:
-        LOGGER.warning(
-            "Invalid integer config value %r; using default %s", value, default
-        )
-        return default
+        _warn_invalid_numeric(value, spec)
+        return spec.default
+    if (isinstance(parsed, float) and not math.isfinite(parsed)) or parsed < spec.minimum or parsed > spec.maximum:
+        _warn_invalid_numeric(value, spec)
+        return spec.default
     return parsed
+
+
+def _warn_invalid_numeric(value: str, spec: _NumericFieldSpec) -> None:
+    LOGGER.warning(
+        "Invalid %s config value %r; using default %s",
+        spec.kind,
+        value,
+        spec.default,
+    )
 
 
 def _non_empty(value: str, default: str) -> str:

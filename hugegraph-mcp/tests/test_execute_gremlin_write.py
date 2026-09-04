@@ -22,6 +22,28 @@ class FakeGremlinClient:
         return self.results
 
 
+class FakePyHugeClient:
+    init_kwargs = None
+
+    def __init__(self, **kwargs):
+        type(self).init_kwargs = kwargs
+
+    def gremlin(self):
+        return FakeGremlinClient([])
+
+
+def test_get_write_client_uses_write_timeout(monkeypatch):
+    from hugegraph_mcp import gremlin_tools
+
+    monkeypatch.setattr(gremlin_tools, "PyHugeClient", FakePyHugeClient)
+    monkeypatch.setenv("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "19")
+
+    gremlin_tools._get_write_client()
+
+    assert FakePyHugeClient.init_kwargs["timeout"] == (2.0, 19.0)
+
+
 def test_execute_gremlin_write_basic(monkeypatch):
     """Basic write path: uses write client, returns affected & is_write."""
 
@@ -38,13 +60,9 @@ def test_execute_gremlin_write_basic(monkeypatch):
         guarded.append(capability)
 
     monkeypatch.setattr(gremlin_tools, "guard_write", fake_guard_write)
-    monkeypatch.setattr(
-        gremlin_tools, "_get_write_client", lambda: fake_client, raising=False
-    )
+    monkeypatch.setattr(gremlin_tools, "_get_write_client", lambda: fake_client, raising=False)
 
-    res = gremlin_tools.execute_gremlin_write(
-        "g.addV('person').property('name','Alice')"
-    )
+    res = gremlin_tools.execute_gremlin_write("g.addV('person').property('name','Alice')")
 
     assert fake_client.last_query is not None
     assert fake_client.last_query.startswith("g.addV")
@@ -66,9 +84,7 @@ def test_execute_gremlin_write_blocked_in_readonly(monkeypatch):
     from hugegraph_mcp import gremlin_tools
 
     fake_client = FakeGremlinClient(results=[])
-    monkeypatch.setattr(
-        gremlin_tools, "_get_write_client", lambda: fake_client, raising=False
-    )
+    monkeypatch.setattr(gremlin_tools, "_get_write_client", lambda: fake_client, raising=False)
 
     result = gremlin_tools.execute_gremlin_write("g.addV('person')")
 

@@ -24,6 +24,7 @@ def build_hugegraph_client(
     cfg: MCPConfig,
     *,
     client_cls: type[Any] = PyHugeClient,
+    request_timeout_seconds: float | None = None,
 ) -> Any:
     """Build a PyHugeClient while preserving optional graphspace compatibility."""
 
@@ -33,6 +34,10 @@ def build_hugegraph_client(
         "graph": cfg.graph,
         "user": cfg.user,
         "pwd": cfg.password,
+        "timeout": (
+            cfg.connect_timeout_seconds,
+            request_timeout_seconds if request_timeout_seconds is not None else cfg.read_timeout_seconds,
+        ),
     }
     if graphspace:
         kwargs["graphspace"] = graphspace

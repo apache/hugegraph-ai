@@ -38,6 +38,14 @@ READONLY_ALLOWED_CAPABILITIES = frozenset(
         Capability.GENERATE,
     }
 )
+WRITE_CAPABILITIES = frozenset(
+    {
+        Capability.DATA_WRITE,
+        Capability.SCHEMA_WRITE,
+        Capability.INDEX_WRITE,
+        Capability.DEBUG_WRITE,
+    }
+)
 
 
 def is_allowed_in_readonly(capability: Capability) -> bool:
@@ -51,6 +59,24 @@ def guard(
 ) -> dict[str, Any] | None:
     cfg = cfg or MCPConfig.from_env()
     readonly = cfg.is_readonly()
+
+    if capability in WRITE_CAPABILITIES and not readonly and not cfg.has_safe_write_store():
+        return envelope_err(
+            ErrorType.FEATURE_DISABLED,
+            "Write capability requires a shared transactional plan store when multiple MCP instances are configured.",
+            suggestion=(
+                "Run one write-enabled MCP instance with the SQLite plan store, "
+                "or configure a supported shared transactional PlanStore."
+            ),
+            readonly=False,
+            graph=cfg.graph,
+            graphspace=cfg.graphspace,
+            capability=capability.value,
+            details={
+                "plan_store_backend": cfg.plan_store_backend,
+                "write_instance_count": cfg.write_instance_count,
+            },
+        )
 
     if not readonly or is_allowed_in_readonly(capability):
         return None

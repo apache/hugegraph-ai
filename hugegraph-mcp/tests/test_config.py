@@ -12,8 +12,10 @@
 # limitations under the License.
 
 import logging
+from dataclasses import FrozenInstanceError
 
 import hugegraph_mcp.config as config_module
+import pytest
 from hugegraph_mcp.config import MCPConfig, config
 
 CONFIG_ENV_VARS = (
@@ -30,6 +32,12 @@ CONFIG_ENV_VARS = (
     "HUGEGRAPH_MCP_ALLOW_AI",
     "HUGEGRAPH_MCP_ADMIN_MODE",
     "HUGEGRAPH_MCP_TIMEOUT_SECONDS",
+    "HUGEGRAPH_AI_TIMEOUT_SECONDS",
+    "HUGEGRAPH_CONNECT_TIMEOUT_SECONDS",
+    "HUGEGRAPH_READ_TIMEOUT_SECONDS",
+    "HUGEGRAPH_WRITE_TIMEOUT_SECONDS",
+    "HUGEGRAPH_MCP_MAX_RESULT_ITEMS",
+    "HUGEGRAPH_MCP_MAX_RESULT_BYTES",
     "HUGEGRAPH_MCP_STATE_DIR",
     "XDG_STATE_HOME",
 )
@@ -54,6 +62,11 @@ def test_basic_config_parsing(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_ALLOW_AI", "yes")
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
     monkeypatch.setenv("HUGEGRAPH_MCP_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "1.5")
+    monkeypatch.setenv("HUGEGRAPH_READ_TIMEOUT_SECONDS", "20")
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "40")
+    monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "25")
+    monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "2048")
 
     cfg = MCPConfig.from_env()
 
@@ -69,6 +82,149 @@ def test_basic_config_parsing(monkeypatch):
     assert cfg.allow_ai is True
     assert cfg.admin_mode is True
     assert cfg.timeout_seconds == 45
+    assert cfg.connect_timeout_seconds == 1.5
+    assert cfg.read_timeout_seconds == 20.0
+    assert cfg.write_timeout_seconds == 40.0
+    assert cfg.max_result_items == 25
+    assert cfg.max_result_bytes == 2048
+
+
+def test_explicit_ai_timeout_takes_priority_over_legacy_name(monkeypatch):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_MCP_TIMEOUT_SECONDS", "45")
+    monkeypatch.setenv("HUGEGRAPH_AI_TIMEOUT_SECONDS", "12")
+
+    assert MCPConfig.from_env().timeout_seconds == 12
+
+
+def test_invalid_graph_timeouts_fall_back_to_safe_defaults(monkeypatch, caplog):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "zero")
+    monkeypatch.setenv("HUGEGRAPH_READ_TIMEOUT_SECONDS", "0")
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "-1")
+
+    with caplog.at_level(logging.WARNING, logger="hugegraph_mcp.config"):
+        cfg = MCPConfig.from_env()
+
+    assert cfg.connect_timeout_seconds == 0.5
+    assert cfg.read_timeout_seconds == 15.0
+    assert cfg.write_timeout_seconds == 15.0
+    assert len(caplog.messages) == 3
+
+
+def test_non_finite_graph_timeouts_fall_back_to_safe_defaults(monkeypatch):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_READ_TIMEOUT_SECONDS", "nan")
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "inf")
+
+    cfg = MCPConfig.from_env()
+
+    assert cfg.read_timeout_seconds == 15.0
+    assert cfg.write_timeout_seconds == 15.0
+
+
+@pytest.mark.parametrize(
+    ("env_name", "invalid_value", "field_name", "default"),
+    [
+        ("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "", "connect_timeout_seconds", 0.5),
+        ("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "-0.1", "connect_timeout_seconds", 0.5),
+        ("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "nan", "connect_timeout_seconds", 0.5),
+        ("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "inf", "connect_timeout_seconds", 0.5),
+        ("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "86401", "connect_timeout_seconds", 0.5),
+        ("HUGEGRAPH_READ_TIMEOUT_SECONDS", "-1", "read_timeout_seconds", 15.0),
+        ("HUGEGRAPH_READ_TIMEOUT_SECONDS", "-inf", "read_timeout_seconds", 15.0),
+        ("HUGEGRAPH_READ_TIMEOUT_SECONDS", "86401", "read_timeout_seconds", 15.0),
+        ("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "-1", "write_timeout_seconds", 15.0),
+        ("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "nan", "write_timeout_seconds", 15.0),
+        ("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "86401", "write_timeout_seconds", 15.0),
+        ("HUGEGRAPH_AI_TIMEOUT_SECONDS", "-1", "timeout_seconds", 30),
+        ("HUGEGRAPH_AI_TIMEOUT_SECONDS", "nan", "timeout_seconds", 30),
+        ("HUGEGRAPH_AI_TIMEOUT_SECONDS", "inf", "timeout_seconds", 30),
+        ("HUGEGRAPH_AI_TIMEOUT_SECONDS", "86401", "timeout_seconds", 30),
+        ("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "-1", "max_result_items", 100),
+        ("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "nan", "max_result_items", 100),
+        ("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "1000001", "max_result_items", 100),
+        ("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "-1", "max_result_bytes", 1_048_576),
+        ("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "inf", "max_result_bytes", 1_048_576),
+        ("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "1073741825", "max_result_bytes", 1_048_576),
+    ],
+)
+def test_numeric_config_rejects_values_outside_field_bounds(
+    monkeypatch,
+    env_name,
+    invalid_value,
+    field_name,
+    default,
+):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv(env_name, invalid_value)
+
+    cfg = MCPConfig.from_env()
+
+    assert getattr(cfg, field_name) == default
+
+
+@pytest.mark.parametrize(
+    ("env_name", "field_name", "default"),
+    [
+        ("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "connect_timeout_seconds", 0.5),
+        ("HUGEGRAPH_READ_TIMEOUT_SECONDS", "read_timeout_seconds", 15.0),
+        ("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "write_timeout_seconds", 15.0),
+        ("HUGEGRAPH_AI_TIMEOUT_SECONDS", "timeout_seconds", 30),
+        ("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "max_result_items", 100),
+        ("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "max_result_bytes", 1_048_576),
+    ],
+)
+def test_arbitrarily_large_numeric_config_never_raises(
+    monkeypatch,
+    env_name,
+    field_name,
+    default,
+):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv(env_name, "1" + ("0" * 1000))
+
+    cfg = MCPConfig.from_env()
+
+    assert getattr(cfg, field_name) == default
+
+
+def test_numeric_config_accepts_declared_upper_bounds(monkeypatch):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "86400")
+    monkeypatch.setenv("HUGEGRAPH_READ_TIMEOUT_SECONDS", "86400")
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "86400")
+    monkeypatch.setenv("HUGEGRAPH_AI_TIMEOUT_SECONDS", "86400")
+    monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "1000000")
+    monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "1073741824")
+
+    cfg = MCPConfig.from_env()
+
+    assert cfg.connect_timeout_seconds == 86400.0
+    assert cfg.read_timeout_seconds == 86400.0
+    assert cfg.write_timeout_seconds == 86400.0
+    assert cfg.timeout_seconds == 86400
+    assert cfg.max_result_items == 1_000_000
+    assert cfg.max_result_bytes == 1_073_741_824
+
+
+def test_numeric_config_accepts_declared_lower_bounds(monkeypatch):
+    clear_config_env(monkeypatch)
+    monkeypatch.setenv("HUGEGRAPH_CONNECT_TIMEOUT_SECONDS", "0.001")
+    monkeypatch.setenv("HUGEGRAPH_READ_TIMEOUT_SECONDS", "0.001")
+    monkeypatch.setenv("HUGEGRAPH_WRITE_TIMEOUT_SECONDS", "0.001")
+    monkeypatch.setenv("HUGEGRAPH_AI_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "1")
+    monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "1")
+
+    cfg = MCPConfig.from_env()
+
+    assert cfg.connect_timeout_seconds == 0.001
+    assert cfg.read_timeout_seconds == 0.001
+    assert cfg.write_timeout_seconds == 0.001
+    assert cfg.timeout_seconds == 1
+    assert cfg.max_result_items == 1
+    assert cfg.max_result_bytes == 1
 
 
 def test_graph_path_parsing(monkeypatch):
@@ -91,9 +247,7 @@ def test_split_graph_variables_take_priority(monkeypatch):
 
     assert cfg.graphspace == "split_space"
     assert cfg.graph == "split_graph"
-    assert cfg.warnings == (
-        "HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH",
-    )
+    assert cfg.warnings == ("HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH",)
 
 
 def test_warnings_are_logged(monkeypatch, caplog):
@@ -104,18 +258,11 @@ def test_warnings_are_logged(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="hugegraph_mcp.config"):
         cfg = MCPConfig.from_env()
 
-    assert cfg.warnings == (
-        "HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH",
-    )
-    assert (
-        "HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH"
-        in caplog.messages
-    )
+    assert cfg.warnings == ("HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH",)
+    assert "HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH" in caplog.messages
 
 
-def test_duplicate_config_warnings_are_not_logged_for_unchanged_env(
-    monkeypatch, caplog
-):
+def test_duplicate_config_warnings_are_not_logged_for_unchanged_env(monkeypatch, caplog):
     clear_config_env(monkeypatch)
     monkeypatch.setenv("HUGEGRAPH_GRAPH_PATH", "cache_space/cache_graph")
     monkeypatch.setenv("HUGEGRAPH_GRAPHSPACE", "cache_override")
@@ -125,12 +272,7 @@ def test_duplicate_config_warnings_are_not_logged_for_unchanged_env(
         second = MCPConfig.from_env()
 
     assert first is second
-    assert (
-        caplog.messages.count(
-            "HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH"
-        )
-        == 1
-    )
+    assert caplog.messages.count("HUGEGRAPH_GRAPHSPACE/HUGEGRAPH_GRAPH override HUGEGRAPH_GRAPH_PATH") == 1
 
 
 def test_invalid_integer_config_falls_back_to_default(monkeypatch, caplog):
@@ -141,10 +283,12 @@ def test_invalid_integer_config_falls_back_to_default(monkeypatch, caplog):
         cfg = MCPConfig.from_env()
 
     assert cfg.timeout_seconds == 30
-    assert (
-        "Invalid integer config value 'not-a-number'; using default 30"
-        in caplog.messages
-    )
+    assert cfg.connect_timeout_seconds == 0.5
+    assert cfg.read_timeout_seconds == 15.0
+    assert cfg.write_timeout_seconds == 15.0
+    assert cfg.max_result_items == 100
+    assert cfg.max_result_bytes == 1_048_576
+    assert "Invalid integer config value 'not-a-number'; using default 30" in caplog.messages
 
 
 def test_non_positive_integer_config_falls_back_to_default(monkeypatch, caplog):
@@ -157,10 +301,7 @@ def test_non_positive_integer_config_falls_back_to_default(monkeypatch, caplog):
             cfg = MCPConfig.from_env()
 
         assert cfg.timeout_seconds == 30
-        assert (
-            f"Invalid integer config value '{value}'; using default 30"
-            in caplog.messages
-        )
+        assert f"Invalid integer config value '{value}'; using default 30" in caplog.messages
 
 
 def test_readonly_and_allow_ai_are_controlled_independently(monkeypatch):
@@ -278,6 +419,16 @@ def test_config_proxy_reads_current_env(monkeypatch):
 
     monkeypatch.setenv("HUGEGRAPH_GRAPH", "second_graph")
     assert config.graph == "second_graph"
+
+
+def test_cached_config_is_immutable(monkeypatch):
+    clear_config_env(monkeypatch)
+    cached = MCPConfig.from_env()
+
+    with pytest.raises(FrozenInstanceError):
+        cached.graph = "mutated"
+
+    assert MCPConfig.from_env().graph == "hugegraph"
 
 
 def test_cached_config_uses_same_environment_snapshot_for_key_and_value(monkeypatch):

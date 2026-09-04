@@ -17,6 +17,7 @@
 HTTP 错误/语法错误做结构化错误收集，不抛异常到上层。
 """
 
+import json
 import time
 from typing import Any
 
@@ -49,14 +50,18 @@ class GremlinExecutor:
     def __init__(self, cfg: MCPConfig) -> None:
         self._cfg = cfg
 
-    def _build_client(self) -> PyHugeClient:
-        return build_hugegraph_client(self._cfg, client_cls=PyHugeClient)
+    def _build_client(self, request_timeout_seconds: float) -> PyHugeClient:
+        return build_hugegraph_client(
+            self._cfg,
+            client_cls=PyHugeClient,
+            request_timeout_seconds=request_timeout_seconds,
+        )
 
     def get_read_client(self):
-        return self._build_client().gremlin()
+        return self._build_client(self._cfg.read_timeout_seconds).gremlin()
 
     def get_write_client(self):
-        return self._build_client().gremlin()
+        return self._build_client(self._cfg.write_timeout_seconds).gremlin()
 
 
 _GREMLIN_ERROR_TYPE_MAP = {
@@ -132,6 +137,44 @@ def _gremlin_result_count(data: Any) -> int:
     return 1
 
 
+def _gremlin_result_byte_size(data: Any) -> int:
+    encoded = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
+    return len(encoded)
+
+
+def _gremlin_output_guard_error(data: Any, count: int, duration_ms: float) -> dict[str, Any] | None:
+    """Reject an already-materialized result that is too large to return.
+
+    This is deliberately an output guard, not an execution or transport budget:
+    PyHugeGraph has already downloaded and decoded ``data`` at this point.
+    """
+    cfg = MCPConfig.from_env()
+    byte_size = _gremlin_result_byte_size(data)
+    exceeded = []
+    if count > cfg.max_result_items:
+        exceeded.append("max_result_items")
+    if byte_size > cfg.max_result_bytes:
+        exceeded.append("max_result_bytes")
+    if not exceeded:
+        return None
+    return envelope_err(
+        ErrorType.VALIDATION_ERROR,
+        "Gremlin result exceeds the configured post-materialization output guard.",
+        suggestion="Use a smaller limit or return fewer/smaller properties.",
+        details={
+            "truncated": False,
+            "guard_type": "post_materialization_output_guard",
+            "hard_budget": False,
+            "exceeded": exceeded,
+            "result_items": count,
+            "max_result_items": cfg.max_result_items,
+            "result_bytes": byte_size,
+            "max_result_bytes": cfg.max_result_bytes,
+        },
+        duration_ms=duration_ms,
+    )
+
+
 def _is_no_index_error(message: Any) -> bool:
     lowered = str(message).lower()
     return "noindexexception" in lowered or "no index" in lowered
@@ -169,9 +212,7 @@ def _get_client_address(client) -> str:
     return "unknown address"
 
 
-def _execute_gremlin_with_error_handling(
-    client, gremlin_query: str, operation_type: str = "read"
-) -> dict[str, Any]:
+def _execute_gremlin_with_error_handling(client, gremlin_query: str, operation_type: str = "read") -> dict[str, Any]:
     """执行 Gremlin 查询并做结构化错误处理。
 
     连接失败、HTTP 错误、语法错误等均返回结构化 dict 而非抛异常，
@@ -224,11 +265,7 @@ def _execute_gremlin_with_error_handling(
         }
 
     except requests.exceptions.HTTPError as e:
-        status_code = (
-            e.response.status_code
-            if hasattr(e, "response") and e.response
-            else "unknown"
-        )
+        status_code = e.response.status_code if hasattr(e, "response") and e.response else "unknown"
 
         if status_code == 401:
             error_type = "authentication_error"
@@ -325,9 +362,8 @@ def _execute_gremlin_with_error_handling(
             return _no_index_error_result(str(e), duration_ms, operation_type)
         return {
             "success": False,
-            # Keep the internal reason for diagnostics; _gremlin_error_envelope
-            # maps it to the canonical public ErrorType.
-            "error_type": classification.reason,
+            "error_type": classification.error_type.value,
+            "reason": classification.reason,
             "message": str(e) or type(e).__name__,
             "suggestions": [classification.suggestion],
             "retryable": classification.retryable,
@@ -418,9 +454,7 @@ def execute_gremlin_read(
             return envelope_err(
                 ErrorType.VALIDATION_ERROR,
                 "Cannot safely auto-append limit to this Gremlin query.",
-                suggestion=(
-                    "Add an explicit .limit(n) yourself, or use limit_policy='warn'."
-                ),
+                suggestion=("Add an explicit .limit(n) yourself, or use limit_policy='warn'."),
                 details={"gremlin_query": gremlin_query, "warnings": cost_warnings},
                 warnings=cost_warnings,
             )
@@ -428,12 +462,13 @@ def execute_gremlin_read(
         rewrite_reason = "limit_policy='auto_append' added .limit(100) to an unbounded read traversal."
         cost_warnings = gremlin_cost_warnings(gremlin_query)
 
-    result = _execute_gremlin_with_error_handling(
-        _get_read_client, gremlin_query, "read"
-    )
+    result = _execute_gremlin_with_error_handling(_get_read_client, gremlin_query, "read")
 
     if result.get("success"):
         duration_ms = result["duration_ms"]
+        output_guard_error = _gremlin_output_guard_error(result["data"], result["count"], duration_ms)
+        if output_guard_error is not None:
+            return output_guard_error
         return envelope_ok(
             {
                 "data": result["data"],
@@ -481,9 +516,7 @@ def execute_gremlin_write(
     if violation is not None:
         return violation
 
-    result = _execute_gremlin_with_error_handling(
-        _get_write_client, gremlin_query, "write"
-    )
+    result = _execute_gremlin_with_error_handling(_get_write_client, gremlin_query, "write")
 
     if result.get("success"):
         duration_ms = result["duration_ms"]

@@ -15,7 +15,6 @@ from unittest.mock import Mock
 
 import pytest
 import requests
-
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.hugegraph_ai_client import get, health_check, post, request
 
@@ -27,9 +26,7 @@ class FakeResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise requests.exceptions.HTTPError(
-                f"HTTP {self.status_code}", response=self
-            )
+            raise requests.exceptions.HTTPError(f"HTTP {self.status_code}", response=self)
 
     def json(self):
         if isinstance(self._data, Exception):
@@ -49,9 +46,7 @@ def _cfg(**overrides):
 
 def test_request_success(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"status": "ok"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request("GET", "/health", cfg=_cfg())
 
@@ -118,6 +113,126 @@ def test_request_propagates_thin_api_error_envelope(monkeypatch):
     assert result["error"]["source"] == "hugegraph-llm"
     assert result["error"]["details"] == {"stage": "extract"}
     assert result["meta"]["request_id"] == "req-ai-2"
+
+
+def test_request_unwraps_error_envelope_nested_in_success_envelope(monkeypatch):
+    inner_error = {
+        "ok": False,
+        "data": None,
+        "error": {
+            "type": "FLOW_EXECUTION_FAILED",
+            "message": "inner flow failed",
+            "suggestion": "check the flow",
+            "retryable": False,
+            "source": "hugegraph-llm",
+            "details": {"stage": "extract"},
+        },
+        "warnings": ["inner warning"],
+        "next_actions": ["inspect configuration"],
+        "meta": {"request_id": "req-inner", "duration_ms": 1},
+    }
+    outer_success = {
+        "ok": True,
+        "data": inner_error,
+        "error": None,
+        "warnings": [],
+        "next_actions": [],
+        "meta": {"request_id": "req-outer", "duration_ms": 2},
+    }
+    monkeypatch.setattr(
+        "hugegraph_mcp.hugegraph_ai_client.requests.request",
+        Mock(return_value=FakeResponse(outer_success)),
+    )
+
+    result = request("POST", "/graph-extract", cfg=_cfg(), json={})
+
+    assert result["ok"] is False
+    assert result["data"] is None
+    assert result["error"]["type"] == "FLOW_EXECUTION_FAILED"
+    assert result["error"]["message"] == "inner flow failed"
+    assert result["error"]["details"] == {"stage": "extract"}
+    assert result["warnings"] == ["inner warning"]
+    assert result["next_actions"] == ["inspect configuration"]
+    assert result["meta"]["request_id"] == "req-inner"
+
+
+def test_request_rejects_excessively_nested_thin_api_envelopes(monkeypatch):
+    payload = {"status": "ready"}
+    for index in reversed(range(3)):
+        payload = {
+            "ok": True,
+            "data": payload,
+            "error": None,
+            "warnings": [],
+            "next_actions": [],
+            "meta": {"request_id": f"req-depth-{index}", "duration_ms": 1},
+        }
+    monkeypatch.setattr(
+        "hugegraph_mcp.hugegraph_ai_client.requests.request",
+        Mock(return_value=FakeResponse(payload)),
+    )
+
+    result = request("GET", "/health", cfg=_cfg())
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "HUGEGRAPH_AI_UNAVAILABLE"
+    assert result["error"]["retryable"] is False
+    assert result["error"]["details"] == {
+        "reason": "invalid_upstream_response",
+        "issue": "nested_envelope_depth_exceeded",
+        "max_nested_envelopes": 1,
+    }
+
+
+def test_request_rejects_cyclic_thin_api_envelope(monkeypatch):
+    cyclic = {
+        "ok": True,
+        "data": None,
+        "error": None,
+        "warnings": [],
+        "next_actions": [],
+        "meta": {"request_id": "req-cycle", "duration_ms": 1},
+    }
+    cyclic["data"] = cyclic
+    monkeypatch.setattr(
+        "hugegraph_mcp.hugegraph_ai_client.requests.request",
+        Mock(return_value=FakeResponse(cyclic)),
+    )
+
+    result = request("GET", "/health", cfg=_cfg())
+
+    assert result["ok"] is False
+    assert result["error"]["details"]["reason"] == "invalid_upstream_response"
+    assert result["error"]["details"]["issue"] == "cyclic_nested_envelope"
+
+
+def test_request_rejects_malformed_nested_thin_api_envelope(monkeypatch):
+    malformed = {
+        "ok": True,
+        "data": {"status": "ready"},
+        "error": None,
+        "warnings": "not-a-list",
+        "next_actions": [],
+        "meta": {"request_id": "req-malformed", "duration_ms": 1},
+    }
+    outer = {
+        "ok": True,
+        "data": malformed,
+        "error": None,
+        "warnings": [],
+        "next_actions": [],
+        "meta": {"request_id": "req-outer", "duration_ms": 1},
+    }
+    monkeypatch.setattr(
+        "hugegraph_mcp.hugegraph_ai_client.requests.request",
+        Mock(return_value=FakeResponse(outer)),
+    )
+
+    result = request("GET", "/health", cfg=_cfg())
+
+    assert result["ok"] is False
+    assert result["error"]["details"]["reason"] == "invalid_upstream_response"
+    assert result["error"]["details"]["issue"] == "malformed_nested_envelope"
 
 
 def test_request_propagates_thin_api_error_envelope_on_http_error(monkeypatch):
@@ -188,9 +303,7 @@ def test_request_does_not_unwrap_domain_dict_that_only_looks_like_envelope(monke
 
 def test_request_accepts_relative_path_without_leading_slash(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"status": "ok"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request("GET", "health", cfg=_cfg())
 
@@ -215,9 +328,7 @@ def test_request_accepts_relative_path_without_leading_slash(monkeypatch):
 )
 def test_request_rejects_absolute_url_before_network_call(monkeypatch, path):
     http_request = Mock()
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request("GET", path, cfg=_cfg(ai_token="ai-secret"))
 
@@ -235,9 +346,7 @@ def test_request_rejects_absolute_url_before_network_call(monkeypatch, path):
 
 def test_request_does_not_reuse_graph_password_for_ai_auth(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"status": "ok"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request("GET", "/health", cfg=_cfg(user="alice", password="secret"))
 
@@ -253,9 +362,7 @@ def test_request_does_not_reuse_graph_password_for_ai_auth(monkeypatch):
 
 def test_request_injects_configured_bearer_token(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"status": "ok"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request(
         "GET",
@@ -273,9 +380,7 @@ def test_request_injects_configured_bearer_token(monkeypatch):
 
 def test_explicit_authorization_header_overrides_configured_token(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"status": "ok"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request(
         "GET",
@@ -372,9 +477,7 @@ def test_request_http_429_is_retryable_ai_error(monkeypatch):
 
 def test_request_allow_ai_disabled(monkeypatch):
     http_request = Mock()
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = request("GET", "/health", cfg=_cfg(allow_ai=False))
 
@@ -389,9 +492,7 @@ def test_request_allow_ai_disabled(monkeypatch):
 
 def test_post_convenience(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"gremlin": "g.V().count()"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = post("/generate-gremlin", cfg=_cfg(), json={"question": "count vertices"})
 
@@ -408,9 +509,7 @@ def test_post_convenience(monkeypatch):
 
 def test_get_convenience(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"ready": True}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = get("/graph-index-info", cfg=_cfg())
 
@@ -426,9 +525,7 @@ def test_get_convenience(monkeypatch):
 
 def test_health_check(monkeypatch):
     http_request = Mock(return_value=FakeResponse({"ok": True, "data": "ready"}))
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = health_check(cfg=_cfg())
 
@@ -451,9 +548,7 @@ def test_health_check_falls_back_to_openapi(monkeypatch):
             FakeResponse({"openapi": "3.1.0"}),
         ]
     )
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = health_check(cfg=_cfg())
 
@@ -493,9 +588,7 @@ def test_health_check_does_not_report_inner_failure_as_available(monkeypatch):
             FakeResponse({"openapi": "3.1.0"}),
         ]
     )
-    monkeypatch.setattr(
-        "hugegraph_mcp.hugegraph_ai_client.requests.request", http_request
-    )
+    monkeypatch.setattr("hugegraph_mcp.hugegraph_ai_client.requests.request", http_request)
 
     result = health_check(cfg=_cfg())
 

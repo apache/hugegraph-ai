@@ -49,6 +49,8 @@ class ErrorType(str, Enum):
     PLAN_EXPIRED = "PLAN_EXPIRED"
     PLAN_ALREADY_USED = "PLAN_ALREADY_USED"
     TARGET_CHANGED = "TARGET_CHANGED"
+    WRITE_CONFLICT = "WRITE_CONFLICT"
+    WRITE_OUTCOME_UNKNOWN = "WRITE_OUTCOME_UNKNOWN"
     PARTIAL_APPLY = "PARTIAL_APPLY"
     NOT_FOUND = "NOT_FOUND"
     NO_INDEX = "NO_INDEX"
@@ -74,9 +76,7 @@ def sanitize_for_response(value: Any) -> Any:
 
     if isinstance(value, dict):
         return {
-            key: REDACTED_VALUE
-            if _is_sensitive_key(key)
-            else sanitize_for_response(item)
+            key: REDACTED_VALUE if _is_sensitive_key(key) else sanitize_for_response(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -220,9 +220,7 @@ def envelope_err(
     readonly: bool | None = None,
     **meta_fields: Any,
 ) -> dict[str, Any]:
-    error_value = (
-        error_type.value if isinstance(error_type, ErrorType) else str(error_type)
-    )
+    error_value = error_type.value if isinstance(error_type, ErrorType) else str(error_type)
     error: dict[str, Any] = {
         "type": error_value,
         "message": sanitize_for_response(message),

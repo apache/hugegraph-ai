@@ -82,9 +82,6 @@ def extract_graph_data(
         return ai_result
 
     payload = _unwrap_ai_payload(ai_result.get("data"))
-    if isinstance(payload, dict) and payload.get("ok") is False:
-        return payload
-
     graph_data = _extract_graph_data(payload)
     if graph_data is None:
         return envelope_err(
@@ -108,9 +105,7 @@ def extract_graph_data(
     )
 
 
-def _schema_context(
-    schema: dict[str, Any] | str | None, cfg: MCPConfig
-) -> tuple[str | None, dict[str, Any]]:
+def _schema_context(schema: dict[str, Any] | str | None, cfg: MCPConfig) -> tuple[str | None, dict[str, Any]]:
     """Resolve schema input and provenance from one graph target.
 
     A missing schema is read from MCP's HugeGraph connection and sent inline to
@@ -141,9 +136,7 @@ def _schema_context(
     return schema_message, _schema_ref(cfg, schema_source, fingerprint)
 
 
-def _schema_ref(
-    cfg: MCPConfig, schema_source: str, fingerprint: str | None
-) -> dict[str, Any]:
+def _schema_ref(cfg: MCPConfig, schema_source: str, fingerprint: str | None) -> dict[str, Any]:
     return {
         "schema_source": schema_source,
         "graph": cfg.graph,

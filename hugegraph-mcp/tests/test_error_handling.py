@@ -17,16 +17,6 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
-from pyhugegraph.utils.exceptions import (
-    DataFormatError,
-    InvalidParameterError,
-    NotAuthorizedError,
-    NotFoundError,
-    ResponseParseError,
-    ServerError,
-    ServiceUnavailableError,
-)
-
 from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
     mark_readonly_preview,
@@ -43,15 +33,22 @@ from hugegraph_mcp.error_mapping import (
     classify_hugegraph_exception,
 )
 from hugegraph_mcp.gremlin_tools import execute_gremlin_read, execute_gremlin_write
+from pyhugegraph.utils.exceptions import (
+    DataFormatError,
+    InvalidParameterError,
+    NotAuthorizedError,
+    NotFoundError,
+    ResponseParseError,
+    ServerError,
+    ServiceUnavailableError,
+)
 
 
 def test_connection_error_handling():
     """Test handling of connection errors."""
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
         mock_client_instance = Mock()
-        mock_client_instance.exec.side_effect = requests.exceptions.ConnectionError(
-            "Connection refused"
-        )
+        mock_client_instance.exec.side_effect = requests.exceptions.ConnectionError("Connection refused")
         mock_client.return_value = mock_client_instance
 
         result = execute_gremlin_read("g.V().count()")
@@ -83,12 +80,26 @@ def test_gremlin_parameter_errors_remain_query_syntax_errors(exc_type):
     assert result["error"]["retryable"] is False
 
 
+@pytest.mark.parametrize(
+    ("message", "expected_type", "expected_reason"),
+    [
+        ("PropertyKey does not exist: age", "SCHEMA_MISMATCH", "schema_missing"),
+        ("vertex not found", "NOT_FOUND", "not_found"),
+    ],
+)
+def test_server_error_message_uses_canonical_error_type(message, expected_type, expected_reason):
+    with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
+        mock_client.return_value.exec.side_effect = ServerError(message)
+        result = execute_gremlin_read("g.V().limit(10)")
+
+    assert result["error"]["type"] == expected_type
+    assert result["error"]["details"]["reason"] == expected_reason
+
+
 def test_read_client_initialization_connection_error_is_enveloped():
     """Connection failures while constructing the client should not escape."""
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
-        mock_client.side_effect = requests.exceptions.ConnectionError(
-            "Connection refused during init"
-        )
+        mock_client.side_effect = requests.exceptions.ConnectionError("Connection refused during init")
 
         result = execute_gremlin_read("g.V().count()")
 
@@ -104,9 +115,7 @@ def test_write_client_initialization_connection_error_is_enveloped(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_READONLY", "false")
     monkeypatch.setenv("HUGEGRAPH_MCP_ADMIN_MODE", "true")
     with patch("hugegraph_mcp.gremlin_tools._get_write_client") as mock_client:
-        mock_client.side_effect = requests.exceptions.ConnectionError(
-            "Connection refused during init"
-        )
+        mock_client.side_effect = requests.exceptions.ConnectionError("Connection refused during init")
 
         result = execute_gremlin_write("g.addV('test')")
 
@@ -127,9 +136,7 @@ def test_http_500_error_handling(monkeypatch):
         # Create a mock response with status code 500
         mock_response = Mock()
         mock_response.status_code = 500
-        error = requests.exceptions.HTTPError(
-            "Internal Server Error", response=mock_response
-        )
+        error = requests.exceptions.HTTPError("Internal Server Error", response=mock_response)
         mock_client_instance.exec.side_effect = error
         mock_client.return_value = mock_client_instance
 
@@ -151,9 +158,7 @@ def test_http_503_error_is_retryable():
 
         mock_response = Mock()
         mock_response.status_code = 503
-        error = requests.exceptions.HTTPError(
-            "Service Unavailable", response=mock_response
-        )
+        error = requests.exceptions.HTTPError("Service Unavailable", response=mock_response)
         mock_client_instance.exec.side_effect = error
         mock_client.return_value = mock_client_instance
 
@@ -191,9 +196,7 @@ def test_timeout_error_handling():
     """Test handling of request timeouts."""
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
         mock_client_instance = Mock()
-        mock_client_instance.exec.side_effect = requests.exceptions.Timeout(
-            "Read timed out"
-        )
+        mock_client_instance.exec.side_effect = requests.exceptions.Timeout("Read timed out")
         mock_client.return_value = mock_client_instance
 
         result = execute_gremlin_read("g.V().count()")
@@ -228,15 +231,14 @@ def test_authentication_error_handling():
 
 def test_pyhugegraph_authentication_error_handling():
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
-        mock_client.return_value.exec.side_effect = NotAuthorizedError(
-            "bad credentials"
-        )
+        mock_client.return_value.exec.side_effect = NotAuthorizedError("bad credentials")
 
         result = execute_gremlin_read("g.V().limit(10)")
 
     assert result["ok"] is False
     assert result["error"]["type"] == "AUTHENTICATION_FAILED"
-    assert result["error"]["details"]["error_type"] == "authentication_error"
+    assert result["error"]["details"]["error_type"] == "AUTHENTICATION_FAILED"
+    assert result["error"]["details"]["reason"] == "authentication_error"
     assert result["error"]["retryable"] is False
 
 
@@ -248,15 +250,14 @@ def test_pyhugegraph_not_found_error_handling():
 
     assert result["ok"] is False
     assert result["error"]["type"] == "NOT_FOUND"
-    assert result["error"]["details"]["error_type"] == "not_found_error"
+    assert result["error"]["details"]["error_type"] == "NOT_FOUND"
+    assert result["error"]["details"]["reason"] == "not_found_error"
     assert result["error"]["retryable"] is False
 
 
 def test_pyhugegraph_server_error_preserves_no_index_classification():
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
-        mock_client.return_value.exec.side_effect = ServerError(
-            "Server Exception: NoIndexException"
-        )
+        mock_client.return_value.exec.side_effect = ServerError("Server Exception: NoIndexException")
 
         result = execute_gremlin_read("g.V().has('name', 'alice').limit(10)")
 
@@ -273,9 +274,7 @@ def test_pyhugegraph_server_error_preserves_no_index_classification():
         (ServiceUnavailableError("temporarily unavailable"), True),
     ],
 )
-def test_pyhugegraph_server_error_preserves_retryable_classification(
-    exception, expected_retryable
-):
+def test_pyhugegraph_server_error_preserves_retryable_classification(exception, expected_retryable):
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
         mock_client.return_value.exec.side_effect = exception
 
@@ -341,8 +340,7 @@ def test_no_index_exception_is_classified_as_no_index():
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
         mock_client_instance = Mock()
         mock_client_instance.exec.side_effect = RuntimeError(
-            "Gremlin can't get results: Server Exception: "
-            "org.apache.hugegraph.exception.NoIndexException"
+            "Gremlin can't get results: Server Exception: org.apache.hugegraph.exception.NoIndexException"
         )
         mock_client.return_value = mock_client_instance
 
@@ -478,9 +476,7 @@ def test_sanitize_redacts_python_dict_repr_format():
 
     assert "abc123" not in redacted
     assert "xyz" not in redacted
-    assert redacted == (
-        "{'Authorization': '***REDACTED***', 'token': '***REDACTED***'}"
-    )
+    assert redacted == ("{'Authorization': '***REDACTED***', 'token': '***REDACTED***'}")
 
 
 def test_sanitize_redacts_bare_text_format():

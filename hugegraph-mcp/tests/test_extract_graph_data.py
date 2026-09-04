@@ -70,9 +70,7 @@ def test_extract_graph_data_uses_graph_schema_by_default(monkeypatch):
             "propertykeys": [{"name": "name", "data_type": "TEXT"}],
         }
     }
-    monkeypatch.setattr(
-        extract_graph_data_module, "fetch_live_schema_or_none", lambda: live_schema
-    )
+    monkeypatch.setattr(extract_graph_data_module, "fetch_live_schema_or_none", lambda: live_schema)
     graph_data = {"vertices": [], "edges": []}
     post = Mock(return_value=envelope_ok({"ok": True, "data": json.dumps(graph_data)}))
     monkeypatch.setattr(extract_graph_data_module, "post", post)
@@ -96,9 +94,7 @@ def test_extract_graph_data_uses_graph_schema_by_default(monkeypatch):
 
 def test_extract_graph_data_default_schema_failure_is_structured(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_ALLOW_AI", "true")
-    monkeypatch.setattr(
-        extract_graph_data_module, "fetch_live_schema_or_none", lambda: None
-    )
+    monkeypatch.setattr(extract_graph_data_module, "fetch_live_schema_or_none", lambda: None)
 
     result = extract_graph_data_module.extract_graph_data("Alice knows Bob.")
 
@@ -131,9 +127,7 @@ def test_extract_graph_data_preserves_explicit_string_schema_and_prompt(monkeypa
 
 def test_extract_graph_data_ai_unavailable(monkeypatch):
     fetch_schema = Mock(return_value=None)
-    monkeypatch.setattr(
-        extract_graph_data_module, "fetch_live_schema_or_none", fetch_schema
-    )
+    monkeypatch.setattr(extract_graph_data_module, "fetch_live_schema_or_none", fetch_schema)
     ai_error = envelope_err(
         ErrorType.HUGEGRAPH_AI_UNAVAILABLE,
         "HugeGraph-AI is unavailable",
@@ -146,3 +140,32 @@ def test_extract_graph_data_ai_unavailable(monkeypatch):
 
     assert result == ai_error
     fetch_schema.assert_not_called()
+
+
+def test_extract_graph_data_does_not_return_nonstandard_inner_error(monkeypatch):
+    inner_error = {
+        "ok": False,
+        "error": {"type": "FLOW_EXECUTION_FAILED", "message": "flow failed"},
+    }
+    monkeypatch.setattr(
+        extract_graph_data_module,
+        "post",
+        Mock(return_value=envelope_ok(inner_error)),
+    )
+
+    result = extract_graph_data_module.extract_graph_data(
+        "Alice knows Bob.",
+        schema={"vertexlabels": ["person"]},
+    )
+
+    assert result["ok"] is False
+    assert result["data"] is None
+    assert result["error"]["type"] == ErrorType.INVALID_GRAPH_DATA.value
+    assert set(result) == {
+        "ok",
+        "data",
+        "error",
+        "warnings",
+        "next_actions",
+        "meta",
+    }

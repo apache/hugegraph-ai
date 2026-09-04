@@ -26,6 +26,9 @@ import requests
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 
+_MAX_NESTED_THIN_ENVELOPES = 1
+_THIN_ENVELOPE_KEYS = frozenset({"ok", "data", "error", "warnings", "next_actions", "meta"})
+
 
 def request(
     method: str,
@@ -72,9 +75,7 @@ def request(
 
     try:
         request_headers = dict(headers) if headers is not None else {}
-        if cfg.ai_token and not any(
-            name.lower() == "authorization" for name in request_headers
-        ):
+        if cfg.ai_token and not any(name.lower() == "authorization" for name in request_headers):
             request_headers["Authorization"] = f"Bearer {cfg.ai_token}"
         kwargs: dict[str, Any] = {
             "params": params,
@@ -250,38 +251,95 @@ def _normalize_response(data: Any, *, duration_ms: float) -> dict[str, Any]:
     if not _is_thin_api_envelope(data):
         return envelope_ok(data, duration_ms=duration_ms)
 
-    remote_meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
-    request_id = remote_meta.get("request_id")
-    warnings = data.get("warnings") if isinstance(data.get("warnings"), list) else []
-    next_actions = (
-        data.get("next_actions") if isinstance(data.get("next_actions"), list) else []
-    )
-    if data["ok"]:
+    current = data
+    nested_envelopes = 0
+    seen_ids: set[int] = set()
+    while True:
+        current_id = id(current)
+        if current_id in seen_ids:
+            return _invalid_upstream_response(
+                "cyclic_nested_envelope",
+                duration_ms=duration_ms,
+            )
+        seen_ids.add(current_id)
+
+        remote_meta = current.get("meta")
+        request_id = remote_meta.get("request_id")
+        warnings = current.get("warnings")
+        next_actions = current.get("next_actions")
+        if not current["ok"]:
+            error = current.get("error") if isinstance(current.get("error"), dict) else {}
+            retryable = error.get("retryable", False)
+            return envelope_err(
+                error.get("type", ErrorType.HUGEGRAPH_AI_UNAVAILABLE),
+                error.get("message", "HugeGraph-AI request failed"),
+                suggestion=error.get("suggestion"),
+                retryable=retryable if isinstance(retryable, bool) else False,
+                source=error.get("source", "hugegraph-llm"),
+                details=error.get("details"),
+                duration_ms=duration_ms,
+                warnings=warnings,
+                next_actions=next_actions,
+                request_id=request_id,
+            )
+
+        inner_data = current.get("data")
+        if _is_thin_api_envelope(inner_data):
+            if id(inner_data) in seen_ids:
+                return _invalid_upstream_response(
+                    "cyclic_nested_envelope",
+                    duration_ms=duration_ms,
+                    request_id=request_id,
+                )
+            if nested_envelopes >= _MAX_NESTED_THIN_ENVELOPES:
+                return _invalid_upstream_response(
+                    "nested_envelope_depth_exceeded",
+                    duration_ms=duration_ms,
+                    request_id=request_id,
+                    max_nested_envelopes=_MAX_NESTED_THIN_ENVELOPES,
+                )
+            nested_envelopes += 1
+            current = inner_data
+            continue
+        if _looks_like_thin_api_envelope(inner_data):
+            return _invalid_upstream_response(
+                "malformed_nested_envelope",
+                duration_ms=duration_ms,
+                request_id=request_id,
+            )
         return envelope_ok(
-            data.get("data"),
+            inner_data,
             duration_ms=duration_ms,
             warnings=warnings,
             next_actions=next_actions,
             request_id=request_id,
         )
 
-    error = data.get("error") if isinstance(data.get("error"), dict) else {}
+
+def _invalid_upstream_response(
+    issue: str,
+    *,
+    duration_ms: float,
+    request_id: str | None = None,
+    **details: Any,
+) -> dict[str, Any]:
     return envelope_err(
-        error.get("type", ErrorType.HUGEGRAPH_AI_UNAVAILABLE),
-        error.get("message", "HugeGraph-AI request failed"),
-        suggestion=error.get("suggestion"),
-        retryable=(
-            error.get("retryable", False)
-            if isinstance(error.get("retryable", False), bool)
-            else False
-        ),
-        source=error.get("source", "hugegraph-llm"),
-        details=error.get("details"),
+        ErrorType.HUGEGRAPH_AI_UNAVAILABLE,
+        "HugeGraph-AI returned an invalid response envelope",
+        retryable=False,
+        source="hugegraph-llm",
+        details={
+            "reason": "invalid_upstream_response",
+            "issue": issue,
+            **details,
+        },
         duration_ms=duration_ms,
-        warnings=warnings,
-        next_actions=next_actions,
         request_id=request_id,
     )
+
+
+def _looks_like_thin_api_envelope(data: Any) -> bool:
+    return isinstance(data, dict) and _THIN_ENVELOPE_KEYS.issubset(data)
 
 
 def _is_thin_api_envelope(data: Any) -> bool:

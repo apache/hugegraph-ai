@@ -190,7 +190,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["T20"]
 "hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
-"hugegraph-mcp/hugegraph_mcp/server.py" = ["E402"]
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
 
 [tool.ruff.lint.isort]

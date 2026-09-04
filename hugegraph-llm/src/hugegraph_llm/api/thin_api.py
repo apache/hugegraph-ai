@@ -57,7 +57,12 @@ def _envelope_ok(
 
 
 def _envelope_err(
-    error_type: str, message: str, *, suggestion: str | None = None, details: Any = None
+    error_type: str,
+    message: str,
+    *,
+    suggestion: str | None = None,
+    details: Any = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "ok": False,
@@ -73,7 +78,7 @@ def _envelope_err(
         "warnings": [],
         "next_actions": [],
         "meta": {
-            "request_id": _generate_request_id(),
+            "request_id": request_id or _generate_request_id(),
             "duration_ms": 0,
         },
     }
@@ -81,17 +86,24 @@ def _envelope_err(
 
 def _wrap_flow_call(flow_name: FlowName, *args: Any, **kwargs: Any) -> dict[str, Any]:
     start = time.perf_counter()
+    request_id = _generate_request_id()
     try:
         result = SchedulerSingleton.get_instance().schedule_flow(flow_name, *args, **kwargs)
         envelope = _envelope_ok(result)
         envelope["meta"]["duration_ms"] = (time.perf_counter() - start) * 1000.0
         return envelope
     except Exception as exc:
-        log.error("Thin API flow execution failed: %s", exc, exc_info=True)
+        log.error(
+            "Thin API flow execution failed: request_id=%s flow=%s exception_type=%s",
+            request_id,
+            flow_name.value,
+            type(exc).__name__,
+        )
         envelope = _envelope_err(
             "FLOW_EXECUTION_FAILED",
             "An internal error occurred during flow execution.",
             suggestion="Check HugeGraph-AI service logs for details.",
+            request_id=request_id,
         )
         envelope["meta"]["duration_ms"] = (time.perf_counter() - start) * 1000.0
         return envelope

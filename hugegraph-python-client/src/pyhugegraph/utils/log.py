@@ -247,4 +247,6 @@ def fetch_log_level(level_name: str):
     return level
 
 
-log = init_logger(log_output="logs/output.log", log_level=logging.INFO)
+# Importing a library must not replace the host process' logging configuration.
+# Applications that want Rich or file handlers can opt in with init_logger().
+log = logging.getLogger("client")

@@ -1,0 +1,32 @@
+{
+  "contract_version": "1.0",
+  "server_version": "1.7.0",
+  "backend": "rocksdb",
+  "capability": "property_compare_and_set",
+  "status": "verified_unsupported",
+  "method": "replace_properties_if_match",
+  "request_fields": [
+    "target_type",
+    "target_id",
+    "expected_properties",
+    "desired_properties",
+    "operation_id"
+  ],
+  "semantics": {
+    "atomic_boundary": "backend",
+    "replacement_scope": "complete_property_map",
+    "operation_id": "required_for_backend_idempotency",
+    "expected_state_mismatch": "must_not_write"
+  },
+  "result_mapping": {
+    "expected_matched_and_desired_committed": "APPLIED",
+    "same_operation_previously_committed": "ALREADY_APPLIED",
+    "expected_mismatch_and_desired_not_present": "CONFLICT",
+    "request_rejected_before_write": "REJECTED",
+    "commit_outcome_cannot_be_proven": "UNKNOWN"
+  },
+  "activation_gate": {
+    "required_status": "verified_supported",
+    "required_two_client_cardinalities": ["SINGLE", "LIST", "SET"]
+  }
+}

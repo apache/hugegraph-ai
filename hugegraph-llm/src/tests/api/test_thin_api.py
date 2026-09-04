@@ -172,7 +172,7 @@ def test_thin_api_request_models_do_not_emit_schema_shadow_warning():
         warnings.simplefilter("always")
         module = importlib.reload(rag_requests)
 
-    assert not any("Field name \"schema\"" in str(item.message) for item in caught)
+    assert not any('Field name "schema"' in str(item.message) for item in caught)
 
     extract = module.GraphExtractRequest(text="Alice knows Bob.", schema="{}")
     graph_import = module.GraphImportRequest(data="{}", schema=None)
@@ -307,6 +307,12 @@ def test_graph_index_info_api_calls_flow(monkeypatch):
 def test_thin_api_returns_flow_execution_failed(monkeypatch):
     scheduler = Mock()
     scheduler.schedule_flow.side_effect = RuntimeError("secret path /tmp/token")
+    error_log = Mock()
+    monkeypatch.setattr("hugegraph_llm.api.thin_api.log.error", error_log)
+    monkeypatch.setattr(
+        "hugegraph_llm.api.thin_api._generate_request_id",
+        Mock(return_value="req-safe-error"),
+    )
     client = _client(monkeypatch, scheduler)
 
     response = client.get("/graph-index-info")
@@ -320,6 +326,15 @@ def test_thin_api_returns_flow_execution_failed(monkeypatch):
     assert "secret" not in json_body["error"]["message"]
     assert json_body["error"]["source"] == "hugegraph-llm"
     assert "details" in json_body["error"]
+    assert json_body["meta"]["request_id"] == "req-safe-error"
+    error_log.assert_called_once_with(
+        "Thin API flow execution failed: request_id=%s flow=%s exception_type=%s",
+        "req-safe-error",
+        FlowName.GET_GRAPH_INDEX_INFO.value,
+        "RuntimeError",
+    )
+    assert "secret" not in repr(error_log.call_args)
+    assert "/tmp/token" not in repr(error_log.call_args)
 
 
 def test_thin_api_response_defaults_are_not_shared():

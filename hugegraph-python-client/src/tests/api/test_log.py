@@ -18,7 +18,7 @@
 from logging.handlers import RotatingFileHandler
 
 import pytest
-from pyhugegraph.utils.log import init_logger
+from pyhugegraph.utils.log import init_logger, log
 
 pytestmark = pytest.mark.unit
 
@@ -42,3 +42,8 @@ def test_init_logger_creates_rotating_handler_for_plain_filename(monkeypatch, tm
             handler.close()
         logger.handlers.clear()
         init_logger.cache_clear()
+
+
+def test_module_logger_does_not_create_file_handler_on_import():
+    assert not any(isinstance(handler, RotatingFileHandler) for handler in log.handlers)
+    assert log.propagate is True

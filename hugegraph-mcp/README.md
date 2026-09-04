@@ -2,13 +2,13 @@
 
 [中文文档](README.zh-CN.md)
 
-HugeGraph MCP is a Model Context Protocol server for HugeGraph. It is designed as a safe, controlled, thin adapter layer: it exposes a small set of stable tools and centralizes configuration, permission checks, read-only Gremlin validation, the dry-run/confirm write safety chain, and the unified response envelope.
+HugeGraph MCP is a safe, controlled Model Context Protocol adapter for HugeGraph Server. It exposes stable structured tools, centralizes configuration and permission checks, and persists immutable write plans and outcomes.
 
-**Requires HugeGraph Server >= 1.7.0** (MCP defaults to `graphspace=DEFAULT` and relies on graphspace-scoped API routes that are not available in older versions).
+**Requires HugeGraph Server >= 1.7.0.** The default graph path is `DEFAULT/hugegraph` and uses graphspace-scoped APIs unavailable in older releases.
 
 ## Quick Start
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), set the connection variables, and run HugeGraph MCP with `uvx`. Replace `hugegraph.example.com` with your HugeGraph Server host:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then start the server in read-only mode:
 
 ```bash
 export HUGEGRAPH_URL=http://hugegraph.example.com:8080
@@ -20,12 +20,9 @@ export HUGEGRAPH_MCP_READONLY=true
 uvx --from hugegraph-mcp==1.7.0 hugegraph-mcp
 ```
 
-The process speaks MCP JSON-RPC on stdout; connect it from an MCP client. Keep
-`HUGEGRAPH_MCP_READONLY=true` unless you have a deliberate write-validation
-plan. The default toolset is `v2_core`; set `HUGEGRAPH_MCP_TOOLSET=v1` before
-startup when an older client requires the 10-tool compatibility contract.
+The process speaks MCP JSON-RPC on stdout. Keep `HUGEGRAPH_MCP_READONLY=true` unless controlled writes are required. The default toolset is `v2_core`; set `HUGEGRAPH_MCP_TOOLSET=v1` before startup only for the legacy 10-tool contract.
 
-For MCP clients that accept JSON server configuration, use `uvx` as the command:
+For MCP clients that accept JSON server configuration:
 
 ```json
 {
@@ -47,68 +44,49 @@ For MCP clients that accept JSON server configuration, use `uvx` as the command:
 
 ## Developer Notes
 
-### Run from Source
-
-From the repository root:
+Run from the repository checkout while keeping the repository path explicit:
 
 ```bash
-uv venv
-uv pip install -e ../hugegraph-python-client -e .
-uv run --project hugegraph-mcp hugegraph-mcp
+export PYTHONPATH=/Users/uleng/Code/hugegraph-ai-pr73-mcp/hugegraph-mcp:/Users/uleng/Code/hugegraph-ai-pr73-mcp/hugegraph-python-client/src
+/Users/uleng/Code/hugegraph-ai-pr73-mcp/.venv/bin/python -m hugegraph_mcp.server
 ```
 
-### Design Boundary
+This command uses the checkout's existing root virtual environment and forces both
+`hugegraph-mcp` and its sibling Python client to resolve from the current checkout.
+It does not ask uv to solve the standalone `hugegraph-mcp` subproject, which would
+try to satisfy `hugegraph-python-client>=1.7.0` from a package index instead of the
+sibling source tree.
 
-HugeGraph MCP does not turn MCP into a second business kernel. The MCP layer is responsible for:
+The MCP layer exposes stable tools, reads runtime configuration, enforces permissions, validates structured requests, persists write plans and receipts, and delegates graph operations to HugeGraph Server or enabled AI operations to HugeGraph-AI.
 
-- Exposing stable MCP tool interfaces
-- Reading runtime configuration
-- Enforcing permission and readonly guards
-- Validating whether Gremlin is read-only
-- Generating and validating `plan_hash`
-- Returning a unified response envelope
-- Forwarding AI capabilities to HugeGraph-AI, or graph reads/writes to HugeGraph Server
+## Public Tool Surface
 
-### Public Tool Surface
+The default `v2_core` contract registers 16 tools. The `v1` compatibility contract registers 10 tools and omits the six v2 additions.
 
-The default `v2_core` toolset registers 13 MCP tools: 11 normal user-facing stable tools plus 2 admin/debug tools that are registered but blocked by default.
+| Tool | Contract | Description |
+|------|----------|-------------|
+| `inspect_graph_tool` | v1, v2 | Inspect connection, schema summary, read-only state, and tool contract |
+| `generate_gremlin_tool` | v1, v2 | Generate Gremlin; execution is disabled until the hard-budget contract is verified |
+| `execute_gremlin_read_tool` | v1, v2 | Registered for compatibility; public raw execution currently returns `FEATURE_DISABLED` |
+| `extract_graph_data_tool` | v1, v2 | Extract candidate graph data without writing |
+| `design_schema_tool` | v1, v2 | Produce schema design guidance |
+| `apply_schema_tool` | v1, v2 | Validate or preview one schema create; v2 supports confirmed apply |
+| `import_graph_data_tool` | v1, v2 | Validate and preview structured vertex/edge creates; confirmation currently returns `FEATURE_DISABLED` |
+| `delete_graph_data_tool` | v1, v2 | Preview exact deletion; confirmed edge deletion is supported |
+| `refresh_vid_embeddings_tool` | v1, v2 | Admin write tool, disabled unless admin mode and writes are enabled |
+| `execute_gremlin_write_tool` | v1, v2 | Registered for compatibility; public raw execution currently returns `FEATURE_DISABLED` |
+| `inspect_schema_tool` | v2 | Inspect and filter schema objects and relations |
+| `query_graph_data_tool` | v2 | Perform typed, bounded vertex and edge reads |
+| `mutate_graph_properties_tool` | v2 | Preview property changes; confirmation is disabled without atomic CAS |
+| `confirm_write_tool` | v2 | Confirm one persisted plan by `plan_id` |
+| `get_write_status_tool` | v2 | Read the durable plan and operation outcome by `plan_id` |
+| `reconcile_write_tool` | v2 | Reconcile `UNKNOWN` or `PARTIAL` outcomes by `plan_id` using read-only checks |
 
-The normal user-facing stable tools are:
+Invalid `HUGEGRAPH_MCP_TOOLSET` values fail closed to `v1`. Tool registration is fixed at process startup, so restart the server after changing the toolset.
 
-- `inspect_graph_tool`
-- `inspect_schema_tool`
-- `query_graph_data_tool`
-- `generate_gremlin_tool`
-- `execute_gremlin_read_tool`
-- `extract_graph_data_tool`
-- `design_schema_tool`
-- `apply_schema_tool`
-- `mutate_graph_properties_tool`
-- `import_graph_data_tool`
-- `delete_graph_data_tool`
+## Unified Response Envelope
 
-These tools are still registered in MCP, but they are admin/debug capabilities and are blocked by default when `HUGEGRAPH_MCP_ADMIN_MODE=false`. Write-capable admin tools also require `HUGEGRAPH_MCP_READONLY=false`:
-
-- `execute_gremlin_write_tool`
-- `refresh_vid_embeddings_tool`
-
-`execute_gremlin_write_tool` is the sole break-glass exception to the write safety chain. It executes arbitrary Gremlin writes without a preview, dry-run, plan hash, or confirmation. Enable it only on an isolated transport available to trusted administrators; do not enable it on a shared agent or client endpoint.
-
-### Toolset Selection
-
-`HUGEGRAPH_MCP_TOOLSET` controls the public tool contract:
-
-| Value | Tools | Intended use |
-|-------|------:|--------------|
-| `v1` | 10 | Compatibility mode for old clients; exposes the original stable tools and admin/debug tools, hides the three `v2_core` tools, and keeps `apply_schema_tool(mode="apply")` disabled |
-| `v2_core` | 13 | New deployment default; exposes the V1 tools plus `inspect_schema_tool`, `query_graph_data_tool`, and `mutate_graph_properties_tool`, and enables the P0a schema create apply path |
-
-When `HUGEGRAPH_MCP_TOOLSET` is unset, the server defaults to `v2_core`. Any value other than exact `v1` is treated as `v2_core`.
-Toolset selection is applied when the MCP server starts and registers tools; restart the MCP server after changing this variable.
-
-### Unified Response Envelope
-
-High-level tools return a unified envelope:
+High-level tools return:
 
 ```json
 {
@@ -127,168 +105,75 @@ High-level tools return a unified envelope:
 }
 ```
 
-When a call fails, `ok=false` and `error` uses this structure:
+Failures set `ok=false`; `error.type` is a stable machine-readable code and `error.retryable` must be observed.
 
-```json
-{
-  "type": "READONLY_VIOLATION",
-  "message": "DATA_WRITE capability is disabled in read-only mode",
-  "suggestion": "Disable HUGEGRAPH_MCP_READONLY to allow this operation.",
-  "retryable": false,
-  "source": "hugegraph-mcp",
-  "details": {}
-}
-```
+## Write Safety Contract
 
-## Tool Reference
-
-### User-Facing Tool Overview
-
-| Tool | Description |
-|------|-------------|
-| `inspect_graph_tool` | Inspect HugeGraph Server status, schema summary, readonly state, AI availability, and current MCP tool contract fields. Vertex/edge counts stay `null` unless `include_counts=true` |
-| `inspect_schema_tool` | Inspect schema objects, relations, and index labels; supports filtering by property key, vertex label, edge label, or index label |
-| `query_graph_data_tool` | Query vertices or edges by typed operations (`get_by_id`, `get_by_ids`, `page`, `condition`) with explicit limits and no Gremlin full-scan fallback |
-| `generate_gremlin_tool` | Generate Gremlin from natural language; defaults to generation only; `execute=true` still requires read-only validation |
-| `execute_gremlin_read_tool` | Execute read-only Gremlin queries; rejects queries whose safety cannot be confirmed and supports `limit_policy` for unbounded reads |
-| `extract_graph_data_tool` | Extract candidate graph data from natural language text and return vertex/edge structures without writing to HugeGraph |
-| `import_graph_data_tool` | Structured graph data import entrypoint; real writes must pass `dry_run -> plan_hash -> confirm` |
-| `delete_graph_data_tool` | Controlled delete entrypoint; supports only exact vertex or edge deletion, not conditional bulk delete or cascade delete |
-| `design_schema_tool` | Provide schema design guidance from proposed schema operations without modifying the database |
-| `apply_schema_tool` | Validate schema operations and dry-run the P0a apply scope; in `v2_core`, dry-run and confirmed `apply` support only `create_property_key`, `create_vertex_label`, and `create_edge_label`; in `v1`, real `apply` remains disabled |
-| `mutate_graph_properties_tool` | Append or eliminate properties on one exact vertex or edge; both operations require `dry_run -> plan_hash -> confirm` and reject stale targets |
-| `execute_gremlin_write_tool` | Execute direct Gremlin writes; disabled by default and available only when `HUGEGRAPH_MCP_ADMIN_MODE=true` and `HUGEGRAPH_MCP_READONLY=false` |
-| `refresh_vid_embeddings_tool` | Refresh VID embeddings and mutate index state; disabled by default and available only when `HUGEGRAPH_MCP_ADMIN_MODE=true` and `HUGEGRAPH_MCP_READONLY=false` |
-
-Schema apply uses a closed operation-field contract. The supported create fields
-are `data_type`, `cardinality`, `aggregate_type`, and `user_data` for property
-keys; `id_strategy`, `properties`, `primary_keys`, `nullable_keys`,
-`index_labels`, `enable_label_index`, and `user_data` for vertex labels; and
-`source_label`, `target_label`, `properties`, `nullable_keys`, `sort_keys`,
-`frequency`, `enable_label_index`, and `user_data` for edge labels. Fields not
-listed here, including `ttl*`, are rejected during validation before a plan is
-issued. Supported fields are forwarded to HugeGraph and checked by a post-read
-of the live schema.
-
-The old `query_graph_tool`, `manage_schema_tool`, and `manage_graph_data_tool` are no longer exposed as user interfaces. New integrations should use the stable tools listed above.
-
-## Write Safety Chain
-
-All normal user-facing write operations must follow this chain. The admin-only `execute_gremlin_write_tool` break-glass exception described above does not:
+Canonical writes use only a server-issued `plan_id`:
 
 ```text
-dry_run=true
-  -> user/agent reviews preview, warnings, matched_count, mutation_summary
-  -> records plan_hash, nonce, expires_at
-  -> dry_run=false + confirm=true + original payload + plan_hash + nonce + expires_at
-  -> MCP revalidates target, permission, schema, payload digest, and expiry
-  -> executes the write
-  -> returns write/delete results and failure details
+structured dry-run
+  -> review concrete targets, warnings, and mutation summary
+  -> receive immutable persisted plan_id
+  -> confirm_write_tool(plan_id)
+  -> get_write_status_tool(plan_id)
+  -> if required, reconcile_write_tool(plan_id)
 ```
 
-`plan_hash` is not just a payload hash. It binds at least:
+The confirmation call never accepts the original payload. The persisted plan is the sole execution authority. Each operation records a durable receipt, and reusing a completed `plan_id` returns its recorded outcome rather than applying the write again.
 
-- Tool name
-- Operation mode
-- Graph URL
-- Graph name
-- Graph space
-- MCP readonly state
-- Current schema hash
-- Normalized payload digest
-- Nonce
-- Expiry
+`APPLIED` means every operation is proven applied. `PARTIAL` means at least one operation was applied and the workflow did not completely apply. `UNKNOWN` means the service cannot prove whether an operation committed, so callers must query status and reconcile; they must not blindly repeat the write.
 
-The confirm phase must fully revalidate the plan. If the dry-run result expires, the target graph changes, the schema changes, the payload changes, or permissions change, confirm must fail and require a new dry run.
+The old `plan_hash`, `nonce`, and `expires_at` locator remains on legacy write entry points for the single compatibility release immediately following introduction of the plan-ID contract. All three fields are required together, cannot be mixed with `plan_id`, and produce a `LEGACY_CONFIRMATION_DEPRECATED` warning. New integrations must use `confirm_write_tool(plan_id)`.
 
-### Import Semantics
+The bundled SQLite plan store is safe for a single write-capable MCP instance. Configure a shared transactional store before deploying multiple write instances; the current package fails closed when `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` is greater than one with the SQLite backend.
 
-`import_graph_data_tool(mode="ingest")` is the structured import path shared by `v2_core` and the `v1` compatibility toolset. It uses local schema validation, dry-run/hash/confirm, and direct Gremlin writes through `manage_graph_data()`; it does not call the HugeGraph-AI `/graph-import` HTTP path. The legacy/internal AI-backed function is named `ingest_graph_data_via_ai()`. This PR keeps both write kernels: public MCP import uses local Gremlin writes, while `ingest_graph_data_via_ai()` remains the leftover HugeGraph-AI `/graph-import` dual-write path and is not closed here.
+### Operation Boundaries
 
-Schema and graph-data dry-run share hard limits of `MAX_OPERATIONS = 200` and `MAX_PAYLOAD_BYTES = 1048576` (1 MiB). Exceeding either limit returns `VALIDATION_ERROR` before `plan_hash` is generated. The limits are not configurable in this release.
+- A confirmable schema plan contains exactly one `create_property_key`, `create_vertex_label`, or `create_edge_label` operation. Success is reported as `APPLIED`. Index create, append/eliminate, and drop remain outside the apply scope.
+- Graph import is always preview-only because atomic create-if-absent capability has not been verified for HugeGraph 1.7.0. Its preview sets `confirmable=false` and `preview_only=true`, issues no `plan_id`, and confirmation returns `FEATURE_DISABLED` without writing.
+- Property mutation is preview-only because HugeGraph 1.7.0 does not expose an atomic compare-and-set property update. Confirmation returns `FEATURE_DISABLED`.
+- Isolated vertex deletion is preview-only. Docker concurrency testing proved that HugeGraph 1.7.0 cannot atomically guarantee “delete only if no incident edge”; confirmation returns `FEATURE_DISABLED`. Delete incident edges explicitly, then use an independently controlled maintenance path for the vertex.
+- Exact edge deletion remains confirmable because the plan binds the concrete edge ID.
 
-When `import_graph_data_tool(mode="ingest")` executes a create operation, it returns one of three states:
+Schema and graph-data dry-runs reject more than 200 operations or payloads larger than 1 MiB before returning a usable preview or plan.
 
-- `success`: all writes succeeded
-- `partial` / `degraded`: some writes succeeded, some failed, or the final state cannot be fully confirmed
-- `error`: the write failed
+### Raw Gremlin Boundary
 
-The response should include written counts, failure details, and compensation suggestions to avoid an untraceable partial write.
+Every public raw Gremlin execution path is disabled, including `execute_gremlin_read_tool`, `execute_gremlin_write_tool`, and `generate_gremlin_tool(execute=true)`. Admin mode does not override this gate. Raw execution can be opened only after the deployment proves server evaluation and wait timeouts, a server-side result-item cap, a client streaming byte cap, and a read-only principal. Post-materialization item or byte checks are output guards, not hard resource budgets.
 
-#### Edge Endpoint Contract
-
-Edge endpoints accept both object and scalar forms:
-
-```text
-object source/target  -> forwarded as-is
-  {"id": "1:Alice"}   -> HugeGraph vertex id match
-  {"name": "Alice"}   -> complete primary-key match; arbitrary property
-                         matching is not part of the public graph_data contract
-
-scalar source/target  -> if the live schema says the endpoint label has exactly
-                         one primary key, match by that primary key first;
-                         otherwise fall back to {"id": value}
-
-outV / inV / vertex id in payload -> always HugeGraph vertex id, with no
-                                     primary-key remapping
-```
-
-The scalar endpoint form is a same-payload import convenience, but under a single-primary-key live schema it is resolved as a primary-key match and may match an already existing vertex in the graph. It is not limited to vertices in the current payload, so edge-only or edge-to-existing-vertex payloads are valid when the dry-run live match resolves each endpoint to exactly one vertex.
-
-### Delete Semantics
-
-`delete_graph_data_tool` is a controlled delete tool:
-
-- The dry-run phase must resolve the concrete objects that would be deleted
-- The confirm phase must re-match and verify that the target is unchanged
-- The tool must verify after deletion that the target no longer exists
-- Vertex deletion is rejected by default when the vertex has associated edges
-
-Therefore, when deleting a vertex with associated edges, explicitly dry-run and delete the related edges first, then dry-run and delete the vertex.
+Structured reads and `generate_gremlin_tool(execute=false)` remain available.
 
 ## Configuration
-
-All configuration is read from environment variables.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HUGEGRAPH_URL` | `http://127.0.0.1:8080` | HugeGraph Server URL |
-| `HUGEGRAPH_GRAPH_PATH` | `DEFAULT/hugegraph` | Graph path in `GRAPH_SPACE/GRAPH_NAME` format |
-| `HUGEGRAPH_GRAPHSPACE` | unset | Override graph space separately |
-| `HUGEGRAPH_GRAPH` | unset | Override graph name separately |
+| `HUGEGRAPH_GRAPH_PATH` | `DEFAULT/hugegraph` | `GRAPH_SPACE/GRAPH_NAME` |
+| `HUGEGRAPH_GRAPHSPACE`, `HUGEGRAPH_GRAPH` | unset | Explicit values that override `HUGEGRAPH_GRAPH_PATH` |
 | `HUGEGRAPH_USER` | `admin` | HugeGraph username |
-| `HUGEGRAPH_PASSWORD` | `""` | HugeGraph password |
-| `HUGEGRAPH_MCP_TOOLSET` | `v2_core` | Public tool contract: `v1` for 10-tool compatibility mode, `v2_core` for the 13-tool default |
-| `HUGEGRAPH_MCP_READONLY` | `true` | Whether readonly mode is enabled |
-| `HUGEGRAPH_MCP_ALLOW_AI` | `false` | Whether HugeGraph-AI calls are allowed |
-| `HUGEGRAPH_MCP_ADMIN_MODE` | `false` | Whether admin/debug tools are enabled |
+| `HUGEGRAPH_PASSWORD` | empty | HugeGraph password |
+| `HUGEGRAPH_MCP_TOOLSET` | `v2_core` | `v1` or `v2_core`; invalid values fall back to `v1` |
+| `HUGEGRAPH_MCP_READONLY` | `true` | Disable all controlled writes when true |
+| `HUGEGRAPH_MCP_ALLOW_AI` | `false` | Allow HugeGraph-AI calls |
+| `HUGEGRAPH_MCP_ADMIN_MODE` | `false` | Enable eligible admin/debug tools |
 | `HUGEGRAPH_AI_URL` | `http://127.0.0.1:8001` | HugeGraph-AI URL |
-| `HUGEGRAPH_AI_TOKEN` | unset | Bearer token for an authenticated HugeGraph-AI service; public MCP tools configure this through the environment (an internal HTTP caller may override it per request) |
-| `HUGEGRAPH_AI_GRAPH_URL` | unset | Graph URL used by HugeGraph-AI; defaults to `HUGEGRAPH_URL` when unset |
-| `HUGEGRAPH_MCP_TIMEOUT_SECONDS` | `30` | AI call timeout in seconds |
-| `HUGEGRAPH_MCP_MAX_REPEAT_TIMES` | `10` | Recommended maximum for read-cost warnings on `repeat().times(n)` |
-| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp`, or `~/.local/state/hugegraph-mcp` when `XDG_STATE_HOME` is unset | Local state directory for the persistent single-use confirmation ledger |
+| `HUGEGRAPH_AI_TOKEN` | unset | Optional HugeGraph-AI bearer token |
+| `HUGEGRAPH_AI_GRAPH_URL` | unset | Graph URL presented to HugeGraph-AI; falls back to `HUGEGRAPH_URL` |
+| `HUGEGRAPH_CONNECT_TIMEOUT_SECONDS` | `0.5` | HugeGraph connection timeout; range `0.001..86400` |
+| `HUGEGRAPH_READ_TIMEOUT_SECONDS` | `15` | Structured HugeGraph read timeout; range `0.001..86400` |
+| `HUGEGRAPH_WRITE_TIMEOUT_SECONDS` | `15` | HugeGraph data and schema write timeout; range `0.001..86400` |
+| `HUGEGRAPH_AI_TIMEOUT_SECONDS` | `30` | HugeGraph-AI HTTP timeout; range `1..86400` |
+| `HUGEGRAPH_MCP_TIMEOUT_SECONDS` | `30` | Deprecated fallback for AI timeout |
+| `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` | `100` | Post-materialization output item guard; range `1..1000000` |
+| `HUGEGRAPH_MCP_MAX_RESULT_BYTES` | `1048576` | Post-materialization output byte guard; range `1..1073741824` |
+| `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | Durable plan-store backend; only `sqlite` is currently supported |
+| `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` | `1` | Declared count of write-capable MCP instances; SQLite requires exactly one |
+| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` or `~/.local/state/hugegraph-mcp` | Directory containing the plan, operation, and receipt database |
 
-`HUGEGRAPH_MCP_TIMEOUT_SECONDS` only applies to HugeGraph-AI HTTP calls; it does not apply to PyHugeClient Gremlin queries. Read-only Gremlin cost boundaries are reported as non-blocking read cost guard warnings for bare full-graph scans, `repeat()` without a `times()` bound, and `path` / `group` / `profile` without `limit` or `range`.
+Boolean values accept `1/true/yes/on` and `0/false/no/off`, case-insensitively. Invalid values use safe defaults. Invalid, non-finite, or out-of-range numeric values use the documented defaults.
 
-Boolean configuration accepts `1`, `true`, `yes`, or `on` and `0`, `false`, `no`, or `off`, ignoring case and surrounding whitespace. Empty or invalid values fail closed: `HUGEGRAPH_MCP_READONLY` remains enabled, while `HUGEGRAPH_MCP_ALLOW_AI` and `HUGEGRAPH_MCP_ADMIN_MODE` remain disabled.
-
-The confirmation ledger persists server-issued dry-run plans and consumed nonce digests. Confirm accepts only a matching server-issued plan, enforces the server's 10-minute maximum TTL, and atomically consumes it so a write plan can be used only once across local process restarts and workers sharing the same state directory. On POSIX platforms, HugeGraph MCP restricts the state directory to mode `0700` and the ledger database to mode `0600`.
-
-Recommended safe defaults:
-
-- `HUGEGRAPH_MCP_READONLY=true`
-- `HUGEGRAPH_MCP_ALLOW_AI=false`
-- `HUGEGRAPH_MCP_ADMIN_MODE=false`
-
-Common combinations:
-
-| Scenario | Configuration |
-|----------|---------------|
-| Read-only graph query | `HUGEGRAPH_MCP_READONLY=true`, `HUGEGRAPH_MCP_ALLOW_AI=false` |
-| AI Gremlin generation / text extraction | `HUGEGRAPH_MCP_READONLY=true`, `HUGEGRAPH_MCP_ALLOW_AI=true` |
-| Controlled import and delete | `HUGEGRAPH_MCP_READONLY=false`, set `HUGEGRAPH_MCP_ALLOW_AI=true` as needed |
-| Administration/debugging | `HUGEGRAPH_MCP_READONLY=false`, `HUGEGRAPH_MCP_ADMIN_MODE=true` |
+Recommended defaults are `HUGEGRAPH_MCP_READONLY=true`, `HUGEGRAPH_MCP_ALLOW_AI=false`, and `HUGEGRAPH_MCP_ADMIN_MODE=false`.
 
 ## License
 

@@ -8,7 +8,7 @@ It is used to define graph structures, perform CRUD operations on graph data, ma
 
 ### Install the released package (Stable)
 
-To install the released `hugegraph-python` distribution:
+To install the released `hugegraph-python` distribution (Python 3.10+):
 
 ```bash
 # uv is optional, you can use pip directly

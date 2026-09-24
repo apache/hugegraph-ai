@@ -62,7 +62,7 @@ dependencies = [
     "pydantic-settings",
     "apscheduler",
     "litellm",
-    "hugegraph-python-client",
+    "hugegraph-python",
     "pycgraph==3.2.2",
 ]
 
@@ -97,7 +97,7 @@ include = [
 allow-direct-references = true
 
 [tool.uv.sources]
-hugegraph-python-client = { workspace = true }
+hugegraph-python = { workspace = true }
 pycgraph = { git = "https://github.com/ChunelFeng/CGraph.git", subdirectory = "python", tag = "v3.2.2", marker = "platform_machine == 'aarch64'" }
 
 [tool.ruff]

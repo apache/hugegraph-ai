@@ -31,7 +31,7 @@ class HugeGraph:
             from pyhugegraph.client import PyHugeClient
         except ImportError:
             raise ValueError(
-                "Please install HugeGraph Python client first: `pip3 install hugegraph-python-client`"
+                "Please install HugeGraph Python client first: `uv pip install hugegraph-python`"
             ) from ImportError
 
         self.username = username

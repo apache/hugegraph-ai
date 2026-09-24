@@ -1,6 +1,6 @@
 # hugegraph-python-client
 
-The `hugegraph-python-client` is a Python client/SDK for HugeGraph Database.
+The `hugegraph-python-client` module provides the `hugegraph-python` Python client/SDK for HugeGraph Database. The distribution name is `hugegraph-python`; the import name remains `pyhugegraph`.
 
 It is used to define graph structures, perform CRUD operations on graph data, manage schemas, and execute Gremlin queries. Both the `hugegraph-llm` and `hugegraph-ml` modules depend on this foundational library.
 
@@ -8,12 +8,11 @@ It is used to define graph structures, perform CRUD operations on graph data, ma
 
 ### Install the released package (Stable)
 
-To install the `hugegraph-python-client`, you can use uv/pip or source code building:
+To install the released `hugegraph-python` distribution:
 
 ```bash
 # uv is optional, you can use pip directly
-uv pip install hugegraph-python # Note: may not the latest version, recommend to install from source
-# WIP: we will use 'hugegraph-python-client' as the package name soon
+uv pip install hugegraph-python
 ```
 
 ### Install from Source (Latest Code)
@@ -22,10 +21,10 @@ To install from the source, clone the repository and install the required depend
 
 ```bash
 git clone https://github.com/apache/hugegraph-ai.git
-cd hugegraph-ai/hugegraph-python-client
+cd hugegraph-ai
 
 # Use uv sync to install dependencies (workspace member)
-uv sync  # Automatically creates .venv and installs dependencies
+uv sync --extra python-client  # Installs hugegraph-python from hugegraph-python-client/
 source .venv/bin/activate  # Activate once - all commands below assume this environment
 ```
 

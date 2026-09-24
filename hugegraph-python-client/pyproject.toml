@@ -16,7 +16,7 @@
 # under the License.
 
 [project]
-name = "hugegraph-python-client"
+name = "hugegraph-python"
 version = "1.7.0"
 description = "A Python SDK for Apache HugeGraph Database."
 authors = [

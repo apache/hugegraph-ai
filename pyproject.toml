@@ -37,7 +37,7 @@ dependencies = [
 [project.optional-dependencies]
 llm = ["hugegraph-llm"]
 ml = ["hugegraph-ml"]
-python-client = ["hugegraph-python-client"]
+python-client = ["hugegraph-python"]
 vermeer = ["vermeer-python-client"]
 dev = [
     "pytest~=8.0.0",
@@ -50,8 +50,8 @@ dev = [
     "pre-commit>=3.5.0",
 ]
 
-nk-llm = ["hugegraph-llm", "hugegraph-python-client", "nuitka"]
-all = ["hugegraph-python-client", "hugegraph-llm", "hugegraph-ml", "vermeer-python-client"]
+nk-llm = ["hugegraph-llm", "hugegraph-python", "nuitka"]
+all = ["hugegraph-python", "hugegraph-llm", "hugegraph-ml", "vermeer-python-client"]
 
 [project.urls]
 homepage = "https://hugegraph.apache.org/"
@@ -86,7 +86,7 @@ include = ["*/src", "README.md", "LICENSE", "NOTICE"]
 
 [tool.uv.sources]
 hugegraph-llm = { workspace = true }
-hugegraph-python-client = { workspace = true }
+hugegraph-python = { workspace = true }
 hugegraph-ml = { path = "hugegraph-ml", editable = true }
 vermeer-python-client = { path = "vermeer-python-client", editable = true }
 

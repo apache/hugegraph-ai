@@ -112,7 +112,7 @@ Graph machine learning with 20+ implemented algorithms:
 
 ### [hugegraph-python-client](./hugegraph-python-client)
 
-Python client for HugeGraph operations:
+Python client for HugeGraph operations, distributed as `hugegraph-python` (`uv pip install hugegraph-python`) and imported as `pyhugegraph`:
 
 - **Schema Management**: Define vertex/edge labels and properties
 - **CRUD Operations**: Create, read, update, delete graph data

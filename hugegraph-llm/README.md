@@ -194,13 +194,13 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 
 scheduler = SchedulerSingleton.get_instance()
 res = scheduler.schedule_flow(
-  "rag_graph_only",
-  query="Tell me about Al Pacino.",
-  graph_only_answer=True,
-  vector_only_answer=False,
-  raw_answer=False,
-  gremlin_tmpl_num=-1,
-  gremlin_prompt=None,
+    "rag_graph_only",
+    query="Tell me about Al Pacino.",
+    graph_only_answer=True,
+    vector_only_answer=False,
+    raw_answer=False,
+    gremlin_tmpl_num=-1,
+    gremlin_prompt=None,
 )
 
 print(res.get("graph_only_answer"))
@@ -213,10 +213,7 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 
 scheduler = SchedulerSingleton.get_instance()
 res = scheduler.schedule_flow(
-  "rag_vector_only",
-  query="Summarize the career of Ada Lovelace.",
-  vector_only_answer=True,
-  vector_search=True
+    "rag_vector_only", query="Summarize the career of Ada Lovelace.", vector_only_answer=True, vector_search=True
 )
 
 print(res.get("vector_only_answer"))
@@ -229,12 +226,12 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 
 scheduler = SchedulerSingleton.get_instance()
 response = scheduler.schedule_flow(
-  "text2gremlin",
-  "find people who worked with Alan Turing",
-  2,  # example_num
-  "hugegraph",  # schema_input (graph name or schema)
-  None,  # gremlin_prompt_input (optional)
-  ["template_gremlin", "raw_gremlin"],
+    "text2gremlin",
+    "find people who worked with Alan Turing",
+    2,  # example_num
+    "hugegraph",  # schema_input (graph name or schema)
+    None,  # gremlin_prompt_input (optional)
+    ["template_gremlin", "raw_gremlin"],
 )
 
 print(response.get("template_gremlin"))

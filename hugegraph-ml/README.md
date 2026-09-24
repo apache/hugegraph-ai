@@ -123,8 +123,7 @@ embedded_graph = node_embed_task.train_and_embed(add_self_loop=True, n_epochs=30
 
 ```python
 model = MLPClassifier(
-    n_in_feat=embedded_graph.ndata["feat"].shape[1],
-    n_out_feat=embedded_graph.ndata["label"].unique().shape[0]
+    n_in_feat=embedded_graph.ndata["feat"].shape[1], n_out_feat=embedded_graph.ndata["label"].unique().shape[0]
 )
 node_clf_task = NodeClassify(graph=embedded_graph, model=model)
 node_clf_task.train(lr=1e-3, n_epochs=400, patience=40)
@@ -148,10 +147,7 @@ from hugegraph_ml.tasks.node_classify import NodeClassify
 
 hg2d = HugeGraph2DGL()
 graph = hg2d.convert_graph(vertex_label="CORA_vertex", edge_label="CORA_edge")
-model = GRAND(
-    n_in_feats=graph.ndata["feat"].shape[1],
-    n_out_feats=graph.ndata["label"].unique().shape[0]
-)
+model = GRAND(n_in_feats=graph.ndata["feat"].shape[1], n_out_feats=graph.ndata["label"].unique().shape[0])
 node_clf_task = NodeClassify(graph, model)
 node_clf_task.train(lr=1e-2, weight_decay=5e-4, n_epochs=2000, patience=100)
 print(node_clf_task.evaluate())

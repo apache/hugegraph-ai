@@ -62,6 +62,7 @@ class TaskInfo:
         self.__type = dic.get("type", "")
         self.__params = dic.get("params", {})
         self.__workers = [TaskWorker(w) for w in dic.get("workers", [])]
+        self.__error_message = dic.get("error_message", "")
 
     @property
     def id(self) -> int:
@@ -123,6 +124,11 @@ class TaskInfo:
         """task workers"""
         return self.__workers
 
+    @property
+    def error_message(self) -> str:
+        """task error message"""
+        return self.__error_message
+
     def to_dict(self) -> dict:
         """to dict"""
         return {
@@ -139,6 +145,7 @@ class TaskInfo:
             "type": self.__type,
             "params": self.__params,
             "workers": [w.to_dict() for w in self.__workers],
+            "error_message": self.__error_message,
         }
 
 

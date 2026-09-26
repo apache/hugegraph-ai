@@ -44,7 +44,7 @@ dev = [
     "pytest-cov~=5.0.0",
     "coverage[toml]==7.10.4",
     "pylint~=3.0.0",
-    "ruff>=0.11.0",
+    "ruff==0.15.18",
     "mypy>=1.16.1",
     "ty>=0.0.51",  # pre-stable (0.0.x): consider tight pinning to avoid surprise breakage
     "pre-commit>=3.5.0",

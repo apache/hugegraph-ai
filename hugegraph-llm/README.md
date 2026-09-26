@@ -14,6 +14,15 @@ HugeGraph-LLM is a comprehensive toolkit that combines the power of graph databa
 
 For detailed source code doc, visit our [DeepWiki](https://deepwiki.com/apache/hugegraph-ai) page. (Recommended)
 
+### Experimental Extraction Runtime
+
+Contributors can experiment with a domain-neutral extract, review, and repair
+lifecycle, including concurrent chunks. The prototype has a deterministic replay
+example; live model integration and production routing remain separate work.
+See the [runtime guide](docs/extraction-runtime.md) for setup, extension points,
+and tests, and the [architecture explanation (中文)](docs/extraction-runtime-architecture.zh-CN.md)
+for module responsibilities and extension boundaries.
+
 ## 📋 Prerequisites
 
 > [!IMPORTANT]

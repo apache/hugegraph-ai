@@ -21,3 +21,4 @@
 # Maintenance: When adding or removing resource files, update this file to keep the package contents accurate.
 
 recursive-include src/hugegraph_llm/resources *
+recursive-include src/hugegraph_llm/extraction_runtime/resources *.json

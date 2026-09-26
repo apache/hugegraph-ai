@@ -1,0 +1,32 @@
+{
+    "_comment": "Gremlin 查询语料库生成器配置文件",
+    "db_id": "movie",
+    "db_schema_path": {
+        "movie": "./db_data/schema/movie_schema.json"
+    },
+    "data_path": "./db_data/",
+    "templates_file": "gremlin_templates.csv",
+    "output_dir": "output",
+    "schema_dict_path": [
+        "./base/template/schema_dict.txt"
+    ],
+    "_note": "查询数量由 combination_control_config.json 中的 max_total_combinations 控制",
+
+    "_comment_llm": "LLM 翻译配置（将泛化后的 Gremlin + 简单描述翻译为自然语言问题）",
+    "llm": {
+        "base_url": "http://your-llm-server:port/v1",
+        "api_key": "your-api-key",
+        "model": "your-model-name",
+        "temperature": 0.7,
+        "max_retries": 3,
+        "max_concurrency": 5,
+        "save_interval": 50,
+        "timeout": 40
+    },
+
+    "_comment_migration": "场景迁移配置",
+    "migration": {
+        "migration_mode": "same_operation",
+        "same_operation_sample_count": 3
+    }
+}

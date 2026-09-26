@@ -1,0 +1,85 @@
+movie 电影
+id id
+title 标题
+tagline 标签
+summary 总结
+poster_image 海报图片
+user 用户
+login 登录用户名
+genre 流派
+name 姓名 名称 名字 名
+person 人
+born 出生年份
+keyword 关键字
+is_friend 是朋友关系
+rate 打分
+duration 持续时间
+rated 评分 评价 打分
+acted_in 参演
+directed 导演
+produce 生产 出版
+write 写
+Person 人
+Company 公司
+Account 账户
+Loan 贷款
+Medium 中间
+isBlocked 是否被
+type 类型
+nickname 昵称
+phoneNumber 电话号码
+email 电子邮箱 邮箱
+freqLogintype 常用账户登录方式
+lastLoginType 上一次登录时间
+acountLavel 账户等级
+createTime 创建时间
+loanAmount 贷款金额
+balance 贷款余额
+usage 贷款用途
+insertrate 利率
+riskLevel 风险等级
+timestamp 时间戳
+amount 数额 金额
+location 地理位置
+ratio 比例
+organization 组织
+relationship 关系
+gender 性别
+birthday 生日
+country 国家
+city 城市
+business 主营业务
+description 描述
+url url
+withdraw 取
+signIn 登录
+repay 偿还 付还
+deposit 支付
+apply 应用
+guarantee 担保
+invest 投资
+own 拥有 持有
+plan 计划
+content 内容
+introduce 介绍
+time 时间
+important_events 重要事件
+relation 关系
+person_person 人物关系 人物间关系
+person_plan 人物和计划间的关系 人物和计划的关系
+person_organization 人物和组织间的关系
+organization_plan 组织和计划间的关系
+organization_organization 组织间的关系
+time_time 时间上的关系 时间关系
+birthyear 出生年份
+phone 电话号码 手机号码
+City 城市
+Film 电影 影片
+HAS_CHILD 有孩子
+MARRIED 是婚姻关系
+BORN_IN 出生于 出生在
+weight 重量
+DIRECTED 导演了
+WROTE_MUSIC_FOR 写了音乐给
+ACTED_IN 参演
+charactername 角色名字 扮演的角色名称是 扮演的角色是 出演的角色是

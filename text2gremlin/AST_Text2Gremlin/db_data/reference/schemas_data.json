@@ -1,0 +1,1801 @@
+{
+  "description": "20个场景schema库",
+  "total_scenarios": 20,
+  "scenarios": {
+    "1_ecommerce": {
+      "index": 1,
+      "name_zh": "电商",
+      "domain": "ecommerce",
+      "schema": {
+        "domain": "ecommerce",
+        "description": "电商商品、用户行为与类目标签图",
+        "vertex_labels": [
+          "customer",
+          "product",
+          "category",
+          "brand",
+          "tag",
+          "order",
+          "seller"
+        ],
+        "edge_labels": [
+          {
+            "name": "view",
+            "from": "customer",
+            "to": "product"
+          },
+          {
+            "name": "purchase",
+            "from": "customer",
+            "to": "product"
+          },
+          {
+            "name": "add_to_cart",
+            "from": "customer",
+            "to": "product"
+          },
+          {
+            "name": "place_order",
+            "from": "customer",
+            "to": "order"
+          },
+          {
+            "name": "contain_product",
+            "from": "order",
+            "to": "product"
+          },
+          {
+            "name": "belong_category",
+            "from": "product",
+            "to": "category"
+          },
+          {
+            "name": "has_tag",
+            "from": "product",
+            "to": "tag"
+          },
+          {
+            "name": "has_brand",
+            "from": "product",
+            "to": "brand"
+          },
+          {
+            "name": "sold_by",
+            "from": "product",
+            "to": "seller"
+          }
+        ],
+        "properties": {
+          "customer": [
+            "customer_id",
+            "name",
+            "age",
+            "gender",
+            "city"
+          ],
+          "product": [
+            "product_id",
+            "name",
+            "price",
+            "stock",
+            "rating"
+          ],
+          "category": [
+            "category_id",
+            "name"
+          ],
+          "brand": [
+            "brand_id",
+            "name"
+          ],
+          "tag": [
+            "tag_id",
+            "name"
+          ],
+          "order": [
+            "order_id",
+            "amount",
+            "status",
+            "created_at"
+          ],
+          "seller": [
+            "seller_id",
+            "name",
+            "level"
+          ]
+        }
+      }
+    },
+    "2_social": {
+      "index": 2,
+      "name_zh": "社交",
+      "domain": "social",
+      "schema": {
+        "domain": "social",
+        "description": "社交用户、帖子、话题与互动关系图",
+        "vertex_labels": [
+          "user",
+          "post",
+          "comment",
+          "topic",
+          "group",
+          "tag"
+        ],
+        "edge_labels": [
+          {
+            "name": "follow",
+            "from": "user",
+            "to": "user"
+          },
+          {
+            "name": "create_post",
+            "from": "user",
+            "to": "post"
+          },
+          {
+            "name": "like_post",
+            "from": "user",
+            "to": "post"
+          },
+          {
+            "name": "comment_on",
+            "from": "user",
+            "to": "post"
+          },
+          {
+            "name": "reply_comment",
+            "from": "comment",
+            "to": "comment"
+          },
+          {
+            "name": "has_topic",
+            "from": "post",
+            "to": "topic"
+          },
+          {
+            "name": "has_tag",
+            "from": "post",
+            "to": "tag"
+          },
+          {
+            "name": "join_group",
+            "from": "user",
+            "to": "group"
+          }
+        ],
+        "properties": {
+          "user": [
+            "user_id",
+            "name",
+            "city",
+            "register_time"
+          ],
+          "post": [
+            "post_id",
+            "title",
+            "content",
+            "publish_time",
+            "like_count"
+          ],
+          "comment": [
+            "comment_id",
+            "content",
+            "publish_time"
+          ],
+          "topic": [
+            "topic_id",
+            "name"
+          ],
+          "group": [
+            "group_id",
+            "name"
+          ],
+          "tag": [
+            "tag_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "3_academic": {
+      "index": 3,
+      "name_zh": "学术",
+      "domain": "academic",
+      "schema": {
+        "domain": "academic",
+        "description": "作者、论文、期刊会议和关键词图",
+        "vertex_labels": [
+          "author",
+          "paper",
+          "venue",
+          "institution",
+          "keyword",
+          "field"
+        ],
+        "edge_labels": [
+          {
+            "name": "write",
+            "from": "author",
+            "to": "paper"
+          },
+          {
+            "name": "cite",
+            "from": "paper",
+            "to": "paper"
+          },
+          {
+            "name": "publish_in",
+            "from": "paper",
+            "to": "venue"
+          },
+          {
+            "name": "affiliated_with",
+            "from": "author",
+            "to": "institution"
+          },
+          {
+            "name": "has_keyword",
+            "from": "paper",
+            "to": "keyword"
+          },
+          {
+            "name": "belongs_field",
+            "from": "paper",
+            "to": "field"
+          },
+          {
+            "name": "collaborate",
+            "from": "author",
+            "to": "author"
+          }
+        ],
+        "properties": {
+          "author": [
+            "author_id",
+            "name",
+            "h_index"
+          ],
+          "paper": [
+            "paper_id",
+            "title",
+            "year",
+            "citation_count"
+          ],
+          "venue": [
+            "venue_id",
+            "name",
+            "type"
+          ],
+          "institution": [
+            "institution_id",
+            "name",
+            "country"
+          ],
+          "keyword": [
+            "keyword_id",
+            "name"
+          ],
+          "field": [
+            "field_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "4_enterprise": {
+      "index": 4,
+      "name_zh": "企业组织",
+      "domain": "enterprise",
+      "schema": {
+        "domain": "enterprise",
+        "description": "员工、部门、项目、技能与组织结构图",
+        "vertex_labels": [
+          "employee",
+          "department",
+          "project",
+          "skill",
+          "role",
+          "office"
+        ],
+        "edge_labels": [
+          {
+            "name": "belongs_department",
+            "from": "employee",
+            "to": "department"
+          },
+          {
+            "name": "work_on",
+            "from": "employee",
+            "to": "project"
+          },
+          {
+            "name": "has_skill",
+            "from": "employee",
+            "to": "skill"
+          },
+          {
+            "name": "report_to",
+            "from": "employee",
+            "to": "employee"
+          },
+          {
+            "name": "has_role",
+            "from": "employee",
+            "to": "role"
+          },
+          {
+            "name": "located_in",
+            "from": "department",
+            "to": "office"
+          },
+          {
+            "name": "require_skill",
+            "from": "project",
+            "to": "skill"
+          }
+        ],
+        "properties": {
+          "employee": [
+            "employee_id",
+            "name",
+            "level",
+            "hire_date"
+          ],
+          "department": [
+            "department_id",
+            "name"
+          ],
+          "project": [
+            "project_id",
+            "name",
+            "status",
+            "priority"
+          ],
+          "skill": [
+            "skill_id",
+            "name"
+          ],
+          "role": [
+            "role_id",
+            "name"
+          ],
+          "office": [
+            "office_id",
+            "city",
+            "country"
+          ]
+        }
+      }
+    },
+    "5_medical": {
+      "index": 5,
+      "name_zh": "医疗",
+      "domain": "medical",
+      "schema": {
+        "domain": "medical",
+        "description": "患者、疾病、症状、药物与检查图",
+        "vertex_labels": [
+          "patient",
+          "disease",
+          "symptom",
+          "drug",
+          "doctor",
+          "department",
+          "test"
+        ],
+        "edge_labels": [
+          {
+            "name": "has_symptom",
+            "from": "patient",
+            "to": "symptom"
+          },
+          {
+            "name": "diagnosed_with",
+            "from": "patient",
+            "to": "disease"
+          },
+          {
+            "name": "prescribed",
+            "from": "doctor",
+            "to": "drug"
+          },
+          {
+            "name": "visit_doctor",
+            "from": "patient",
+            "to": "doctor"
+          },
+          {
+            "name": "belongs_department",
+            "from": "doctor",
+            "to": "department"
+          },
+          {
+            "name": "treats",
+            "from": "drug",
+            "to": "disease"
+          },
+          {
+            "name": "requires_test",
+            "from": "disease",
+            "to": "test"
+          },
+          {
+            "name": "take_test",
+            "from": "patient",
+            "to": "test"
+          }
+        ],
+        "properties": {
+          "patient": [
+            "patient_id",
+            "name",
+            "age",
+            "gender"
+          ],
+          "disease": [
+            "disease_id",
+            "name",
+            "severity"
+          ],
+          "symptom": [
+            "symptom_id",
+            "name"
+          ],
+          "drug": [
+            "drug_id",
+            "name",
+            "type"
+          ],
+          "doctor": [
+            "doctor_id",
+            "name",
+            "title"
+          ],
+          "department": [
+            "department_id",
+            "name"
+          ],
+          "test": [
+            "test_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "6_logistics": {
+      "index": 6,
+      "name_zh": "物流",
+      "domain": "logistics",
+      "schema": {
+        "domain": "logistics",
+        "description": "订单、包裹、仓库、运输与路线图",
+        "vertex_labels": [
+          "customer",
+          "shipment",
+          "warehouse",
+          "vehicle",
+          "route",
+          "city",
+          "carrier"
+        ],
+        "edge_labels": [
+          {
+            "name": "create_shipment",
+            "from": "customer",
+            "to": "shipment"
+          },
+          {
+            "name": "stored_in",
+            "from": "shipment",
+            "to": "warehouse"
+          },
+          {
+            "name": "transport_by",
+            "from": "shipment",
+            "to": "vehicle"
+          },
+          {
+            "name": "follow_route",
+            "from": "shipment",
+            "to": "route"
+          },
+          {
+            "name": "from_city",
+            "from": "route",
+            "to": "city"
+          },
+          {
+            "name": "to_city",
+            "from": "route",
+            "to": "city"
+          },
+          {
+            "name": "operated_by",
+            "from": "vehicle",
+            "to": "carrier"
+          }
+        ],
+        "properties": {
+          "customer": [
+            "customer_id",
+            "name"
+          ],
+          "shipment": [
+            "shipment_id",
+            "status",
+            "weight",
+            "created_at"
+          ],
+          "warehouse": [
+            "warehouse_id",
+            "name",
+            "city"
+          ],
+          "vehicle": [
+            "vehicle_id",
+            "type",
+            "capacity"
+          ],
+          "route": [
+            "route_id",
+            "distance"
+          ],
+          "city": [
+            "city_id",
+            "name"
+          ],
+          "carrier": [
+            "carrier_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "7_iot": {
+      "index": 7,
+      "name_zh": "IoT",
+      "domain": "iot",
+      "schema": {
+        "domain": "iot",
+        "description": "设备、传感器、位置、告警与网关图",
+        "vertex_labels": [
+          "device",
+          "sensor",
+          "gateway",
+          "location",
+          "alarm",
+          "metric"
+        ],
+        "edge_labels": [
+          {
+            "name": "has_sensor",
+            "from": "device",
+            "to": "sensor"
+          },
+          {
+            "name": "connect_gateway",
+            "from": "device",
+            "to": "gateway"
+          },
+          {
+            "name": "located_in",
+            "from": "device",
+            "to": "location"
+          },
+          {
+            "name": "trigger_alarm",
+            "from": "device",
+            "to": "alarm"
+          },
+          {
+            "name": "collect_metric",
+            "from": "sensor",
+            "to": "metric"
+          },
+          {
+            "name": "gateway_in",
+            "from": "gateway",
+            "to": "location"
+          }
+        ],
+        "properties": {
+          "device": [
+            "device_id",
+            "name",
+            "status",
+            "type"
+          ],
+          "sensor": [
+            "sensor_id",
+            "name",
+            "sensor_type"
+          ],
+          "gateway": [
+            "gateway_id",
+            "name"
+          ],
+          "location": [
+            "location_id",
+            "name",
+            "region"
+          ],
+          "alarm": [
+            "alarm_id",
+            "level",
+            "created_at"
+          ],
+          "metric": [
+            "metric_id",
+            "name",
+            "value"
+          ]
+        }
+      }
+    },
+    "8_gaming": {
+      "index": 8,
+      "name_zh": "游戏",
+      "domain": "gaming",
+      "schema": {
+        "domain": "gaming",
+        "description": "玩家、游戏、道具、任务与公会图",
+        "vertex_labels": [
+          "player",
+          "game",
+          "item",
+          "quest",
+          "guild",
+          "achievement",
+          "character"
+        ],
+        "edge_labels": [
+          {
+            "name": "play_game",
+            "from": "player",
+            "to": "game"
+          },
+          {
+            "name": "own_item",
+            "from": "player",
+            "to": "item"
+          },
+          {
+            "name": "complete_quest",
+            "from": "player",
+            "to": "quest"
+          },
+          {
+            "name": "join_guild",
+            "from": "player",
+            "to": "guild"
+          },
+          {
+            "name": "unlock_achievement",
+            "from": "player",
+            "to": "achievement"
+          },
+          {
+            "name": "use_character",
+            "from": "player",
+            "to": "character"
+          },
+          {
+            "name": "reward_item",
+            "from": "quest",
+            "to": "item"
+          }
+        ],
+        "properties": {
+          "player": [
+            "player_id",
+            "name",
+            "level",
+            "region"
+          ],
+          "game": [
+            "game_id",
+            "name",
+            "genre"
+          ],
+          "item": [
+            "item_id",
+            "name",
+            "rarity"
+          ],
+          "quest": [
+            "quest_id",
+            "name",
+            "difficulty"
+          ],
+          "guild": [
+            "guild_id",
+            "name"
+          ],
+          "achievement": [
+            "achievement_id",
+            "name"
+          ],
+          "character": [
+            "character_id",
+            "name",
+            "class"
+          ]
+        }
+      }
+    },
+    "9_recommendation": {
+      "index": 9,
+      "name_zh": "推荐",
+      "domain": "recommendation",
+      "schema": {
+        "domain": "recommendation",
+        "description": "用户、物品、标签、类目与行为图",
+        "vertex_labels": [
+          "user",
+          "item",
+          "category",
+          "tag",
+          "session",
+          "creator"
+        ],
+        "edge_labels": [
+          {
+            "name": "click",
+            "from": "user",
+            "to": "item"
+          },
+          {
+            "name": "like",
+            "from": "user",
+            "to": "item"
+          },
+          {
+            "name": "favorite",
+            "from": "user",
+            "to": "item"
+          },
+          {
+            "name": "belongs_category",
+            "from": "item",
+            "to": "category"
+          },
+          {
+            "name": "has_tag",
+            "from": "item",
+            "to": "tag"
+          },
+          {
+            "name": "created_by",
+            "from": "item",
+            "to": "creator"
+          },
+          {
+            "name": "has_session",
+            "from": "user",
+            "to": "session"
+          },
+          {
+            "name": "interact_item",
+            "from": "session",
+            "to": "item"
+          }
+        ],
+        "properties": {
+          "user": [
+            "user_id",
+            "name"
+          ],
+          "item": [
+            "item_id",
+            "name",
+            "score",
+            "publish_time"
+          ],
+          "category": [
+            "category_id",
+            "name"
+          ],
+          "tag": [
+            "tag_id",
+            "name"
+          ],
+          "session": [
+            "session_id",
+            "start_time"
+          ],
+          "creator": [
+            "creator_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "10_risk_control": {
+      "index": 10,
+      "name_zh": "金融风控",
+      "domain": "risk_control",
+      "schema": {
+        "domain": "risk_control",
+        "description": "账户、设备、交易、商户与风险关系图",
+        "vertex_labels": [
+          "account",
+          "transaction",
+          "device",
+          "merchant",
+          "ip",
+          "card",
+          "risk_tag"
+        ],
+        "edge_labels": [
+          {
+            "name": "initiate_txn",
+            "from": "account",
+            "to": "transaction"
+          },
+          {
+            "name": "use_device",
+            "from": "account",
+            "to": "device"
+          },
+          {
+            "name": "use_ip",
+            "from": "account",
+            "to": "ip"
+          },
+          {
+            "name": "bind_card",
+            "from": "account",
+            "to": "card"
+          },
+          {
+            "name": "pay_merchant",
+            "from": "transaction",
+            "to": "merchant"
+          },
+          {
+            "name": "has_risk_tag",
+            "from": "account",
+            "to": "risk_tag"
+          },
+          {
+            "name": "txn_has_risk_tag",
+            "from": "transaction",
+            "to": "risk_tag"
+          }
+        ],
+        "properties": {
+          "account": [
+            "account_id",
+            "name",
+            "status",
+            "risk_score"
+          ],
+          "transaction": [
+            "txn_id",
+            "amount",
+            "time",
+            "status"
+          ],
+          "device": [
+            "device_id",
+            "type"
+          ],
+          "merchant": [
+            "merchant_id",
+            "name",
+            "category"
+          ],
+          "ip": [
+            "ip_id",
+            "address"
+          ],
+          "card": [
+            "card_id",
+            "bin"
+          ],
+          "risk_tag": [
+            "tag_id",
+            "name",
+            "level"
+          ]
+        }
+      }
+    },
+    "11_cybersecurity": {
+      "index": 11,
+      "name_zh": "网络安全",
+      "domain": "cybersecurity",
+      "schema": {
+        "domain": "cybersecurity",
+        "description": "主机、进程、文件、IP、告警与漏洞图",
+        "vertex_labels": [
+          "host",
+          "process",
+          "file",
+          "ip",
+          "alert",
+          "vulnerability",
+          "user"
+        ],
+        "edge_labels": [
+          {
+            "name": "run_process",
+            "from": "host",
+            "to": "process"
+          },
+          {
+            "name": "access_file",
+            "from": "process",
+            "to": "file"
+          },
+          {
+            "name": "connect_ip",
+            "from": "host",
+            "to": "ip"
+          },
+          {
+            "name": "trigger_alert",
+            "from": "host",
+            "to": "alert"
+          },
+          {
+            "name": "has_vulnerability",
+            "from": "host",
+            "to": "vulnerability"
+          },
+          {
+            "name": "login_host",
+            "from": "user",
+            "to": "host"
+          },
+          {
+            "name": "parent_process",
+            "from": "process",
+            "to": "process"
+          }
+        ],
+        "properties": {
+          "host": [
+            "host_id",
+            "hostname",
+            "os"
+          ],
+          "process": [
+            "process_id",
+            "name",
+            "pid"
+          ],
+          "file": [
+            "file_id",
+            "path",
+            "type"
+          ],
+          "ip": [
+            "ip_id",
+            "address"
+          ],
+          "alert": [
+            "alert_id",
+            "level",
+            "type"
+          ],
+          "vulnerability": [
+            "vuln_id",
+            "cve",
+            "severity"
+          ],
+          "user": [
+            "user_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "12_manufacturing": {
+      "index": 12,
+      "name_zh": "制造",
+      "domain": "manufacturing",
+      "schema": {
+        "domain": "manufacturing",
+        "description": "工厂、产线、设备、工单、零件与供应商图",
+        "vertex_labels": [
+          "factory",
+          "production_line",
+          "machine",
+          "work_order",
+          "part",
+          "supplier",
+          "product"
+        ],
+        "edge_labels": [
+          {
+            "name": "has_line",
+            "from": "factory",
+            "to": "production_line"
+          },
+          {
+            "name": "has_machine",
+            "from": "production_line",
+            "to": "machine"
+          },
+          {
+            "name": "execute_order",
+            "from": "machine",
+            "to": "work_order"
+          },
+          {
+            "name": "produce_product",
+            "from": "work_order",
+            "to": "product"
+          },
+          {
+            "name": "use_part",
+            "from": "work_order",
+            "to": "part"
+          },
+          {
+            "name": "supply_part",
+            "from": "supplier",
+            "to": "part"
+          },
+          {
+            "name": "located_in",
+            "from": "factory",
+            "to": "factory"
+          }
+        ],
+        "properties": {
+          "factory": [
+            "factory_id",
+            "name",
+            "city"
+          ],
+          "production_line": [
+            "line_id",
+            "name"
+          ],
+          "machine": [
+            "machine_id",
+            "name",
+            "status"
+          ],
+          "work_order": [
+            "order_id",
+            "status",
+            "priority"
+          ],
+          "part": [
+            "part_id",
+            "name",
+            "type"
+          ],
+          "supplier": [
+            "supplier_id",
+            "name"
+          ],
+          "product": [
+            "product_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "13_education": {
+      "index": 13,
+      "name_zh": "教育",
+      "domain": "education",
+      "schema": {
+        "domain": "education",
+        "description": "学生、课程、教师、专业、知识点与作业图",
+        "vertex_labels": [
+          "student",
+          "course",
+          "teacher",
+          "major",
+          "knowledge_point",
+          "assignment",
+          "classroom"
+        ],
+        "edge_labels": [
+          {
+            "name": "enroll_course",
+            "from": "student",
+            "to": "course"
+          },
+          {
+            "name": "teach_course",
+            "from": "teacher",
+            "to": "course"
+          },
+          {
+            "name": "belong_major",
+            "from": "student",
+            "to": "major"
+          },
+          {
+            "name": "has_knowledge_point",
+            "from": "course",
+            "to": "knowledge_point"
+          },
+          {
+            "name": "submit_assignment",
+            "from": "student",
+            "to": "assignment"
+          },
+          {
+            "name": "course_has_assignment",
+            "from": "course",
+            "to": "assignment"
+          },
+          {
+            "name": "hold_in",
+            "from": "course",
+            "to": "classroom"
+          }
+        ],
+        "properties": {
+          "student": [
+            "student_id",
+            "name",
+            "grade"
+          ],
+          "course": [
+            "course_id",
+            "name",
+            "credit"
+          ],
+          "teacher": [
+            "teacher_id",
+            "name",
+            "title"
+          ],
+          "major": [
+            "major_id",
+            "name"
+          ],
+          "knowledge_point": [
+            "kp_id",
+            "name"
+          ],
+          "assignment": [
+            "assignment_id",
+            "title",
+            "deadline"
+          ],
+          "classroom": [
+            "classroom_id",
+            "name",
+            "building"
+          ]
+        }
+      }
+    },
+    "14_recruitment": {
+      "index": 14,
+      "name_zh": "招聘",
+      "domain": "recruitment",
+      "schema": {
+        "domain": "recruitment",
+        "description": "候选人、职位、公司、技能与面试流程图",
+        "vertex_labels": [
+          "candidate",
+          "job",
+          "company",
+          "skill",
+          "interview",
+          "recruiter",
+          "department"
+        ],
+        "edge_labels": [
+          {
+            "name": "apply_job",
+            "from": "candidate",
+            "to": "job"
+          },
+          {
+            "name": "has_skill",
+            "from": "candidate",
+            "to": "skill"
+          },
+          {
+            "name": "require_skill",
+            "from": "job",
+            "to": "skill"
+          },
+          {
+            "name": "posted_by",
+            "from": "job",
+            "to": "company"
+          },
+          {
+            "name": "schedule_interview",
+            "from": "candidate",
+            "to": "interview"
+          },
+          {
+            "name": "handled_by",
+            "from": "interview",
+            "to": "recruiter"
+          },
+          {
+            "name": "belongs_department",
+            "from": "job",
+            "to": "department"
+          }
+        ],
+        "properties": {
+          "candidate": [
+            "candidate_id",
+            "name",
+            "experience_years"
+          ],
+          "job": [
+            "job_id",
+            "title",
+            "salary_min",
+            "salary_max"
+          ],
+          "company": [
+            "company_id",
+            "name"
+          ],
+          "skill": [
+            "skill_id",
+            "name"
+          ],
+          "interview": [
+            "interview_id",
+            "round",
+            "status"
+          ],
+          "recruiter": [
+            "recruiter_id",
+            "name"
+          ],
+          "department": [
+            "department_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "15_content_platform": {
+      "index": 15,
+      "name_zh": "内容平台",
+      "domain": "content_platform",
+      "schema": {
+        "domain": "content_platform",
+        "description": "用户、内容、作者、专题、标签与互动图",
+        "vertex_labels": [
+          "user",
+          "content",
+          "creator",
+          "topic",
+          "tag",
+          "playlist",
+          "comment"
+        ],
+        "edge_labels": [
+          {
+            "name": "view_content",
+            "from": "user",
+            "to": "content"
+          },
+          {
+            "name": "like_content",
+            "from": "user",
+            "to": "content"
+          },
+          {
+            "name": "favorite_content",
+            "from": "user",
+            "to": "content"
+          },
+          {
+            "name": "create_content",
+            "from": "creator",
+            "to": "content"
+          },
+          {
+            "name": "has_topic",
+            "from": "content",
+            "to": "topic"
+          },
+          {
+            "name": "has_tag",
+            "from": "content",
+            "to": "tag"
+          },
+          {
+            "name": "add_playlist",
+            "from": "playlist",
+            "to": "content"
+          },
+          {
+            "name": "comment_content",
+            "from": "user",
+            "to": "comment"
+          }
+        ],
+        "properties": {
+          "user": [
+            "user_id",
+            "name"
+          ],
+          "content": [
+            "content_id",
+            "title",
+            "duration",
+            "publish_time"
+          ],
+          "creator": [
+            "creator_id",
+            "name"
+          ],
+          "topic": [
+            "topic_id",
+            "name"
+          ],
+          "tag": [
+            "tag_id",
+            "name"
+          ],
+          "playlist": [
+            "playlist_id",
+            "name"
+          ],
+          "comment": [
+            "comment_id",
+            "text",
+            "publish_time"
+          ]
+        }
+      }
+    },
+    "16_aiops": {
+      "index": 16,
+      "name_zh": "运维监控",
+      "domain": "aiops",
+      "schema": {
+        "domain": "aiops",
+        "description": "服务、实例、日志、指标、告警与依赖关系图",
+        "vertex_labels": [
+          "service",
+          "instance",
+          "host",
+          "metric",
+          "log",
+          "alert",
+          "cluster"
+        ],
+        "edge_labels": [
+          {
+            "name": "has_instance",
+            "from": "service",
+            "to": "instance"
+          },
+          {
+            "name": "deploy_on",
+            "from": "instance",
+            "to": "host"
+          },
+          {
+            "name": "emit_metric",
+            "from": "instance",
+            "to": "metric"
+          },
+          {
+            "name": "generate_log",
+            "from": "instance",
+            "to": "log"
+          },
+          {
+            "name": "trigger_alert",
+            "from": "instance",
+            "to": "alert"
+          },
+          {
+            "name": "belongs_cluster",
+            "from": "service",
+            "to": "cluster"
+          },
+          {
+            "name": "depends_on",
+            "from": "service",
+            "to": "service"
+          }
+        ],
+        "properties": {
+          "service": [
+            "service_id",
+            "name",
+            "tier"
+          ],
+          "instance": [
+            "instance_id",
+            "status"
+          ],
+          "host": [
+            "host_id",
+            "hostname",
+            "ip"
+          ],
+          "metric": [
+            "metric_id",
+            "name",
+            "value"
+          ],
+          "log": [
+            "log_id",
+            "level",
+            "timestamp"
+          ],
+          "alert": [
+            "alert_id",
+            "severity",
+            "timestamp"
+          ],
+          "cluster": [
+            "cluster_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "17_travel": {
+      "index": 17,
+      "name_zh": "旅游",
+      "domain": "travel",
+      "schema": {
+        "domain": "travel",
+        "description": "游客、景点、城市、酒店、路线与标签图",
+        "vertex_labels": [
+          "traveler",
+          "attraction",
+          "city",
+          "hotel",
+          "route",
+          "tag",
+          "booking"
+        ],
+        "edge_labels": [
+          {
+            "name": "visit_attraction",
+            "from": "traveler",
+            "to": "attraction"
+          },
+          {
+            "name": "book_hotel",
+            "from": "traveler",
+            "to": "hotel"
+          },
+          {
+            "name": "book_trip",
+            "from": "traveler",
+            "to": "booking"
+          },
+          {
+            "name": "located_in",
+            "from": "attraction",
+            "to": "city"
+          },
+          {
+            "name": "hotel_in",
+            "from": "hotel",
+            "to": "city"
+          },
+          {
+            "name": "has_tag",
+            "from": "attraction",
+            "to": "tag"
+          },
+          {
+            "name": "follow_route",
+            "from": "booking",
+            "to": "route"
+          }
+        ],
+        "properties": {
+          "traveler": [
+            "traveler_id",
+            "name"
+          ],
+          "attraction": [
+            "attraction_id",
+            "name",
+            "rating"
+          ],
+          "city": [
+            "city_id",
+            "name",
+            "country"
+          ],
+          "hotel": [
+            "hotel_id",
+            "name",
+            "star"
+          ],
+          "route": [
+            "route_id",
+            "name"
+          ],
+          "tag": [
+            "tag_id",
+            "name"
+          ],
+          "booking": [
+            "booking_id",
+            "status",
+            "price"
+          ]
+        }
+      }
+    },
+    "18_local_service": {
+      "index": 18,
+      "name_zh": "本地生活",
+      "domain": "local_service",
+      "schema": {
+        "domain": "local_service",
+        "description": "用户、商户、门店、服务、订单与评价图",
+        "vertex_labels": [
+          "user",
+          "merchant",
+          "store",
+          "service",
+          "order",
+          "review",
+          "category"
+        ],
+        "edge_labels": [
+          {
+            "name": "place_order",
+            "from": "user",
+            "to": "order"
+          },
+          {
+            "name": "order_service",
+            "from": "order",
+            "to": "service"
+          },
+          {
+            "name": "provided_by",
+            "from": "service",
+            "to": "merchant"
+          },
+          {
+            "name": "has_store",
+            "from": "merchant",
+            "to": "store"
+          },
+          {
+            "name": "review_service",
+            "from": "user",
+            "to": "review"
+          },
+          {
+            "name": "belongs_category",
+            "from": "service",
+            "to": "category"
+          },
+          {
+            "name": "store_in",
+            "from": "store",
+            "to": "store"
+          }
+        ],
+        "properties": {
+          "user": [
+            "user_id",
+            "name",
+            "city"
+          ],
+          "merchant": [
+            "merchant_id",
+            "name"
+          ],
+          "store": [
+            "store_id",
+            "name",
+            "district"
+          ],
+          "service": [
+            "service_id",
+            "name",
+            "price"
+          ],
+          "order": [
+            "order_id",
+            "status",
+            "amount"
+          ],
+          "review": [
+            "review_id",
+            "score",
+            "content"
+          ],
+          "category": [
+            "category_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "19_legal_compliance": {
+      "index": 19,
+      "name_zh": "法务合规",
+      "domain": "legal_compliance",
+      "schema": {
+        "domain": "legal_compliance",
+        "description": "案件、法规、条款、主体与风险事件图",
+        "vertex_labels": [
+          "case",
+          "law",
+          "clause",
+          "entity",
+          "risk_event",
+          "court",
+          "lawyer"
+        ],
+        "edge_labels": [
+          {
+            "name": "related_law",
+            "from": "case",
+            "to": "law"
+          },
+          {
+            "name": "contains_clause",
+            "from": "law",
+            "to": "clause"
+          },
+          {
+            "name": "involves_entity",
+            "from": "case",
+            "to": "entity"
+          },
+          {
+            "name": "handled_by",
+            "from": "case",
+            "to": "lawyer"
+          },
+          {
+            "name": "tried_in",
+            "from": "case",
+            "to": "court"
+          },
+          {
+            "name": "has_risk_event",
+            "from": "entity",
+            "to": "risk_event"
+          },
+          {
+            "name": "related_clause",
+            "from": "risk_event",
+            "to": "clause"
+          }
+        ],
+        "properties": {
+          "case": [
+            "case_id",
+            "name",
+            "status"
+          ],
+          "law": [
+            "law_id",
+            "name"
+          ],
+          "clause": [
+            "clause_id",
+            "name"
+          ],
+          "entity": [
+            "entity_id",
+            "name",
+            "type"
+          ],
+          "risk_event": [
+            "event_id",
+            "name",
+            "level"
+          ],
+          "court": [
+            "court_id",
+            "name"
+          ],
+          "lawyer": [
+            "lawyer_id",
+            "name"
+          ]
+        }
+      }
+    },
+    "20_supply_chain": {
+      "index": 20,
+      "name_zh": "供应链",
+      "domain": "supply_chain",
+      "schema": {
+        "domain": "supply_chain",
+        "description": "供应商、工厂、仓库、商品、订单与运输图",
+        "vertex_labels": [
+          "supplier",
+          "factory",
+          "warehouse",
+          "product",
+          "purchase_order",
+          "shipment",
+          "retailer"
+        ],
+        "edge_labels": [
+          {
+            "name": "supply_product",
+            "from": "supplier",
+            "to": "product"
+          },
+          {
+            "name": "produce_product",
+            "from": "factory",
+            "to": "product"
+          },
+          {
+            "name": "store_product",
+            "from": "warehouse",
+            "to": "product"
+          },
+          {
+            "name": "create_po",
+            "from": "retailer",
+            "to": "purchase_order"
+          },
+          {
+            "name": "contain_product",
+            "from": "purchase_order",
+            "to": "product"
+          },
+          {
+            "name": "deliver_shipment",
+            "from": "supplier",
+            "to": "shipment"
+          },
+          {
+            "name": "shipment_for",
+            "from": "shipment",
+            "to": "purchase_order"
+          }
+        ],
+        "properties": {
+          "supplier": [
+            "supplier_id",
+            "name"
+          ],
+          "factory": [
+            "factory_id",
+            "name"
+          ],
+          "warehouse": [
+            "warehouse_id",
+            "name",
+            "city"
+          ],
+          "product": [
+            "product_id",
+            "name",
+            "category"
+          ],
+          "purchase_order": [
+            "po_id",
+            "status",
+            "amount"
+          ],
+          "shipment": [
+            "shipment_id",
+            "status"
+          ],
+          "retailer": [
+            "retailer_id",
+            "name"
+          ]
+        }
+      }
+    }
+  }
+}

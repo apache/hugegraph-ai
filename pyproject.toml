@@ -163,6 +163,9 @@ addopts = "--strict-markers --strict-config"
 [tool.ruff]
 line-length = 120
 target-version = "py310"
+extend-exclude = [
+    "text2gremlin/AST_Text2Gremlin/base/gremlin/*.py",
+]
 
 [tool.ruff.lint]
 # Select a broad set of rules for comprehensive checks.
@@ -188,6 +191,18 @@ ignore = [
 "tests/**/*.py" = ["T20"]
 "hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
+"text2gremlin/**/*.py" = [
+    "E501",   # Long Chinese prompts and generated Gremlin visitor fragments are kept readable.
+    "E741",   # Gremlin examples use compact variable names in local comprehensions.
+    "F403",   # ANTLR visitor code relies on antlr4's compatibility import style.
+    "F811",   # Visitor methods mirror grammar alternatives and may intentionally repeat names.
+    "N999",   # Keep existing module names used by standalone scripts.
+    "RUF002", # Chinese docstrings intentionally use full-width punctuation.
+    "RUF012", # Class-level step configuration dictionaries are constants in practice.
+    "SIM102", # Keep complex traversal-generation branching explicit.
+    "SIM108", # Keep complex traversal-generation branching explicit.
+    "T20",    # Standalone CLI/data-generation scripts write progress to stdout.
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["hugegraph_llm", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]

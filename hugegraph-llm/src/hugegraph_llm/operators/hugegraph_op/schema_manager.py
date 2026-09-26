@@ -23,20 +23,31 @@ from hugegraph_llm.config import huge_settings
 
 
 class SchemaManager:
-    def __init__(self, graph_name: str, *, connection: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        graph_name: str,
+        *,
+        connection: Optional[Dict[str, Any]] = None,
+        graph_config: Optional[Dict[str, Any]] = None,
+    ):
         self.graph_name = graph_name
-        # Apply a request-scoped connection as a complete unit (omitted fields stay as
-        # given) so it cannot fall back to global huge_settings per-field.
+
+        def pick(config, key, default):
+            value = config[key] if key in config else default
+            return default if value is None else value
+
         if connection is not None:
-            url = connection.get("url")
-            user = connection.get("user")
-            pwd = connection.get("pwd")
-            graphspace = connection.get("graphspace")
+            connection = connection or {}
+            url = pick(connection, "url", huge_settings.graph_url)
+            user = pick(connection, "user", huge_settings.graph_user)
+            pwd = pick(connection, "pwd", huge_settings.graph_pwd)
+            graphspace = pick(connection, "graphspace", huge_settings.graph_space)
         else:
-            url = huge_settings.graph_url
-            user = huge_settings.graph_user
-            pwd = huge_settings.graph_pwd
-            graphspace = huge_settings.graph_space
+            graph_config = graph_config or {}
+            url = pick(graph_config, "url", huge_settings.graph_url)
+            user = pick(graph_config, "user", huge_settings.graph_user)
+            pwd = pick(graph_config, "pwd", huge_settings.graph_pwd)
+            graphspace = pick(graph_config, "gs", huge_settings.graph_space)
         self.client = PyHugeClient(
             url=url,
             graph=self.graph_name,

@@ -23,14 +23,14 @@ from hugegraph_llm.state.ai_state import WkFlowInput, WkFlowState
 
 # pylint: disable=arguments-differ,keyword-arg-before-vararg
 class UpdateVidEmbeddingsFlow(BaseFlow):
-    def prepare(self, prepared_input: WkFlowInput, **kwargs):
-        pass
+    def prepare(self, prepared_input: WkFlowInput, graph_config=None, **kwargs):
+        prepared_input.graph_config = graph_config
 
-    def build_flow(self, **kwargs):
+    def build_flow(self, graph_config=None, **kwargs):
         pipeline = GPipeline()
         prepared_input = WkFlowInput()
         # prepare input data
-        self.prepare(prepared_input)
+        self.prepare(prepared_input, graph_config=graph_config)
 
         pipeline.createGParam(prepared_input, "wkflow_input")
         pipeline.createGParam(WkFlowState(), "wkflow_state")

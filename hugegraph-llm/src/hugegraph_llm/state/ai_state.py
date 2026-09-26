@@ -22,6 +22,8 @@ from hugegraph_llm.utils.log import log
 
 class WkFlowInput(GParam):
     texts: Optional[Union[str, List[str]]] = None  # texts input used by ChunkSplit Node
+    content_type: Optional[str] = None
+    max_parallel_chunks: Optional[int] = None
     language: Optional[str] = None  # language configuration used by ChunkSplit Node
     split_type: Optional[str] = None  # split type used by ChunkSplit Node
     example_prompt: Optional[str] = None  # need by graph information extract
@@ -29,6 +31,7 @@ class WkFlowInput(GParam):
     # Request-scoped HugeGraph connection; None falls back to global huge_settings.
     graph_client_config: Optional[Dict[str, Any]] = None
     data_json: Optional[Dict[str, Any]] = None
+    graph_config: Optional[Dict[str, Any]] = None
     extract_type: Optional[str] = None
     query_examples: Optional[Any] = None
     few_shot_schema: Optional[Any] = None
@@ -84,12 +87,15 @@ class WkFlowInput(GParam):
 
     def reset(self, _: CStatus) -> None:
         self.texts = None
+        self.content_type = None
+        self.max_parallel_chunks = None
         self.language = None
         self.split_type = None
         self.example_prompt = None
         self.schema = None
         self.graph_client_config = None
         self.data_json = None
+        self.graph_config = None
         self.extract_type = None
         self.query_examples = None
         self.few_shot_schema = None
@@ -145,6 +151,7 @@ class WkFlowState(GParam):
     vertices: Optional[List[Any]] = None
     triples: Optional[List[Any]] = None
     call_count: Optional[int] = None
+    max_parallel_chunks: Optional[int] = None
 
     keywords: Optional[List[str]] = None
     vector_result: Optional[Any] = None
@@ -203,6 +210,7 @@ class WkFlowState(GParam):
         self.vertices = None
         self.triples = None
         self.call_count = None
+        self.max_parallel_chunks = None
 
         self.keywords = None
         self.vector_result = None

@@ -15,9 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+
+class GraphExtractError(BaseModel):
+    code: str
+    message: str
+    phase: str
+    job_id: Optional[str] = None
 
 
 class GraphExtractResponse(BaseModel):
@@ -25,3 +32,38 @@ class GraphExtractResponse(BaseModel):
     result: Dict[str, Any]
     warnings: List[str] = Field(default_factory=list)
     meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphExtractJobCreateResponse(BaseModel):
+    job_id: str
+    status: str
+    result_url: str
+    created_at: str
+    updated_at: str
+
+
+class GraphExtractJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    created_at: str
+    updated_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    error: Optional[GraphExtractError] = None
+
+
+class GraphImportResponse(BaseModel):
+    status: str = "succeeded"
+    vertex_count: int = 0
+    edge_count: int = 0
+    triple_count: int = 0
+    updated_embeddings: bool = False
+    warnings: List[str] = Field(default_factory=list)
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphExtractAndImportResponse(BaseModel):
+    status: str = "succeeded"
+    extract_result: GraphExtractResponse
+    import_result: GraphImportResponse

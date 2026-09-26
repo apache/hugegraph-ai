@@ -44,10 +44,21 @@ class GraphExtractFlow(BaseFlow):
         extract_type,
         split_type=SPLIT_TYPE_DOCUMENT,
         language="zh",
+        content_type="text",
+        max_parallel_chunks=1,
+        client_config=None,
         **kwargs,
     ):
         # prepare input data
         prepared_input.texts = texts
+        if content_type not in {"text", "chunks"}:
+            raise ValueError("content_type must be text or chunks")
+        if content_type == "chunks" and split_type != SPLIT_TYPE_DOCUMENT:
+            raise ValueError("split_type must be document when content_type is chunks")
+        prepared_input.content_type = content_type
+        if not isinstance(max_parallel_chunks, int) or max_parallel_chunks < 1:
+            raise ValueError("max_parallel_chunks must be a positive integer")
+        prepared_input.max_parallel_chunks = max_parallel_chunks
         prepared_input.language = language
         if split_type not in VALID_SPLIT_TYPES:
             raise ValueError("split_type must be document, paragraph, or sentence")
@@ -56,7 +67,6 @@ class GraphExtractFlow(BaseFlow):
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
-        client_config = kwargs.get("client_config")
         if client_config:
             # URL stays server-controlled; only identity/graphspace are request-scoped.
             prepared_input.graph_client_config = {
@@ -76,6 +86,9 @@ class GraphExtractFlow(BaseFlow):
         extract_type,
         split_type=SPLIT_TYPE_DOCUMENT,
         language="zh",
+        content_type="text",
+        max_parallel_chunks=1,
+        client_config=None,
         **kwargs,
     ):
         pipeline = GPipeline()
@@ -87,9 +100,11 @@ class GraphExtractFlow(BaseFlow):
             texts,
             example_prompt,
             extract_type,
-            split_type,
-            language,
-            **kwargs,
+            split_type=split_type,
+            language=language,
+            content_type=content_type,
+            max_parallel_chunks=max_parallel_chunks,
+            client_config=client_config,
         )
 
         pipeline.createGParam(prepared_input, "wkflow_input")
@@ -110,19 +125,23 @@ class GraphExtractFlow(BaseFlow):
         edges = res.get("edges", [])
         chunk_count = len(res.get("chunks", []))
         log.info("Graph extraction chunk_count: %s", chunk_count)
+        output = {
+            "vertices": vertices,
+            "edges": edges,
+            "call_count": res.get("call_count"),
+            "chunk_count": chunk_count,
+            "max_parallel_chunks": res.get("max_parallel_chunks"),
+        }
         if not vertices and not edges:
             log.info("Please check the schema.(The schema may not match the Doc)")
+            output["warning"] = "The schema may not match the Doc"
             return json.dumps(
-                {
-                    "vertices": vertices,
-                    "edges": edges,
-                    "warning": "The schema may not match the Doc",
-                },
+                output,
                 ensure_ascii=False,
                 indent=2,
             )
         return json.dumps(
-            {"vertices": vertices, "edges": edges},
+            output,
             ensure_ascii=False,
             indent=2,
         )

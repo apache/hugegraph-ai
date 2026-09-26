@@ -37,9 +37,12 @@ class SchemaNode(BaseNode):
         from_hugegraph=None,
         from_extraction=None,
         from_user_defined=None,
+        graph_config=None,
     ):
         if from_hugegraph:
-            return SchemaManager(from_hugegraph, connection=self.wk_input.graph_client_config)
+            if self.wk_input.graph_client_config is not None:
+                return SchemaManager(from_hugegraph, connection=self.wk_input.graph_client_config)
+            return SchemaManager(from_hugegraph, graph_config=graph_config)
         if from_user_defined:
             return CheckSchema(from_user_defined)
         if from_extraction:
@@ -59,7 +62,10 @@ class SchemaNode(BaseNode):
                 return CStatus(-1, f"Invalid JSON format in schema. {exc}")
         else:
             log.info("Get schema '%s' from graphdb.", self.schema)
-            self.schema_manager = self._import_schema(from_hugegraph=self.schema)
+            self.schema_manager = self._import_schema(
+                from_hugegraph=self.schema,
+                graph_config=self.wk_input.graph_config,
+            )
         return super().node_init()
 
     def operator_schedule(self, data_json):

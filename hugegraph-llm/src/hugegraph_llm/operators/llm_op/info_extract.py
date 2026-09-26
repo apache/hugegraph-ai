@@ -95,6 +95,7 @@ def extract_triples_by_regex_with_schema(schema, text, graph):
     text = text.replace("\\n", " ").replace("\\", " ").replace("\n", " ")
     pattern = r"\((.*?), (.*?), (.*?)\) - ([^ ]*)"
     matches = re.findall(pattern, text)
+    schema = _to_legacy_schema(schema)
 
     vertices_dict = {v["id"]: v for v in graph["vertices"]}
     for match in matches:
@@ -146,6 +147,29 @@ def extract_triples_by_regex_with_schema(schema, text, graph):
                 )
                 break
     graph["vertices"] = list(vertices_dict.values())
+
+
+def _to_legacy_schema(schema):
+    if "vertices" in schema and "edges" in schema:
+        return schema
+    return {
+        "vertices": [
+            {
+                "vertex_label": vertex["name"],
+                "properties": vertex.get("properties", []),
+            }
+            for vertex in schema.get("vertexlabels", [])
+        ],
+        "edges": [
+            {
+                "edge_label": edge["name"],
+                "source_vertex_label": edge["source_label"],
+                "target_vertex_label": edge["target_label"],
+                "properties": edge.get("properties", []),
+            }
+            for edge in schema.get("edgelabels", [])
+        ],
+    }
 
 
 class InfoExtract:

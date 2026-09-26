@@ -32,7 +32,7 @@ class BuildSemanticIndexNode(BaseNode):
 
         vector_index = get_vector_index_class(index_settings.cur_vector_index)
         embedding = Embeddings().get_embedding()
-        self.build_semantic_index_op = BuildSemanticIndex(embedding, vector_index)
+        self.build_semantic_index_op = BuildSemanticIndex(embedding, vector_index, self.wk_input.graph_config)
         return super().node_init()
 
     def operator_schedule(self, data_json):

@@ -18,6 +18,7 @@
 # pylint: disable=protected-access
 
 import json
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -199,6 +200,20 @@ class TestPropertyGraphExtract(unittest.TestCase):
         self.assertNotIn("ignored", filtered_items[1]["properties"])
         self.assertEqual(filtered_items[2]["properties"]["role"], "Forrest Gump")
         self.assertNotIn("ignored", filtered_items[2]["properties"])
+
+    def test_filter_item_accepts_parent_edge_label_without_properties(self):
+        """Test parent edge labels without properties do not break filtering."""
+        schema = {
+            "vertexlabels": self.schema["vertexlabels"],
+            "edgelabels": [
+                {"name": "BELONGS_TO", "edgelabel_type": "PARENT"},
+                *self.schema["edgelabels"],
+            ],
+        }
+
+        filtered_items = filter_item(schema, [])
+
+        self.assertEqual(filtered_items, [])
 
     def test_extract_property_graph_by_llm(self):
         """Test the extract_property_graph_by_llm method."""
@@ -1053,6 +1068,46 @@ Hope this helps."""
 
         self.assertEqual(result, [])
 
+    def test_extract_and_filter_label_drops_items_with_non_object_properties(self):
+        """Drop malformed LLM items whose properties field is not an object."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        text = """{
+            "vertices": [
+            {
+                "label": "person",
+                "properties": null
+            },
+            {
+                "label": "movie",
+                "properties": {
+                    "title": "Forrest Gump"
+                }
+            }
+            ],
+            "edges": [
+            {
+                "label": "acted_in",
+                "properties": ["role"],
+                "source": {
+                    "label": "person",
+                    "properties": ["Tom Hanks"]
+                },
+                "target": {
+                    "label": "movie",
+                    "properties": {
+                        "title": "Forrest Gump"
+                    }
+                }
+            }
+            ]
+        }"""
+
+        result = extractor._extract_and_filter_label(self.schema, text)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["type"], "vertex")
+        self.assertEqual(result[0]["label"], "movie")
+
     def test_run(self):
         """Test the run method."""
         extractor = PropertyGraphExtract(llm=self.mock_llm)
@@ -1080,6 +1135,123 @@ Hope this helps."""
 
         # Check edge properties
         self.assertEqual(result["edges"][0]["properties"]["role"], "Forrest Gump")
+
+    def test_run_with_parallel_chunks_preserves_input_order(self):
+        """Test parallel chunk extraction keeps deterministic aggregation order."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+
+        def fake_extract(_schema, chunk):
+            if chunk == "slow chunk":
+                time.sleep(0.02)
+            name = "Alice" if chunk == "slow chunk" else "Bob"
+            return json.dumps(
+                {
+                    "vertices": [
+                        {
+                            "type": "vertex",
+                            "label": "person",
+                            "properties": {"name": name},
+                        }
+                    ],
+                    "edges": [],
+                }
+            )
+
+        extractor.extract_property_graph_by_llm = MagicMock(side_effect=fake_extract)
+        context = {
+            "schema": self.schema,
+            "chunks": ["slow chunk", "fast chunk"],
+            "max_parallel_chunks": 8,
+        }
+
+        result = extractor.run(context)
+
+        self.assertEqual([vertex["properties"]["name"] for vertex in result["vertices"]], ["Alice", "Bob"])
+        self.assertEqual(result["call_count"], 2)
+        self.assertEqual(result["max_parallel_chunks"], 2)
+        self.assertEqual(extractor.extract_property_graph_by_llm.call_count, 2)
+
+    @patch("hugegraph_llm.operators.llm_op.property_graph_extract.ThreadPoolExecutor")
+    def test_run_with_single_parallel_chunk_uses_serial_path(self, mock_executor):
+        """Test max_parallel_chunks=1 keeps the existing serial extraction path."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        extractor.extract_property_graph_by_llm = MagicMock(side_effect=self.llm_responses)
+        context = {
+            "schema": self.schema,
+            "chunks": self.chunks,
+            "max_parallel_chunks": 1,
+        }
+
+        result = extractor.run(context)
+
+        mock_executor.assert_not_called()
+        self.assertEqual(extractor.extract_property_graph_by_llm.call_count, 2)
+        self.assertEqual(result["call_count"], 2)
+
+    @patch("hugegraph_llm.operators.llm_op.property_graph_extract.ThreadPoolExecutor")
+    def test_run_with_one_chunk_reduces_parallelism_to_direct_extract(self, mock_executor):
+        """Test one pre-split chunk is extracted directly even when parallelism is higher."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        extractor.extract_property_graph_by_llm = MagicMock(return_value=self.llm_responses[0])
+        context = {
+            "schema": self.schema,
+            "chunks": [self.chunks[0]],
+            "max_parallel_chunks": 4,
+        }
+
+        result = extractor.run(context)
+
+        mock_executor.assert_not_called()
+        self.assertEqual(extractor.extract_property_graph_by_llm.call_count, 1)
+        self.assertEqual(result["call_count"], 1)
+        self.assertEqual(result["max_parallel_chunks"], 1)
+
+    @patch("hugegraph_llm.operators.llm_op.property_graph_extract.ThreadPoolExecutor")
+    def test_run_with_empty_chunks_keeps_parallelism_metadata_positive(self, mock_executor):
+        """Test empty chunks do not record max_parallel_chunks as zero."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        extractor.extract_property_graph_by_llm = MagicMock()
+        context = {
+            "schema": self.schema,
+            "chunks": [],
+            "max_parallel_chunks": 4,
+        }
+
+        result = extractor.run(context)
+
+        mock_executor.assert_not_called()
+        extractor.extract_property_graph_by_llm.assert_not_called()
+        self.assertEqual(result["call_count"], 0)
+        self.assertEqual(result["max_parallel_chunks"], 1)
+
+    def test_run_raises_when_chunk_output_is_malformed_json(self):
+        """Test flow execution fails instead of silently dropping malformed chunk output."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm)
+        extractor.extract_property_graph_by_llm = MagicMock(return_value='{"vertices": [], "edges": [}')
+        context = {
+            "schema": self.schema,
+            "chunks": ["malformed output chunk"],
+        }
+
+        with self.assertRaisesRegex(ValueError, "Invalid property graph JSON") as error:
+            extractor.run(context)
+
+        self.assertIsInstance(error.exception.__cause__, json.JSONDecodeError)
+
+    def test_run_falls_back_to_default_parallelism_for_invalid_context_value(self):
+        """Test invalid operator-level parallelism input does not fail before extraction."""
+        extractor = PropertyGraphExtract(llm=self.mock_llm, max_parallel_chunks=2)
+        extractor.extract_property_graph_by_llm = MagicMock(return_value=self.llm_responses[0])
+        context = {
+            "schema": self.schema,
+            "chunks": [self.chunks[0]],
+            "max_parallel_chunks": "not-an-int",
+        }
+
+        result = extractor.run(context)
+
+        self.assertEqual(result["call_count"], 1)
+        self.assertEqual(result["max_parallel_chunks"], 1)
 
     def test_run_with_existing_vertices_and_edges(self):
         """Test the run method with existing vertices and edges."""
@@ -1121,6 +1293,96 @@ Hope this helps."""
         # Check that existing data is preserved
         self.assertEqual(result["vertices"][0]["properties"]["name"], "Leonardo DiCaprio")
         self.assertEqual(result["edges"][0]["properties"]["role"], "Jack Dawson")
+
+
+def test_run_debug_logs_do_not_include_raw_chunk_or_llm_output():
+    schema = {
+        "vertexlabels": [
+            {
+                "id": 1,
+                "name": "person",
+                "primary_keys": ["name"],
+                "nullable_keys": [],
+                "properties": ["name"],
+            }
+        ],
+        "edgelabels": [],
+    }
+    sensitive_chunk = "Alice secret source document"
+    sensitive_output = json.dumps(
+        {
+            "vertices": [
+                {
+                    "type": "vertex",
+                    "label": "person",
+                    "properties": {"name": "Alice secret model output"},
+                }
+            ],
+            "edges": [],
+        }
+    )
+    extractor = PropertyGraphExtract(llm=MagicMock(spec=BaseLLM))
+    extractor.extract_property_graph_by_llm = MagicMock(return_value=sensitive_output)
+
+    with patch("hugegraph_llm.operators.llm_op.property_graph_extract.log.debug") as debug_log:
+        extractor.run({"schema": schema, "chunks": [sensitive_chunk]})
+
+    logged_args = " ".join(str(arg) for call in debug_log.call_args_list for arg in call.args)
+    assert "chunk processed" in logged_args
+    assert sensitive_chunk not in logged_args
+    assert "Alice secret model output" not in logged_args
+
+
+def test_invalid_edge_warning_does_not_include_raw_edge_payload():
+    schema = {
+        "vertexlabels": [
+            {
+                "id": 1,
+                "name": "person",
+                "primary_keys": ["name"],
+                "nullable_keys": [],
+                "properties": ["name"],
+            },
+            {
+                "id": 2,
+                "name": "movie",
+                "primary_keys": ["title"],
+                "nullable_keys": [],
+                "properties": ["title"],
+            },
+        ],
+        "edgelabels": [{"name": "acted_in", "properties": ["role"], "source_label": "person", "target_label": "movie"}],
+    }
+    graph_json = json.dumps(
+        {
+            "vertices": [
+                {
+                    "type": "vertex",
+                    "label": "person",
+                    "properties": {"name": "Alice secret vertex"},
+                }
+            ],
+            "edges": [
+                {
+                    "type": "edge",
+                    "label": "acted_in",
+                    "properties": {"role": "sensitive role"},
+                    "source": {"label": "person", "properties": {"name": "Alice secret vertex"}},
+                    "target": {"label": "movie", "properties": {"title": "Missing secret movie"}},
+                }
+            ],
+        }
+    )
+    extractor = PropertyGraphExtract(llm=MagicMock(spec=BaseLLM))
+
+    with patch("hugegraph_llm.operators.llm_op.property_graph_extract.log.warning") as warning_log:
+        extractor._extract_and_filter_label(schema, graph_json, raise_on_invalid=True)
+
+    logged_args = " ".join(str(arg) for call in warning_log.call_args_list for arg in call.args)
+    assert "Invalid edge endpoints" in logged_args
+    assert "sensitive role" not in logged_args
+    assert "Alice secret vertex" not in logged_args
+    assert "Missing secret movie" not in logged_args
 
 
 if __name__ == "__main__":

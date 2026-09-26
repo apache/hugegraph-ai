@@ -40,6 +40,7 @@ class GraphExtractService:
                 req.extract_type,
                 language=req.language,
                 split_type=req.split_type,
+                graph_extract_max_workers=req.graph_extract_max_workers,
                 client_config=req.client_config,
             )
             raw = json.loads(result_str)

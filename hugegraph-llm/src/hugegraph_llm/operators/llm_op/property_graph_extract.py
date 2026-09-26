@@ -19,11 +19,13 @@
 
 import json
 import re
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Any, Dict, List
 
 from hugegraph_llm.config import prompt
 from hugegraph_llm.document.chunk_split import ChunkSplitter
 from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 from hugegraph_llm.utils.log import log
 
 # TODO: It is not clear whether there is any other dependence on the SCHEMA_EXAMPLE_PROMPT variable.
@@ -78,9 +80,15 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
 
 
 class PropertyGraphExtract:
-    def __init__(self, llm: BaseLLM, example_prompt: str = prompt.extract_graph_prompt) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        example_prompt: str = prompt.extract_graph_prompt,
+        max_workers: int = 1,
+    ) -> None:
         self.llm = llm
         self.example_prompt = example_prompt
+        self.max_workers = validate_graph_extract_max_workers(max_workers)
         self.NECESSARY_ITEM_KEYS = {"label", "type", "properties"}  # pylint: disable=invalid-name
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
@@ -90,25 +98,144 @@ class PropertyGraphExtract:
             context["vertices"] = []
         if "edges" not in context:
             context["edges"] = []
+
         items = []
-        for chunk in chunks:
-            proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
-            log.debug(
-                "[LLM] %s input: %s \n output:%s",
-                self.__class__.__name__,
-                chunk,
-                proceeded_chunk,
-            )
-            items.extend(self._extract_and_filter_label(schema, proceeded_chunk))
-        items = filter_item(schema, items)
+        if self.max_workers == 1 or len(chunks) <= 1:
+            chunk_results = [
+                self._extract_chunk_items(schema, chunk, index, len(chunks)) for index, chunk in enumerate(chunks)
+            ]
+        else:
+            chunk_results = self._extract_chunks_concurrently(schema, chunks)
+
+        for chunk_items in chunk_results:
+            items.extend(chunk_items)
+
         for item in items:
             if item["type"] == "vertex":
                 context["vertices"].append(item)
             elif item["type"] == "edge":
                 context["edges"].append(item)
-
         context["call_count"] = context.get("call_count", 0) + len(chunks)
         return context
+
+    def _extract_chunks_concurrently(self, schema, chunks):
+        worker_count = min(self.max_workers, len(chunks))
+        chunk_results = [None] * len(chunks)
+        future_to_index = {}
+        next_index = 0
+        first_error = None
+
+        def submit_next(executor):
+            nonlocal next_index
+            future = executor.submit(
+                self._extract_chunk_items,
+                schema,
+                chunks[next_index],
+                next_index,
+                len(chunks),
+            )
+            future_to_index[future] = next_index
+            next_index += 1
+
+        def collect_done(done_futures):
+            completed_results = []
+            completed_errors = []
+
+            for future in done_futures:
+                index = future_to_index.pop(future)
+                try:
+                    completed_results.append((index, future.result()))
+                except Exception as exc:
+                    completed_errors.append((index, exc))
+
+            return completed_results, completed_errors
+
+        def update_first_error(completed_errors):
+            nonlocal first_error
+            if not completed_errors:
+                return
+            current_error = min(completed_errors, key=lambda item: item[0])
+            if first_error is None or current_error[0] < first_error[0]:
+                first_error = current_error
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            while next_index < len(chunks) and len(future_to_index) < worker_count:
+                submit_next(executor)
+
+            while future_to_index and first_error is None:
+                done, _ = wait(future_to_index, return_when=FIRST_COMPLETED)
+                # Drain any other futures that completed before we decide whether to
+                # submit more work. This prevents submitting queued chunks after an
+                # already-visible in-flight failure.
+                done.update(future for future in future_to_index if future.done())
+
+                completed_results, completed_errors = collect_done(done)
+                update_first_error(completed_errors)
+
+                for index, result in completed_results:
+                    chunk_results[index] = result
+
+                if first_error is not None:
+                    break
+
+                while next_index < len(chunks) and len(future_to_index) < worker_count:
+                    submit_next(executor)
+
+            if first_error is not None:
+                # Do not submit more chunks after the first observed failure.
+                # Cancel queued work if any, then wait for already-running calls so no
+                # background LLM call outlives this failed extraction.
+                for future in future_to_index:
+                    future.cancel()
+
+                remaining_errors = []
+                for future, index in list(future_to_index.items()):
+                    if future.cancelled():
+                        continue
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        remaining_errors.append((index, exc))
+
+                update_first_error(remaining_errors)
+                raise first_error[1]
+
+        return chunk_results
+
+    def _extract_chunk_items(self, schema, chunk, chunk_index, chunk_count):
+        try:
+            proceeded_chunk = self.extract_property_graph_by_llm(schema, chunk)
+            property_graph = self._extract_property_graph_json(proceeded_chunk)
+            chunk_items = self._extract_and_filter_label(schema, property_graph)
+            return filter_item(schema, chunk_items)
+        except Exception as exc:
+            raise RuntimeError(f"Graph extraction failed for chunk {chunk_index + 1}/{chunk_count}: {exc}") from exc
+
+    def _extract_property_graph_json(self, text):
+        text = re.sub(r"```\w*\n?", "", text)
+        text = re.sub(r"```", "", text)
+        text = text.strip()
+
+        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
+        if not json_match:
+            raise ValueError("No JSON found in property graph extraction response")
+
+        json_str = json_match.group(1).strip()
+        try:
+            property_graph = json.loads(json_str)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid property graph JSON: {exc.msg}") from exc
+
+        if isinstance(property_graph, list):
+            return property_graph
+
+        if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
+            raise ValueError("Invalid property graph format; expecting 'vertices' and 'edges'")
+
+        if not isinstance(property_graph["vertices"], list) or not isinstance(property_graph["edges"], list):
+            raise ValueError("Invalid property graph format; 'vertices' and 'edges' must be lists")
+
+        return property_graph
 
     def extract_property_graph_by_llm(self, schema, chunk):
         prompt = generate_extract_property_graph_prompt(chunk, schema)
@@ -204,68 +331,60 @@ class PropertyGraphExtract:
             normalized_edges.append(edge)
         return normalized_edges
 
-    def _extract_and_filter_label(self, schema, text) -> List[Dict[str, Any]]:
-        # Strip markdown code blocks (e.g. ```json ... ```)
-        text = re.sub(r"```\w*\n?", "", text)
-        text = re.sub(r"```", "", text)
-        text = text.strip()
+    def _extract_and_filter_label(self, schema, property_graph):
+        if isinstance(property_graph, str):
+            try:
+                property_graph = self._extract_property_graph_json(property_graph)
+            except ValueError as exc:
+                log.warning("Invalid property graph extraction response: %s", exc)
+                return []
 
-        # Try to extract JSON (object or array)
-        json_match = re.search(r"(\{.*\}|\[.*\])", text, re.DOTALL)
-        if not json_match:
-            log.critical("Invalid property graph! No JSON found, please check the output format example in prompt.")
-            return []
-        json_str = json_match.group(1).strip()
+        if isinstance(property_graph, list):
+            property_graph = {
+                "vertices": [
+                    item for item in property_graph if isinstance(item, dict) and item.get("type") == "vertex"
+                ],
+                "edges": [item for item in property_graph if isinstance(item, dict) and item.get("type") == "edge"],
+            }
 
-        items = []
-        try:
-            property_graph = json.loads(json_str)
-            # Handle flat array format: convert to {"vertices": [...], "edges": [...]}
-            if isinstance(property_graph, list):
-                vertices = [item for item in property_graph if isinstance(item, dict) and item.get("type") == "vertex"]
-                edges = [item for item in property_graph if isinstance(item, dict) and item.get("type") == "edge"]
-                property_graph = {"vertices": vertices, "edges": edges}
-            # Expect property_graph to be a dict with keys "vertices" and "edges"
-            if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
-                log.critical("Invalid property graph format; expecting 'vertices' and 'edges'.")
-                return items
+        if not (isinstance(property_graph, dict) and "vertices" in property_graph and "edges" in property_graph):
+            raise ValueError("Invalid property graph format; expecting 'vertices' and 'edges'")
 
-            # Create sets for valid vertex and edge labels based on the schema
-            vertex_label_map = {vertex["name"]: vertex for vertex in schema["vertexlabels"]}
-            edge_label_map = {edge["name"]: edge for edge in schema["edgelabels"]}
-            vertex_label_set = set(vertex_label_map)
-            edge_label_set = set(edge_label_map)
+        vertex_label_map = {vertex["name"]: vertex for vertex in schema["vertexlabels"]}
+        edge_label_map = {edge["name"]: edge for edge in schema["edgelabels"]}
+        vertex_label_set = set(vertex_label_map)
+        edge_label_set = set(edge_label_map)
 
-            def process_items(item_list, valid_labels, item_type):
-                parsed_items = []
-                for item in item_list:
-                    if not isinstance(item, dict):
-                        log.warning("Invalid property graph item type '%s'.", type(item))
-                        continue
-                    item = dict(item)
-                    item_type_value = item.get("type", item_type)
-                    item["type"] = item_type_value
-                    if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
-                        log.warning("Invalid item keys '%s'.", item.keys())
-                        continue
-                    if item_type_value != item_type:
-                        log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
-                        continue
-                    if item["label"] not in valid_labels:
-                        log.warning(
-                            "Invalid %s label '%s' has been ignored.",
-                            item_type,
-                            item["label"],
-                        )
-                        continue
-                    parsed_items.append(item)
-                return parsed_items
+        def process_items(item_list, valid_labels, item_type):
+            parsed_items = []
+            for item in item_list:
+                if not isinstance(item, dict):
+                    log.warning("Invalid property graph item type '%s'.", type(item))
+                    continue
 
-            vertex_items = process_items(property_graph["vertices"], vertex_label_set, "vertex")
-            vertices, vertex_id_map = self._normalize_vertices(vertex_items, vertex_label_map)
-            edge_items = process_items(property_graph["edges"], edge_label_set, "edge")
-            edges = self._normalize_edges(edge_items, edge_label_map, vertex_label_map, vertex_id_map)
-            items = vertices + edges
-        except json.JSONDecodeError:
-            log.critical("Invalid property graph JSON! Please check the extracted JSON data carefully")
-        return items
+                item = dict(item)
+                item_type_value = item.get("type", item_type)
+                item["type"] = item_type_value
+
+                if not self.NECESSARY_ITEM_KEYS.issubset(item.keys()):
+                    log.warning("Invalid item keys '%s'.", item.keys())
+                    continue
+                if not isinstance(item["properties"], dict):
+                    raise ValueError(f"Invalid {item_type} properties; expected object")
+                if item_type_value != item_type:
+                    log.warning("Invalid %s type '%s' has been ignored.", item_type, item_type_value)
+                    continue
+                if item["label"] not in valid_labels:
+                    log.warning("Invalid %s label '%s' has been ignored.", item_type, item["label"])
+                    continue
+
+                parsed_items.append(item)
+            return parsed_items
+
+        vertex_items = process_items(property_graph["vertices"], vertex_label_set, "vertex")
+        vertices, vertex_id_map = self._normalize_vertices(vertex_items, vertex_label_map)
+
+        edge_items = process_items(property_graph["edges"], edge_label_set, "edge")
+        edges = self._normalize_edges(edge_items, edge_label_map, vertex_label_map, vertex_id_map)
+
+        return vertices + edges

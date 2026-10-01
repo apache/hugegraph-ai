@@ -1,0 +1,68 @@
+"note/✅ 项目/教育.md"
+  d68456c408eecce5 128-129
+docs/prompt.md
+  h_0a5d17d3b19f82 276-309
+note/系统资源/画板/教育.drawio
+  d68456c408eecce5 1-10
+web/static/styles.css
+  d68456c408eecce5 691-696,705-707
+web/static/modules/tree-dnd.js
+  d68456c408eecce5 1-7,14,34-38,50-56,75-106,128-129,133,136-137,139-141,161,166,169-178,180-199
+web/README.md
+  d68456c408eecce5 16
+web/templates/index.html
+  d68456c408eecce5 123-132
+"note/✅ 项目/质量.md"
+  d68456c408eecce5 11,326
+web/templates/canvas.html
+  d68456c408eecce5 1-123
+web/static/canvas.js
+  d68456c408eecce5 1-447
+note/系统资源/画板/质量.drawio
+  d68456c408eecce5 1-16
+web/static/app.js
+  d68456c408eecce5 2726,4411-4414,4930
+web/static/canvas.css
+  d68456c408eecce5 1-381
+web/app.py
+  d68456c408eecce5 28-30,33-41,52,60-61,103-107,719-763,1251-1392
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.10",
+  "base_commit_sha": "8ec332a4ea3d4c68180f94f23f6124a341aebe3a",
+  "prompts": {
+    "d68456c408eecce5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae4435b0-6f6d-4ac9-adc4-94636c82ba06",
+        "model": "claude-opus-4.7"
+      },
+      "human_author": "simon",
+      "messages": [],
+      "total_additions": 9821,
+      "total_deletions": 735,
+      "accepted_lines": 1358,
+      "overriden_lines": 1,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/7fa6fac4dcefec85040a8b9e2aec5e3079030637c6f64b71e3951fa45479e07e"
+    },
+    "fbd0a7434a0e56c7": {
+      "agent_id": {
+        "tool": "known_human",
+        "id": "known_human_session",
+        "model": "unknown"
+      },
+      "human_author": "simon",
+      "messages": [],
+      "total_additions": 180,
+      "total_deletions": 146,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_0a5d17d3b19f82": {
+      "author": "simon"
+    }
+  }
+}

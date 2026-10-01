@@ -1,0 +1,32 @@
+note/readme.md
+  2637db168f7c7a8c 1-10
+web/templates/index.html
+  2637db168f7c7a8c 223
+web/static/app.js
+  2637db168f7c7a8c 2295-2304,2306-2307,2309,2312-2314,2417,2665-2666,2964-3009,3228,3239,3268,3496-3529,3550-3574,4829-5180
+docs/prompt.md
+  2637db168f7c7a8c 265-270
+web/static/styles.css
+  2637db168f7c7a8c 55,260-261,272-282,531,706,1034-1080,2130,2134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.10",
+  "base_commit_sha": "3b7c96cf25a2be9e92faad704c0d5a6e89a6eed2",
+  "prompts": {
+    "2637db168f7c7a8c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65bbb728-9728-4795-bd23-a6db0ff270b9",
+        "model": "claude-opus-4.7"
+      },
+      "human_author": "simon",
+      "messages": [],
+      "total_additions": 619,
+      "total_deletions": 418,
+      "accepted_lines": 564,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/82cec5569436ced347c97f3750b23a6ea70216a5ebbbcf7f46d2525ebdebe2c5"
+    }
+  }
+}

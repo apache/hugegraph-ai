@@ -1,0 +1,31 @@
+.github/workflows/ci.yml
+  6876a09d6670275e 1-3,22,49-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "03b537baa5f39f93928fe89779ef18632d77adf5",
+  "prompts": {
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3"
+      },
+      "human_author": "simon <zhangshiming@cvte.com>",
+      "messages": [],
+      "total_additions": 31,
+      "total_deletions": 4,
+      "accepted_lines": 31,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/1797f0b6ddb9575d289b4cdc92910d69e896f643d8d93d1ada78351bd25b848c",
+      "token_usage": {
+        "input_tokens": 68350037,
+        "output_tokens": 143825,
+        "cache_read_tokens": 67494464,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

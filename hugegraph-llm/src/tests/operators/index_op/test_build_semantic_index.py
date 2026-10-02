@@ -21,10 +21,12 @@ import asyncio
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
+from hugegraph_llm.indices.vector_index.faiss_vector_store import FaissVectorIndex
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
 from hugegraph_llm.operators.index_op.build_semantic_index import BuildSemanticIndex
 
@@ -113,6 +115,50 @@ class TestBuildSemanticIndex(unittest.TestCase):
             self.mock_embedding.get_texts_embeddings.assert_called()
         finally:
             loop.close()
+
+    def test_get_embeddings_parallel_empty(self):
+        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
+
+        self.assertEqual(asyncio.run(builder._get_embeddings_parallel([])), [])
+        self.mock_embedding.get_texts_embeddings.assert_not_called()
+
+    def test_get_embeddings_parallel_propagates_errors(self):
+        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
+        self.mock_embedding.get_texts_embeddings.side_effect = RuntimeError("embedding failed")
+
+        with self.assertRaisesRegex(RuntimeError, "embedding failed"):
+            asyncio.run(builder._get_embeddings_parallel(["vid1"]))
+
+    def test_run_preserves_embedding_alignment_across_batches(self):
+        vertices = [f"person:vid{i}" for i in range(1001)]
+        self.mock_embedding.get_embedding_dim.return_value = 1
+
+        for strategy in ("PRIMARY_KEY", "CUSTOMIZE"):
+            with self.subTest(strategy=strategy):
+                self.mock_settings.graph_name = os.path.join(self.temp_dir, strategy)
+                self.mock_schema_manager.schema.getSchema.return_value = {"vertexlabels": [{"id_strategy": strategy}]}
+                second_batch_completed = threading.Event()
+
+                def embed_batch(batch):
+                    if len(batch) == 1000:
+                        if not second_batch_completed.wait(timeout=5):
+                            raise RuntimeError("The second batch did not complete")
+                    return [[float(vid.rsplit("vid", 1)[1])] for vid in batch]
+
+                self.mock_embedding.get_texts_embeddings.side_effect = embed_batch
+                builder = BuildSemanticIndex(self.mock_embedding, FaissVectorIndex)
+
+                with patch("hugegraph_llm.operators.index_op.build_semantic_index.tqdm") as mock_tqdm:
+                    progress = mock_tqdm.return_value.__enter__.return_value
+                    # Release the first batch only after the second batch reports completion.
+                    progress.update.side_effect = lambda _: second_batch_completed.set()
+                    result = builder.run({"vertices": vertices})
+
+                self.assertEqual(result["added_vid_vector_num"], len(vertices))
+                self.assertEqual(progress.update.call_count, 2)
+                loaded_index = FaissVectorIndex.from_name(1, self.mock_settings.graph_name, "graph_vids")
+                for i in (0, 500, 1000):
+                    self.assertEqual(loaded_index.search([float(i)], top_k=1), [f"person:vid{i}"])
 
     def test_run_with_primary_key_strategy(self):
         # Create a builder

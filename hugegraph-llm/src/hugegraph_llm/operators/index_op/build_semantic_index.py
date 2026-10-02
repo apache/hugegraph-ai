@@ -40,20 +40,19 @@ class BuildSemanticIndex:
         sem = asyncio.Semaphore(10)
         batch_size = 1000
 
-        async def get_embeddings_with_semaphore(vid_list: list[str]) -> Any:
+        async def get_embeddings_with_semaphore(vid_list: list[str], pbar: tqdm) -> Any:
             async with sem:
                 loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(None, self.embedding.get_texts_embeddings, vid_list)
+                result = await loop.run_in_executor(None, self.embedding.get_texts_embeddings, vid_list)
+                pbar.update(1)
+                return result
 
         vid_batches = [vids[i : i + batch_size] for i in range(0, len(vids), batch_size)]
-        tasks = [get_embeddings_with_semaphore(batch) for batch in vid_batches]
-
         embeddings = []
-        with tqdm(total=len(tasks)) as pbar:
-            for future in asyncio.as_completed(tasks):
-                batch_embeddings = await future
+        with tqdm(total=len(vid_batches)) as pbar:
+            tasks = [get_embeddings_with_semaphore(batch, pbar) for batch in vid_batches]
+            for batch_embeddings in await asyncio.gather(*tasks):
                 embeddings.extend(batch_embeddings)
-                pbar.update(1)
         return embeddings
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:

@@ -1,0 +1,52 @@
+tests/test_deploy.py
+  6876a09d6670275e 149-160,162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "c10ff48e5fcc68a0ba587d7bd925a047c5563297",
+  "prompts": {
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 3,
+      "accepted_lines": 13,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/85d28ede87b5422ce31fb9ffff814a531d8626406be3b4ebdadc942520a640d2",
+      "token_usage": {
+        "input_tokens": 96756591,
+        "output_tokens": 191606,
+        "cache_read_tokens": 95153216,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    },
+    "a151d67de6d9c287": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_81f7f4ed-5cec-428f-a766-5df41ae00f57",
+        "model": "GLM-5.3"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 60,
+      "total_deletions": 151,
+      "accepted_lines": 60,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/80629be579259cd8f985bad7d2c030b22bdf9a41e0fc7d6ba58ae44f4ebe6e5f",
+      "token_usage": {
+        "input_tokens": 112111404,
+        "output_tokens": 216627,
+        "cache_read_tokens": 111305664,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

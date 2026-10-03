@@ -1,0 +1,25 @@
+{
+  "schema": "hugegraph-ai/extraction-runtime-resource",
+  "resource_version": 1,
+  "license": "Apache-2.0",
+  "runtime_contract": {
+    "contract": "extraction-runtime/v1",
+    "phase_order": [
+      "extract",
+      "schema",
+      "identity",
+      "review_fix",
+      "final_gate"
+    ],
+    "terminal_contract": "extraction-terminal-body/v1",
+    "graph_state_contract": "immutable-current-graph/v1"
+  },
+  "terminal_kinds": [
+    "final",
+    "candidate",
+    "blocked",
+    "failed"
+  ],
+  "public_integration": "none",
+  "stability": "experimental"
+}

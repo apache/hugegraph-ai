@@ -1,0 +1,10 @@
+{
+  "hugegraph-ai": {
+    "repoName": "apache/hugegraph-ai",
+    "deepwiki": "https://deepwiki.com/apache/hugegraph-ai",
+    "github": "https://github.com/apache/hugegraph-ai",
+    "enabled": true,
+    "description": "Apache HugeGraph AI repository"
+  }
+}
+

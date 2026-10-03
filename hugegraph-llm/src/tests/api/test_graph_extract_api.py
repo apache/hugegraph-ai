@@ -104,6 +104,30 @@ def test_graph_extract_moves_warning_into_warnings(mock_singleton):
 
 
 @patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
+def test_graph_extract_forwards_non_default_worker_count(mock_singleton):
+    scheduler = MagicMock()
+    scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
+    mock_singleton.get_instance.return_value = scheduler
+
+    client = _graph_client()
+
+    response = client.post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": INLINE_SCHEMA,
+            "graph_extract_max_workers": 4,
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert scheduler.schedule_flow.call_args.kwargs["graph_extract_max_workers"] == 4
+
+    response = client.post("/graph/extract", json={"texts": "x", "schema": INLINE_SCHEMA})
+    assert response.status_code == status.HTTP_200_OK
+    assert scheduler.schedule_flow.call_args.kwargs["graph_extract_max_workers"] == 1
+
+
+@patch("hugegraph_llm.api.graph_extract_api.SchedulerSingleton")
 def test_graph_extract_accepts_text_and_list(mock_singleton):
     scheduler = MagicMock()
     scheduler.schedule_flow.return_value = json.dumps({"vertices": [], "edges": []})
@@ -254,6 +278,30 @@ def test_service_extract_sync_maps_errors_to_500(mock_singleton):
     with pytest.raises(HTTPException) as exc_info:
         GraphExtractService.extract_sync(GraphExtractRequest(texts="x", schema=INLINE_SCHEMA))
     assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+@pytest.mark.parametrize("raw_value", [True, False, "1.0"])
+def test_graph_extract_rejects_raw_invalid_worker_values(raw_value):
+    response = _graph_client().post(
+        "/graph/extract",
+        json={
+            "texts": "x",
+            "schema": INLINE_SCHEMA,
+            "graph_extract_max_workers": raw_value,
+        },
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.parametrize("raw_value", [True, False, "1.0"])
+def test_request_model_rejects_raw_invalid_worker_values(raw_value):
+    with pytest.raises(ValidationError):
+        GraphExtractRequest(
+            texts="hello",
+            schema=INLINE_SCHEMA,
+            graph_extract_max_workers=raw_value,
+        )
 
 
 def test_request_model_validation():

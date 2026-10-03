@@ -345,3 +345,20 @@ def test_old_prompt_config_without_schema_generator_examples_still_loads(
 
     assert config.schema_generator_query_examples == ""
     assert config.schema_generator_few_shot_examples == ""
+    assert config.graph_extract_max_workers == 1
+
+
+def test_prompt_config_round_trips_graph_extract_max_workers(monkeypatch, tmp_path):
+    prompt_path = tmp_path / "config_prompt.yaml"
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(prompt_path))
+
+    config = BasePromptConfig()
+    config.llm_settings = SimpleNamespace(language="EN")
+    config.graph_extract_max_workers = 4
+    config.save_to_yaml()
+
+    loaded = BasePromptConfig()
+    loaded.llm_settings = SimpleNamespace(language="EN")
+    loaded.ensure_yaml_file_exists()
+
+    assert loaded.graph_extract_max_workers == 4

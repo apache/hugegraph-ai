@@ -28,6 +28,7 @@ from hugegraph_llm.operators.document_op.chunk_split import (
     SPLIT_TYPE_DOCUMENT,
     VALID_SPLIT_TYPES,
 )
+from hugegraph_llm.utils.graph_extract_config import validate_graph_extract_max_workers
 
 from ..config import huge_settings
 from .hugegraph_utils import clean_hg_data
@@ -87,6 +88,7 @@ def extract_graph(
     schema,
     example_prompt,
     split_type=SPLIT_TYPE_DOCUMENT,
+    graph_extract_max_workers=1,
 ) -> str:
     texts = read_documents(input_file, input_text)
     scheduler = SchedulerSingleton.get_instance()
@@ -95,13 +97,21 @@ def extract_graph(
     if split_type not in VALID_SPLIT_TYPES:
         raise gr.Error("split_type must be document, paragraph, or sentence")
     try:
+        graph_extract_max_workers = validate_graph_extract_max_workers(graph_extract_max_workers)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from exc
+    try:
+        schedule_kwargs = {"split_type": split_type}
+        if graph_extract_max_workers != 1:
+            schedule_kwargs["graph_extract_max_workers"] = graph_extract_max_workers
+
         return scheduler.schedule_flow(
             FlowName.GRAPH_EXTRACT,
             schema,
             texts,
             example_prompt,
             "property_graph",
-            split_type=split_type,
+            **schedule_kwargs,
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.error(e)

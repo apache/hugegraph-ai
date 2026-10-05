@@ -103,7 +103,7 @@ def init_rag_ui() -> gr.Interface:
          = else ["","",""]
         """
 
-        textbox_array_graph_config = create_configs_block()
+        textbox_array_graph_config = create_configs_block(hugegraph_llm_ui)
 
         with gr.Tab(label="1. Build RAG Index 💡"):
             textbox_input_text, textbox_input_schema, textbox_info_extract_template = create_vector_graph_block()

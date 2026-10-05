@@ -342,8 +342,9 @@ def apply_llm_config(
 
 # TODO: refactor the function to reduce the number of statements & separate the logic
 # pylint: disable=C0301,E1101
-def create_configs_block() -> list:
+def create_configs_block(blocks: gr.Blocks) -> list:
     # pylint: disable=R0915 (too-many-statements)
+    config_revision = gr.State(0)
     with gr.Accordion("1. Set up the HugeGraph server.", open=False):
         with gr.Row():
             graph_config_input = [
@@ -391,8 +392,11 @@ def create_configs_block() -> list:
             )
             apply_llm_config_with_chat_op = partial(apply_llm_config, "chat")
 
-            @gr.render(inputs=[chat_llm_dropdown])
-            def chat_llm_settings(llm_type):
+            @gr.render(
+                inputs=[chat_llm_dropdown, config_revision],
+                triggers=[chat_llm_dropdown.change, config_revision.change],
+            )
+            def chat_llm_settings(llm_type, _revision):
                 llm_settings.chat_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
@@ -473,8 +477,11 @@ def create_configs_block() -> list:
             )
             apply_llm_config_with_extract_op = partial(apply_llm_config, "extract")
 
-            @gr.render(inputs=[extract_llm_dropdown])
-            def extract_llm_settings(llm_type):
+            @gr.render(
+                inputs=[extract_llm_dropdown, config_revision],
+                triggers=[extract_llm_dropdown.change, config_revision.change],
+            )
+            def extract_llm_settings(llm_type, _revision):
                 llm_settings.extract_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
@@ -547,8 +554,11 @@ def create_configs_block() -> list:
             )
             apply_llm_config_with_text2gql_op = partial(apply_llm_config, "text2gql")
 
-            @gr.render(inputs=[text2gql_llm_dropdown])
-            def text2gql_llm_settings(llm_type):
+            @gr.render(
+                inputs=[text2gql_llm_dropdown, config_revision],
+                triggers=[text2gql_llm_dropdown.change, config_revision.change],
+            )
+            def text2gql_llm_settings(llm_type, _revision):
                 llm_settings.text2gql_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
@@ -620,8 +630,11 @@ def create_configs_block() -> list:
             label="Embedding",
         )
 
-        @gr.render(inputs=[embedding_dropdown])
-        def embedding_settings(embedding_type):
+        @gr.render(
+            inputs=[embedding_dropdown, config_revision],
+            triggers=[embedding_dropdown.change, config_revision.change],
+        )
+        def embedding_settings(embedding_type, _revision):
             llm_settings.embedding_type = embedding_type
             if embedding_type == "openai":
                 with gr.Row():
@@ -691,8 +704,11 @@ def create_configs_block() -> list:
             label="Reranker",
         )
 
-        @gr.render(inputs=[reranker_dropdown])
-        def reranker_settings(reranker_type):
+        @gr.render(
+            inputs=[reranker_dropdown, config_revision],
+            triggers=[reranker_dropdown.change, config_revision.change],
+        )
+        def reranker_settings(reranker_type, _revision):
             llm_settings.reranker_type = reranker_type if reranker_type != "None" else None
             if reranker_type == "cohere":
                 with gr.Row():
@@ -714,7 +730,7 @@ def create_configs_block() -> list:
                             type="password",
                         ),
                         gr.Textbox(
-                            value="BAAI/bge-reranker-v2-m3",
+                            value=llm_settings.reranker_model or "BAAI/bge-reranker-v2-m3",
                             label="model",
                             info="Please refer to https://siliconflow.cn/pricing",
                         ),
@@ -778,6 +794,31 @@ def create_configs_block() -> list:
                 gr.Markdown("✅ Faiss 本地索引无需额外配置。")
                 apply_faiss_button = gr.Button("Apply Configuration")
                 apply_faiss_button.click(lambda: apply_vector_engine(engine))
+
+    def refresh_llm_config(revision):
+        with runtime_config_lock:
+            llm_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
+            return (
+                llm_settings.chat_llm_type,
+                llm_settings.extract_llm_type,
+                llm_settings.text2gql_llm_type,
+                llm_settings.embedding_type,
+                llm_settings.reranker_type or "None",
+                revision + 1,
+            )
+
+    blocks.load(
+        fn=refresh_llm_config,
+        inputs=[config_revision],
+        outputs=[
+            chat_llm_dropdown,
+            extract_llm_dropdown,
+            text2gql_llm_dropdown,
+            embedding_dropdown,
+            reranker_dropdown,
+            config_revision,
+        ],
+    )
 
     # The reason for returning this partial value is the functional need to refresh the ui
     return graph_config_input

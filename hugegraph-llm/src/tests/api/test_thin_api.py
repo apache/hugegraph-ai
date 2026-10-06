@@ -16,6 +16,7 @@
 # under the License.
 
 import importlib
+import os
 import warnings
 from unittest.mock import Mock
 
@@ -25,7 +26,8 @@ from fastapi.testclient import TestClient
 
 from hugegraph_llm.api.models.rag_response import ThinAPIError, ThinAPIMeta, ThinAPIResponse
 from hugegraph_llm.api.thin_api import thin_router
-from hugegraph_llm.config import prompt
+from hugegraph_llm.config import AdminConfig, prompt
+from hugegraph_llm.config.models import base_config
 from hugegraph_llm.demo.rag_demo import app as rag_demo_app
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.graph_extract import GraphExtractFlow
@@ -69,6 +71,19 @@ def _assert_envelope(response_json: dict, expected_ok: bool):
         assert response_json["error"] is not None
         assert "type" in response_json["error"]
         assert "message" in response_json["error"]
+
+
+@pytest.fixture
+def dotenv_admin_settings(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("ENABLE_LOGIN=True\nUSER_TOKEN=internal-token\n", encoding="utf-8")
+    monkeypatch.setattr(base_config, "env_path", str(env_file))
+    monkeypatch.setitem(AdminConfig.model_config, "env_file", str(env_file))
+    settings = AdminConfig()
+    monkeypatch.setattr("hugegraph_llm.api.thin_api.admin_settings", settings)
+    monkeypatch.setattr(rag_demo_app, "admin_settings", settings)
+    monkeypatch.delenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", raising=False)
+    return env_file
 
 
 def test_graph_extract_api_calls_flow(monkeypatch):
@@ -261,12 +276,17 @@ def test_thin_writes_remain_disabled_without_write_flag(monkeypatch):
         ),
     ],
 )
-def test_production_router_requires_bearer_for_enabled_thin_writes(monkeypatch, path, payload, expected_flow):
+@pytest.mark.parametrize("flag_source", ["process", "dotenv"])
+def test_production_router_requires_bearer_for_enabled_thin_writes(
+    monkeypatch, dotenv_admin_settings, path, payload, expected_flow, flag_source
+):
     scheduler = Mock()
     scheduler.schedule_flow.return_value = {"status": "ok"}
-    monkeypatch.setattr(rag_demo_app.admin_settings, "enable_login", "True")
-    monkeypatch.setattr(rag_demo_app.admin_settings, "user_token", "internal-token")
-    monkeypatch.setenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", "true")
+    if flag_source == "dotenv":
+        with dotenv_admin_settings.open("a", encoding="utf-8") as env_file:
+            env_file.write("HUGEGRAPH_LLM_ENABLE_THIN_WRITES=true\n")
+    else:
+        monkeypatch.setenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", "true")
     client = _production_router_client(monkeypatch, scheduler)
 
     missing = client.post(path, json=payload)
@@ -288,6 +308,50 @@ def test_production_router_requires_bearer_for_enabled_thin_writes(monkeypatch, 
     assert accepted.json()["ok"] is True
     assert scheduler.schedule_flow.call_count == 1
     assert scheduler.schedule_flow.call_args.args[0] == expected_flow
+    if flag_source == "dotenv":
+        assert "HUGEGRAPH_LLM_ENABLE_THIN_WRITES" not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("file_value", "process_value", "enabled"),
+    [(None, None, False), ("", "true", False), ("false", "true", False), ("true", "false", True), (None, "true", True)],
+)
+def test_thin_write_flag_source_precedence(monkeypatch, dotenv_admin_settings, file_value, process_value, enabled):
+    if file_value is not None:
+        with dotenv_admin_settings.open("a", encoding="utf-8") as env_file:
+            env_file.write(f"HUGEGRAPH_LLM_ENABLE_THIN_WRITES={file_value}\n")
+    if process_value is not None:
+        monkeypatch.setenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", process_value)
+    scheduler = Mock()
+    scheduler.schedule_flow.return_value = {"status": "ok"}
+    client = _production_router_client(monkeypatch, scheduler)
+
+    response = client.post("/graph-import", json={"data": "{}"}, headers={"Authorization": "Bearer internal-token"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is enabled
+    if enabled:
+        scheduler.schedule_flow.assert_called_once()
+    else:
+        assert response.json()["error"]["type"] == "FEATURE_DISABLED"
+        scheduler.schedule_flow.assert_not_called()
+
+
+def test_removing_dotenv_write_flag_disables_writes(monkeypatch, dotenv_admin_settings):
+    original = dotenv_admin_settings.read_text(encoding="utf-8")
+    dotenv_admin_settings.write_text(original + "HUGEGRAPH_LLM_ENABLE_THIN_WRITES=true\n", encoding="utf-8")
+    scheduler = Mock()
+    scheduler.schedule_flow.return_value = {"status": "ok"}
+    client = _production_router_client(monkeypatch, scheduler)
+    headers = {"Authorization": "Bearer internal-token"}
+
+    assert client.post("/vid-embeddings/refresh", json={}, headers=headers).json()["ok"] is True
+    dotenv_admin_settings.write_text(original, encoding="utf-8")
+    disabled = client.post("/vid-embeddings/refresh", json={}, headers=headers)
+
+    assert disabled.json()["error"]["type"] == "FEATURE_DISABLED"
+    assert scheduler.schedule_flow.call_count == 1
+    assert "HUGEGRAPH_LLM_ENABLE_THIN_WRITES" not in os.environ
 
 
 def test_graph_index_info_api_calls_flow(monkeypatch):

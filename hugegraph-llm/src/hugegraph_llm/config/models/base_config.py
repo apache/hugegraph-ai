@@ -53,6 +53,11 @@ def resolve_env_path() -> str:
 env_path = resolve_env_path()
 
 
+def get_env_value(name: str, default: str | None = None) -> str | None:
+    """Read standalone flags with the same file-first precedence as settings."""
+    return dotenv_values(env_path).get(name, os.getenv(name, default))
+
+
 class BaseConfig(BaseSettings):
     class Config:
         env_file = env_path

@@ -23,6 +23,7 @@ __all__ = [
     "resource_path",
     "index_settings",
     "runtime_config_lock",
+    "snapshot_llm_config",
 ]
 
 import os
@@ -42,6 +43,13 @@ huge_settings = HugeGraphConfig()
 admin_settings = AdminConfig()
 index_settings = IndexConfig()
 runtime_config_lock = threading.RLock()
+
+
+def snapshot_llm_config(settings: LLMConfig) -> LLMConfig:
+    """Copy settings under the reload lock; construct clients after releasing it."""
+    with runtime_config_lock:
+        return settings.model_copy(deep=True)
+
 
 package_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 resource_path = os.path.join(package_path, "resources")

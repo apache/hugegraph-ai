@@ -15,13 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from hugegraph_llm.config import LLMConfig, llm_settings
+from hugegraph_llm.config import LLMConfig, llm_settings, snapshot_llm_config
 from hugegraph_llm.models.llms.litellm import LiteLLMClient
 from hugegraph_llm.models.llms.ollama import OllamaClient
 from hugegraph_llm.models.llms.openai import OpenAIClient
 
 
 def get_chat_llm(llm_configs: LLMConfig):
+    llm_configs = snapshot_llm_config(llm_configs)
     if llm_configs.chat_llm_type == "openai":
         return OpenAIClient(
             api_key=llm_configs.openai_chat_api_key,
@@ -46,6 +47,7 @@ def get_chat_llm(llm_configs: LLMConfig):
 
 
 def get_extract_llm(llm_configs: LLMConfig):
+    llm_configs = snapshot_llm_config(llm_configs)
     if llm_configs.extract_llm_type == "openai":
         return OpenAIClient(
             api_key=llm_configs.openai_extract_api_key,
@@ -70,6 +72,7 @@ def get_extract_llm(llm_configs: LLMConfig):
 
 
 def get_text2gql_llm(llm_configs: LLMConfig):
+    llm_configs = snapshot_llm_config(llm_configs)
     if llm_configs.text2gql_llm_type == "openai":
         return OpenAIClient(
             api_key=llm_configs.openai_text2gql_api_key,
@@ -95,76 +98,77 @@ def get_text2gql_llm(llm_configs: LLMConfig):
 
 class LLMs:
     def __init__(self):
-        self.chat_llm_type = llm_settings.chat_llm_type
-        self.extract_llm_type = llm_settings.extract_llm_type
-        self.text2gql_llm_type = llm_settings.text2gql_llm_type
+        self._settings = snapshot_llm_config(llm_settings)
+        self.chat_llm_type = self._settings.chat_llm_type
+        self.extract_llm_type = self._settings.extract_llm_type
+        self.text2gql_llm_type = self._settings.text2gql_llm_type
 
     def get_chat_llm(self):
         if self.chat_llm_type == "openai":
             return OpenAIClient(
-                api_key=llm_settings.openai_chat_api_key,
-                api_base=llm_settings.openai_chat_api_base,
-                model_name=llm_settings.openai_chat_language_model,
-                max_tokens=llm_settings.openai_chat_tokens,
+                api_key=self._settings.openai_chat_api_key,
+                api_base=self._settings.openai_chat_api_base,
+                model_name=self._settings.openai_chat_language_model,
+                max_tokens=self._settings.openai_chat_tokens,
             )
         if self.chat_llm_type == "ollama/local":
             return OllamaClient(
-                model=llm_settings.ollama_chat_language_model,
-                host=llm_settings.ollama_chat_host,
-                port=llm_settings.ollama_chat_port,
+                model=self._settings.ollama_chat_language_model,
+                host=self._settings.ollama_chat_host,
+                port=self._settings.ollama_chat_port,
             )
         if self.chat_llm_type == "litellm":
             return LiteLLMClient(
-                api_key=llm_settings.litellm_chat_api_key,
-                api_base=llm_settings.litellm_chat_api_base,
-                model_name=llm_settings.litellm_chat_language_model,
-                max_tokens=llm_settings.litellm_chat_tokens,
+                api_key=self._settings.litellm_chat_api_key,
+                api_base=self._settings.litellm_chat_api_base,
+                model_name=self._settings.litellm_chat_language_model,
+                max_tokens=self._settings.litellm_chat_tokens,
             )
         raise Exception("chat llm type is not supported !")
 
     def get_extract_llm(self):
         if self.extract_llm_type == "openai":
             return OpenAIClient(
-                api_key=llm_settings.openai_extract_api_key,
-                api_base=llm_settings.openai_extract_api_base,
-                model_name=llm_settings.openai_extract_language_model,
-                max_tokens=llm_settings.openai_extract_tokens,
+                api_key=self._settings.openai_extract_api_key,
+                api_base=self._settings.openai_extract_api_base,
+                model_name=self._settings.openai_extract_language_model,
+                max_tokens=self._settings.openai_extract_tokens,
             )
         if self.extract_llm_type == "ollama/local":
             return OllamaClient(
-                model=llm_settings.ollama_extract_language_model,
-                host=llm_settings.ollama_extract_host,
-                port=llm_settings.ollama_extract_port,
+                model=self._settings.ollama_extract_language_model,
+                host=self._settings.ollama_extract_host,
+                port=self._settings.ollama_extract_port,
             )
         if self.extract_llm_type == "litellm":
             return LiteLLMClient(
-                api_key=llm_settings.litellm_extract_api_key,
-                api_base=llm_settings.litellm_extract_api_base,
-                model_name=llm_settings.litellm_extract_language_model,
-                max_tokens=llm_settings.litellm_extract_tokens,
+                api_key=self._settings.litellm_extract_api_key,
+                api_base=self._settings.litellm_extract_api_base,
+                model_name=self._settings.litellm_extract_language_model,
+                max_tokens=self._settings.litellm_extract_tokens,
             )
         raise Exception("extract llm type is not supported !")
 
     def get_text2gql_llm(self):
         if self.text2gql_llm_type == "openai":
             return OpenAIClient(
-                api_key=llm_settings.openai_text2gql_api_key,
-                api_base=llm_settings.openai_text2gql_api_base,
-                model_name=llm_settings.openai_text2gql_language_model,
-                max_tokens=llm_settings.openai_text2gql_tokens,
+                api_key=self._settings.openai_text2gql_api_key,
+                api_base=self._settings.openai_text2gql_api_base,
+                model_name=self._settings.openai_text2gql_language_model,
+                max_tokens=self._settings.openai_text2gql_tokens,
             )
         if self.text2gql_llm_type == "ollama/local":
             return OllamaClient(
-                model=llm_settings.ollama_text2gql_language_model,
-                host=llm_settings.ollama_text2gql_host,
-                port=llm_settings.ollama_text2gql_port,
+                model=self._settings.ollama_text2gql_language_model,
+                host=self._settings.ollama_text2gql_host,
+                port=self._settings.ollama_text2gql_port,
             )
         if self.text2gql_llm_type == "litellm":
             return LiteLLMClient(
-                api_key=llm_settings.litellm_text2gql_api_key,
-                api_base=llm_settings.litellm_text2gql_api_base,
-                model_name=llm_settings.litellm_text2gql_language_model,
-                max_tokens=llm_settings.litellm_text2gql_tokens,
+                api_key=self._settings.litellm_text2gql_api_key,
+                api_base=self._settings.litellm_text2gql_api_base,
+                model_name=self._settings.litellm_text2gql_language_model,
+                max_tokens=self._settings.litellm_text2gql_tokens,
             )
         raise Exception("text2gql llm type is not supported !")
 

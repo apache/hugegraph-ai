@@ -15,22 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from hugegraph_llm.config import llm_settings
+from hugegraph_llm.config import llm_settings, snapshot_llm_config
 from hugegraph_llm.models.rerankers.cohere import CohereReranker
 from hugegraph_llm.models.rerankers.siliconflow import SiliconReranker
 
 
 class Rerankers:
     def __init__(self):
-        self.reranker_type = llm_settings.reranker_type
+        self._settings = snapshot_llm_config(llm_settings)
+        self.reranker_type = self._settings.reranker_type
 
     def get_reranker(self):
         if self.reranker_type == "cohere":
             return CohereReranker(
-                api_key=llm_settings.reranker_api_key,
-                base_url=llm_settings.cohere_base_url,
-                model=llm_settings.reranker_model,
+                api_key=self._settings.reranker_api_key,
+                base_url=self._settings.cohere_base_url,
+                model=self._settings.reranker_model,
             )
         if self.reranker_type == "siliconflow":
-            return SiliconReranker(api_key=llm_settings.reranker_api_key, model=llm_settings.reranker_model)
+            return SiliconReranker(api_key=self._settings.reranker_api_key, model=self._settings.reranker_model)
         raise Exception("Reranker type is not supported!")

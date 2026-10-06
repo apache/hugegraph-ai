@@ -31,6 +31,7 @@ class TestRerankers(unittest.TestCase):
         mock_settings.reranker_api_key = "test_api_key"
         mock_settings.cohere_base_url = "https://api.cohere.ai/v1/rerank"
         mock_settings.reranker_model = "rerank-english-v2.0"
+        mock_settings.model_copy.return_value = mock_settings
 
         # Initialize reranker
         rerankers = Rerankers()
@@ -48,6 +49,7 @@ class TestRerankers(unittest.TestCase):
         mock_settings.reranker_type = "siliconflow"
         mock_settings.reranker_api_key = "test_api_key"
         mock_settings.reranker_model = "bge-reranker-large"
+        mock_settings.model_copy.return_value = mock_settings
 
         # Initialize reranker
         rerankers = Rerankers()
@@ -62,6 +64,7 @@ class TestRerankers(unittest.TestCase):
     def test_unsupported_reranker_type(self, mock_settings):
         # Configure mock settings with unsupported reranker type
         mock_settings.reranker_type = "unsupported_type"
+        mock_settings.model_copy.return_value = mock_settings
 
         # Initialize reranker
         rerankers = Rerankers()

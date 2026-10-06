@@ -19,6 +19,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from hugegraph_llm.config.models import base_config
 from hugegraph_llm.demo.rag_demo import app
 
 pytestmark = pytest.mark.contract
@@ -91,3 +92,21 @@ def test_run_server_does_not_warn_for_loopback(monkeypatch):
     app.run_server(app.parse_args(["--host", "::1"]))
 
     warning.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("file_value", "process_value", "reload"), [("1", None, True), ("0", "1", False), (None, "1", True)]
+)
+def test_run_server_reads_reload_flag_without_export(tmp_path, monkeypatch, file_value, process_value, reload):
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"HG_DEV_RELOAD={file_value}\n" if file_value is not None else "", encoding="utf-8")
+    monkeypatch.setattr(base_config, "env_path", str(env_file))
+    monkeypatch.delenv("HG_DEV_RELOAD", raising=False)
+    if process_value is not None:
+        monkeypatch.setenv("HG_DEV_RELOAD", process_value)
+    uvicorn_run = Mock()
+    monkeypatch.setattr(app.uvicorn, "run", uvicorn_run)
+
+    app.run_server(app.parse_args([]))
+
+    assert uvicorn_run.call_args.kwargs["reload"] is reload

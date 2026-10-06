@@ -38,6 +38,15 @@ def _restore_config(settings, values):
         setattr(settings, field, value)
 
 
+def _synchronized_config_render(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with runtime_config_lock:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
 def _transactional_config_update(settings_getter):
     """Serialize, persist on success, and roll back failed config updates."""
 
@@ -66,6 +75,7 @@ def _transactional_config_update(settings_getter):
 
 def test_litellm_embedding(api_key, api_base, model_name) -> int:
     llm_client = LiteLLMEmbedding(
+        embedding_dimension=1536,
         api_key=api_key,
         api_base=api_base,
         model_name=model_name,
@@ -396,6 +406,7 @@ def create_configs_block(blocks: gr.Blocks) -> list:
                 inputs=[chat_llm_dropdown, config_revision],
                 triggers=[chat_llm_dropdown.change, config_revision.change],
             )
+            @_synchronized_config_render
             def chat_llm_settings(llm_type, _revision):
                 llm_settings.chat_llm_type = llm_type
                 if llm_type == "openai":
@@ -481,6 +492,7 @@ def create_configs_block(blocks: gr.Blocks) -> list:
                 inputs=[extract_llm_dropdown, config_revision],
                 triggers=[extract_llm_dropdown.change, config_revision.change],
             )
+            @_synchronized_config_render
             def extract_llm_settings(llm_type, _revision):
                 llm_settings.extract_llm_type = llm_type
                 if llm_type == "openai":
@@ -558,6 +570,7 @@ def create_configs_block(blocks: gr.Blocks) -> list:
                 inputs=[text2gql_llm_dropdown, config_revision],
                 triggers=[text2gql_llm_dropdown.change, config_revision.change],
             )
+            @_synchronized_config_render
             def text2gql_llm_settings(llm_type, _revision):
                 llm_settings.text2gql_llm_type = llm_type
                 if llm_type == "openai":
@@ -634,6 +647,7 @@ def create_configs_block(blocks: gr.Blocks) -> list:
             inputs=[embedding_dropdown, config_revision],
             triggers=[embedding_dropdown.change, config_revision.change],
         )
+        @_synchronized_config_render
         def embedding_settings(embedding_type, _revision):
             llm_settings.embedding_type = embedding_type
             if embedding_type == "openai":
@@ -708,6 +722,7 @@ def create_configs_block(blocks: gr.Blocks) -> list:
             inputs=[reranker_dropdown, config_revision],
             triggers=[reranker_dropdown.change, config_revision.change],
         )
+        @_synchronized_config_render
         def reranker_settings(reranker_type, _revision):
             llm_settings.reranker_type = reranker_type if reranker_type != "None" else None
             if reranker_type == "cohere":

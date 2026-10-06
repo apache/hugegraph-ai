@@ -17,7 +17,6 @@
 
 import argparse
 import ipaddress
-import os
 
 import gradio as gr
 import uvicorn
@@ -29,6 +28,7 @@ from hugegraph_llm.api.graph_extract_api import graph_extract_http_api
 from hugegraph_llm.api.rag_api import rag_http_api
 from hugegraph_llm.api.thin_api import thin_router
 from hugegraph_llm.config import admin_settings, huge_settings, prompt
+from hugegraph_llm.config.models.base_config import get_env_value
 from hugegraph_llm.demo.rag_demo.admin_block import create_admin_block, log_stream
 from hugegraph_llm.demo.rag_demo.configs_block import (
     apply_embedding_config,
@@ -234,7 +234,7 @@ def run_server(args: argparse.Namespace) -> None:
         host=args.host,
         port=args.port,
         factory=True,
-        reload=os.getenv("HG_DEV_RELOAD") == "1",
+        reload=get_env_value("HG_DEV_RELOAD") == "1",
     )
 
 

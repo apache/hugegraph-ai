@@ -25,6 +25,7 @@ import nltk
 from nltk.corpus import stopwords
 
 from hugegraph_llm.config import resource_path
+from hugegraph_llm.config.models.base_config import get_env_value
 from hugegraph_llm.utils.log import log
 
 
@@ -41,7 +42,7 @@ class NLTKHelper:
             nltk.data.path.append(_hugegraph_source_dir)
         if self._stopwords.get(lang) is None:
             cache_dir = self.get_cache_dir()
-            nltk_data_dir = os.environ.get("NLTK_DATA", cache_dir)
+            nltk_data_dir = get_env_value("NLTK_DATA", cache_dir) or cache_dir
 
             # update nltk path for nltk so that it finds the data
             if nltk_data_dir not in nltk.data.path:
@@ -75,7 +76,7 @@ class NLTKHelper:
             nltk.data.path.append(_hugegraph_source_dir)
 
         cache_dir = self.get_cache_dir()
-        nltk_data_dir = os.environ.get("NLTK_DATA", cache_dir)
+        nltk_data_dir = get_env_value("NLTK_DATA", cache_dir) or cache_dir
         if nltk_data_dir not in nltk.data.path:
             nltk.data.path.append(nltk_data_dir)
 
@@ -114,8 +115,9 @@ class NLTKHelper:
         and create it if it doesn't yet exist
         """
         # User override
-        if "HG_AI_CACHE_DIR" in os.environ:
-            path = Path(os.environ["HG_AI_CACHE_DIR"])
+        configured_cache_dir = get_env_value("HG_AI_CACHE_DIR")
+        if configured_cache_dir is not None:
+            path = Path(configured_cache_dir)
 
         # Linux, Unix, AIX, etc.
         elif os.name == "posix" and sys.platform != "darwin":

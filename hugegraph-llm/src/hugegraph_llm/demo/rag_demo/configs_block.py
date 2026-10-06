@@ -797,7 +797,14 @@ def create_configs_block(blocks: gr.Blocks) -> list:
 
     def refresh_llm_config(revision):
         with runtime_config_lock:
-            llm_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
+            try:
+                reloaded = type(llm_settings)()
+                _restore_config(llm_settings, reloaded.model_dump())
+            except Exception as e:  # pylint: disable=broad-except
+                log.error("Failed to reload LLM settings from %s: %s", env_path, e)
+                gr.Warning(
+                    f"Could not reload {env_path}. Keeping the current settings; check the server logs for details."
+                )
             return (
                 llm_settings.chat_llm_type,
                 llm_settings.extract_llm_type,

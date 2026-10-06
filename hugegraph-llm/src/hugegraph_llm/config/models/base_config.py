@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 from dotenv import dotenv_values, set_key
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 from hugegraph_llm.utils.log import log
 
@@ -59,6 +59,18 @@ class BaseConfig(BaseSettings):
         case_sensitive = False
         extra = "ignore"  # ignore extra fields to avoid ValidationError
         env_ignore_empty = True
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Keep .env ahead of process variables without retaining old file values in os.environ.
+        return init_settings, dotenv_settings, env_settings, file_secret_settings
 
     def generate_env(self):
         if os.path.exists(env_path):
@@ -150,15 +162,9 @@ class BaseConfig(BaseSettings):
     def __init__(self, **data):
         try:
             file_exists = os.path.exists(env_path)
-            # Step 1: Load environment variables if file exists
-            if file_exists:
-                env_config = dotenv_values(env_path)
-                for k, v in env_config.items():
-                    os.environ[k] = v
-
-            # Step 2: Init the parent class with loaded environment variables
+            # Load and validate settings directly from the current sources.
             super().__init__(**data)
-            # Step 3: Handle environment file operations after initialization
+            # Handle environment file operations after initialization.
             if not file_exists:
                 self.generate_env()
             else:

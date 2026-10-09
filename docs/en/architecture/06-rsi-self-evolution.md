@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture)
 
-**[中文](../../architecture/06-rsi-self-evolution.md)** | English
+**[中文](../../zh/architecture/06-rsi-self-evolution.md)** | English
 
 What recurses is the **model layer** (ontology + action); the platform constitution is never touched by the loop. Mutation is outsourced to the LLM, **selection never is** — the dividing line from unbounded RSI.
 There is no mysticism in the loop: every beat is deterministic code plus a persisted artifact. **Signals** come from rule-based scanners over telemetry (`ontogeny_evolve_signal`); **mutations** come only from the whitelist (`ontogeny_evolve_proposal`, rationale mandatory); **evaluation** is entirely deterministically evaluable (no LLM-judge); **promotion** runs the T0–T3 tiers against an ISO-week budget (`ontogeny_evolve_budget`). Every beat's products are database rows and a Git diff — auditable, replayable, revertible.

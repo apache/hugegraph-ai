@@ -2,7 +2,7 @@
 
 > 所属：[使用文档](../README.md#第二部分--使用文档part-ii--usage)
 
-**中文** | [English](../en/usage/09-ui-tour.md)
+**中文** | [English](../../en/usage/09-ui-tour.md)
 
 
 六个高频页面，覆盖「建模 → 数据 → 追溯 → 治理」的日常动线。全部截图取自真实运行的演示实例（`ontogeny serve --demo`，product-manufacturing 样例域）。

@@ -4,7 +4,7 @@
 [![Backend Tests](https://img.shields.io/badge/pytest-561%20passed-brightgreen.svg)](#-contributing)
 [![Frontend Tests](https://img.shields.io/badge/vitest-245%20passed-brightgreen.svg)](#-contributing)
 
-`ontogeny` — named after the biological term for the *development of an individual organism* — is a **self-improving operational ontology platform**: it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto [Apache HugeGraph](https://github.com/apache/hugegraph) for deep-graph queries.
+`ontogeny` — Greek *onto-* (being, the root of *ontology*) + *genesis* (birth, development): in biology the word names the **full-life-cycle development of an individual organism**. The name is the thesis: an ontology here is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use. It is a **self-improving operational ontology platform**: it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto [Apache HugeGraph](https://github.com/apache/hugegraph) for deep-graph queries.
 
 The design references the Palantir Foundry Ontology (semantic layer + dynamic action layer) but is fully open: **the DSL is the single source of truth** — object tables and the graph schema are compiled artifacts that can be deleted and rebuilt at any time.
 
@@ -77,25 +77,25 @@ One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single
 
 ## 📚 Documentation
 
-Docs live in [`docs/`](./docs/README.md) (Chinese; English translations welcome), in two parts:
+Docs live in [`docs/`](./docs/zh/README.md) (Chinese; English translations welcome), in two parts:
 
 **Part I · Architecture**
 
-- [Overall architecture](./docs/architecture/01-overall-architecture.md) — the four-band view, third-party components & degradation
-- [Ontology model & DSL](./docs/architecture/02-ontology-model-and-dsl.md) — the 11 resource kinds, mini-expr, validators
-- [Data & derivation](./docs/architecture/03-data-and-derivation.md) — ownership, sync engine, outbox, projection backfill
-- [Kinetic layer](./docs/architecture/04-actions-and-functions.md) — function ecosystem, functional actions & effect plans
-- [Agent governance](./docs/architecture/05-agent-governance.md) — sessions, engines, the MCP channel, the three doors
-- [RSI self-evolution](./docs/architecture/06-rsi-self-evolution.md) — signals, selection ladder, T0–T3 promotion
-- [Boundaries & quality](./docs/architecture/07-boundaries-and-quality.md) — non-goals, limits, test map
+- [Overall architecture](./docs/zh/architecture/01-overall-architecture.md) — the four-band view, third-party components & degradation
+- [Ontology model & DSL](./docs/zh/architecture/02-ontology-model-and-dsl.md) — the 11 resource kinds, mini-expr, validators
+- [Data & derivation](./docs/zh/architecture/03-data-and-derivation.md) — ownership, sync engine, outbox, projection backfill
+- [Kinetic layer](./docs/zh/architecture/04-actions-and-functions.md) — function ecosystem, functional actions & effect plans
+- [Agent governance](./docs/zh/architecture/05-agent-governance.md) — sessions, engines, the MCP channel, the three doors
+- [RSI self-evolution](./docs/zh/architecture/06-rsi-self-evolution.md) — signals, selection ladder, T0–T3 promotion
+- [Boundaries & quality](./docs/zh/architecture/07-boundaries-and-quality.md) — non-goals, limits, test map
 
 **Part II · Usage**
 
-- [Quick start](./docs/usage/08-quickstart.md) — one command, first login
-- [UI tour](./docs/usage/09-ui-tour.md) — six high-frequency pages
-- [Function editor](./docs/usage/10-function-editor.md) — sandboxed Python in the console
-- [Manufacturing case](./docs/usage/11-manufacturing-case.md) — a full operational loop
-- [Reference](./docs/usage/12-reference.md) — CLI, env vars, API endpoints, routes, error codes
+- [Quick start](./docs/zh/usage/08-quickstart.md) — one command, first login
+- [UI tour](./docs/zh/usage/09-ui-tour.md) — six high-frequency pages
+- [Function editor](./docs/zh/usage/10-function-editor.md) — sandboxed Python in the console
+- [Manufacturing case](./docs/zh/usage/11-manufacturing-case.md) — a full operational loop
+- [Reference](./docs/zh/usage/12-reference.md) — CLI, env vars, API endpoints, routes, error codes
 
 ## 🔗 HugeGraph Ecosystem
 

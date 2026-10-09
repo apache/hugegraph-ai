@@ -1,8 +1,10 @@
 # Ontogeny Architecture & Usage Docs
 
 > Ontogeny · Self-improving operational ontology · an ontology that grows
+>
+> *Ontogeny* — Greek **onto-** (being, the root of *ontology*) + **genesis** (birth, development): in biology, the full-life-cycle development of an individual organism. Here, the thesis is the name: an ontology is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use.
 
-**[中文版](../README.md)** | English
+**[中文版](../zh/README.md)** | English
 
 Ontogeny models an enterprise's **nouns** (objects · properties · links) and **verbs** (actions · functions · permissions) as declarative YAML in Git, compiled into strongly-typed object tables and one unified API shared by apps, analytics and AI agents. The write path runs a five-stage pipeline — rules → Cedar policy → transaction → immutable audit — with side effects riding a transactional outbox; and a **RSI self-evolution loop** recursively improves the model itself inside the governance track (LLM proposes mutations · deterministic evals select · T0–T3 tiered promotion).
 

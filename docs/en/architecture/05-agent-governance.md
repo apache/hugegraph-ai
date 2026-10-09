@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture)
 
-**[中文](../../architecture/05-agent-governance.md)** | English
+**[中文](../../zh/architecture/05-agent-governance.md)** | English
 
 An agent is a **first-class resource declared in the DSL**: the plugin carries a frozen identity (the permission surface), a tool allowlist, an approval stance and a budget.
 The MCP tool surface mounts at **`/mcp`** when the service starts (streamable HTTP · JSON mode). Every tool carries the reserved parameters `plugin` + `session_id` — sessionful calls funnel into **the broker.call_tool single gate** and execute inside the plugin identity, that session's budget and the tool catalog, leaving a trace; sessionless calls are **read-only** (writes return `WRITE_REQUIRES_SESSION`; the default `mcp-agent` shared identity is rejected wholesale by role-gated policies — **by design: without a declaration you can do nothing**).

@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture)
 
-**中文** | [English](../en/architecture/06-rsi-self-evolution.md)
+**中文** | [English](../../en/architecture/06-rsi-self-evolution.md)
 
 
 递归改进的对象是**模型层**（ontology + action），平台宪法永不被循环触碰。变异外包给 LLM，**选择函数不外包**——这是与无界 RSI 的分界线。

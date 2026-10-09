@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture)
 
-**中文** | [English](../en/architecture/03-data-and-derivation.md)
+**中文** | [English](../../en/architecture/03-data-and-derivation.md)
 
 
 ## 3.1 属性级所有权（谁是真的源）

@@ -2,7 +2,7 @@
 
 > Part of [Part II · Usage](../README.md#part-ii--usage)
 
-**[中文](../../usage/09-ui-tour.md)** | English
+**[中文](../../zh/usage/09-ui-tour.md)** | English
 
 Six high-frequency pages covering the daily path "model → data → trace → govern". All screenshots come from a real running demo instance (`ontogeny serve --demo`, the product-manufacturing sample domain).
 

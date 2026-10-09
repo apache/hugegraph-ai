@@ -2,7 +2,7 @@
 
 > 所属：[使用文档](../README.md#第二部分--使用文档part-ii--usage)
 
-**中文** | [English](../en/usage/11-manufacturing-case.md)
+**中文** | [English](../../en/usage/11-manufacturing-case.md)
 
 
 15 对象 · 15 链接 · 12 动作 · 5 函数 · 6 策略 · 1 投影 · 2 评测套件 · 2 Agent 插件 + 自带种子（`seed/*.sql` 名词 + `demo-story.yaml` 动词）。启动时 --demo 自动重放的演示剧本即以下链路。

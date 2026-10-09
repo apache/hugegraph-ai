@@ -2,7 +2,7 @@
 
 > 所属：[使用文档](../README.md#第二部分--使用文档part-ii--usage)
 
-**中文** | [English](../en/usage/12-reference.md)
+**中文** | [English](../../en/usage/12-reference.md)
 
 
 ## 12.2 CLI（ontogeny）

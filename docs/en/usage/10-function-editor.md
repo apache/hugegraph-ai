@@ -2,7 +2,7 @@
 
 > Part of [Part II · Usage](../README.md#part-ii--usage)
 
-**[中文](../../usage/10-function-editor.md)** | English
+**[中文](../../zh/usage/10-function-editor.md)** | English
 
 Only functions with a **python** runtime show the "Run code" section (declarative functions encode their logic as step orchestration, edited in the Steps area above). The editor reads and writes the real file inside the package:
 **Test run** executes the current code once — nothing written, nothing traced; only **Save & publish** writes the file, producing a new version and a revision record.

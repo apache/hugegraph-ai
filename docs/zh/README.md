@@ -1,8 +1,10 @@
 # Ontogeny 架构与使用文档
 
 > Ontogeny · Self-improving operational ontology · an ontology that grows
+>
+> *Ontogeny*（个体发育）—— 希腊语 **onto-**（存在，即 *ontology* 本体论的词根）+ **genesis**（诞生、发育）：生物学术语，指一个个体从胚胎到成体的**全生命周期发育**。这个名字就是产品主张：本体不是静态的 schema，而是一个活物——在 Git 里被定义，编译成表与图，再在使用中成长。
 
-**中文** | [English](./en/README.md)
+**中文** | [English](../en/README.md)
 
 
 把企业的**名词**（对象·属性·链接）与**动词**（动作·函数·权限）建模成 Git 里的声明式 YAML，编译为强类型对象表与统一 API，供应用、分析与 AI Agent 共用；写路径经「规则 → Cedar 策略 → 事务 → 不可变审计」五段式，副作用走事务性 outbox；并以 **RSI 自进化闭环**在治理轨道内递归改进模型本身（LLM 出变异 · 确定性评测做选择 · T0–T3 分层晋升）。

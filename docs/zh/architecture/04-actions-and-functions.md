@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture)
 
-**中文** | [English](../en/architecture/04-actions-and-functions.md)
+**中文** | [English](../../en/architecture/04-actions-and-functions.md)
 
 
 **Action 改世界、Function 算答案**——Palantir Ontology 同为动力学层一等公民，Ontogeny 忠实继承，并把函数生态补齐到四项能力（LLM 注册 · 派生底层 · 发布 API · 流式规划中）。

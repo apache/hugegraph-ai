@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture)
 
-**中文** | [English](../en/architecture/02-ontology-model-and-dsl.md)
+**中文** | [English](../../en/architecture/02-ontology-model-and-dsl.md)
 
 
 **11 种资源**全部是 `apiVersion: ontogeny/v1` 的 YAML，目录即包，Git 即真源；环境引用 `${VAR}` 运行期注入，包内无密钥。语义层（对象·链接）与动力学层（动作·函数·策略）配对，外加派生层（投影）、Agent 层（插件）与自进化层（评测/宪法）。

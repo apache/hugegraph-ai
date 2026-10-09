@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture)
 
-**[中文](../../architecture/07-boundaries-and-quality.md)** | English
+**[中文](../../zh/architecture/07-boundaries-and-quality.md)** | English
 
 ## Explicitly out of scope
 

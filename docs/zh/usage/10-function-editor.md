@@ -2,7 +2,7 @@
 
 > 所属：[使用文档](../README.md#第二部分--使用文档part-ii--usage)
 
-**中文** | [English](../en/usage/10-function-editor.md)
+**中文** | [English](../../en/usage/10-function-editor.md)
 
 
 Runtime 为 **python** 的函数才显示「运行代码」区（declarative 函数的逻辑就是步骤编排，在上方 Steps 区编辑）。编辑器直接读写包内真实文件：

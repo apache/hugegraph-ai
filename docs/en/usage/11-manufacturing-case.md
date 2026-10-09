@@ -2,7 +2,7 @@
 
 > Part of [Part II · Usage](../README.md#part-ii--usage)
 
-**[中文](../../usage/11-manufacturing-case.md)** | English
+**[中文](../../zh/usage/11-manufacturing-case.md)** | English
 
 15 objects · 15 links · 12 actions · 5 functions · 6 policies · 1 projection · 2 eval suites · 2 agent plugins, with its own seeds (`seed/*.sql` nouns + `demo-story.yaml` verbs). The demo story replayed by --demo at startup is exactly the path below.
 

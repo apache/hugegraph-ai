@@ -25,3 +25,6 @@ web/.e2e-port
 # ---- editor/tooling ----
 .idea/
 .vscode/
+
+# ---- local tooling config (ZCode) ----
+.zcodeignore

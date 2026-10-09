@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture) · Sources: `api/app.py` · `mcp_server.py` · `cli.py` · `engine/service.py` · `action/runtime.py` · `action/outbox.py` etc.
 
-**[中文](../../architecture/01-overall-architecture.md)** | English
+**[中文](../../zh/architecture/01-overall-architecture.md)** | English
 
 ## The architecture board at a glance
 

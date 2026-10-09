@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture)
 
-**中文** | [English](../en/architecture/05-agent-governance.md)
+**中文** | [English](../../en/architecture/05-agent-governance.md)
 
 
 Agent 是 **DSL 里声明的一等资源**：插件自带冻结身份（权限面）、工具白名单、审批模式与预算。

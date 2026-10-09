@@ -32,7 +32,9 @@ const STORAGE_KEY = 'ontogeny.lang'
 function detectLanguage(): Language {
   const saved = localStorage.getItem(STORAGE_KEY)
   if (saved === 'zh' || saved === 'en') return saved
-  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  // first-time visitors default to EN; an explicit 中文 pick (or a saved
+  // choice) wins over browser locale
+  return 'en'
 }
 
 function interpolate(template: string, params?: Record<string, string | number>): string {

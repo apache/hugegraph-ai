@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture)
 
-**[中文](../../architecture/02-ontology-model-and-dsl.md)** | English
+**[中文](../../zh/architecture/02-ontology-model-and-dsl.md)** | English
 
 **11 resources**, all `apiVersion: ontogeny/v1` YAML — the directory is the package, Git is the source of truth; `${VAR}` references are injected at runtime, no secrets inside the package. The semantic layer (objects · links) pairs with the kinetic layer (actions · functions · policies), plus the derived layer (projections), the agent layer (plugins) and the evolution layer (eval suite / constitution).
 

@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture)
 
-**[中文](../../architecture/04-actions-and-functions.md)** | English
+**[中文](../../zh/architecture/04-actions-and-functions.md)** | English
 
 **Actions change the world, functions compute answers** — Palantir's Ontology also makes these first-class citizens of the kinetic layer; Ontogeny inherits that faithfully and completes the function ecosystem to four capabilities (LLM access · derivation substrate · published APIs · streaming in design).
 

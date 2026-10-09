@@ -2,7 +2,7 @@
 
 > Part of [Part I · Architecture](../README.md#part-i--architecture)
 
-**[中文](../../architecture/03-data-and-derivation.md)** | English
+**[中文](../../zh/architecture/03-data-and-derivation.md)** | English
 
 ## 3.1 Property-level ownership (who is the real source)
 

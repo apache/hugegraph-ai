@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture) · 源：`api/app.py` · `mcp_server.py` · `cli.py` · `engine/service.py` · `action/runtime.py` · `action/outbox.py` 等
 
-**中文** | [English](../en/architecture/01-overall-architecture.md)
+**中文** | [English](../../en/architecture/01-overall-architecture.md)
 
 ## 架构总览图
 

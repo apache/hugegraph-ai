@@ -2,7 +2,7 @@
 
 > 所属：[架构文档](../README.md#第一部分--架构文档part-i--architecture)
 
-**中文** | [English](../en/architecture/07-boundaries-and-quality.md)
+**中文** | [English](../../en/architecture/07-boundaries-and-quality.md)
 
 
 ## 明确不做

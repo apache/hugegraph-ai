@@ -2,7 +2,7 @@
 
 > 所属：[使用文档](../README.md#第二部分--使用文档part-ii--usage)
 
-**中文** | [English](../en/usage/08-quickstart.md)
+**中文** | [English](../../en/usage/08-quickstart.md)
 
 
 ## 8.1 一条命令启动

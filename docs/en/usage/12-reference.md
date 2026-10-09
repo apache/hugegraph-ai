@@ -2,7 +2,7 @@
 
 > Part of [Part II · Usage](../README.md#part-ii--usage)
 
-**[中文](../../usage/12-reference.md)** | English
+**[中文](../../zh/usage/12-reference.md)** | English
 
 ## 12.2 CLI (ontogeny)
 

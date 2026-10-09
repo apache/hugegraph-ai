@@ -1,0 +1,33 @@
+server/ontogeny/service.py
+  6876a09d6670275e 646-650
+daemon.sh
+  6876a09d6670275e 49-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "2adea3d2f266fb16bba9775c158c1d4e943451dd",
+  "prompts": {
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 29,
+      "accepted_lines": 8,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/449f7f6a29826174a1c9d1329d368208f432612a9087962691788c0e4a40033c",
+      "token_usage": {
+        "input_tokens": 157824268,
+        "output_tokens": 261318,
+        "cache_read_tokens": 154385024,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: production-order-product
+  display: Product is produced by orders
+  description: Which production orders build a product
+spec:
+  source: product
+  target: production-order
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      production-order.product_id: product.product_id

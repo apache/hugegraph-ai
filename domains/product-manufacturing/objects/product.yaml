@@ -1,0 +1,47 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: product
+  display: Product
+  description: A sellable finished good
+kind: ObjectType
+spec:
+  primaryKey:
+  - product_id
+  properties:
+    product_id:
+      type: string
+      display: Product ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    category:
+      type: enum[MACHINE, MODULE, SPARE]
+      display: Category
+      required: false
+    unit_price:
+      type: decimal(14,2)
+      display: Unit price
+      required: false
+    status:
+      type: enum[ACTIVE, PHASE_OUT]
+      display: Lifecycle status
+      required: false
+      owner: ontology
+    created_at:
+      type: timestamp
+      display: Created at
+      required: false
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: products
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

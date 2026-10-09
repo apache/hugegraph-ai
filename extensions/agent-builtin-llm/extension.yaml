@@ -1,0 +1,14 @@
+apiVersion: ontogeny-ext/v1
+name: agent-builtin-llm
+display: 内置 LLM Agent 引擎（参考实现）
+description: "agent-paradigm §3.1 的 builtin-llm 引擎：plan→tool→observe 循环，严格 JSON 单工具/轮；经唯一治理门（broker.call_tool）执行。注册为引擎工厂，/run 分发器零改动"
+kind: agent-engine
+provides: []
+requires: []
+entry:
+  module: ontogeny_ext_agent_llm
+  function: register
+config:
+  ONTOGENY_LLM_BASE_URL:
+    required: true
+    description: "引擎运行需要 capability:llm（未配置时 Run 返回 503 LLM_NOT_CONFIGURED）"

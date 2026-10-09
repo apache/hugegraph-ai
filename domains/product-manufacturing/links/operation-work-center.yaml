@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: operation-work-center
+  display: Work centre performs operations
+  description: Which operations run at a work centre
+spec:
+  source: work-center
+  target: operation
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      operation.work_center_id: work-center.work_center_id

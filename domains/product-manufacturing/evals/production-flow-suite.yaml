@@ -1,0 +1,63 @@
+apiVersion: ontogeny/v1
+kind: EvalSuite
+metadata:
+  name: production-flow-suite
+  display: Production flow regression suite
+  description: Regression assertions over orders, routing operations and stock, evaluated
+    before an evolution proposal is promoted
+spec:
+  queries:
+  - name: planned-orders-exist
+    query:
+      object: production-order
+      filter:
+        status: PLANNED
+      limit: 50
+    expect:
+      columns:
+      - order_id
+      - status
+      - priority
+      min-rows: 1
+  - name: running-operations
+    query:
+      object: operation
+      filter:
+        status: RUNNING
+      limit: 50
+    expect:
+      row-count-max: 10
+  - name: pending-inspections
+    query:
+      object: quality-inspection
+      filter:
+        result: PENDING
+      limit: 50
+    expect:
+      columns:
+      - inspection_id
+      - result
+      - order_id
+  - name: active-work-centers
+    query:
+      object: work-center
+      filter:
+        status: ACTIVE
+      limit: 10
+    expect:
+      min-rows: 1
+      # wall-clock budget: a loaded CI runner can hold a ~20ms query past
+      # 200ms, which made the suite (and every eval-gated test) flaky. The
+      # case still catches gross regressions (the query used to run >1s
+      # before the index work); sub-2x jitter is not a schema regression.
+      max-latency-ms: 1000
+  replays:
+  - action: release-production-order
+    cases: from-revisions
+    since: 90d
+    expect:
+      effects-idempotent: true
+      # the tighten gate: a candidate whose rules would have REJECTED a
+      # decision a human actually made fails the suite (rule-tighten proposals
+      # that fight history cannot ride the automation ladder)
+      outcomes-match: 1.0

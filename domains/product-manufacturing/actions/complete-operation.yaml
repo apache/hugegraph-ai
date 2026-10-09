@@ -1,0 +1,25 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: complete-operation
+  display: Complete operation
+  description: Confirm a routing operation as finished
+spec:
+  target: operation
+  parameters:
+    note:
+      type: string
+      display: Note
+  rules:
+  - expr: target.status != 'COMPLETED'
+    message: Operation is already completed
+  policy: production
+  effects:
+  - kind: modify-target
+    set:
+      status: COMPLETED
+      completed_at: now()
+  audit:
+    fields:
+    - target.operation_id
+    - target.status

@@ -1,0 +1,32 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: cancel-production-order
+  display: Cancel production order
+  description: Cancel a planned or released order; every routing operation that belongs
+    to it is cancelled with it (modify-linked)
+spec:
+  target: production-order
+  parameters:
+    reason:
+      type: string
+      display: Reason
+  rules:
+  - expr: target.status != 'COMPLETED'
+    message: Completed orders cannot be cancelled
+  - expr: target.status != 'CANCELLED'
+    message: Order is already cancelled
+  policy: production
+  effects:
+  - kind: modify-target
+    set:
+      status: CANCELLED
+  - kind: modify-linked
+    link: production-order-operations
+    set:
+      status: CANCELLED
+  audit:
+    fields:
+    - target.order_id
+    - target.status
+    - parameters

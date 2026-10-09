@@ -1,0 +1,10 @@
+apiVersion: ontogeny/v1
+kind: PolicySet
+metadata:
+  name: production
+  display: Production policies
+  description: 'Role-based grants for the manufacturing actions: planning, shop floor
+    and quality'
+spec:
+  language: cedar
+  source: production.cedar

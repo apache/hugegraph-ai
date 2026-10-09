@@ -1,0 +1,45 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: register-work-center
+  display: Register work centre
+  description: Add a production resource with its shift capacity
+spec:
+  target: work-center
+  parameters:
+    name:
+      type: string
+      display: Name
+      required: true
+    process:
+      type: string
+      display: Process type
+    site:
+      type: string
+      display: Site
+    capacity_per_shift:
+      type: integer
+      display: Capacity per shift
+      required: true
+    shifts_per_day:
+      type: integer
+      display: Shifts per day
+  rules:
+  - expr: parameters.capacity_per_shift > 0
+    message: Capacity per shift must be positive
+  policy: production
+  effects:
+  - kind: create-object
+    properties:
+      work_center_id: newId('WC')
+      name: parameters.name
+      process: parameters.process
+      site: parameters.site
+      capacity_per_shift: parameters.capacity_per_shift
+      shifts_per_day: parameters.shifts_per_day
+      status: ACTIVE
+      created_at: now()
+  audit:
+    fields:
+    - target.work_center_id
+    - parameters

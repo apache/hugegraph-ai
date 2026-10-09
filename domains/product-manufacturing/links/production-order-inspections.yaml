@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: production-order-inspections
+  display: Order has inspections
+  description: Quality inspections recorded for an order
+spec:
+  source: production-order
+  target: quality-inspection
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      quality-inspection.order_id: production-order.order_id

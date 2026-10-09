@@ -1,0 +1,27 @@
+# ---- runtimes & caches ----
+.venv/
+node_modules/
+.ontogeny-*/
+# legacy local state dirs from the kina era
+.kina-*/
+.oo-verify/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+web/node_modules/
+web/dist/
+web/.e2e-port
+
+# ---- local state (databases, logs, pid/port files) ----
+*.db
+*.log
+*.pid
+
+# ---- internal design docs: local-only, never published ----
+.docs/
+
+# ---- editor/tooling ----
+.idea/
+.vscode/

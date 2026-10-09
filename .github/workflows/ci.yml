@@ -1,0 +1,80 @@
+# The gate runs exactly what a contributor can run locally. Deliberately
+# boring: setup-python + a real .venv (the e2e harness spawns
+# .venv/bin/python directly, see web/tests-integration/globalSetup.ts).
+# (uv venv + setup-uv failed on runners with an opaque exit-2 in the install
+# step while the identical commands worked locally; the standard stack
+# removes that entire failure class.)
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e '.[mcp]' pytest pytest-asyncio httpx ruff
+      - name: Lint
+        run: .venv/bin/ruff check .
+      - name: Tests
+        run: .venv/bin/pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        working-directory: web
+        run: npm ci
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Unit tests
+        working-directory: web
+        run: npx vitest run
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+  # Full-stack: the vitest integration suite boots the REAL backend (uvicorn,
+  # seeded demo state, /mcp mounted) and drives it end to end. Live-LLM cases
+  # self-skip when no ONTOGENY_LLM_BASE_URL is reachable -- governance paths are
+  # exercised regardless.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install backend
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e '.[mcp]' pytest pytest-asyncio httpx
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend
+        working-directory: web
+        run: npm ci
+      - name: Integration tests (real server)
+        working-directory: web
+        run: npm run test:e2e

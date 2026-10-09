@@ -1,0 +1,41 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: add-bom-line
+  display: Add BOM line
+  description: Add one material line to a product's bill of materials
+spec:
+  target: bom
+  parameters:
+    product_id:
+      type: string
+      display: Product
+      required: true
+    material_id:
+      type: string
+      display: Material
+      required: true
+    qty_per_unit:
+      type: decimal(10,3)
+      display: Quantity per unit
+      required: true
+    scrap_rate:
+      type: decimal(5,4)
+      display: Scrap allowance
+  rules:
+  - expr: parameters.qty_per_unit > 0
+    message: Quantity per unit must be positive
+  policy: production
+  effects:
+  - kind: create-object
+    properties:
+      bom_id: newId('B')
+      product_id: parameters.product_id
+      material_id: parameters.material_id
+      qty_per_unit: parameters.qty_per_unit
+      scrap_rate: parameters.scrap_rate
+      created_at: now()
+  audit:
+    fields:
+    - target.bom_id
+    - parameters

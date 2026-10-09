@@ -1,0 +1,67 @@
+# ontogeny canvas layout: hand-arranged node positions of the ontology
+# workbench, committed with the model by a builder save. Per package,
+# travels with zip import/export; safe to delete (auto layout returns).
+layout:
+  type:production-order:
+    x: 168.30002321428225
+    y: 67.2905690926842
+  function:material-availability:
+    x: 581.5738083585572
+    y: 182.98735216271547
+  action:add-bom-line:
+    x: 719.9264124000337
+    y: -54.28976608610413
+  type:bom:
+    x: 603.4621473908062
+    y: 63.52576151074384
+  type:operation:
+    x: -70.28106110279091
+    y: 71.12878447551611
+  type:work-center:
+    x: -79.96186641368467
+    y: -65.46161754808605
+  action:register-work-center:
+    x: -58.11717672693885
+    y: -148.8232962487594
+  action:create-production-order:
+    x: 291.03189304678966
+    y: -141.05525610717817
+  action:release-production-order:
+    x: 364.3063608522498
+    y: -56.83450189187915
+  function:capacity-check:
+    x: 115.69400650345698
+    y: -62.26752378533503
+  action:complete-operation:
+    x: -284.15647716420585
+    y: 66.48472304582992
+  function:order-yield:
+    x: -67.22276773437963
+    y: 186.39366130043814
+  type:quality-inspection:
+    x: 165.1718653332586
+    y: 269.74265167998175
+  action:record-inspection:
+    x: 148.3634807075953
+    y: 393.596782593297
+  action:receive-material:
+    x: 886.6558356452073
+    y: -53.106704457158536
+  action:introduce-product:
+    x: 547.9917052378267
+    y: -55.6140746723679
+  type:product:
+    x: 389.88732771960235
+    y: 66.94267010433757
+  type:material:
+    x: 821.7420198788897
+    y: 60.866554732046396
+  action:cancel-production-order:
+    x: 418.1418120197865
+    y: 203.95365019080697
+  action:assign-operation:
+    x: -289.00323823349925
+    y: 179.98181820340864
+  action:retract-inspection:
+    x: 401.4997231433365
+    y: 274.78102177852145

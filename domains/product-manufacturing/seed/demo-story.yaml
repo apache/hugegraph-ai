@@ -1,0 +1,130 @@
+# Demo story: acts the seed rows into a living production system.
+#
+# seed/*.sql provides the nouns (data); this file provides the verbs (action
+# and function calls) — both owned by the example, the engine stays generic.
+#
+# Executed by `ontogeny serve --demo` (fresh / --reseeded demo state) or by
+# tools/seed_demo.py against a running instance.
+#
+# Fields:
+#   principals  identities (Role drives Cedar decisions, site drives row filters)
+#   steps[].id  step name; later steps may reference a created object as $<id>
+#   steps[].action / function  one or the other; actions may carry a target
+#               (omitted = creating action)
+#   steps[].expect  ok / denied / rejected — anything else gets flagged red
+#
+# Plot: authority check → release an order (rule → policy → effects → audit)
+# → shop floor execution → quality gate → stock correction → functions.
+principals:
+  planner: { id: u-planner, Role: [planner], site: plant-north }
+  operator: { id: u-operator, Role: [operator], site: plant-north }
+  inspector: { id: u-inspector, Role: [quality], site: plant-north }
+
+steps:
+  # --- authority first: an operator may not release orders (Cedar default deny,
+  # the refusal is audited too, so this is a *meaningful* negative sample) -----
+  - action: release-production-order
+    principal: operator
+    target: PO-1002
+    parameters: {}
+    expect: denied
+
+  # --- release: rule (only PLANNED) → policy (planner) → effects → audit ------
+  - id: release-po
+    action: release-production-order
+    principal: planner
+    target: PO-1002
+    parameters: {}
+    expect: ok
+
+  # releasing twice trips the rule before policy even runs (rule guard sample)
+  - action: release-production-order
+    principal: planner
+    target: PO-1002
+    parameters: {}
+    expect: rejected
+
+  # --- shop floor: the RUNNING operation completes, the completed one cannot --
+  - action: complete-operation
+    principal: operator
+    target: OP-2001
+    parameters: { note: 'Plate cutting finished, fed forward to CNC milling' }
+    expect: ok
+
+  - action: complete-operation
+    principal: operator
+    target: OP-2302
+    parameters: { note: 'Late re-report of an already completed operation' }
+    expect: rejected
+
+  # --- stock: operator is not allowed, planner records the physical count -----
+  - action: receive-material
+    principal: operator
+    target: M-104
+    parameters: { counted_qty: 50 }
+    expect: denied
+
+  - action: receive-material
+    principal: planner
+    target: M-104
+    parameters: { counted_qty: 50, note: 'Cycle count — bearings restocked above safety stock' }
+    expect: ok
+
+  # --- quality: defect count above inspected quantity trips a rule ------------
+  - action: record-inspection
+    principal: inspector
+    parameters:
+      order_id: PO-1003
+      inspected_qty: 40
+      defect_qty: 41
+      result: FAIL
+      inspector: qa-eng-02
+    expect: rejected
+
+  - id: record-qi
+    action: record-inspection
+    principal: inspector
+    parameters:
+      order_id: PO-1003
+      inspected_qty: 40
+      defect_qty: 1
+      result: PASS
+      inspector: qa-eng-02
+    expect: ok
+
+  # --- routing: set-link moves a queued operation to another work centre -----
+  - action: assign-operation
+    principal: planner
+    target: OP-2101
+    parameters: { work_center_id: WC-01 }
+    expect: ok
+
+  # --- cancellation: modify-target + modify-linked (the routing cancels too) --
+  - action: cancel-production-order
+    principal: planner
+    target: PO-1003
+    parameters: { reason: 'Customer deferred the project' }
+    expect: ok
+
+  # --- quality: a mistaken entry is soft-deleted (archive-object) -------------
+  - action: retract-inspection
+    principal: inspector
+    target: QI-3002
+    parameters: { reason: 'Double entry — same inspection recorded twice' }
+    expect: ok
+
+  # --- functions: read-only sandboxed analysis over the same objects ----------
+  - function: material-availability
+    principal: planner
+    parameters: { product_id: P-100, qty: 5 }
+    expect: ok
+
+  - function: capacity-check
+    principal: planner
+    parameters: { work_center_id: WC-01, qty: 10 }
+    expect: ok
+
+  - function: order-yield
+    principal: inspector
+    parameters: { order_id: PO-1004 }
+    expect: ok

@@ -1,0 +1,62 @@
+# ontogeny deployment.
+#
+#   docker compose up -d                 # single service: API + UI on :8000
+#   docker compose --profile postgres up -d
+#   docker compose --profile graph up -d
+#
+# The default profile is a self-contained demo (SQLite metadata + seeded
+# source db). The postgres profile swaps the metadata/object store for a real
+# database; the graph profile adds HugeGraph for the projection layer.
+
+name: ontogeny
+
+services:
+  ontogeny:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    image: ontogeny:local
+    ports:
+      - "${ONTOGENY_PORT:-8000}:8000"
+    environment:
+      # point the assistant / RSI proposer at any OpenAI-compatible Ollama host
+      ONTOGENY_LLM_BASE_URL: ${ONTOGENY_LLM_BASE_URL:-}
+      ONTOGENY_LLM_MODEL: ${ONTOGENY_LLM_MODEL:-qwen3.8:27b}
+      ONTOGENY_WEBHOOK_ALLOWLIST: ${ONTOGENY_WEBHOOK_ALLOWLIST:-wms.example.test}
+      # when the postgres profile is on, override the sqlite DSN:
+      ONTOGENY_DB_DSN: ${ONTOGENY_DB_DSN:-sqlite+aiosqlite:////data/ontogeny.db}
+    volumes:
+      - ontogeny-data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ontogeny
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ontogeny}
+      POSTGRES_DB: ontogeny
+    volumes:
+      - ontogeny-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ontogeny -d ontogeny"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  hugegraph:
+    image: hugegraph/hugegraph:1.5.0
+    profiles: ["graph"]
+    ports:
+      - "${HUGEGRAPH_PORT:-8080}:8080"
+    environment:
+      HUGEGRAPH_BACKEND: rocksdb
+    volumes:
+      - ontogeny-graph:/hugegraph-data
+    restart: unless-stopped
+
+volumes:
+  ontogeny-data:
+  ontogeny-pg:
+  ontogeny-graph:

@@ -1,0 +1,52 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: record-inspection
+  display: Record inspection
+  description: Record a quality inspection result for an order
+spec:
+  target: quality-inspection
+  parameters:
+    order_id:
+      type: string
+      display: Production order
+      required: true
+    inspected_qty:
+      type: integer
+      display: Inspected quantity
+      required: true
+    defect_qty:
+      type: integer
+      display: Defect quantity
+      required: true
+    result:
+      type: enum[PASS, FAIL, PENDING]
+      display: Result
+      required: true
+    inspector:
+      type: string
+      display: Inspector
+  rules:
+  - expr: parameters.inspected_qty > 0
+    message: Inspected quantity must be positive
+  - expr: parameters.defect_qty <= parameters.inspected_qty
+    message: Defects cannot exceed the inspected quantity
+  policy: production
+  effects:
+  - when: parameters.result == 'FAIL'
+    kind: emit-event
+    payload:
+      event: quality.alert
+  - kind: create-object
+    properties:
+      inspection_id: newId('QI')
+      order_id: parameters.order_id
+      inspected_qty: parameters.inspected_qty
+      defect_qty: parameters.defect_qty
+      result: parameters.result
+      inspector: parameters.inspector
+      inspected_at: now()
+  audit:
+    fields:
+    - target.inspection_id
+    - parameters

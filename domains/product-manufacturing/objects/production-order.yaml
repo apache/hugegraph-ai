@@ -1,0 +1,56 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: production-order
+  display: Production order
+  description: A works order to manufacture a product
+spec:
+  primaryKey:
+  - order_id
+  properties:
+    order_id:
+      type: string
+      display: Order ID
+      required: true
+    product_id:
+      type: string
+      display: Product
+      required: true
+    qty:
+      type: integer
+      display: Ordered quantity
+      required: true
+    status:
+      type: enum[PLANNED, RELEASED, COMPLETED, CANCELLED]
+      display: Status
+      owner: ontology
+    priority:
+      type: enum[LOW, NORMAL, HIGH]
+      display: Priority
+    due_date:
+      type: date
+      display: Due date
+    created_at:
+      type: timestamp
+      display: Created at
+    released_at:
+      type: timestamp
+      display: Released at
+      owner: ontology
+    release_lag_h:
+      type: decimal(10,2)
+      display: Release lag (h)
+      required: false
+      derived: (released_at - created_at) / 3600000
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: production_orders
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

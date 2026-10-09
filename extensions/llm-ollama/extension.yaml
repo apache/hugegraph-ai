@@ -1,0 +1,17 @@
+apiVersion: ontogeny-ext/v1
+name: llm-ollama
+display: Ollama LLM 适配器
+description: "平台 LLM 网关的 Ollama 实现（/api/chat，理解 reasoning 模型 thinking 字段）；为助手、RSI 提案器、builtin-llm 引擎和函数沙箱提供 capability:llm"
+kind: llm-provider
+provides: [capability:llm]
+requires: []
+entry:
+  module: ontogeny_ext_ollama
+  function: register
+config:
+  ONTOGENY_LLM_BASE_URL:
+    required: true
+    description: "Ollama 服务地址，例如 http://10.70.11.36:63302"
+  ONTOGENY_LLM_MODEL:
+    default: qwen3:27b
+    description: 默认模型

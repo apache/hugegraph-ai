@@ -1,0 +1,26 @@
+apiVersion: ontogeny/v1
+kind: Function
+metadata:
+  name: capacity-check
+  display: Work centre capacity check
+  description: Compare a work centre's daily capacity against open production orders and estimate the
+    earliest feasible delivery
+spec:
+  runtime: python
+  entry: capacity.py:capacity_check
+  parameters:
+    work_center_id:
+      type: string
+      required: true
+      display: Work centre ID
+    qty:
+      type: integer
+      required: true
+      display: Additional quantity
+  returns:
+    type: string
+    display: Capacity report (JSON)
+  capabilities:
+  - read-objects:
+    - work-center
+    - production-order

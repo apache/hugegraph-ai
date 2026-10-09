@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: production-order-operations
+  display: Order has routing operations
+  description: The routing steps of a production order
+spec:
+  source: production-order
+  target: operation
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      operation.order_id: production-order.order_id

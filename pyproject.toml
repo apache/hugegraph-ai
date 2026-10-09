@@ -17,7 +17,7 @@
 
 [project]
 name = "hugegraph-ai"
-version = "1.7.0"
+version = "1.8.0"
 description = "A repository for AI-related projects for Apache HugeGraph."
 authors = [
     { name = "Apache HugeGraph Contributors", email = "dev@hugegraph.apache.org" },
@@ -82,7 +82,7 @@ packages = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["*/src", "README.md", "LICENSE", "NOTICE"]
+include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "README.md", "LICENSE", "NOTICE"]
 
 [tool.uv.sources]
 hugegraph-llm = { workspace = true }

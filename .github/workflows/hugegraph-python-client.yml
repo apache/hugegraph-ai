@@ -7,6 +7,10 @@ on:
       - 'release-*'
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -43,13 +47,19 @@ jobs:
         with:
           path: |
             ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', 'uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
 
       - name: Install dependencies with uv sync
         run: |
           uv sync --extra python-client --extra dev
+
+      - name: Build release packages from a source archive
+        run: |
+          archive_dir=$(mktemp -d)
+          git archive HEAD | tar -x -C "$archive_dir"
+          uv build --all-packages "$archive_dir" --out-dir "$archive_dir/dist"
 
       - name: Run unit and contract tests
         run: |
@@ -100,7 +110,7 @@ jobs:
         with:
           path: |
             ~/.cache/uv
-          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', 'uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
 

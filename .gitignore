@@ -28,3 +28,8 @@ web/.e2e-port
 
 # ---- local tooling config (ZCode) ----
 .zcodeignore
+
+# ---- third_party (vendored hugegraph-ai) build/test artifacts ----
+third_party/**/*.faiss
+third_party/**/*.pkl
+third_party/**/logs/*.log*

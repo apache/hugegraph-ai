@@ -9,3 +9,11 @@
 - `git grep -rn "hugegraph_llm\|hugegraph_ml" server/ extensions/ tests/` → zero hits (no import coupling)
 - `pyproject.toml` / `uv.lock` carry no dependency on third_party packages
 - `third_party/` is excluded from ruff and from the default CI gate (a smoke job only checks presence + LICENSE)
+
+## Curation record (M0)
+
+Repo-machinery files that only function at a repository root were removed from
+the vendored copy: `.asf.yaml`, `.github/`, `.gitattributes`, `.licenserc.yaml`,
+`.pre-commit-config.yaml`. The upstream `.gitignore` was merged into the root
+`.gitignore` (entries scoped under `third_party/`). Everything else — code,
+LICENSE, NOTICE, README, workspace `pyproject.toml` — is kept byte-for-byte.

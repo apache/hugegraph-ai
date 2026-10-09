@@ -1,0 +1,51 @@
+networks:
+  hugegraph-network:
+    driver: bridge
+
+services:
+  # HugeGraph Server
+  hugegraph-server:
+    image: hugegraph/hugegraph:1.7.0
+    container_name: server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - hugegraph-network
+    environment:
+      - HUGEGRAPH_HOST=0.0.0.0
+      - HUGEGRAPH_PORT=8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/versions"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # HugeGraph LLM RAG Service
+  hugegraph-rag:
+    image: hugegraph/rag
+    container_name: rag
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount .env file, please modify according to actual path
+      - ${PROJECT_PATH}/hugegraph-llm/.env:/home/work/hugegraph-llm/.env
+      # Optional: mount resources file
+      # - ${PROJECT_PATH}/hugegraph-llm/src/hugegraph_llm/resources:/home/work/hugegraph-llm/src/hugegraph_llm/resources
+    networks:
+      - hugegraph-network
+    environment:
+      # Set HugeGraph server address, use container name as hostname
+      - HUGEGRAPH_HOST=server
+      - HUGEGRAPH_PORT=8080
+    depends_on:
+      hugegraph-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

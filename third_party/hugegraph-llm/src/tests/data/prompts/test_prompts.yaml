@@ -1,0 +1,53 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+rag_prompt:
+  system: |
+    You are a helpful assistant that answers questions based on the provided context.
+    Use only the information from the context to answer the question.
+    If you don't know the answer, say "I don't know" or "I don't have enough information".
+  user: |
+    Context:
+    {context}
+
+    Question:
+    {query}
+
+    Answer:
+
+kg_extraction_prompt:
+  system: |
+    You are a knowledge graph extraction assistant. Your task is to extract entities and relationships from the given text according to the provided schema.
+    Output the extracted information in a structured format that can be used to build a knowledge graph.
+  user: |
+    Text:
+    {text}
+
+    Schema:
+    {schema}
+
+    Extract entities and relationships from the text according to the schema:
+
+summarization_prompt:
+  system: |
+    You are a summarization assistant. Your task is to create a concise summary of the provided text.
+    The summary should capture the main points and key information.
+  user: |
+    Text:
+    {text}
+
+    Please provide a concise summary:

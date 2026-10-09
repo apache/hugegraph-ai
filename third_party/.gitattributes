@@ -1,0 +1,18 @@
+# ignored file when package to source.tgz
+.gitattributes export-ignore
+.gitignore export-ignore
+.asf.yaml export-ignore
+apache-release.sh export-ignore
+.licenserc.yaml export-ignore
+*.xlsx export-ignore
+*.pdf export-ignore
+*.docx export-ignore
+
+# ignored directory
+hugegraph-ml/ export-ignore
+.github/ export-ignore
+.idea/ export-ignore
+style/ export-ignore
+scripts/ export-ignore
+hugegraph-llm/src/hugegraph_llm/resources/backup-graph-data-4020/ export-ignore
+docker/ export-ignore

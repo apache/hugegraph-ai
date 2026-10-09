@@ -1,0 +1,18 @@
+# TODO: we could add graph server & hubble(Graph UI) here
+# Usage: docker-compose -f docker-compose-llm.yml up -d
+version: '3'
+services:
+  hugegraph-llm:
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile.llm
+    container_name: hugegraph-llm-rag
+    restart: always
+    ports:
+      - "8001:8001"
+    # If you want to mount local configs to the container, uncomment the following lines
+    #volumes:
+      # Mount local '.env' file, could use ${ENV_FILE_PATH:-/dev/null} to avoid error
+      #- /path/to/.env:/home/work/hugegraph-llm/.env
+      # Mount local resources file
+      #- /path/to/resources:/home/work/hugegraph-llm/src/hugegraph_llm/resources

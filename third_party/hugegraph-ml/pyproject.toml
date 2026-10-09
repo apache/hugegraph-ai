@@ -1,0 +1,71 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hugegraph-ml"
+version = "1.7.0"
+description = "Machine learning extensions for Apache HugeGraph."
+authors = [
+    { name = "Apache HugeGraph Contributors", email = "dev@hugegraph.apache.org" },
+]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+
+dependencies = [
+    # ML specific dependencies
+    "dgl",
+    "ogb",
+    "catboost",
+    "category-encoders",
+    "torch",
+    "tqdm",
+    "packaging",
+    "torchdata",
+    "PyYAML",
+    "hugegraph-python",
+    # Common data dependencies managed by root
+    "numpy",
+    "pandas",
+    "pydantic",
+]
+
+[project.urls]
+homepage = "https://hugegraph.apache.org/"
+repository = "https://github.com/apache/hugegraph-ai"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hugegraph_ml"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/hugegraph_ml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv.sources]
+hugegraph-python = { path = "../hugegraph-python-client", editable = true }

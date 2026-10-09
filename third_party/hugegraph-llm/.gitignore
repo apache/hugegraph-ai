@@ -1,0 +1,7 @@
+src/hugegraph_llm/resources/*
+!/src/hugegraph_llm/resources/demo/
+!/src/hugegraph_llm/resources/nltk_data/corpora/stopwords/
+!/src/hugegraph_llm/resources/prompt_examples/
+
+
+uv.lock

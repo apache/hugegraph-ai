@@ -1,0 +1,6 @@
+Alice is 25 years old and works as a software engineer at TechCorp.
+Bob is 30 years old and is a data scientist at DataInc.
+Alice and Bob are colleagues and they collaborate on AI projects.
+They are working on a knowledge graph project that uses natural language processing.
+The project aims to extract structured information from unstructured text.
+TechCorp and DataInc are partner companies in the technology sector.

@@ -1,0 +1,9 @@
+{
+  "vertexlabels": [
+    {"name": "quality_person", "properties": ["name", "age"]},
+    {"name": "quality_software", "properties": ["name", "lang"]}
+  ],
+  "edgelabels": [
+    {"name": "quality_created", "source_label": "quality_person", "target_label": "quality_software"}
+  ]
+}

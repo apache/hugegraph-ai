@@ -1,0 +1,99 @@
+query,gremlin
+腾讯适合合作吗,"g.V().has('company','name','腾讯').as('a').project('公司信息','法人','对外投资企业数量','投资人-自然人','高管','投资人-公司','最终受益人-自然人','最终受益人-公司').by(valueMap('description', 'email', 'phone', 'operatingStatus', 'registrationAddress', 'salaryTreatment', 'registeredCapital', 'registeredCapitalCurrency', 'financingInformation')).by(select('a').in('legalPerson').values('name')).by(select('a').out('companyInvest').values('name').count()).by(select('a').in('personInvest').values('name').fold()).by(select('a').in('companyInvest').values('name').fold()).by(select('a').in('serve').limit(3).values('name').fold()).by(select('a').in('finalBeneficiaryPerson').values('name').limit(3).fold()).by(select('a').in('finalBeneficiaryCompany').limit(3).values('name').fold())"
+四川省有哪些企业？,"g.V().has('company','province','四川').limit(20).values('name')"
+腾讯是在哪年成立的,"g.V().has('company','name','腾讯').values('establishmentYear')"
+给我一份2011年成立的公司名单,"g.V().has('company','establishmentYear',2011).limit(20).values('name')"
+5278600是哪个企业的电话？经常骚扰,"g.V().has('company','phone', containing('5278600')).values('name')"
+北京有哪些通用航空生产服务行业的公司,"g.V().has('company','city','北京').has('industry',containing('通用航空生产服务业')).values('name')"
+沈阳1999年成立的计算机外围设备制造企业有哪些,"g.V().has('company', 'city','沈阳').has('establishmentYear', 1999).has('industry',containing('计算机外围设备制造')).limit(20).values('name')"
+沈阳2000年以前成立的计算机外围设备制造企业有哪些,"g.V().has('company', 'city','沈阳').has('establishmentYear', lt(2000)).has('industry',containing('计算机外围设备制造')).limit(20).values('name')"
+马化腾是哪家公司法人,"g.V().has('person', 'name', '马化腾').out('legalPerson').limit(20).values('name')"
+马化腾是哪家公司股东,"g.V().has('person', 'name', '马化腾').out('personInvest').limit(20).values('name')"
+腾讯的投资人都有谁,"g.V().has('company', 'name', '腾讯').inE('personInvest', 'companyInvest').as('s').otherV().as('p').project('shareholdingRatio', 'name').by(select('s').values('shareholdingRatio')).by(select('p').values('name'))"
+腾讯的注册资本是多少,"g.V().has('company', 'name', '腾讯').valueMap('registeredCapital', 'registeredCapitalCurrency')"
+腾讯的工资待遇怎么样？,"g.V().has('company', 'name', '腾讯').values('salaryTreatment')"
+腾讯最近在招聘吗？,"g.V().has('company', 'name', '腾讯').values('recruitmentInfo')"
+腾讯的党委书记是谁,"g.V().has('company', 'name', '腾讯').inE('serve').as('po').outV().as('pe').project('name', 'position').by(select('po').values('position')).by(select('pe').values('name'))"
+腾讯中马化腾的职务,"g.V().has('company', 'name', '腾讯').inE('serve').where(outV().has('name', '马化腾')).values('position')"
+腾讯股权构成和股东信息,"g.V().has('company', 'name', '腾讯').inE('personInvest', 'companyInvest').as('a').outV().project('name', 'info').by(values('name')).by(select('a').valueMap())"
+腾讯的地址和法人信息,"g.V().has('company','name','腾讯').as('a').in('legalPerson').project('registrationAddress', 'legalPerson').by(select('a').values('registrationAddress')).by(values('name'))"
+腾讯和美团的关系是什么,"g.V().has('company','name','腾讯').bothE().where(otherV().has('company','name', '美团')).label()"
+腾讯的马化腾,"g.V().has('company', 'name', '腾讯').in().has('person', 'name', '马化腾').outE('legalPerson','actualControllerPerson','personInvest','serve').as('a').limit(20).inV().as('b').project('edge', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯的统一社会信用代码,"g.V().has('company', 'name', '腾讯').values('unifiedCreditCode')"
+腾讯的员工工资是多少,"g.V().hasLabel('company').has('name', '腾讯').values('salaryTreatment')"
+腾讯详细工商信息,"g.V().has('company', 'name', '腾讯').match( __.as('a').valueMap('name', 'registrationAddress', 'registeredCapital', 'industry', 'businessScope').fold().as('company'), __.as('a').in('legalPerson').values('name').fold().as('legalPerson'),__.as('a').out('branch').values('name').fold().as('branch'),__.as('a').in('personInvest').values('name').fold().as('personInvest'),__.as('a').in('companyInvest').values('name').fold().as('companyInvest')).select('company','legalPerson', 'branch', 'personInvest', 'companyInvest')"
+腾讯的马化腾和张志东是合作伙伴关系吗？,"g.V().has('person', 'name','马化腾').out('partners').has('person','name','张志东').hasNext()"
+腾讯的马化腾的合作伙伴都有谁？,"g.V().has('person', 'name','马化腾').out('partners').limit(20).values('name')"
+马化腾都投资了哪些公司？,"g.V().has('person', 'name','马化腾').out('personInvest').limit(20).values('name')"
+腾讯都控股了哪些公司，且控股比例是多少？,"g.V().has('company', 'name', '腾讯').outE('controllingShareholderCompany').as('a').inV().project('name', 'info').by(values('name')).by(select('a').valueMap())"
+马化腾在腾讯的持股比例是多少？,"g.V().has('company', 'name', '腾讯').inE('personInvest').where(outV().has('person','name','马化腾')).values('shareholdingRatio')"
+马化腾在腾讯的认缴出资额是多少？,"g.V().has('company', 'name', '腾讯').inE('personInvest').where(outV().has('person','name','马化腾')).valueMap('capitalContribution','unitOfContribution')"
+马化腾在腾讯的认缴出资日期是什么时候？,"g.V().has('company', 'name', '腾讯').inE('personInvest').where(outV().has('person','name','马化腾')).values('contributionDate')"
+腾讯实际人数与缴纳社保人数多少,"g.V().has('company', 'name', '腾讯').valueMap('insuredNumberOfPeople','numberOfEmployees')"
+腾讯已实缴的资金有多少,"g.V().has('company', 'name', '腾讯').valueMap('paidInCapital','paidInCapitalCurrency')"
+腾讯有多少家子公司,"g.V().has('company', 'name', '腾讯').out('branch').count()"
+腾讯有多少员工，主要做什么的,"g.V().has('company', 'name', '腾讯').valueMap('numberOfEmployees', 'businessScope')"
+腾讯的实际控制人和法人是谁？,"g.V().has('company', 'name', '腾讯').inE().hasLabel('legalPerson', 'actualControllerPerson', 'actualControllerCompany').as('a').outV().as('b').project('name', 'label').by(select('b').values('name')).by(select('a').label())"
+制造业有哪些公司上海,"g.V().has('company', 'city','上海').has('industry',containing('制造业')).limit(20).values('name')"
+2000年之前成立的企业有哪些,"g.V().has('company', 'establishmentYear', lt(2000)).values('name')"
+和腾讯有关系的公司和人有哪些,"g.V().has('company', 'name', '腾讯').bothE().limit(20).as('a').otherV().as('b').project('name', 'label').by(select('b').values('name')).by(select('a').label())"
+2008年到2015年之间成立的企业有哪些,"g.V().has('company','establishmentYear', between(2008, 2015)).limit(20).values('name')"
+腾讯有官方的微信公众号吗？,"g.V().has('company', 'name', '腾讯').values('wechatPublicNumber')"
+腾讯旗下有几家公司,"g.V().has('company','name','腾讯').as('a').match(__.as('a').out('branch').values('name').count().fold().as('num'),__.as('a').out('branch').values('name').fold().as('company_name')).select('num','company_name')"
+腾讯的子公司或分公司有哪些,"g.V().has('company','name','腾讯').as('a').match(__.as('a').out('branch').values('name').count().fold().as('num'),__.as('a').out('branch').limit(10).values('name').fold().as('company_name')).select('num','company_name')"
+腾讯的法人代表是谁，该公司注册资本是多少？,"g.V().has('company', 'name', '腾讯').as('a').project('legalPerson','registeredCapital').by(select('a').in('legalPerson').values('name')).by(valueMap('registeredCapital','registeredCapitalCurrency'))"
+腾讯各股东占比,"g.V().has('company', 'name', '腾讯').inE('personInvest', 'companyInvest').as('a').outV().as('b').project('name', 'info').by(select('b').values('name')).by(select('a').valueMap())"
+腾讯的主要负责人,"g.V().has('company', 'name', '腾讯').inE('legalPerson','actualControllerPerson','serve').as('a').outV().project('label','name').by(select('a').label()).by(values('name'))"
+腾讯的实际控制人对其股权比例为多少,"g.V().has('company', 'name', '腾讯').match(__.as('a').in('actualControllerPerson').as('b'),__.as('a').inE('personInvest').as('c').outV().as('d'),where('b', eq('d')).by('name')).project('name', 'info').by(select('d').values('name')).by(select('c').valueMap())"
+腾讯都控股了哪些公司，其认缴出资额分别是多少？,"g.V().has('company', 'name', '腾讯').outE('controllingShareholderCompany').as('e').inV().as('v').project('name','info').by(select('v').values('name')).by(select('e').valueMap())"
+腾讯的马化腾还在其他哪些公司任职？,"g.V().has('company', 'name', '腾讯').as('a').in().has('person','name', '马化腾').out('serve')where(neq('a')).values('name')"
+腾讯的老板信息,"g.V().has('company', 'name', '腾讯').inE().hasLabel('legalPerson','actualControllerPerson', 'actualControllerCompany').as('a').outV().as('b').project('label', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯和美团的关系,"g.V().has('company', 'name', '腾讯').bothE().where(otherV().has('company', 'name', '美团')).label()"
+腾讯的法定代表人马化腾有几家公司,"g.V().has('company', 'name', '腾讯').in('actualControllerPerson', 'legalPerson').has('person', 'name', '马化腾').outE('legalPerson','actualControllerPerson','personInvest','serve').as('a').limit(20).inV().as('b').project('edge', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯的马化腾和王兴的股份比例,"g.V().has('company', 'name', '腾讯').inE('personInvest').as('a').outV().has('name',within('马化腾', '王兴')).as('b').project('name','shareholdingRatio').by(select('b').values('name')).by(select('a').values('shareholdingRatio'))"
+腾讯和美团的关系,"g.V().has('name', '腾讯').bothE().where(otherV().has('name', '美团')).label()"
+腾讯的股东马化腾的相关信息,"g.V().has('company', 'name', '腾讯').in('personInvest').has('person', 'name', '马化腾').outE('legalPerson','actualControllerPerson','personInvest','serve').as('a').limit(20).inV().as('b').project('edge', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯在招战略分析岗位,"g.V().has('company','name','腾讯').valueMap('recruitmentInfo')"
+腾讯和中科院有关系吗,"g.V().has('name', '腾讯').bothE().where(otherV().has('name', '中科院')).label()"
+腾讯的社保信息,"g.V().has('company', 'name', '腾讯').valueMap('insuredNumberOfPeople', 'unifiedCreditCode', 'industry', 'taxpayerIdentificationNumber','administrativeDivision', 'province')"
+腾讯的知识产权情况,"g.V().has('company', 'name', '腾讯').valueMap('copyrightForWorks','websiteRegistrationRecord','patentInformation')"
+腾讯的法定代表人马化腾的背景,"g.V().has('company', 'name', '腾讯').in('legalPerson').has('person', 'name', '马化腾').outE('legalPerson','actualControllerPerson','personInvest','serve').as('a').limit(20).inV().as('b').project('edge', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯马化腾共持股多少,"g.V().has('company', 'name', '腾讯').inE('personInvest').where(outV().has('name','马化腾')).valueMap()"
+腾讯的老板成立过哪些公司,"g.V().has('company', 'name', '腾讯').in('legalPerson').outE('legalPerson','actualControllerPerson','personInvest','serve').as('a').limit(20).inV().as('b').project('edge', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯的23条对外投资信息,"g.V().has('company', 'name', '腾讯').outE('companyInvest').as('a').inV().as('b').project('name', 'info').by(select('b').values('name')).by(select('a').valueMap())"
+腾讯领导层,"g.V().has('company', 'name', '腾讯').inE('serve').as('a').outV().as('b').project('name','position').by(select('b').values('name')).by(select('a').values('position'))"
+腾讯的马化腾还有哪些企业任职,"g.V().has('company', 'name', '腾讯').as('a').in().has('person', 'name', '马化腾').out('serve').where(neq('a')).values('name')"
+腾讯黄永刚注册资本,"g.V().has('company', 'name', '腾讯').inE('personInvest').where(outV().has('person', 'name','黄永刚')).valueMap('capitalContribution','unitOfContribution')"
+腾讯的16家控股企业都是哪16家,"g.V().has('company', 'name', '腾讯').out('controllingShareholderCompany').values('name').limit(16)"
+腾讯历任董事会秘书,"g.V().has('company', 'name', '腾讯').inE('serve').has('position', containing('董事会秘书')).outV().values('name')"
+腾讯的十大股东是谁,"g.V().has('company', 'name', '腾讯').inE('personInvest', 'companyInvest').order().by('shareholdingRatio',desc).limit(10).as('a').outV().as('b').project('name','shareholdingRatio').by(select('b').values('name')).by(select('a').values('shareholdingRatio'))"
+腾讯的法人和实际控制人都是谁,"g.V().has('company', 'name', '腾讯').as('a')
+.project('法人', '实际控制人')
+.by(__.in('legalPerson').values('name').fold())
+.by(__.in('actualControllerPerson','actualControllerCompany').values('name').fold())
+.select('法人','实际控制人').by(__.coalesce(identity(), __.constant('未知')))"
+腾讯的法人和董事长分别是谁,"g.V().has('company', 'name', '腾讯').as('a')
+.project('法人', '董事长')
+.by(__.in('legalPerson').values('name').fold())
+.by(__.inE('serve').has('position', containing('董事长')).outV().values('name').fold())
+.select('法人','董事长').by(__.coalesce(identity(), __.constant('未知')))"
+腾讯的CEO投资了哪些企业,"g.V().has('company', 'name', '腾讯').inE('serve').has('position', containing('CEO')).outV().outE('legalPerson','actualControllerPerson','personInvest','serve').as('a').limit(20).inV().as('b').project('edge', 'name').by(select('a').label()).by(select('b').values('name'))"
+腾讯的总经理有控股公司吗？,"g.V().has('company', 'name', '腾讯').inE('serve').has('position', containing('总经理')).outV().out('controllingShareholderPerson').values('name')"
+腾讯老板的合作伙伴有哪些,"g.V().has('company', 'name', '腾讯').in('legalPerson','actualControllerPerson').dedup().project('name','partners').by(values('name')).by(out('partners').values('name').fold())"
+腾讯的最总受益人和董事长是同一个人吗？,"g.V().has('company', 'name', '腾讯').as('c')
+.project('最终受益人', '董事长')
+.by(__.in('finalBeneficiaryPerson').values('name').fold().coalesce(identity(), __.constant('未知')))
+.by(__.inE('serve').has('position', containing('董事长')).outV().values('name').fold().coalesce(identity(), __.constant('未知')))
+.select('最终受益人', '董事长')"
+腾讯的股东、法人、最终受益人、董事、董事长分别有哪些,"g.V().has('company', 'name', '腾讯').as('a')
+.project('股东','法人','最终受益人','董事','董事长')
+.by(__.in('personInvest').values('name').fold())
+.by(__.in('legalPerson').values('name').fold())
+.by(__.in('actualControllerPerson').values('name').fold())
+.by(__.inE('serve').has('position', containing('董事')).outV().values('name').fold())
+.by(__.inE('serve').has('position', containing('董事长')).outV().values('name').fold())"
+腾讯的关联公司,"g.V().has('company','name','腾讯').project('branch','companyInvest').by(out('branch').values('name').fold()).by(out('companyInvest').values('name').fold())"
+腾讯的实缴资本和注册资本分别是多少,"g.V().has('company', 'name', '腾讯').valueMap('registeredCapital', 'registeredCapitalCurrency','paidInCapital','paidInCapitalCurrency')"
+腾讯有哪些知识产权,"g.V().has('company','name','腾讯').valueMap('copyrightForWorks', 'patentInformation', 'websiteRegistrationRecord')"
+腾讯的作品著作权有哪些,"g.V().has('company', 'name', '腾讯').values('copyrightForWorks')"
+腾讯有哪些岗位,"g.V().has('company','name','腾讯').values('recruitmentInfo')"

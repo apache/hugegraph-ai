@@ -1,0 +1,37 @@
+name: "License header & 3rd-party check"
+
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-dependency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Repository'
+        uses: actions/checkout@v4
+      - name: 'Dependency Review'
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/dependency-review-action@v4
+        # Refer: https://github.com/actions/dependency-review-action
+        with:
+          fail-on-severity: low
+          comment-summary-in-pr: on-failure
+          # Action will fail if dependencies don't match the list (we could choose only one of the following)
+          deny-licenses: GPL-3.0, AGPL-1.0, AGPL-3.0, LGPL-2.0, CC-BY-3.0
+          #allow-licenses: Apache-2.0, MIT
+
+  check-license-header:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check License Header
+        uses: apache/skywalking-eyes@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          log: info
+          token: ${{ github.token }}
+          config: .licenserc.yaml

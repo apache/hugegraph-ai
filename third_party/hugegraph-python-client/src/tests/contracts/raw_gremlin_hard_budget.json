@@ -1,0 +1,23 @@
+{
+  "contract_version": "1.0",
+  "public_raw_execution": "disabled",
+  "required_capabilities": {
+    "readonly_principal": {
+      "owner": "server_deployment",
+      "status": "not_enforced_by_client"
+    },
+    "evaluation_timeout": {
+      "owner": "server_deployment",
+      "status": "not_selectable_per_request"
+    },
+    "server_result_cap": {
+      "owner": "server_deployment",
+      "status": "not_verified_for_gremlin_endpoint"
+    },
+    "streaming_http_byte_cap": {
+      "owner": "pyhugegraph_transport",
+      "status": "unsupported_response_is_fully_materialized"
+    }
+  },
+  "post_materialization_item_and_byte_limits": "output_guard_only"
+}

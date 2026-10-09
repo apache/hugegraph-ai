@@ -1,0 +1,1 @@
+marko is a person aged 29. marko created lop. lop is software written in java.

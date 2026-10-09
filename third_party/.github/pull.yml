@@ -1,0 +1,11 @@
+version: "1"
+rules:
+  - base: main
+    upstream: apache/main
+    mergeMethod: rebase
+    assignees:
+      - imbajin
+    reviewers:
+      - imbajin
+    conflictReviewers:
+      - imbajin

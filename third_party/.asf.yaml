@@ -1,0 +1,71 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+github:
+  features:
+    issues: true
+    wiki: true
+    projects: true
+    discussions: true
+  description: The integration of HugeGraph with AI/LLM & GraphRAG
+  homepage: https://hugegraph.apache.org/docs/quickstart/hugegraph-ai/
+  del_branch_on_merge: true
+  labels:
+    - graphrag
+    - graph-machine-learning
+    - gnn
+    - knowledge-graph
+    - hugegraph
+  enabled_merge_buttons:
+    merge: false
+    rebase: true
+    squash: true
+    # can either be: DEFAULT | PR_TITLE | PR_TITLE_AND_COMMIT_DETAILS | PR_TITLE_AND_DESC
+    squash_commit_message: PR_TITLE_AND_DESC
+    merge_commit_message: PR_TITLE_AND_DESC
+  protected_branches:
+    main:
+      required_status_checks:
+        # strict means "Require branches to be up-to-date before merging".
+        strict: true
+        # contexts are the names of checks that must pass (now only enable the basic check)
+        #contexts:
+          #- CodeQL
+          #- check-license
+      required_pull_request_reviews:
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: false
+        required_approving_review_count: 1
+  # (for non-committer): assign/edit/close issues & PR, without write access to the code
+  collaborators:
+    - ChenZiHong-Gavin
+    - weijinglin
+    - HJ-Young
+    - afterimagex
+    - returnToInnocence
+    - Thespica
+
+# refer https://cwiki.apache.org/confluence/display/INFRA/Git+-+.asf.yaml+features#Git.asf.yamlfeatures-Notificationsettingsforrepositories
+notifications:
+  # use https://selfserve.apache.org to manage it
+  pullrequests_status: issues@hugegraph.apache.org
+  pullrequests_comment: issues@hugegraph.apache.org
+  pullrequests_bot_dependabot: issues@hugegraph.apache.org
+  issues: issues@hugegraph.apache.org
+  issues_status: dev@hugegraph.apache.org
+  issues_comment: issues@hugegraph.apache.org
+  discussions: dev@hugegraph.apache.org

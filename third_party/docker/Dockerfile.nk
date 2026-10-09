@@ -1,0 +1,49 @@
+# Stage 1: Build stage (Isolating the build env)
+FROM python:3.10.16-bookworm AS builder
+
+WORKDIR /build/
+
+# Use uv instead of poetry for a more efficient, elegant, and unified py env management
+RUN pip install --no-cache-dir uv
+
+# 1.1 Copy source code (merged for efficiency)
+COPY . .
+
+# 1.2 Install dependency
+RUN apt update && \
+    apt install -y --no-install-recommends build-essential patchelf && \
+    uv venv && \
+    . .venv/bin/activate && \
+    uv sync --extra nk-llm && \
+    cd hugegraph-llm/src && \
+    export PYTHONPATH=/build/hugegraph-llm/src && \
+    python -m nuitka --follow-imports --standalone --include-package-data=safehttpx,groovy,gradio,litellm,jieba --include-module=hugegraph_llm.demo.rag_demo.app,litellm.litellm_core_utils.tokenizers --include-data-dir=./hugegraph_llm/resources=hugegraph_llm/resources ./hugegraph_llm/demo/rag_demo/app.py && \
+    mv app.* ..
+
+# Stage 2: Runtime stage
+FROM python:3.10.16-slim-bookworm
+LABEL maintainer="HugeGraph Docker Maintainers <dev@hugegraph.apache.org>"
+
+# Create non-root user & install 'curl' for healthcheck
+RUN useradd -m -s /bin/bash work && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /home/work/
+
+COPY --from=builder --chown=work:work /build/hugegraph-llm/src /home/work/hugegraph-llm/src
+COPY --from=builder --chown=work:work /build/hugegraph-llm/app.dist /home/work/hugegraph-llm/app.dist
+COPY --from=builder --chown=work:work /build/hugegraph-llm/app.build /home/work/hugegraph-llm/app.build
+COPY --from=builder --chown=work:work /build/hugegraph-llm/pyproject.toml /home/work/hugegraph-llm/pyproject.toml
+
+USER work
+
+WORKDIR /home/work/hugegraph-llm
+VOLUME ["/home/work/hugegraph-llm/src/hugegraph_llm/resources"]
+EXPOSE 8001
+
+HEALTHCHECK --interval=60s --timeout=10s --start-period=5s --retries=3 CMD curl -f http://localhost:8001/ || exit 1
+
+CMD ["./app.dist/app.bin", "--host", "0.0.0.0", "--port", "8001"]

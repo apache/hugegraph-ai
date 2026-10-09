@@ -1,0 +1,48 @@
+name: Upstream Sync
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: "0 */3 * * *" # every 3 hours
+  workflow_dispatch:
+
+jobs:
+  sync_latest_from_upstream:
+    name: Sync latest commits from upstream repo
+    runs-on: ubuntu-latest
+    if: ${{ github.event.repository.fork }}
+
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote get-url upstream 2>/dev/null || git remote add upstream https://github.com/apache/hugegraph-ai.git
+          git fetch upstream main
+
+          # Check if upstream changed workflow files
+          WORKFLOW_CHANGED=$(git diff --name-only HEAD upstream/main -- .github/workflows/ | wc -l)
+
+          LOCAL_HEAD=$(git rev-parse HEAD)
+
+          # Merge all upstream changes
+          git merge upstream/main --no-edit
+
+          # If upstream touched workflows, restore our local versions so
+          # GITHUB_TOKEN can push (it is blocked from updating .github/workflows)
+          if [ "$WORKFLOW_CHANGED" -gt 0 ]; then
+            echo "Upstream changed workflow files. Preserving local versions..."
+            git checkout "$LOCAL_HEAD" -- .github/workflows/
+            git add .github/workflows/
+            git diff --cached --quiet || git commit -m "sync: preserve local workflow files"
+          fi
+
+          git push origin main

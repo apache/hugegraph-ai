@@ -1,0 +1,52 @@
+name: Feature request (新需求 / 功能)
+description: Give an idea for hugegraph-ai
+title: '[Feature] describe the new feature'
+labels:
+  - feature
+
+body:
+  - type: checkboxes
+    attributes:
+      label: Search before asking
+      description: >
+        Please make sure to search in the [feature](https://github.com/apache/hugegraph-ai/issues?q=is%3Aissue+label%3A%22Feature%22) first
+        to see whether the same feature was requested already.
+      options:
+        - label: >
+            I had searched in the [feature](https://github.com/apache/hugegraph-ai/issues?q=is%3Aissue+label%3A%22Feature%22) and found no
+            similar feature requirement.
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Feature Description (功能描述)
+      description: >
+        Please describe the function you want in as much detail as possible. (请简要描述新功能 /
+        需求的使用场景或上下文, 最好能给个具体的例子说明)
+      placeholder: type the feature description here
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: Are you willing to submit a PR?
+      description: >
+        This is absolutely not required, but we are happy to guide you in the contribution process
+        especially if you already have a good understanding of how to implement the feature.
+        hugegraph-ai is a totally community-driven project and we love to bring new contributors in.
+      options:
+        - label: Yes I am willing to submit a PR!
+
+  - type: checkboxes
+    attributes:
+      label: Code of Conduct
+      description: |
+        The Code of Conduct helps create a safe space for everyone. We require that everyone agrees to it.
+      options:
+        - label: |
+            I agree to follow this project's [Code of Conduct](https://www.apache.org/foundation/policies/conduct)
+          required: true
+
+  - type: markdown
+    attributes:
+      value: "Thanks for completing our form, and we will reply you as soon as possible."

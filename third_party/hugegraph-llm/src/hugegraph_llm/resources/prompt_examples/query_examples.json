@@ -1,0 +1,9 @@
+[
+  "Property filter: Find all 'person' nodes with age > 30 and return their name and occupation",
+  "Relationship traversal: Find all roommates of the person named Alice, and return their name and age",
+  "Shortest path: Find the shortest path between Bob and Charlie and show the edge labels along the way",
+  "Subgraph match: Find all friend pairs who both follow the same webpage, and return the names and URL",
+  "Aggregation: Count the number of people for each occupation and compute their average age",
+  "Time-based filter: Find all nodes created after 2025-01-01 and return their name and created_at",
+  "Top-N query: List top 10 most visited webpages with their URL and visit_count"
+]

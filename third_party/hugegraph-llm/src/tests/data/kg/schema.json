@@ -1,0 +1,42 @@
+{
+  "vertices": [
+    {
+      "vertex_label": "person",
+      "properties": ["name", "age", "occupation"]
+    },
+    {
+      "vertex_label": "company",
+      "properties": ["name", "industry"]
+    },
+    {
+      "vertex_label": "project",
+      "properties": ["name", "technology"]
+    }
+  ],
+  "edges": [
+    {
+      "edge_label": "works_at",
+      "source_vertex_label": "person",
+      "target_vertex_label": "company",
+      "properties": []
+    },
+    {
+      "edge_label": "colleague",
+      "source_vertex_label": "person",
+      "target_vertex_label": "person",
+      "properties": []
+    },
+    {
+      "edge_label": "works_on",
+      "source_vertex_label": "person",
+      "target_vertex_label": "project",
+      "properties": []
+    },
+    {
+      "edge_label": "partner",
+      "source_vertex_label": "company",
+      "target_vertex_label": "company",
+      "properties": []
+    }
+  ]
+}

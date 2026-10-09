@@ -1,0 +1,42 @@
+{
+  "contract_version": "2.1",
+  "canonical": {
+    "authoritative_source": "server_persisted_plan",
+    "confirm_tool": "confirm_write_tool",
+    "confirm_request_fields": [
+      "plan_id"
+    ],
+    "status_tool": "get_write_status_tool",
+    "reconcile_tool": "reconcile_write_tool",
+    "repeated_confirmation": "return_persisted_status",
+    "mixed_protocol": "reject",
+    "client_payload_authoritative": false
+  },
+  "legacy": {
+    "accepted_for_releases": 1,
+    "locator_fields": [
+      "plan_hash",
+      "nonce",
+      "expires_at"
+    ],
+    "fields_are_all_or_nothing": true,
+    "authoritative_source": "server_persisted_plan",
+    "client_payload_authoritative": false,
+    "response_warning_code": "LEGACY_CONFIRMATION_DEPRECATED"
+  },
+  "outcomes": [
+    "APPLIED",
+    "ALREADY_APPLIED",
+    "REJECTED",
+    "CONFLICT",
+    "PARTIAL",
+    "UNKNOWN"
+  ],
+  "direct_retryable_outcomes": [],
+  "errors": {
+    "ambiguous": "WRITE_OUTCOME_UNKNOWN",
+    "conflict": "WRITE_CONFLICT",
+    "partial": "PARTIAL_APPLY",
+    "unsupported_atomic_primitive": "FEATURE_DISABLED"
+  }
+}

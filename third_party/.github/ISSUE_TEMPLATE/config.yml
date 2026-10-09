@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: HugeGraph Loader Doc
+    url: https://hugegraph.apache.org/docs/quickstart/hugegraph-loader/
+    about: Please search question here before opening a new issue
+  - name: HugeGraph Hubble Doc
+    url: https://hugegraph.apache.org/docs/quickstart/hugegraph-hubble/
+    about: Please search usage here before opening a new issue
+  - name: HugeGraph Tools Doc
+    url: https://hugegraph.apache.org/docs/quickstart/hugegraph-tools/
+    about: Please search question here before opening a new issue
+  - name: HugeGraph Client Doc
+    url: https://hugegraph.apache.org/docs/quickstart/hugegraph-client/
+    about: Please search question here before opening a new issue
+  - name: HugeGraph API Doc
+    url: https://hugegraph.apache.org/docs/clients/restful-api/
+    about: Please search usage here before opening a new issue

@@ -1,0 +1,43 @@
+web/src/i18n/en.ts
+  6876a09d6670275e 19
+web/src/components/AppShell.tsx
+  6876a09d6670275e 624-625
+web/index.html
+  6876a09d6670275e 20,24
+web/src/pages/Login.tsx
+  6876a09d6670275e 69
+web/src/i18n/zh.ts
+  6876a09d6670275e 19
+web/src/index.css
+  6876a09d6670275e 19-23
+web/public/docs.html
+  6876a09d6670275e 438,1602
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "276c48119c0b83247c5b9232dc83c4eeb0cc9e09",
+  "prompts": {
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 14,
+      "total_deletions": 12,
+      "accepted_lines": 14,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/1c3a5ec061f2eac3d27f3a608f4c73659a6b8e8018f7a0ea56228da9b3274404",
+      "token_usage": {
+        "input_tokens": 132726541,
+        "output_tokens": 238838,
+        "cache_read_tokens": 129769408,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

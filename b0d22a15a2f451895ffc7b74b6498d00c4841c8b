@@ -1,0 +1,71 @@
+web/src/pages/dashboard/ArchBoard.tsx
+  5dc5a47f5f456c39 18
+docs/usage/12-reference.md
+  5dc5a47f5f456c39 1-80
+docs/architecture/01-overall-architecture.md
+  5dc5a47f5f456c39 1-164
+docs/architecture/02-ontology-model-and-dsl.md
+  5dc5a47f5f456c39 1-64
+docs/architecture/04-actions-and-functions.md
+  5dc5a47f5f456c39 1-63
+docs/architecture/06-rsi-self-evolution.md
+  5dc5a47f5f456c39 1-129
+web/src/components/AppShell.tsx
+  5dc5a47f5f456c39 695,739
+server/ontogeny/api/routes_agent.py
+  5dc5a47f5f456c39 118-119
+docs/architecture/05-agent-governance.md
+  5dc5a47f5f456c39 1-133
+docs/usage/11-manufacturing-case.md
+  5dc5a47f5f456c39 1-37
+.zcodeignore
+  5dc5a47f5f456c39 16
+.gitignore
+  5dc5a47f5f456c39 23
+docs/architecture/07-boundaries-and-quality.md
+  5dc5a47f5f456c39 1-27
+docs/usage/09-ui-tour.md
+  5dc5a47f5f456c39 1-41
+docs/usage/10-function-editor.md
+  5dc5a47f5f456c39 1-23
+docs/usage/08-quickstart.md
+  5dc5a47f5f456c39 1-23
+docs/architecture/03-data-and-derivation.md
+  5dc5a47f5f456c39 1-49
+docs/README.md
+  5dc5a47f5f456c39 1-50
+web/src/pages/Dashboard.tsx
+  5dc5a47f5f456c39 274
+README.md
+  5dc5a47f5f456c39 80,82,84-98
+tests/test_agent_engine.py
+  5dc5a47f5f456c39 348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "b0d22a15a2f451895ffc7b74b6498d00c4841c8b",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 911,
+      "total_deletions": 1774,
+      "accepted_lines": 911,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/cf2b5a6ba92b55f87263b4e0d2b507f2c273daead990aa33a78ef2e723d9b1d7",
+      "token_usage": {
+        "input_tokens": 5719595,
+        "output_tokens": 33506,
+        "cache_read_tokens": 5613504,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

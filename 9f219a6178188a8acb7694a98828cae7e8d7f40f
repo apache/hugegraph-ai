@@ -1,0 +1,31 @@
+daemon.sh
+  6876a09d6670275e 45-49,103-125,130,144,167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "9f219a6178188a8acb7694a98828cae7e8d7f40f",
+  "prompts": {
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 31,
+      "total_deletions": 0,
+      "accepted_lines": 31,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/b8c5fa3de8d8be7059e5844b66c1635c344a4673400b59408c94ff18ee8dd319",
+      "token_usage": {
+        "input_tokens": 151971046,
+        "output_tokens": 256358,
+        "cache_read_tokens": 148564864,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

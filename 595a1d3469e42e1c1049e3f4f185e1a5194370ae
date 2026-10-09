@@ -1,0 +1,43 @@
+web/src/i18n/en.ts
+  6876a09d6670275e 19
+web/src/index.css
+  6876a09d6670275e 21-23
+web/src/i18n/zh.ts
+  6876a09d6670275e 19
+web/index.html
+  6876a09d6670275e 20,24
+web/src/components/AppShell.tsx
+  6876a09d6670275e 624-625
+server/ontogeny/core/models.py
+  6876a09d6670275e 560-571
+web/public/docs.html
+  6876a09d6670275e 438,1602
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "595a1d3469e42e1c1049e3f4f185e1a5194370ae",
+  "prompts": {
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 55,
+      "total_deletions": 43,
+      "accepted_lines": 38,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/21eb79cb2c6036c39ab98807cd05168f41e82720530cd34e0d032ae5ef055f6c",
+      "token_usage": {
+        "input_tokens": 145785444,
+        "output_tokens": 250112,
+        "cache_read_tokens": 142389888,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

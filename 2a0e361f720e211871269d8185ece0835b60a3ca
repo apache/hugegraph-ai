@@ -1,0 +1,56 @@
+docs/hugegraph-ai-merge-plan.md
+  6876a09d6670275e 1-321
+web/src/App.test.tsx
+  5dc5a47f5f456c39 88,90
+server/ontogeny/api/app.py
+  5dc5a47f5f456c39 135-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "2a0e361f720e211871269d8185ece0835b60a3ca",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 24,
+      "accepted_lines": 7,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/c5c813cdc097fbd40e6954f440e216cde770763ec4bb34623caf142154d5c325",
+      "token_usage": {
+        "input_tokens": 9666008,
+        "output_tokens": 43547,
+        "cache_read_tokens": 9539776,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    },
+    "6876a09d6670275e": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_8092bf17-7261-4a61-bfc1-3d7295682636",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 321,
+      "total_deletions": 0,
+      "accepted_lines": 321,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/70cedbf6f0cf69ffdb185b3123fae93a1497343dfd92911d0f8faebeed02c927",
+      "token_usage": {
+        "input_tokens": 162423385,
+        "output_tokens": 277971,
+        "cache_read_tokens": 158524096,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

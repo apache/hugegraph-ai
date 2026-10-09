@@ -1,14 +1,20 @@
 # ontogeny
 
 [![License](https://img.shields.io/badge/license-Apache%202-0E78BA.svg)](./LICENSE)
-[![Backend Tests](https://img.shields.io/badge/pytest-561%20passed-brightgreen.svg)](#-contributing)
-[![Frontend Tests](https://img.shields.io/badge/vitest-245%20passed-brightgreen.svg)](#-contributing)
+[![Backend Tests](https://img.shields.io/badge/pytest-561%20passed-brightgreen.svg)](#contributing)
+[![Frontend Tests](https://img.shields.io/badge/vitest-245%20passed-brightgreen.svg)](#contributing)
 
 `ontogeny` — Greek *onto-* (being, the root of *ontology*) + *genesis* (birth, development): in biology the word names the **full-life-cycle development of an individual organism**. The name is the thesis: an ontology here is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use. It is a **self-improving operational ontology platform**: it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto [Apache HugeGraph](https://github.com/apache/hugegraph) for deep-graph queries.
 
 The design references the Palantir Foundry Ontology (semantic layer + dynamic action layer) but is fully open: **the DSL is the single source of truth** — object tables and the graph schema are compiled artifacts that can be deleted and rebuilt at any time.
 
-## ✨ Key Features
+The whole system on one board — this is the console's Overview dashboard, and the map for everything below:
+
+![Overall architecture board](./docs/en/img/arch-board.png)
+
+*Top: the eight first-class DSL citizens (Action = the only write gate, EvalSuite = the selection box). Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
+
+## Key Features
 
 - **Git-native ontology** — modeling is YAML + pull requests; consensus happens in code review, not a locked GUI
 - **Single-process kernel** — `ontogeny serve` = Registry + query engine + Action runtime on SQLite / Postgres
@@ -17,7 +23,11 @@ The design references the Palantir Foundry Ontology (semantic layer + dynamic ac
 - **Constitutional guardrails** — machine proposals travel the same Git/CI channel as humans; policy relaxation, markings and tier definitions always require human review
 - **Bilingual enterprise console** — React 19 + TypeScript: ontology canvas (browse *and* edit), graph exploration, action runner, audit, self-evolution console
 
-## 🚀 Quick Start
+Modeling is code review, not form-filling — the ontology canvas shows every object, link, action and function of the domain, with references highlighted on hover:
+
+![Ontology definition canvas](./docs/en/img/tour-ontology.png)
+
+## Quick Start
 
 ### Option 1: Docker (Recommended)
 
@@ -30,7 +40,9 @@ docker compose up -d          # self-contained demo (SQLite + seeded data)
 # docker compose --profile graph up -d      # + HugeGraph projection
 ```
 
-Console + API: **http://localhost:8000** — the first boot creates an `admin` account and prints the generated password to the container log (or preset `ONTOGENY_ADMIN_PASSWORD`).
+Console + API: **http://localhost:8000** — the first boot creates an `admin` account and prints the generated password to the container log (or preset `ONTOGENY_ADMIN_PASSWORD`). One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
+
+![The Overview dashboard — ontology model section](./docs/en/img/qs-dashboard.png)
 
 ### Option 2: From Source
 
@@ -48,7 +60,7 @@ ontogeny serve --demo --open   # → http://127.0.0.1:8000/
 > [!NOTE]
 > The API is session/bearer authenticated. The `X-Ontogeny-Principal` dev header is **enabled by default** for evaluation (`ONTOGENY_DEV_AUTH=0` disables it) — turn it off in production, where the agent surfaces (REST + `/mcp`) then require a signed-in driver and every session records WHO drove it.
 
-## 🤖 Connecting an Agent (MCP)
+## Connecting an Agent (MCP)
 
 Point any MCP client (Claude Desktop, ZCode, LangGraph, the `mcp` SDK) at **`http://<host>/mcp`**:
 
@@ -58,13 +70,21 @@ Point any MCP client (Claude Desktop, ZCode, LangGraph, the `mcp` SDK) at **`htt
 
 The builtin LLM engine drives its sessions over the same MCP surface (in-process), so the transport is exercised in production. Without the `mcp` extra the endpoint is absent and the engine falls back to in-process calls — governance never changes, only the transport.
 
-## 🏭 Production Notes
+In the console, the same surface lives behind the floating icon at the bottom-right of every page — click it and hand a task to a declared plugin (agent run, ontology Q&A or RSI proposal) from anywhere:
+
+![The agent console popup](./docs/en/img/agent-console.png)
+
+Governance you can point at: every execution and every refusal lands in an immutable audit stream (executed / rule-rejected / policy-denied), and every agent step is attributable and replayable:
+
+![The audit stream](./docs/en/img/tour-audit.png)
+
+## Production Notes
 
 - **Single-process kernel**: registry, outbox, derivation, evolve and projection workers all live in the one server process. Do NOT scale with `uvicorn --workers N`; scale by domain (one process per database).
 - **Observability**: `GET /api/v1/admin/metrics` — query/action/agent/outbox counters from the platform's own tables, zero extra dependencies.
 - **Query baseline**: `python tools/bench_query.py` (p50/p95 for search/filter/traverse).
 
-## 📦 Repository Layout
+## Repository Layout
 
 | Path | What it is |
 |---|---|
@@ -75,35 +95,35 @@ The builtin LLM engine drives its sessions over the same MCP surface (in-process
 
 One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single governance channel. The full contract lives at `GET /openapi.json`.
 
-## 📚 Documentation
+## Documentation
 
-Docs live in [`docs/`](./docs/zh/README.md) (Chinese; English translations welcome), in two parts:
+Docs live under [`docs/`](./docs) in two languages — [中文](./docs/zh/README.md) and [English](./docs/en/README.md) — each with screenshots captured from the matching UI language. Two parts:
 
 **Part I · Architecture**
 
-- [Overall architecture](./docs/zh/architecture/01-overall-architecture.md) — the four-band view, third-party components & degradation
-- [Ontology model & DSL](./docs/zh/architecture/02-ontology-model-and-dsl.md) — the 11 resource kinds, mini-expr, validators
-- [Data & derivation](./docs/zh/architecture/03-data-and-derivation.md) — ownership, sync engine, outbox, projection backfill
-- [Kinetic layer](./docs/zh/architecture/04-actions-and-functions.md) — function ecosystem, functional actions & effect plans
-- [Agent governance](./docs/zh/architecture/05-agent-governance.md) — sessions, engines, the MCP channel, the three doors
-- [RSI self-evolution](./docs/zh/architecture/06-rsi-self-evolution.md) — signals, selection ladder, T0–T3 promotion
-- [Boundaries & quality](./docs/zh/architecture/07-boundaries-and-quality.md) — non-goals, limits, test map
+- [Overall architecture](./docs/en/architecture/01-overall-architecture.md) — the four-band view, third-party components & degradation
+- [Ontology model & DSL](./docs/en/architecture/02-ontology-model-and-dsl.md) — the 11 resource kinds, mini-expr, validators
+- [Data & derivation](./docs/en/architecture/03-data-and-derivation.md) — ownership, sync engine, outbox, projection backfill
+- [Kinetic layer](./docs/en/architecture/04-actions-and-functions.md) — function ecosystem, functional actions & effect plans
+- [Agent governance](./docs/en/architecture/05-agent-governance.md) — sessions, engines, the MCP channel, the three doors
+- [RSI self-evolution](./docs/en/architecture/06-rsi-self-evolution.md) — signals, selection ladder, T0–T3 promotion
+- [Boundaries & quality](./docs/en/architecture/07-boundaries-and-quality.md) — non-goals, limits, test map
 
 **Part II · Usage**
 
-- [Quick start](./docs/zh/usage/08-quickstart.md) — one command, first login
-- [UI tour](./docs/zh/usage/09-ui-tour.md) — six high-frequency pages
-- [Function editor](./docs/zh/usage/10-function-editor.md) — sandboxed Python in the console
-- [Manufacturing case](./docs/zh/usage/11-manufacturing-case.md) — a full operational loop
-- [Reference](./docs/zh/usage/12-reference.md) — CLI, env vars, API endpoints, routes, error codes
+- [Quick start](./docs/en/usage/08-quickstart.md) — one command, first login
+- [UI tour](./docs/en/usage/09-ui-tour.md) — six high-frequency pages
+- [Function editor](./docs/en/usage/10-function-editor.md) — sandboxed Python in the console
+- [Manufacturing case](./docs/en/usage/11-manufacturing-case.md) — a full operational loop
+- [Reference](./docs/en/usage/12-reference.md) — CLI, env vars, API endpoints, routes, error codes
 
-## 🔗 HugeGraph Ecosystem
+## HugeGraph Ecosystem
 
 - [hugegraph](https://github.com/apache/hugegraph) — graph server (the projection's query engine)
 - [hugegraph-toolchain](https://github.com/apache/hugegraph-toolchain) — loader / dashboard / client tools
 - [hugegraph-computer](https://github.com/apache/hugegraph-computer) — graph computing
 
-## 🤝 Contributing
+## Contributing
 
 See the [HugeGraph contribution guidelines](https://hugegraph.apache.org/docs/contribution-guidelines/).
 
@@ -113,6 +133,6 @@ cd web && npx vitest run && npm run build   # frontend + typecheck + build
 ruff check . && ruff format .       # lint
 ```
 
-## 📄 License
+## License
 
 Apache 2.0 — see [LICENSE](./LICENSE).

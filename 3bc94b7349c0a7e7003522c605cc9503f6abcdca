@@ -1,0 +1,83 @@
+docs/zh/README.md
+  5dc5a47f5f456c39 7
+docs/zh/architecture/03-data-and-derivation.md
+  5dc5a47f5f456c39 5
+docs/zh/architecture/05-agent-governance.md
+  5dc5a47f5f456c39 5
+docs/en/usage/09-ui-tour.md
+  5dc5a47f5f456c39 5
+docs/zh/architecture/06-rsi-self-evolution.md
+  5dc5a47f5f456c39 5
+docs/zh/usage/08-quickstart.md
+  5dc5a47f5f456c39 5
+docs/en/architecture/02-ontology-model-and-dsl.md
+  5dc5a47f5f456c39 5
+docs/zh/usage/09-ui-tour.md
+  5dc5a47f5f456c39 5
+docs/en/usage/10-function-editor.md
+  5dc5a47f5f456c39 5
+docs/zh/usage/12-reference.md
+  5dc5a47f5f456c39 5
+docs/zh/architecture/01-overall-architecture.md
+  5dc5a47f5f456c39 5
+docs/en/usage/08-quickstart.md
+  5dc5a47f5f456c39 5
+README.md
+  5dc5a47f5f456c39 80,84-90,94-98
+docs/en/architecture/01-overall-architecture.md
+  5dc5a47f5f456c39 5
+docs/en/architecture/03-data-and-derivation.md
+  5dc5a47f5f456c39 5
+docs/zh/architecture/07-boundaries-and-quality.md
+  5dc5a47f5f456c39 5
+docs/zh/usage/11-manufacturing-case.md
+  5dc5a47f5f456c39 5
+docs/en/architecture/07-boundaries-and-quality.md
+  5dc5a47f5f456c39 5
+docs/en/usage/11-manufacturing-case.md
+  5dc5a47f5f456c39 5
+docs/zh/usage/10-function-editor.md
+  5dc5a47f5f456c39 5
+docs/en/usage/12-reference.md
+  5dc5a47f5f456c39 5
+docs/en/architecture/06-rsi-self-evolution.md
+  5dc5a47f5f456c39 5
+docs/en/architecture/04-actions-and-functions.md
+  5dc5a47f5f456c39 5
+docs/zh/architecture/04-actions-and-functions.md
+  5dc5a47f5f456c39 5
+docs/en/architecture/05-agent-governance.md
+  5dc5a47f5f456c39 5
+docs/zh/architecture/02-ontology-model-and-dsl.md
+  5dc5a47f5f456c39 5
+docs/en/README.md
+  5dc5a47f5f456c39 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "3bc94b7349c0a7e7003522c605cc9503f6abcdca",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 1017,
+      "total_deletions": 64,
+      "accepted_lines": 992,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/3a5005ddab818ef57de010c98fbf50cd9b6d623041682c27c48958f80c2a0f9c",
+      "token_usage": {
+        "input_tokens": 48140842,
+        "output_tokens": 139066,
+        "cache_read_tokens": 47661376,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

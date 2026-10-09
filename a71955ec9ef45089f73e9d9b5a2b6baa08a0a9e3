@@ -1,0 +1,31 @@
+README.md
+  5dc5a47f5f456c39 4-5,11-17,26-30,43-45,63,73-81,87,98,100,104-110,114-118,120,126,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "a71955ec9ef45089f73e9d9b5a2b6baa08a0a9e3",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 4381,
+      "total_deletions": 2970,
+      "accepted_lines": 5332,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/4a9e9a67fa5addb763fb95d5c551e4ddcc659fc2383fc0e2c228f9ca739af1e9",
+      "token_usage": {
+        "input_tokens": 62362299,
+        "output_tokens": 156417,
+        "cache_read_tokens": 61852096,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

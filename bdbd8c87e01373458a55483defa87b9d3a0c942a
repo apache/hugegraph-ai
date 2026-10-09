@@ -1,0 +1,1157 @@
+third_party/hugegraph-python-client/src/pyhugegraph/utils/util.py
+  5dc5a47f5f456c39 1-211
+third_party/hugegraph-ml/src/hugegraph_ml/examples/seal_example.py
+  5dc5a47f5f456c39 1-56
+third_party/skills/hugegraph-operator/SKILL.md
+  5dc5a47f5f456c39 1-37
+third_party/hugegraph-python-client/src/tests/api/test_response_validation.py
+  5dc5a47f5f456c39 1-174
+third_party/hugegraph-llm/src/hugegraph_llm/flows/get_graph_index_info.py
+  5dc5a47f5f456c39 1-64
+third_party/hugegraph-mcp/tests/test_plan_store_interface.py
+  5dc5a47f5f456c39 1-72
+third_party/docs/plans/2026-05-31-hugegraph-ai-code-scan.md
+  5dc5a47f5f456c39 1-259
+third_party/hugegraph-python-client/src/tests/api/test_property_cas_contract.py
+  5dc5a47f5f456c39 1-86
+third_party/hugegraph-python-client/src/pyhugegraph/utils/constants.py
+  5dc5a47f5f456c39 1-21
+third_party/hugegraph-python-client/src/tests/api/test_variable.py
+  5dc5a47f5f456c39 1-83
+third_party/hugegraph-python-client/src/pyhugegraph/api/schema.py
+  5dc5a47f5f456c39 1-132
+third_party/.github/workflows/codeql.yml
+  5dc5a47f5f456c39 1-64
+third_party/hugegraph-llm/src/tests/utils/mock.py
+  5dc5a47f5f456c39 1-76
+third_party/.gitattributes
+  5dc5a47f5f456c39 1-18
+third_party/hugegraph-ml/src/hugegraph_ml/examples/diffpool_example.py
+  5dc5a47f5f456c39 1-40
+third_party/hugegraph-llm/src/tests/data/quality_program/graphrag_documents.json
+  5dc5a47f5f456c39 1-4
+third_party/hugegraph-mcp/hugegraph_mcp/reconciler.py
+  5dc5a47f5f456c39 1-210
+third_party/hugegraph-mcp/hugegraph_mcp/plan_store.py
+  5dc5a47f5f456c39 1-862
+third_party/hugegraph-llm/README.md
+  5dc5a47f5f456c39 1-295
+third_party/hugegraph-llm/src/hugegraph_llm/api/thin_api.py
+  5dc5a47f5f456c39 1-162
+third_party/hugegraph-llm/src/hugegraph_llm/models/rerankers/cohere.py
+  5dc5a47f5f456c39 1-68
+third_party/hugegraph-ml/src/hugegraph_ml/examples/appnp_example.py
+  5dc5a47f5f456c39 1-44
+third_party/hugegraph-python-client/src/tests/api/test_raw_gremlin_contract.py
+  5dc5a47f5f456c39 1-45
+third_party/vermeer-python-client/src/pyvermeer/structure/task_data.py
+  5dc5a47f5f456c39 1-225
+third_party/hugegraph-mcp/hugegraph_mcp/tools/refresh_vid_embeddings.py
+  5dc5a47f5f456c39 1-88
+third_party/hugegraph-llm/src/hugegraph_llm/enums/id_strategy.py
+  5dc5a47f5f456c39 1-27
+third_party/hugegraph-mcp/hugegraph_mcp/config.py
+  5dc5a47f5f456c39 1-310
+third_party/docker/charts/hg-llm/templates/deployment.yaml
+  5dc5a47f5f456c39 1-78
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/semantic_id_query.py
+  5dc5a47f5f456c39 1-112
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/prompt_generate.py
+  5dc5a47f5f456c39 1-67
+third_party/docker/Dockerfile.llm
+  5dc5a47f5f456c39 1-47
+third_party/hugegraph-llm/src/hugegraph_llm/models/embeddings/openai.py
+  5dc5a47f5f456c39 1-105
+third_party/hugegraph-llm/src/tests/operators/llm_op/test_disambiguate_data.py
+  5dc5a47f5f456c39 1-85
+third_party/hugegraph-mcp/tests/test_manage_graph_data.py
+  5dc5a47f5f456c39 1-2190
+third_party/hugegraph-python-client/src/pyhugegraph/api/graphs.py
+  5dc5a47f5f456c39 1-62
+third_party/hugegraph-llm/src/tests/api/test_thin_api.py
+  5dc5a47f5f456c39 1-352
+third_party/hugegraph-python-client/src/pyhugegraph/structure/index_label_data.py
+  5dc5a47f5f456c39 1-57
+third_party/hugegraph-llm/src/hugegraph_llm/flows/graph_extract.py
+  5dc5a47f5f456c39 1-128
+third_party/hugegraph-llm/src/hugegraph_llm/indices/keyword_index.py
+  5dc5a47f5f456c39 1-19
+third_party/hugegraph-mcp/hugegraph_mcp/tools/manage_schema.py
+  5dc5a47f5f456c39 1-1952
+third_party/README.md
+  5dc5a47f5f456c39 1-226
+third_party/hugegraph-llm/src/hugegraph_llm/flows/text2gremlin.py
+  5dc5a47f5f456c39 1-120
+third_party/hugegraph-llm/src/hugegraph_llm/flows/build_example_index.py
+  5dc5a47f5f456c39 1-62
+third_party/hugegraph-llm/src/hugegraph_llm/models/llms/__init__.py
+  5dc5a47f5f456c39 1-31
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/keyword_extract.py
+  5dc5a47f5f456c39 1-185
+third_party/hugegraph-llm/src/tests/operators/hugegraph_op/test_schema_manager.py
+  5dc5a47f5f456c39 1-271
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/node_classify_with_sample.py
+  5dc5a47f5f456c39 1-148
+third_party/hugegraph-llm/src/tests/data/quality_program/kg_graph_output.json
+  5dc5a47f5f456c39 1-14
+third_party/hugegraph-llm/src/hugegraph_llm/middleware/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/common_node/merge_rerank_node.py
+  5dc5a47f5f456c39 1-84
+third_party/hugegraph-llm/src/tests/utils/test_hugegraph_utils.py
+  5dc5a47f5f456c39 1-63
+third_party/docker/charts/hg-llm/templates/service.yaml
+  5dc5a47f5f456c39 1-18
+third_party/hugegraph-mcp/hugegraph_mcp/backend_capabilities.py
+  5dc5a47f5f456c39 1-209
+third_party/hugegraph-python-client/src/pyhugegraph/api/schema_manage/edge_label.py
+  5dc5a47f5f456c39 1-172
+third_party/hugegraph-llm/src/tests/models/llms/test_ollama_client.py
+  5dc5a47f5f456c39 1-226
+third_party/hugegraph-python-client/src/tests/test_distribution.py
+  5dc5a47f5f456c39 1-30
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/schema_build.py
+  5dc5a47f5f456c39 1-137
+third_party/hugegraph-ml/src/hugegraph_ml/examples/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-python-client/src/tests/api/test_schema.py
+  5dc5a47f5f456c39 1-130
+third_party/hugegraph-mcp/hugegraph_mcp/tools/schema_utils.py
+  5dc5a47f5f456c39 1-245
+third_party/hugegraph-llm/src/tests/operators/llm_op/test_property_graph_extract.py
+  5dc5a47f5f456c39 1-1127
+third_party/.github/ISSUE_TEMPLATE/feature_request.yml
+  5dc5a47f5f456c39 1-52
+third_party/docs/quality/hugegraph-integration.md
+  5dc5a47f5f456c39 1-20
+third_party/hugegraph-llm/src/hugegraph_llm/config/generate.py
+  5dc5a47f5f456c39 1-38
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-python-client/src/tests/api/test_auth.py
+  5dc5a47f5f456c39 1-220
+third_party/style/code_format_and_analysis.sh
+  5dc5a47f5f456c39 1-57
+third_party/scripts/build_llm_image.sh
+  5dc5a47f5f456c39 1-29
+third_party/hugegraph-llm/src/hugegraph_llm/flows/__init__.py
+  5dc5a47f5f456c39 1-34
+third_party/vermeer-python-client/src/pyvermeer/structure/base_data.py
+  5dc5a47f5f456c39 1-50
+third_party/skills/hugegraph-data-importer/agents/openai.yaml
+  5dc5a47f5f456c39 1-21
+third_party/hugegraph-llm/src/hugegraph_llm/utils/embedding_utils.py
+  5dc5a47f5f456c39 1-88
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/hugegraph_node/gremlin_execute.py
+  5dc5a47f5f456c39 1-75
+third_party/hugegraph-ml/src/hugegraph_ml/models/grace.py
+  5dc5a47f5f456c39 1-361
+third_party/hugegraph-llm/src/tests/indices/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/.github/ISSUE_TEMPLATE/question_ask.yml
+  5dc5a47f5f456c39 1-96
+third_party/spec/hugegraph-llm/fixed_flow/requirements.md
+  5dc5a47f5f456c39 1-24
+third_party/hugegraph-ml/src/hugegraph_ml/examples/grace_example.py
+  5dc5a47f5f456c39 1-45
+third_party/hugegraph-mcp/pyproject.toml
+  5dc5a47f5f456c39 1-70
+third_party/hugegraph-llm/config.md
+  5dc5a47f5f456c39 1-296
+third_party/hugegraph-llm/src/hugegraph_llm/config/models/__init__.py
+  5dc5a47f5f456c39 1-21
+third_party/docker/Dockerfile.nk
+  5dc5a47f5f456c39 1-49
+third_party/hugegraph-llm/src/hugegraph_llm/flows/build_vector_index.py
+  5dc5a47f5f456c39 1-54
+third_party/hugegraph-mcp/hugegraph_mcp/tools/graph_data_execute.py
+  5dc5a47f5f456c39 1-1012
+third_party/hugegraph-mcp/docs/releasing.md
+  5dc5a47f5f456c39 1-90
+third_party/hugegraph-python-client/src/pyhugegraph/utils/huge_router.py
+  5dc5a47f5f456c39 1-219
+third_party/hugegraph-mcp/README.md
+  5dc5a47f5f456c39 1-208
+third_party/hugegraph-llm/src/hugegraph_llm/utils/decorators.py
+  5dc5a47f5f456c39 1-124
+third_party/hugegraph-llm/src/hugegraph_llm/config/models/base_config.py
+  5dc5a47f5f456c39 1-171
+third_party/hugegraph-ml/src/hugegraph_ml/models/jknet.py
+  5dc5a47f5f456c39 1-130
+third_party/hugegraph-python-client/src/pyhugegraph/api/common.py
+  5dc5a47f5f456c39 1-101
+third_party/hugegraph-python-client/pyproject.toml
+  5dc5a47f5f456c39 1-59
+third_party/vermeer-python-client/README.md
+  5dc5a47f5f456c39 1-88
+third_party/hugegraph-mcp/hugegraph_mcp/tools/extract_graph_data.py
+  5dc5a47f5f456c39 1-205
+third_party/hugegraph-llm/src/hugegraph_llm/flows/update_vid_embeddings.py
+  5dc5a47f5f456c39 1-49
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/build_semantic_index.py
+  5dc5a47f5f456c39 1-83
+third_party/hugegraph-mcp/tests/test_gremlin_safety.py
+  5dc5a47f5f456c39 1-106
+third_party/hugegraph-llm/src/hugegraph_llm/models/rerankers/__init__.py
+  5dc5a47f5f456c39 1-24
+third_party/hugegraph-llm/src/tests/test_rag_demo_cli.py
+  5dc5a47f5f456c39 1-93
+third_party/hugegraph-mcp/tests/test_write_confirmation_contract.py
+  5dc5a47f5f456c39 1-174
+third_party/hugegraph-llm/src/hugegraph_llm/utils/log.py
+  5dc5a47f5f456c39 1-90
+third_party/hugegraph-llm/src/tests/fixtures/fake_llm.py
+  5dc5a47f5f456c39 1-31
+third_party/skills/hugegraph-schema-designer/agents/openai.yaml
+  5dc5a47f5f456c39 1-21
+third_party/hugegraph-llm/src/tests/document/test_document_splitter.py
+  5dc5a47f5f456c39 1-129
+third_party/hugegraph-mcp/docs/integration.md
+  5dc5a47f5f456c39 1-385
+third_party/vermeer-python-client/src/pyvermeer/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/tests/fixtures/hugegraph_service.py
+  5dc5a47f5f456c39 1-74
+third_party/hugegraph-python-client/src/pyhugegraph/client.py
+  5dc5a47f5f456c39 1-102
+third_party/skills/hugegraph-schema-designer/SKILL.md
+  5dc5a47f5f456c39 1-45
+third_party/hugegraph-llm/src/tests/integration/test_kg_construction.py
+  5dc5a47f5f456c39 1-104
+third_party/hugegraph-llm/src/tests/config/test_config.py
+  5dc5a47f5f456c39 1-143
+third_party/hugegraph-llm/src/hugegraph_llm/utils/anchor.py
+  5dc5a47f5f456c39 1-39
+third_party/vermeer-python-client/src/pyvermeer/utils/log.py
+  5dc5a47f5f456c39 1-70
+third_party/docker/docker-compose-network.yml
+  5dc5a47f5f456c39 1-51
+third_party/docker/docker-compose-llm.yml
+  5dc5a47f5f456c39 1-18
+third_party/hugegraph-ml/src/hugegraph_ml/examples/gatne_example.py
+  5dc5a47f5f456c39 1-46
+third_party/hugegraph-mcp/tests/test_config.py
+  5dc5a47f5f456c39 1-453
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/answer_synthesize.py
+  5dc5a47f5f456c39 1-265
+third_party/hugegraph-llm/src/hugegraph_llm/indices/vector_index/milvus_vector_store.py
+  5dc5a47f5f456c39 1-259
+third_party/hugegraph-llm/src/tests/nodes/index_node/test_build_gremlin_example_index_node.py
+  5dc5a47f5f456c39 1-37
+third_party/hugegraph-llm/src/hugegraph_llm/utils/vector_index_utils.py
+  5dc5a47f5f456c39 1-148
+third_party/hugegraph-mcp/tests/test_query_graph_data_tool.py
+  5dc5a47f5f456c39 1-472
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/text2gremlin_block.py
+  5dc5a47f5f456c39 1-356
+third_party/hugegraph-python-client/src/tests/conftest.py
+  5dc5a47f5f456c39 1-40
+third_party/hugegraph-python-client/src/pyhugegraph/utils/huge_requests.py
+  5dc5a47f5f456c39 1-162
+third_party/skills/hugegraph-operator/agents/openai.yaml
+  5dc5a47f5f456c39 1-21
+third_party/.gitignore
+  5dc5a47f5f456c39 1-221
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/index_node/vector_query_node.py
+  5dc5a47f5f456c39 1-79
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/info_extract.py
+  5dc5a47f5f456c39 1-198
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/build_vector_index.py
+  5dc5a47f5f456c39 1-47
+third_party/hugegraph-ml/src/hugegraph_ml/models/dgi.py
+  5dc5a47f5f456c39 1-201
+third_party/hugegraph-llm/src/hugegraph_llm/models/rerankers/siliconflow.py
+  5dc5a47f5f456c39 1-69
+third_party/hugegraph-python-client/src/pyhugegraph/api/rebuild.py
+  5dc5a47f5f456c39 1-87
+third_party/hugegraph-python-client/src/pyhugegraph/structure/vertex_data.py
+  5dc5a47f5f456c39 1-44
+third_party/hugegraph-python-client/src/pyhugegraph/utils/huge_decorator.py
+  5dc5a47f5f456c39 1-45
+third_party/rules/requirements.md
+  5dc5a47f5f456c39 1-89
+third_party/hugegraph-mcp/tests/test_write_executor_faults.py
+  5dc5a47f5f456c39 1-372
+third_party/hugegraph-llm/src/tests/operators/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/hugegraph_mcp/tools/schema_write_adapter.py
+  5dc5a47f5f456c39 1-222
+third_party/hugegraph-llm/src/hugegraph_llm/operators/document_op/chunk_split.py
+  5dc5a47f5f456c39 1-82
+third_party/.github/workflows/sync.yml
+  5dc5a47f5f456c39 1-48
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/llm_node/keyword_extract_node.py
+  5dc5a47f5f456c39 1-65
+third_party/hugegraph-llm/src/tests/models/llms/test_openai_client.py
+  5dc5a47f5f456c39 1-318
+third_party/hugegraph-python-client/src/tests/contracts/conditional_property_cas.json
+  5dc5a47f5f456c39 1-32
+third_party/hugegraph-llm/src/hugegraph_llm/utils/graph_index_utils.py
+  5dc5a47f5f456c39 1-138
+third_party/hugegraph-llm/src/tests/data/prompts/test_prompts.yaml
+  5dc5a47f5f456c39 1-53
+third_party/hugegraph-python-client/src/tests/contracts/raw_gremlin_hard_budget.json
+  5dc5a47f5f456c39 1-23
+third_party/hugegraph-ml/src/hugegraph_ml/utils/early_stopping.py
+  5dc5a47f5f456c39 1-93
+third_party/hugegraph-python-client/src/tests/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-python-client/src/tests/api/test_vertex_id_format.py
+  5dc5a47f5f456c39 1-256
+third_party/hugegraph-mcp/tests/test_public_docs_contract.py
+  5dc5a47f5f456c39 1-130
+third_party/hugegraph-python-client/src/pyhugegraph/structure/edge_data.py
+  5dc5a47f5f456c39 1-64
+third_party/hugegraph-llm/src/hugegraph_llm/operators/common_op/nltk_helper.py
+  5dc5a47f5f456c39 1-140
+third_party/hugegraph-mcp/hugegraph_mcp/tools/graph_data_mapping.py
+  5dc5a47f5f456c39 1-185
+third_party/hugegraph-mcp/tests/test_v1_stable_tools.py
+  5dc5a47f5f456c39 1-644
+third_party/hugegraph-ml/src/hugegraph_ml/data/hugegraph2dgl.py
+  5dc5a47f5f456c39 1-444
+third_party/hugegraph-mcp/hugegraph_mcp/guard.py
+  5dc5a47f5f456c39 1-111
+third_party/vermeer-python-client/src/pyvermeer/utils/vermeer_datetime.py
+  5dc5a47f5f456c39 1-32
+third_party/hugegraph-llm/src/tests/operators/index_op/test_build_semantic_index.py
+  5dc5a47f5f456c39 1-267
+third_party/hugegraph-ml/src/hugegraph_ml/models/agnn.py
+  5dc5a47f5f456c39 1-62
+third_party/hugegraph-mcp/tests/integration/test_real_write_path.py
+  5dc5a47f5f456c39 1-1146
+third_party/hugegraph-llm/src/tests/operators/hugegraph_op/test_fetch_graph_data.py
+  5dc5a47f5f456c39 1-243
+third_party/hugegraph-llm/src/tests/operators/llm_op/test_keyword_extract.py
+  5dc5a47f5f456c39 1-340
+third_party/hugegraph-llm/src/hugegraph_llm/resources/prompt_examples/query_examples.json
+  5dc5a47f5f456c39 1-9
+third_party/hugegraph-ml/src/hugegraph_ml/examples/care_gnn_example.py
+  5dc5a47f5f456c39 1-50
+third_party/hugegraph-python-client/src/pyhugegraph/utils/id_format.py
+  5dc5a47f5f456c39 1-72
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/gremlin_generate.py
+  5dc5a47f5f456c39 1-148
+third_party/hugegraph-llm/src/tests/operators/common_op/test_nltk_helper.py
+  5dc5a47f5f456c39 1-28
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/configs_block.py
+  5dc5a47f5f456c39 1-806
+third_party/hugegraph-llm/src/tests/nodes/test_gremlin_execute.py
+  5dc5a47f5f456c39 1-53
+third_party/hugegraph-python-client/src/pyhugegraph/api/task.py
+  5dc5a47f5f456c39 1-42
+third_party/hugegraph-ml/README.md
+  5dc5a47f5f456c39 1-154
+third_party/hugegraph-llm/src/tests/models/rerankers/test_cohere_reranker.py
+  5dc5a47f5f456c39 1-117
+third_party/hugegraph-llm/src/tests/operators/index_op/test_build_vector_index.py
+  5dc5a47f5f456c39 1-151
+third_party/hugegraph-mcp/tests/test_write_limits.py
+  5dc5a47f5f456c39 1-53
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/index_node/semantic_id_query_node.py
+  5dc5a47f5f456c39 1-96
+third_party/hugegraph-llm/src/hugegraph_llm/api/admin_api.py
+  5dc5a47f5f456c39 1-70
+third_party/hugegraph-llm/src/hugegraph_llm/config/hugegraph_config.py
+  5dc5a47f5f456c39 1-44
+third_party/hugegraph-llm/src/hugegraph_llm/resources/prompt_examples/query_examples_CN.json
+  5dc5a47f5f456c39 1-9
+third_party/hugegraph-llm/src/tests/operators/hugegraph_op/test_commit_to_hugegraph.py
+  5dc5a47f5f456c39 1-486
+third_party/hugegraph-mcp/tests/test_execute_gremlin_read.py
+  5dc5a47f5f456c39 1-264
+third_party/hugegraph-mcp/hugegraph_mcp/tools/property_validation.py
+  5dc5a47f5f456c39 1-198
+third_party/hugegraph-python-client/src/pyhugegraph/example/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/hugegraph_mcp/gremlin_tools.py
+  5dc5a47f5f456c39 1-542
+third_party/hugegraph-ml/src/hugegraph_ml/models/correct_and_smooth.py
+  5dc5a47f5f456c39 1-251
+third_party/hugegraph-llm/src/tests/test_utils.py
+  5dc5a47f5f456c39 1-118
+third_party/hugegraph-llm/src/hugegraph_llm/api/models/rag_response.py
+  5dc5a47f5f456c39 1-48
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/index_node/build_semantic_index.py
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-llm/src/tests/config/test_prompt_config.py
+  5dc5a47f5f456c39 1-162
+third_party/hugegraph-llm/src/tests/models/embeddings/test_openai_embedding.py
+  5dc5a47f5f456c39 1-80
+third_party/hugegraph-mcp/hugegraph_mcp/envelope.py
+  5dc5a47f5f456c39 1-258
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/node_embed.py
+  5dc5a47f5f456c39 1-81
+third_party/hugegraph-llm/src/hugegraph_llm/utils/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/tests/test_ingest_graph_data.py
+  5dc5a47f5f456c39 1-1379
+third_party/vermeer-python-client/src/pyvermeer/demo/task_demo.py
+  5dc5a47f5f456c39 1-49
+third_party/vermeer-python-client/src/pyvermeer/utils/vermeer_requests.py
+  5dc5a47f5f456c39 1-107
+third_party/hugegraph-llm/src/tests/document/test_schema_generator_examples_persistence.py
+  5dc5a47f5f456c39 1-347
+third_party/hugegraph-llm/src/hugegraph_llm/flows/scheduler.py
+  5dc5a47f5f456c39 1-198
+third_party/hugegraph-llm/src/hugegraph_llm/models/llms/ollama.py
+  5dc5a47f5f456c39 1-160
+third_party/hugegraph-llm/src/tests/operators/index_op/test_build_gremlin_example_index.py
+  5dc5a47f5f456c39 1-196
+third_party/hugegraph-ml/src/tests/test_tasks/test_node_classify.py
+  5dc5a47f5f456c39 1-57
+third_party/hugegraph-llm/src/hugegraph_llm/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/api/models/graph_extract_responses.py
+  5dc5a47f5f456c39 1-27
+third_party/hugegraph-ml/src/hugegraph_ml/models/gatne.py
+  5dc5a47f5f456c39 1-237
+third_party/hugegraph-python-client/src/tests/api/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/index_node/build_gremlin_example_index.py
+  5dc5a47f5f456c39 1-47
+third_party/hugegraph-mcp/tests/test_backend_capabilities.py
+  5dc5a47f5f456c39 1-120
+third_party/hugegraph-mcp/tests/test_schema_utils.py
+  5dc5a47f5f456c39 1-221
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/hetero_sample_embed_gatne.py
+  5dc5a47f5f456c39 1-121
+third_party/hugegraph-ml/src/hugegraph_ml/models/gin_global_pool.py
+  5dc5a47f5f456c39 1-96
+third_party/hugegraph-mcp/hugegraph_mcp/gremlin_policy.py
+  5dc5a47f5f456c39 1-657
+third_party/hugegraph-llm/src/hugegraph_llm/config/__init__.py
+  5dc5a47f5f456c39 1-47
+third_party/hugegraph-llm/src/hugegraph_llm/flows/rag_flow_graph_only.py
+  5dc5a47f5f456c39 1-153
+third_party/hugegraph-llm/src/hugegraph_llm/enums/property_data_type.py
+  5dc5a47f5f456c39 1-48
+third_party/hugegraph-llm/src/hugegraph_llm/operators/hugegraph_op/commit_to_hugegraph.py
+  5dc5a47f5f456c39 1-320
+third_party/hugegraph-mcp/hugegraph_mcp/confirmable_workflow.py
+  5dc5a47f5f456c39 1-368
+third_party/skills/hugegraph-query-analyst/SKILL.md
+  5dc5a47f5f456c39 1-27
+third_party/hugegraph-ml/src/hugegraph_ml/models/deepergcn.py
+  5dc5a47f5f456c39 1-273
+third_party/docker/charts/hg-llm/values.yaml
+  5dc5a47f5f456c39 1-139
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/unstructured_data_utils.py
+  5dc5a47f5f456c39 1-139
+third_party/hugegraph-python-client/src/pyhugegraph/api/schema_manage/index_label.py
+  5dc5a47f5f456c39 1-108
+third_party/hugegraph-python-client/src/pyhugegraph/utils/exceptions.py
+  5dc5a47f5f456c39 1-76
+third_party/docs/quality/coverage-ratchet.md
+  5dc5a47f5f456c39 1-66
+third_party/hugegraph-llm/src/hugegraph_llm/operators/common_op/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/tests/data/documents/sample.txt
+  5dc5a47f5f456c39 1-6
+third_party/hugegraph-ml/src/tests/test_data/test_hugegraph2dgl.py
+  5dc5a47f5f456c39 1-133
+third_party/rules/basic.md
+  5dc5a47f5f456c39 1-82
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/app.py
+  5dc5a47f5f456c39 1-246
+third_party/vermeer-python-client/src/pyvermeer/structure/graph_data.py
+  5dc5a47f5f456c39 1-245
+third_party/vermeer-python-client/src/pyvermeer/api/worker.py
+  5dc5a47f5f456c39 1-16
+third_party/vermeer-python-client/src/pyvermeer/structure/worker_data.py
+  5dc5a47f5f456c39 1-118
+third_party/rules/prompts/project-general.md
+  5dc5a47f5f456c39 1-176
+third_party/hugegraph-llm/src/tests/operators/document_op/test_chunk_split.py
+  5dc5a47f5f456c39 1-134
+third_party/hugegraph-llm/src/hugegraph_llm/operators/hugegraph_op/fetch_graph_data.py
+  5dc5a47f5f456c39 1-59
+third_party/.github/workflows/rerun-ci.yml
+  5dc5a47f5f456c39 1-102
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/vector_index_query.py
+  5dc5a47f5f456c39 1-41
+third_party/hugegraph-llm/MANIFEST.in
+  5dc5a47f5f456c39 1-23
+third_party/.github/ISSUE_TEMPLATE/config.yml
+  5dc5a47f5f456c39 1-18
+third_party/hugegraph-llm/src/hugegraph_llm/api/models/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/resources/demo/text2gremlin.csv
+  5dc5a47f5f456c39 1-99
+third_party/hugegraph-llm/src/tests/operators/document_op/test_word_extract.py
+  5dc5a47f5f456c39 1-168
+third_party/hugegraph-mcp/hugegraph_mcp/write_plan.py
+  5dc5a47f5f456c39 1-329
+third_party/docs/specs/2026-05-31-hugegraph-ai-code-scan-design.md
+  5dc5a47f5f456c39 1-169
+third_party/hugegraph-llm/src/hugegraph_llm/indices/vector_index/base.py
+  5dc5a47f5f456c39 1-105
+third_party/docker/env.template
+  5dc5a47f5f456c39 1-7
+third_party/hugegraph-mcp/tests/test_generate_gremlin.py
+  5dc5a47f5f456c39 1-326
+third_party/hugegraph-ml/src/tests/test_tasks/test_node_embed.py
+  5dc5a47f5f456c39 1-52
+third_party/hugegraph-python-client/src/pyhugegraph/api/services.py
+  5dc5a47f5f456c39 1-130
+third_party/hugegraph-python-client/src/tests/api/test_version.py
+  5dc5a47f5f456c39 1-52
+third_party/rules/plan.md
+  5dc5a47f5f456c39 1-96
+third_party/hugegraph-ml/src/hugegraph_ml/models/care_gnn.py
+  5dc5a47f5f456c39 1-232
+third_party/hugegraph-llm/src/hugegraph_llm/api/rag_api.py
+  5dc5a47f5f456c39 1-406
+third_party/hugegraph-llm/src/tests/data/kg/schema.json
+  5dc5a47f5f456c39 1-42
+third_party/hugegraph-llm/AGENTS.md
+  5dc5a47f5f456c39 1-56
+third_party/hugegraph-llm/src/hugegraph_llm/enums/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/resources/demo/test.txt
+  5dc5a47f5f456c39 1
+third_party/hugegraph-llm/src/tests/integration/test_graph_rag_pipeline.py
+  5dc5a47f5f456c39 1-83
+third_party/hugegraph-mcp/tests/test_readonly_mode.py
+  5dc5a47f5f456c39 1-144
+third_party/hugegraph-llm/src/hugegraph_llm/config/prompt_config.py
+  5dc5a47f5f456c39 1-448
+third_party/vermeer-python-client/src/pyvermeer/utils/vermeer_config.py
+  5dc5a47f5f456c39 1-34
+third_party/hugegraph-mcp/tests/test_confirm_write.py
+  5dc5a47f5f456c39 1-252
+third_party/hugegraph-llm/src/tests/models/llms/test_litellm_client.py
+  5dc5a47f5f456c39 1-105
+third_party/hugegraph-llm/src/tests/operators/index_op/test_vector_index_query.py
+  5dc5a47f5f456c39 1-216
+third_party/.licenserc.yaml
+  5dc5a47f5f456c39 1-91
+third_party/hugegraph-llm/src/hugegraph_llm/flows/build_schema.py
+  5dc5a47f5f456c39 1-73
+third_party/hugegraph-llm/src/tests/document/test_graph_extract_configurable_split.py
+  5dc5a47f5f456c39 1-238
+third_party/hugegraph-mcp/hugegraph_mcp/tools/graph_write_plan.py
+  5dc5a47f5f456c39 1-238
+third_party/hugegraph-ml/src/hugegraph_ml/models/appnp.py
+  5dc5a47f5f456c39 1-83
+third_party/hugegraph-llm/src/tests/utils/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/tests/test_mutate_graph_properties_tool.py
+  5dc5a47f5f456c39 1-625
+third_party/hugegraph-llm/src/hugegraph_llm/models/embeddings/__init__.py
+  5dc5a47f5f456c39 1-24
+third_party/hugegraph-python-client/src/pyhugegraph/api/schema_manage/property_key.py
+  5dc5a47f5f456c39 1-191
+third_party/hugegraph-llm/src/tests/data/quality_program/text2gremlin_schema.json
+  5dc5a47f5f456c39 1-9
+third_party/hugegraph-llm/src/hugegraph_llm/models/__init__.py
+  5dc5a47f5f456c39 1-31
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/other_block.py
+  5dc5a47f5f456c39 1-72
+third_party/hugegraph-llm/src/hugegraph_llm/enums/property_cardinality.py
+  5dc5a47f5f456c39 1-26
+third_party/hugegraph-llm/src/hugegraph_llm/models/embeddings/litellm.py
+  5dc5a47f5f456c39 1-144
+third_party/hugegraph-llm/src/hugegraph_llm/state/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-ml/src/hugegraph_ml/examples/agnn_example.py
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-python-client/src/tests/fixtures/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-python-client/src/pyhugegraph/utils/log.py
+  5dc5a47f5f456c39 1-252
+third_party/hugegraph-llm/src/hugegraph_llm/resources/prompt_examples/prompt_examples.json
+  5dc5a47f5f456c39 1-26
+third_party/hugegraph-mcp/hugegraph_mcp/tools/manage_graph_data.py
+  5dc5a47f5f456c39 1-601
+third_party/docker/charts/hg-llm/templates/tests/test-connection.yaml
+  5dc5a47f5f456c39 1-15
+third_party/hugegraph-llm/src/tests/flows/test_scheduler.py
+  5dc5a47f5f456c39 1-125
+third_party/NOTICE
+  5dc5a47f5f456c39 1-5
+third_party/spec/hugegraph-llm/fixed_flow/design.md
+  5dc5a47f5f456c39 1-640
+third_party/hugegraph-llm/src/tests/api/test_admin_api.py
+  5dc5a47f5f456c39 1-136
+third_party/hugegraph-python-client/src/pyhugegraph/utils/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/api/exceptions/rag_exceptions.py
+  5dc5a47f5f456c39 1-38
+third_party/hugegraph-llm/src/hugegraph_llm/models/llms/init_llm.py
+  5dc5a47f5f456c39 1-175
+third_party/hugegraph-ml/src/hugegraph_ml/examples/deepergcn_example.py
+  5dc5a47f5f456c39 1-40
+third_party/hugegraph-llm/src/hugegraph_llm/resources/demo/css.py
+  5dc5a47f5f456c39 1-170
+third_party/hugegraph-mcp/hugegraph_mcp/confirmation_store.py
+  5dc5a47f5f456c39 1-400
+third_party/hugegraph-llm/src/hugegraph_llm/flows/rag_flow_raw.py
+  5dc5a47f5f456c39 1-88
+third_party/hugegraph-python-client/src/pyhugegraph/api/traverser.py
+  5dc5a47f5f456c39 1-250
+third_party/hugegraph-llm/src/tests/integration/test_core_kg_smoke.py
+  5dc5a47f5f456c39 1-108
+third_party/hugegraph-python-client/src/pyhugegraph/structure/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/hugegraph_node/fetch_graph_data.py
+  5dc5a47f5f456c39 1-35
+third_party/hugegraph-llm/src/hugegraph_llm/indices/vector_index/qdrant_vector_store.py
+  5dc5a47f5f456c39 1-220
+third_party/hugegraph-llm/src/tests/middleware/test_middleware.py
+  5dc5a47f5f456c39 1-89
+third_party/hugegraph-mcp/tests/test_guard.py
+  5dc5a47f5f456c39 1-76
+third_party/hugegraph-mcp/hugegraph_mcp/tools/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/indices/vector_index/faiss_vector_store.py
+  5dc5a47f5f456c39 1-138
+third_party/hugegraph-llm/src/tests/operators/llm_op/test_gremlin_generate.py
+  5dc5a47f5f456c39 1-217
+third_party/hugegraph-mcp/tests/test_hugegraph_ai_client.py
+  5dc5a47f5f456c39 1-676
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-ml/src/hugegraph_ml/utils/dgl2hugegraph_utils.py
+  5dc5a47f5f456c39 1-1086
+third_party/hugegraph-mcp/hugegraph_mcp/tools/query_graph_data.py
+  5dc5a47f5f456c39 1-497
+third_party/hugegraph-mcp/tests/test_reconciler.py
+  5dc5a47f5f456c39 1-226
+third_party/hugegraph-mcp/hugegraph_mcp/tools/graph_write_adapter.py
+  5dc5a47f5f456c39 1-454
+third_party/hugegraph-llm/src/hugegraph_llm/api/exceptions/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/CI_FIX_SUMMARY.md
+  5dc5a47f5f456c39 1-69
+third_party/hugegraph-mcp/hugegraph_mcp/schema_tools.py
+  5dc5a47f5f456c39 1-125
+third_party/hugegraph-ml/src/hugegraph_ml/models/arma.py
+  5dc5a47f5f456c39 1-167
+third_party/hugegraph-python-client/src/pyhugegraph/structure/edge_label_data.py
+  5dc5a47f5f456c39 1-83
+third_party/hugegraph-llm/src/hugegraph_llm/indices/graph_index.py
+  5dc5a47f5f456c39 1-51
+third_party/hugegraph-python-client/src/tests/api/test_graphs.py
+  5dc5a47f5f456c39 1-64
+third_party/hugegraph-ml/src/hugegraph_ml/examples/jknet_example.py
+  5dc5a47f5f456c39 1-36
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/docker/charts/hg-llm/.helmignore
+  5dc5a47f5f456c39 1-22
+third_party/docs/quality/test-taxonomy.md
+  5dc5a47f5f456c39 1-32
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/rag_block.py
+  5dc5a47f5f456c39 1-472
+third_party/hugegraph-llm/src/hugegraph_llm/models/rerankers/init_reranker.py
+  5dc5a47f5f456c39 1-36
+third_party/hugegraph-mcp/tests/test_manage_schema.py
+  5dc5a47f5f456c39 1-2462
+third_party/hugegraph-mcp/tests/test_envelope.py
+  5dc5a47f5f456c39 1-126
+third_party/hugegraph-python-client/src/pyhugegraph/api/version.py
+  5dc5a47f5f456c39 1-25
+third_party/hugegraph-llm/quick_start.md
+  5dc5a47f5f456c39 1-200
+third_party/hugegraph-python-client/src/pyhugegraph/structure/vertex_label_data.py
+  5dc5a47f5f456c39 1-69
+third_party/hugegraph-python-client/src/tests/api/test_metric.py
+  5dc5a47f5f456c39 1-165
+third_party/hugegraph-llm/src/hugegraph_llm/indices/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/vermeer-python-client/pyproject.toml
+  5dc5a47f5f456c39 1-59
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/llm_node/schema_build.py
+  5dc5a47f5f456c39 1-87
+third_party/vermeer-python-client/src/tests/structure/test_task_data.py
+  5dc5a47f5f456c39 1-32
+third_party/hugegraph-python-client/src/pyhugegraph/api/schema_manage/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-ml/src/hugegraph_ml/examples/gin_example.py
+  5dc5a47f5f456c39 1-35
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/link_prediction_pgnn.py
+  5dc5a47f5f456c39 1-77
+third_party/hugegraph-llm/src/tests/integration/test_hugegraph_boundary.py
+  5dc5a47f5f456c39 1-246
+third_party/hugegraph-python-client/src/tests/api/test_log.py
+  5dc5a47f5f456c39 1-49
+third_party/.github/workflows/auto-pr-comment.yml
+  5dc5a47f5f456c39 1-36
+third_party/hugegraph-ml/src/hugegraph_ml/models/dagnn.py
+  5dc5a47f5f456c39 1-145
+third_party/hugegraph-python-client/README.md
+  5dc5a47f5f456c39 1-185
+third_party/hugegraph-mcp/hugegraph_mcp/write_limits.py
+  5dc5a47f5f456c39 1-103
+third_party/hugegraph-mcp/hugegraph_mcp/plan_hash.py
+  5dc5a47f5f456c39 1-209
+third_party/hugegraph-mcp/tests/test_refresh_vid_embeddings.py
+  5dc5a47f5f456c39 1-65
+third_party/hugegraph-python-client/src/pyhugegraph/structure/property_key_data.py
+  5dc5a47f5f456c39 1-66
+third_party/hugegraph-python-client/src/tests/api/test_traverser.py
+  5dc5a47f5f456c39 1-252
+third_party/hugegraph-llm/src/hugegraph_llm/config/models/base_prompt_config.py
+  5dc5a47f5f456c39 1-179
+third_party/hugegraph-ml/src/hugegraph_ml/data/hugegraph_dataset.py
+  5dc5a47f5f456c39 1-31
+third_party/skills/hugegraph-regression-tester/agents/openai.yaml
+  5dc5a47f5f456c39 1-21
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/property_graph_extract.py
+  5dc5a47f5f456c39 1-271
+third_party/hugegraph-llm/src/tests/operators/common_op/test_print_result.py
+  5dc5a47f5f456c39 1-124
+third_party/hugegraph-ml/src/hugegraph_ml/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-ml/src/hugegraph_ml/data/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/tests/document/test_document.py
+  5dc5a47f5f456c39 1-73
+third_party/hugegraph-llm/src/hugegraph_llm/resources/prompt_examples/schema_examples.json
+  5dc5a47f5f456c39 1-47
+third_party/hugegraph-python-client/src/pyhugegraph/structure/rank_data.py
+  5dc5a47f5f456c39 1-94
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/gremlin_example_index_query.py
+  5dc5a47f5f456c39 1-78
+third_party/hugegraph-mcp/hugegraph_mcp/hugegraph_client.py
+  5dc5a47f5f456c39 1-44
+third_party/hugegraph-llm/src/tests/api/test_graph_extract_api.py
+  5dc5a47f5f456c39 1-396
+third_party/rules/execute.md
+  5dc5a47f5f456c39 1-53
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/fraud_detector_caregnn.py
+  5dc5a47f5f456c39 1-96
+third_party/hugegraph-python-client/src/pyhugegraph/api/schema_manage/vertex_label.py
+  5dc5a47f5f456c39 1-151
+third_party/hugegraph-python-client/src/tests/api/test_auth_routing.py
+  5dc5a47f5f456c39 1-305
+third_party/hugegraph-llm/src/hugegraph_llm/operators/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/operators/hugegraph_op/schema_manager.py
+  5dc5a47f5f456c39 1-85
+third_party/hugegraph-ml/src/hugegraph_ml/utils/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-ml/src/hugegraph_ml/models/bgrl.py
+  5dc5a47f5f456c39 1-242
+third_party/.github/workflows/hugegraph-python-client.yml
+  5dc5a47f5f456c39 1-128
+third_party/hugegraph-mcp/tests/test_plan_hash.py
+  5dc5a47f5f456c39 1-760
+third_party/hugegraph-ml/src/hugegraph_ml/examples/dagnn_example.py
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-python-client/src/tests/api/test_gremlin.py
+  5dc5a47f5f456c39 1-181
+third_party/vermeer-python-client/src/pyvermeer/api/master.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/base_node.py
+  5dc5a47f5f456c39 1-107
+third_party/hugegraph-llm/src/tests/data/quality_program/kg_text.txt
+  5dc5a47f5f456c39 1
+third_party/hugegraph-llm/src/tests/indices/test_faiss_vector_index.py
+  5dc5a47f5f456c39 1-192
+third_party/hugegraph-ml/src/hugegraph_ml/examples/cluster_gcn_example.py
+  5dc5a47f5f456c39 1-37
+third_party/hugegraph-llm/src/hugegraph_llm/models/embeddings/base.py
+  5dc5a47f5f456c39 1-127
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/vector_graph_block.py
+  5dc5a47f5f456c39 1-602
+third_party/hugegraph-llm/src/hugegraph_llm/models/llms/base.py
+  5dc5a47f5f456c39 1-74
+third_party/hugegraph-llm/src/tests/operators/index_op/test_gremlin_example_index_query.py
+  5dc5a47f5f456c39 1-329
+third_party/hugegraph-python-client/src/tests/api/test_graph.py
+  5dc5a47f5f456c39 1-240
+third_party/hugegraph-llm/src/hugegraph_llm/api/models/graph_extract_requests.py
+  5dc5a47f5f456c39 1-127
+third_party/hugegraph-mcp/tests/test_import_graph_data_tool.py
+  5dc5a47f5f456c39 1-177
+third_party/docker/charts/hg-llm/Chart.yaml
+  5dc5a47f5f456c39 1-24
+third_party/hugegraph-llm/src/tests/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/pyproject.toml
+  5dc5a47f5f456c39 1-117
+third_party/hugegraph-mcp/hugegraph_mcp/tools/generate_gremlin.py
+  5dc5a47f5f456c39 1-190
+third_party/hugegraph-python-client/src/pyhugegraph/api/rank.py
+  5dc5a47f5f456c39 1-65
+third_party/hugegraph-mcp/hugegraph_mcp/server.py
+  5dc5a47f5f456c39 1-693
+third_party/hugegraph-mcp/hugegraph_mcp/tools/live_schema.py
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-mcp/tests/test_gremlin_policy.py
+  5dc5a47f5f456c39 1-240
+third_party/hugegraph-python-client/src/pyhugegraph/structure/gremlin_data.py
+  5dc5a47f5f456c39 1-80
+third_party/hugegraph-ml/src/hugegraph_ml/examples/bgrl_example.py
+  5dc5a47f5f456c39 1-50
+third_party/hugegraph-llm/src/tests/operators/llm_op/test_info_extract.py
+  5dc5a47f5f456c39 1-144
+third_party/hugegraph-ml/pyproject.toml
+  5dc5a47f5f456c39 1-71
+third_party/hugegraph-mcp/tests/test_property_validation.py
+  5dc5a47f5f456c39 1-171
+third_party/hugegraph-ml/src/hugegraph_ml/models/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/tests/test_graph_write_workflow.py
+  5dc5a47f5f456c39 1-416
+third_party/.pre-commit-config.yaml
+  5dc5a47f5f456c39 1-39
+third_party/AGENTS.md
+  5dc5a47f5f456c39 1-48
+third_party/hugegraph-llm/src/hugegraph_llm/models/embeddings/init_embedding.py
+  5dc5a47f5f456c39 1-113
+third_party/hugegraph-llm/src/hugegraph_llm/operators/llm_op/disambiguate_data.py
+  5dc5a47f5f456c39 1-57
+third_party/hugegraph-llm/src/hugegraph_llm/flows/rag_flow_vector_only.py
+  5dc5a47f5f456c39 1-106
+third_party/hugegraph-llm/src/tests/operators/common_op/test_merge_dedup_rerank.py
+  5dc5a47f5f456c39 1-329
+third_party/hugegraph-llm/src/hugegraph_llm/operators/common_op/merge_dedup_rerank.py
+  5dc5a47f5f456c39 1-150
+third_party/hugegraph-python-client/src/pyhugegraph/api/gremlin.py
+  5dc5a47f5f456c39 1-56
+third_party/hugegraph-ml/src/hugegraph_ml/examples/grand_example.py
+  5dc5a47f5f456c39 1-34
+third_party/hugegraph-python-client/src/pyhugegraph/structure/response_data.py
+  5dc5a47f5f456c39 1-39
+third_party/rules/README.md
+  5dc5a47f5f456c39 1-85
+third_party/hugegraph-mcp/docs/architecture.md
+  5dc5a47f5f456c39 1-108
+third_party/hugegraph-llm/src/tests/document/test_text_loader.py
+  5dc5a47f5f456c39 1-98
+third_party/vermeer-python-client/src/pyvermeer/api/graph.py
+  5dc5a47f5f456c39 1-37
+third_party/hugegraph-llm/src/tests/models/embeddings/test_ollama_embedding.py
+  5dc5a47f5f456c39 1-134
+third_party/docker/charts/hg-llm/templates/ingress.yaml
+  5dc5a47f5f456c39 1-43
+third_party/vermeer-python-client/src/pyvermeer/client/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/operators/common_op/check_schema.py
+  5dc5a47f5f456c39 1-140
+third_party/hugegraph-llm/src/tests/operators/common_op/test_check_schema.py
+  5dc5a47f5f456c39 1-86
+third_party/hugegraph-llm/src/hugegraph_llm/flows/common.py
+  5dc5a47f5f456c39 1-62
+third_party/hugegraph-llm/src/hugegraph_llm/config/llm_config.py
+  5dc5a47f5f456c39 1-86
+third_party/.github/labeler.yml
+  5dc5a47f5f456c39 1-31
+third_party/hugegraph-ml/src/hugegraph_ml/models/cluster_gcn.py
+  5dc5a47f5f456c39 1-57
+third_party/hugegraph-ml/src/hugegraph_ml/examples/bgnn_example.py
+  5dc5a47f5f456c39 1-66
+third_party/hugegraph-llm/src/hugegraph_llm/config/index_config.py
+  5dc5a47f5f456c39 1-36
+third_party/hugegraph-llm/src/tests/api/test_rag_api.py
+  5dc5a47f5f456c39 1-607
+third_party/hugegraph-llm/src/hugegraph_llm/operators/document_op/word_extract.py
+  5dc5a47f5f456c39 1-79
+third_party/hugegraph-llm/src/tests/fixtures/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/tests/test_query_graph_data.py
+  5dc5a47f5f456c39 1-37
+third_party/.github/workflows/check-dependencies.yml
+  5dc5a47f5f456c39 1-37
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/node_classify_with_edge.py
+  5dc5a47f5f456c39 1-111
+third_party/hugegraph-llm/src/hugegraph_llm/middleware/middleware.py
+  5dc5a47f5f456c39 1-52
+third_party/hugegraph-ml/src/tests/test_examples/test_examples.py
+  5dc5a47f5f456c39 1-143
+third_party/docker/.dockerignore
+  5dc5a47f5f456c39 1-72
+third_party/vermeer-python-client/src/pyvermeer/client/client.py
+  5dc5a47f5f456c39 1-58
+third_party/hugegraph-llm/src/hugegraph_llm/flows/import_graph_data.py
+  5dc5a47f5f456c39 1-67
+third_party/hugegraph-mcp/tests/test_execute_gremlin_write.py
+  5dc5a47f5f456c39 1-94
+third_party/hugegraph-mcp/hugegraph_mcp/tools/inspect_schema.py
+  5dc5a47f5f456c39 1-272
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/node_classify.py
+  5dc5a47f5f456c39 1-109
+third_party/hugegraph-ml/src/hugegraph_ml/models/diffpool.py
+  5dc5a47f5f456c39 1-374
+third_party/hugegraph-python-client/src/pyhugegraph/api/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/demo/rag_demo/admin_block.py
+  5dc5a47f5f456c39 1-173
+third_party/vermeer-python-client/src/pyvermeer/structure/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/tests/models/rerankers/test_init_reranker.py
+  5dc5a47f5f456c39 1-73
+third_party/hugegraph-llm/src/hugegraph_llm/api/models/rag_requests.py
+  5dc5a47f5f456c39 1-193
+third_party/hugegraph-ml/src/hugegraph_ml/examples/pgnn_example.py
+  5dc5a47f5f456c39 1-33
+third_party/hugegraph-mcp/tests/test_inspect_schema_tool.py
+  5dc5a47f5f456c39 1-147
+third_party/.asf.yaml
+  5dc5a47f5f456c39 1-71
+third_party/hugegraph-llm/src/tests/models/rerankers/test_siliconflow_reranker.py
+  5dc5a47f5f456c39 1-147
+third_party/hugegraph-mcp/hugegraph_mcp/gremlin_safety.py
+  5dc5a47f5f456c39 1-34
+third_party/hugegraph-llm/src/hugegraph_llm/config/admin_config.py
+  5dc5a47f5f456c39 1-28
+third_party/hugegraph-mcp/hugegraph_mcp/tools/ingest_graph_data.py
+  5dc5a47f5f456c39 1-1162
+third_party/hugegraph-mcp/tests/test_extract_graph_data.py
+  5dc5a47f5f456c39 1-199
+third_party/.github/pull.yml
+  5dc5a47f5f456c39 1-11
+third_party/hugegraph-mcp/tests/test_error_handling.py
+  5dc5a47f5f456c39 1-543
+third_party/vermeer-python-client/src/pyvermeer/api/task.py
+  5dc5a47f5f456c39 1-38
+third_party/hugegraph-llm/src/hugegraph_llm/operators/hugegraph_op/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/style/pylint.conf
+  5dc5a47f5f456c39 1-674
+third_party/hugegraph-llm/src/tests/flows/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/hugegraph_mcp/write_executor.py
+  5dc5a47f5f456c39 1-325
+third_party/hugegraph-mcp/tests/conftest.py
+  5dc5a47f5f456c39 1-22
+third_party/vermeer-python-client/src/pyvermeer/api/base.py
+  5dc5a47f5f456c39 1-36
+third_party/hugegraph-llm/src/hugegraph_llm/models/embeddings/ollama.py
+  5dc5a47f5f456c39 1-115
+third_party/hugegraph-python-client/src/tests/client_utils.py
+  5dc5a47f5f456c39 1-146
+third_party/LICENSE
+  5dc5a47f5f456c39 1-201
+third_party/hugegraph-ml/src/hugegraph_ml/models/bgnn.py
+  5dc5a47f5f456c39 1-671
+third_party/hugegraph-python-client/src/pyhugegraph/api/variable.py
+  5dc5a47f5f456c39 1-39
+third_party/.github/workflows/hugegraph-mcp.yml
+  5dc5a47f5f456c39 1-223
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/llm_node/prompt_generate.py
+  5dc5a47f5f456c39 1-60
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/llm_node/extract_info.py
+  5dc5a47f5f456c39 1-54
+third_party/hugegraph-mcp/hugegraph_mcp/error_mapping.py
+  5dc5a47f5f456c39 1-132
+third_party/hugegraph-mcp/hugegraph_mcp/tools/mutate_graph_properties.py
+  5dc5a47f5f456c39 1-565
+third_party/hugegraph-llm/src/hugegraph_llm/utils/hugegraph_utils.py
+  5dc5a47f5f456c39 1-234
+third_party/hugegraph-python-client/src/tests/api/test_task.py
+  5dc5a47f5f456c39 1-68
+third_party/hugegraph-llm/src/hugegraph_llm/flows/rag_flow_graph_vector.py
+  5dc5a47f5f456c39 1-129
+third_party/hugegraph-ml/src/hugegraph_ml/models/grand.py
+  5dc5a47f5f456c39 1-286
+third_party/hugegraph-mcp/tests/test_confirmation_store.py
+  5dc5a47f5f456c39 1-70
+third_party/hugegraph-python-client/src/pyhugegraph/api/auth.py
+  5dc5a47f5f456c39 1-209
+third_party/hugegraph-python-client/src/pyhugegraph/api/property_cas.py
+  5dc5a47f5f456c39 1-61
+third_party/hugegraph-llm/src/hugegraph_llm/document/chunk_split.py
+  5dc5a47f5f456c39 1-49
+third_party/hugegraph-llm/src/tests/integration/test_core_text2gremlin_smoke.py
+  5dc5a47f5f456c39 1-76
+third_party/docker/charts/hg-llm/templates/serviceaccount.yaml
+  5dc5a47f5f456c39 1-13
+third_party/hugegraph-mcp/tests/test_write_plan.py
+  5dc5a47f5f456c39 1-233
+third_party/skills/hugegraph-query-analyst/agents/openai.yaml
+  5dc5a47f5f456c39 1-21
+third_party/hugegraph-python-client/src/pyhugegraph/api/metric.py
+  5dc5a47f5f456c39 1-57
+third_party/.github/workflows/labeler.yml
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/document_node/chunk_split.py
+  5dc5a47f5f456c39 1-40
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/hugegraph_node/schema.py
+  5dc5a47f5f456c39 1-70
+third_party/hugegraph-python-client/src/pyhugegraph/api/graph.py
+  5dc5a47f5f456c39 1-249
+third_party/hugegraph-llm/src/tests/document/test_vector_index_utils.py
+  5dc5a47f5f456c39 1-291
+third_party/hugegraph-ml/src/hugegraph_ml/examples/correct_and_smooth_example.py
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-mcp/hugegraph_mcp/write_contract.py
+  5dc5a47f5f456c39 1-117
+third_party/vermeer-python-client/src/pyvermeer/utils/exception.py
+  5dc5a47f5f456c39 1-44
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/util.py
+  5dc5a47f5f456c39 1-38
+third_party/hugegraph-llm/src/hugegraph_llm/operators/operator_list.py
+  5dc5a47f5f456c39 1-274
+third_party/hugegraph-python-client/src/tests/api/test_schema_contract.py
+  5dc5a47f5f456c39 1-91
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/index_node/gremlin_example_index_query.py
+  5dc5a47f5f456c39 1-55
+third_party/hugegraph-llm/.gitignore
+  5dc5a47f5f456c39 1-7
+third_party/hugegraph-ml/src/hugegraph_ml/examples/dgi_example.py
+  5dc5a47f5f456c39 1-41
+third_party/hugegraph-llm/src/hugegraph_llm/operators/common_op/print_result.py
+  5dc5a47f5f456c39 1-29
+third_party/hugegraph-mcp/hugegraph_mcp/tools/graph_data_validate.py
+  5dc5a47f5f456c39 1-547
+third_party/hugegraph-mcp/hugegraph_mcp/tools/inspect_graph.py
+  5dc5a47f5f456c39 1-207
+third_party/hugegraph-mcp/tests/test_inspect_graph.py
+  5dc5a47f5f456c39 1-398
+third_party/.github/workflows/ruff.yml
+  5dc5a47f5f456c39 1-94
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/index_node/build_vector_index.py
+  5dc5a47f5f456c39 1-39
+third_party/hugegraph-python-client/src/pyhugegraph/example/hugegraph_example.py
+  5dc5a47f5f456c39 1-58
+third_party/pyproject.toml
+  5dc5a47f5f456c39 1-207
+third_party/hugegraph-llm/src/hugegraph_llm/api/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/tests/test_get_live_schema.py
+  5dc5a47f5f456c39 1-158
+third_party/hugegraph-python-client/src/pyhugegraph/example/hugegraph_test.py
+  5dc5a47f5f456c39 1-46
+third_party/rules/design.md
+  5dc5a47f5f456c39 1-166
+third_party/hugegraph-llm/src/hugegraph_llm/api/graph_extract_api.py
+  5dc5a47f5f456c39 1-69
+third_party/hugegraph-llm/src/hugegraph_llm/document/__init__.py
+  5dc5a47f5f456c39 1-74
+third_party/hugegraph-llm/src/tests/operators/index_op/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/llm_node/answer_synthesize_node.py
+  5dc5a47f5f456c39 1-87
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/graph_classify.py
+  5dc5a47f5f456c39 1-122
+third_party/skills/hugegraph-data-importer/SKILL.md
+  5dc5a47f5f456c39 1-47
+third_party/vermeer-python-client/src/pyvermeer/structure/master_data.py
+  5dc5a47f5f456c39 1-82
+third_party/hugegraph-python-client/src/pyhugegraph/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/hugegraph_node/graph_query_node.py
+  5dc5a47f5f456c39 1-461
+third_party/hugegraph-mcp/hugegraph_mcp/tools/graph_data_gremlin.py
+  5dc5a47f5f456c39 1-153
+third_party/hugegraph-python-client/src/pyhugegraph/structure/services_data.py
+  5dc5a47f5f456c39 1-60
+third_party/spec/hugegraph-llm/fixed_flow/tasks.md
+  5dc5a47f5f456c39 1-36
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/hugegraph_node/commit_to_hugegraph.py
+  5dc5a47f5f456c39 1-34
+third_party/hugegraph-python-client/src/pyhugegraph/utils/huge_config.py
+  5dc5a47f5f456c39 1-91
+third_party/hugegraph-llm/src/hugegraph_llm/nodes/llm_node/text2gremlin.py
+  5dc5a47f5f456c39 1-72
+third_party/hugegraph-llm/src/hugegraph_llm/flows/utils.py
+  5dc5a47f5f456c39 1-33
+third_party/hugegraph-llm/src/hugegraph_llm/models/llms/openai.py
+  5dc5a47f5f456c39 1-232
+third_party/hugegraph-ml/src/hugegraph_ml/models/pgnn.py
+  5dc5a47f5f456c39 1-454
+third_party/hugegraph-ml/src/hugegraph_ml/examples/arma_example.py
+  5dc5a47f5f456c39 1-43
+third_party/hugegraph-llm/src/tests/integration/test_core_graphrag_smoke.py
+  5dc5a47f5f456c39 1-89
+third_party/hugegraph-llm/src/hugegraph_llm/operators/document_op/textrank_word_extract.py
+  5dc5a47f5f456c39 1-149
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/link_prediction_seal.py
+  5dc5a47f5f456c39 1-137
+third_party/hugegraph-ml/src/hugegraph_ml/models/mlp.py
+  5dc5a47f5f456c39 1-70
+third_party/hugegraph-llm/src/hugegraph_llm/models/llms/litellm.py
+  5dc5a47f5f456c39 1-193
+third_party/hugegraph-llm/src/tests/integration/test_rag_pipeline.py
+  5dc5a47f5f456c39 1-81
+third_party/hugegraph-llm/src/tests/operators/index_op/test_semantic_id_query.py
+  5dc5a47f5f456c39 1-158
+third_party/hugegraph-mcp/tests/contracts/write_confirmation_v2.json
+  5dc5a47f5f456c39 1-42
+third_party/hugegraph-llm/src/hugegraph_llm/flows/prompt_generate.py
+  5dc5a47f5f456c39 1-59
+third_party/hugegraph-ml/src/hugegraph_ml/models/seal.py
+  5dc5a47f5f456c39 1-771
+third_party/hugegraph-llm/src/hugegraph_llm/operators/document_op/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-mcp/hugegraph_mcp/__init__.py
+  5dc5a47f5f456c39 1-12
+third_party/vermeer-python-client/src/pyvermeer/utils/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/tests/conftest.py
+  5dc5a47f5f456c39 1-103
+third_party/docker/charts/hg-llm/templates/NOTES.txt
+  5dc5a47f5f456c39 1-22
+third_party/hugegraph-llm/src/hugegraph_llm/demo/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/hugegraph-llm/src/tests/operators/hugegraph_op/test_commit_to_hugegraph_load_into_graph.py
+  5dc5a47f5f456c39 1-430
+third_party/hugegraph-ml/src/hugegraph_ml/tasks/__init__.py
+  5dc5a47f5f456c39 1-16
+third_party/.github/ISSUE_TEMPLATE/bug_report.yml
+  5dc5a47f5f456c39 1-95
+third_party/hugegraph-python-client/src/tests/fixtures/hugegraph_service.py
+  5dc5a47f5f456c39 1-75
+third_party/hugegraph-mcp/hugegraph_mcp/tools/schema_contract.py
+  5dc5a47f5f456c39 1-195
+third_party/hugegraph-mcp/tests/test_schema_write_workflow.py
+  5dc5a47f5f456c39 1-154
+third_party/hugegraph-llm/src/hugegraph_llm/state/ai_state.py
+  5dc5a47f5f456c39 1-277
+third_party/hugegraph-llm/src/hugegraph_llm/operators/index_op/build_gremlin_example_index.py
+  5dc5a47f5f456c39 1-58
+third_party/docker/charts/hg-llm/templates/hpa.yaml
+  5dc5a47f5f456c39 1-32
+third_party/hugegraph-mcp/tests/test_plan_store_migration.py
+  5dc5a47f5f456c39 1-449
+third_party/.github/workflows/hugegraph-llm.yml
+  5dc5a47f5f456c39 1-219
+third_party/scripts/apache-release.sh
+  5dc5a47f5f456c39 1-108
+third_party/rules/prompts/project-deep.md
+  5dc5a47f5f456c39 1-152
+third_party/skills/hugegraph-regression-tester/SKILL.md
+  5dc5a47f5f456c39 1-34
+third_party/hugegraph-mcp/README.zh-CN.md
+  5dc5a47f5f456c39 1-207
+third_party/hugegraph-ml/src/tests/conftest.py
+  5dc5a47f5f456c39 1-38
+third_party/docker/charts/hg-llm/templates/_helpers.tpl
+  5dc5a47f5f456c39 1-62
+third_party/hugegraph-mcp/hugegraph_mcp/hugegraph_ai_client.py
+  5dc5a47f5f456c39 1-366
+third_party/hugegraph-mcp/tests/distribution_smoke.py
+  5dc5a47f5f456c39 1-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "bdbd8c87e01373458a55483defa87b9d3a0c942a",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 87667,
+      "total_deletions": 0,
+      "accepted_lines": 88620,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/848af6bfda0ae970168ad2ed2bbb6381f5c492b5f5b3d3c728c36e776b668fc1",
+      "token_usage": {
+        "input_tokens": 65609029,
+        "output_tokens": 171128,
+        "cache_read_tokens": 64400704,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

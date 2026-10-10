@@ -1,0 +1,49 @@
+domains/product-manufacturing/actions/record-inspection.yaml
+  5dc5a47f5f456c39 32-33
+server/ontogeny/core/__init__.py
+  5dc5a47f5f456c39 17
+web/tsconfig.node.json
+  5dc5a47f5f456c39 22
+domains/product-manufacturing/actions/assign-operation.yaml
+  5dc5a47f5f456c39 16-17
+NOTICE
+  5dc5a47f5f456c39 17-20
+domains/product-manufacturing/actions/complete-operation.yaml
+  5dc5a47f5f456c39 16-17
+tests/test_product_manufacturing.py
+  5dc5a47f5f456c39 163,227-270
+domains/product-manufacturing/actions/add-bom-line.yaml
+  5dc5a47f5f456c39 28-29
+THIRD_PARTY.md
+  5dc5a47f5f456c39 20-23
+web/tests-integration/api.e2e.test.ts
+  5dc5a47f5f456c39 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "deff6b27be01701ff8c51b7d2ada69d55e186e6c",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 64,
+      "total_deletions": 6,
+      "accepted_lines": 1017,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/e1dc84a90386bce5f41c09af72d8a48629cc3e278e265a73e15b555be8b759dd",
+      "token_usage": {
+        "input_tokens": 92231697,
+        "output_tokens": 204221,
+        "cache_read_tokens": 89985536,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

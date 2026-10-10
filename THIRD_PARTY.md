@@ -21,3 +21,9 @@ LICENSE, NOTICE, README, workspace `pyproject.toml` — is kept byte-for-byte.
 The upstream NOTICE was merged into the root NOTICE (attribution and the
 2022-2026 copyright line are incorporated verbatim); the vendored copy of
 the file was therefore removed. `third_party/LICENSE` is retained as-is.
+
+The upstream root CI workflows (hugegraph-llm.yml, hugegraph-python-client.yml,
+ruff.yml) were also removed from the branch: they build/test the upstream
+modules at the repository root, which only exist under `third_party/` here, so
+they can never pass in this tree shape. Restoring them (adapted to the merged
+layout) is part of merge-plan steps 2-3.

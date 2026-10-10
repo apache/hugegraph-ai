@@ -86,9 +86,9 @@ The source launcher binds to `127.0.0.1` by default and warns when a non-loopbac
 #### Graph Machine Learning
 
 ```bash
-# Install ML dependencies (ml module is not in workspace)
-uv sync --extra ml
-source .venv/bin/activate
+# Legacy ML is available only in the Git checkout, outside the active workspace.
+uv sync --project hugegraph-ml
+source hugegraph-ml/.venv/bin/activate
 
 # Run ML algorithms
 cd hugegraph-ml
@@ -124,7 +124,8 @@ Graph machine learning with 20+ implemented algorithms:
 - **Link Prediction**: SEAL, GATNE, etc.
 
 > [!NOTE]
-> hugegraph-ml is not part of the workspace but linked via path dependency
+> This legacy module is currently not maintained. It remains available in Git at version 1.7.0,
+> outside the active workspace and excluded from Apache source archives.
 
 ### [hugegraph-python-client](./hugegraph-python-client)
 

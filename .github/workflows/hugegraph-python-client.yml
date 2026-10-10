@@ -55,11 +55,15 @@ jobs:
         run: |
           uv sync --extra python-client --extra dev
 
-      - name: Build release packages from a source archive
+      - name: Build and install release packages from a source archive
         run: |
           archive_dir=$(mktemp -d)
           git archive HEAD | tar -x -C "$archive_dir"
           uv build --all-packages "$archive_dir" --out-dir "$archive_dir/dist"
+          uv sync --project "$archive_dir" --extra python-client
+          uv run --project "$archive_dir" --no-sync python -c "from pyhugegraph.client import PyHugeClient"
+          uv sync --project "$archive_dir" --extra llm
+          uv run --project "$archive_dir" --no-sync python -c "from hugegraph_llm.models.llms.base import BaseLLM; from pyhugegraph.client import PyHugeClient; import faiss"
 
       - name: Run unit and contract tests
         run: |

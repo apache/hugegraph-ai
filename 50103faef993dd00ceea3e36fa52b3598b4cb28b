@@ -1,0 +1,31 @@
+THIRD_PARTY.md
+  5dc5a47f5f456c39 24-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "50103faef993dd00ceea3e36fa52b3598b4cb28b",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 481,
+      "accepted_lines": 959,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/c3de53928cc5c9a17159d192be1ca6b884aaa30e12235391ca9bd9143e0b9720",
+      "token_usage": {
+        "input_tokens": 126696699,
+        "output_tokens": 257339,
+        "cache_read_tokens": 123900352,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+third_party/hugegraph-python-client/README.md
+  5dc5a47f5f456c39 83-88
+third_party/scripts/apache-release.sh
+  5dc5a47f5f456c39 20-22
+third_party/hugegraph-python-client/pyproject.toml
+  5dc5a47f5f456c39 20
+third_party/hugegraph-python-client/src/tests/api/test_graphs.py
+  5dc5a47f5f456c39 21-22,65-80
+.github/workflows/hugegraph-python-client.yml
+  5dc5a47f5f456c39 1-146
+.github/workflows/ruff.yml
+  5dc5a47f5f456c39 1-96
+third_party/scripts/build_llm_image.sh
+  5dc5a47f5f456c39 21
+.github/workflows/hugegraph-llm.yml
+  5dc5a47f5f456c39 1-239
+third_party/hugegraph-llm/pyproject.toml
+  5dc5a47f5f456c39 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.8.1",
+  "base_commit_sha": "29fcb46eb6468b5d9b216d82f45ab946ccef5f82",
+  "prompts": {
+    "5dc5a47f5f456c39": {
+      "agent_id": {
+        "tool": "zcode",
+        "id": "sess_7efd73c4-9979-4e49-b1e7-004108903053",
+        "model": "GLM-5.3-Flash"
+      },
+      "human_author": "simon824 <simon824@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 622,
+      "total_deletions": 93,
+      "accepted_lines": 1464,
+      "overriden_lines": 0,
+      "messages_url": "https://gitai.gz.cvte.cn/cas/bd98458be9453f836042602d73ab14cb3ae43c4a11ac2273db1f6c6dae20f0a7",
+      "token_usage": {
+        "input_tokens": 119268303,
+        "output_tokens": 244924,
+        "cache_read_tokens": 116493376,
+        "cache_creation_tokens": 0,
+        "total_cost": 0.0
+      }
+    }
+  }
+}

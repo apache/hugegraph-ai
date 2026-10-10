@@ -1,0 +1,45 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: quality-inspection
+  display: Quality inspection
+  description: An inspection result recorded for an order
+spec:
+  primaryKey:
+  - inspection_id
+  properties:
+    inspection_id:
+      type: string
+      display: Inspection ID
+      required: true
+    order_id:
+      type: string
+      display: Production order
+      required: true
+    inspected_qty:
+      type: integer
+      display: Inspected quantity
+    defect_qty:
+      type: integer
+      display: Defect quantity
+    result:
+      type: enum[PASS, FAIL, PENDING]
+      display: Result
+    inspector:
+      type: string
+      display: Inspector
+    inspected_at:
+      type: timestamp
+      display: Inspected at
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: quality_inspections
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

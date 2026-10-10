@@ -1,0 +1,30 @@
+# Shop-floor copilot: the operator-role agent. Tracks operations and work
+# centres on the floor and reports operation completion. Cedar grants the
+# operator exactly one write (complete-operation, not on COMPLETED orders) —
+# the plugin stays inside that surface and every write still asks a human.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: shopfloor-copilot
+  display: Shop-floor copilot
+  description: 'Operator-role agent: follow operations and work centres and report
+    operation completion — writes need human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:shopfloor-copilot"
+    Role: [operator]
+    site: plant-north
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_operation
+    - search_work_center
+    - search_production_order
+    - search_material
+    - act_complete_operation
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

@@ -1,0 +1,27 @@
+apiVersion: ontogeny/v1
+kind: Function
+metadata:
+  name: material-availability
+  display: Material availability check
+  description: Explode the product BOM, compare required quantities against on-hand material stock and
+    return the shortage list
+spec:
+  runtime: python
+  entry: availability.py:material_availability
+  parameters:
+    product_id:
+      type: string
+      required: true
+      display: Product ID
+    qty:
+      type: integer
+      required: true
+      display: Quantity
+  returns:
+    type: string
+    display: Availability report (JSON)
+  capabilities:
+  - read-objects:
+    - bom
+    - material
+    - product

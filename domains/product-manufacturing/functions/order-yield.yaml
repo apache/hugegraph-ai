@@ -1,0 +1,22 @@
+apiVersion: ontogeny/v1
+kind: Function
+metadata:
+  name: order-yield
+  display: Order quality yield
+  description: Summarise inspection results and routing progress for one production order
+spec:
+  runtime: python
+  entry: yield.py:order_yield
+  parameters:
+    order_id:
+      type: string
+      required: true
+      display: Order ID
+  returns:
+    type: string
+    display: Yield report (JSON)
+  capabilities:
+  - read-objects:
+    - quality-inspection
+    - operation
+    - production-order

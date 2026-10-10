@@ -1,0 +1,12 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: product-manufacturing
+  display: Product Manufacturing Domain
+  description: 'Product manufacturing domain ontology: sellable products, bills of
+    materials, materials with on-hand stock, work centres, production orders, routing
+    operations and quality inspections. A compact set of actions, sandboxed functions
+    and policies covers every object type; seed data populates every entity.'
+  version: 1.0.0
+kind: Ontology
+spec:
+  imports: []

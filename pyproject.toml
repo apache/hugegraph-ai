@@ -1,207 +1,62 @@
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-
 [project]
-name = "hugegraph-ai"
-version = "1.8.0"
-description = "A repository for AI-related projects for Apache HugeGraph."
-authors = [
-    { name = "Apache HugeGraph Contributors", email = "dev@hugegraph.apache.org" },
+name = "ontogeny"
+version = "0.3.0"
+description = "ontogeny - self-improving operational ontology platform (RSI), reference backend implementation"
+license = { text = "Apache-2.0" }
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10",
 ]
-readme = "README.md"
-license = "Apache-2.0"
-requires-python = ">=3.10" # Adjusted to the highest requirement among submodules (hugegraph-llm)
-maintainers = [
-    { name = "Apache HugeGraph Contributors", email = "dev@hugegraph.apache.org" },
-]
-
+requires-python = ">=3.10"
 dependencies = [
-    # Common dependencies can be listed here if any,
-    # but it's generally better to keep them within extras for clarity
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "httpx>=0.27",
+  "sqlalchemy[asyncio]>=2.0.29",
+  "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
-llm = ["hugegraph-llm"]
-ml = ["hugegraph-ml"]
-python-client = ["hugegraph-python"]
-vermeer = ["vermeer-python-client"]
+postgres = ["asyncpg>=0.29"]
+cedar = ["cedarpy>=0.5"]
+llm = ["litellm>=1.30"]
+queue = ["arq>=0.25", "redis>=5.0"]
+mcp = ["mcp>=2.2,<3"]
+
+[dependency-groups]
 dev = [
-    "pytest~=8.0.0",
-    "pytest-cov~=5.0.0",
-    "coverage[toml]==7.10.4",
-    "pylint~=3.0.0",
-    "ruff>=0.11.0",
-    "mypy>=1.16.1",
-    "ty>=0.0.51",  # pre-stable (0.0.x): consider tight pinning to avoid surprise breakage
-    "pre-commit>=3.5.0",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "httpx>=0.27",
+  "ruff>=0.4",
 ]
 
-nk-llm = ["hugegraph-llm", "hugegraph-python", "nuitka"]
-all = ["hugegraph-python", "hugegraph-llm", "hugegraph-ml", "vermeer-python-client"]
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+# domain packages' functions/*.py are USER code shipped as data (they see a
+# `ontogeny` shim injected by the sandbox at runtime); runtime state dirs are not
+# source at all
+extend-exclude = ["domains", ".ontogeny-*", ".kina-*", ".oo-verify", "web", "third_party"]
 
-[project.urls]
-homepage = "https://hugegraph.apache.org/"
-repository = "https://github.com/apache/hugegraph-ai"
-documentation = "https://hugegraph.apache.org/docs/quickstart/hugegraph-ai/"
-bug_tracker = "https://github.com/apache/hugegraph-ai/issues"
-changelog = "https://github.com/apache/hugegraph-ai/releases"
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[project.scripts]
+ontogeny = "ontogeny.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# NOTE: If you experience slow download speeds, uncomment the lines below to use mirror source
-# [[tool.uv.index]]
-# url = "https://pypi.tuna.tsinghua.edu.cn/simple" # Example mirror for users in China
-# default = true
-#
-# Alternatively, configure globally: uv config --global index.url https://pypi.tuna.tsinghua.edu.cn/simple
-# To reset to default: uv config --global index.url https://pypi.org/simple
-
-[tool.hatch.metadata] # Keep this if the hatch is still used by submodules, otherwise remove
-allow-direct-references = true
-
 [tool.hatch.build.targets.wheel]
-packages = [
-    "hugegraph-llm",
-    "hugegraph-python-client"
-]
-
-[tool.hatch.build.targets.sdist]
-include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "README.md", "LICENSE", "NOTICE"]
-
-[tool.uv.sources]
-hugegraph-llm = { workspace = true }
-hugegraph-python = { workspace = true }
-hugegraph-ml = { path = "hugegraph-ml", editable = true }
-vermeer-python-client = { path = "vermeer-python-client", editable = true }
-
-[tool.uv.workspace]
-members = [
-    "hugegraph-llm",
-    "hugegraph-python-client"
-]
-
-[tool.uv]
-constraint-dependencies = [
-    # Common dependencies
-    "decorator~=5.1.1",
-    "requests~=2.32.0", # TODO: use httpx instead of urllib3 directly
-    "setuptools~=70.0.0", # TODO: remove it when we use hatchling well
-    "urllib3~=2.2.2",
-    "rich~=13.9.4",
-
-    # Data processing dependencies
-    "numpy~=1.24.4",
-    "pandas~=2.2.3", # TODO: replace by polars(rust) in the future
-    "pydantic~=2.10.6",
-    "scipy~=1.15.3", # word segment need
-    "python-igraph~=0.11.9", # textrank need
-
-    # LLM dependencies
-    "openai~=1.61.0",
-    "ollama~=0.4.8",
-    "tenacity~=8.5.0",
-    "tiktoken~=0.7.0",
-    "nltk~=3.9.1",
-    "gradio~=5.20.0",
-    "jieba~=0.42.1",
-    "python-docx~=1.1.2",
-    "pypdf~=6.12.0",
-    "langchain-text-splitters~=0.2.2",
-    "faiss-cpu~=1.8.0",
-    "python-dotenv~=1.0.1",
-    "pyarrow~=17.0.0",
-    "openpyxl~=3.1.5",
-    "pydantic-settings~=2.6.1",
-    "apscheduler~=3.10.4",
-    "litellm~=1.61.13",
-
-
-    # ML dependencies
-    "dgl~=2.1.0",
-    "ogb~=1.3.6",
-    "catboost~=1.2.3",
-    "category-encoders~=2.6.3",
-    "torch==2.2.0",
-    "tqdm~=4.66.5",
-    "packaging~=24.1",
-    "torchdata~=0.7.0",
-    "PyYAML~=6.0.2",
-
-    # Other dependencies
-    "python-dateutil~=2.9.0",
-]
+packages = ["server/ontogeny"]
 
 [tool.pytest.ini_options]
-markers = [
-    "unit: fast deterministic tests without network or Docker",
-    "contract: public contract tests; may use mocks but verify stable behavior",
-    "integration: tests requiring a real local service such as HugeGraph",
-    "hugegraph: tests requiring HugeGraph Server",
-    "live: requires a real HugeGraph Server",
-    "real_hugegraph: requires a real HugeGraph Server",
-    "llm: requires HugeGraph-AI or an external LLM provider",
-    "smoke: end-to-end-ish high-value smoke over production pipeline boundaries",
-    "external: tests requiring external provider credentials or non-HugeGraph services",
-    "slow: long-running tests excluded from default local loops",
-]
-addopts = "--strict-markers --strict-config"
-
-# for code format
-[tool.ruff]
-line-length = 120
-target-version = "py310"
-
-[tool.ruff.lint]
-# Select a broad set of rules for comprehensive checks.
-# E: pycodestyle Errors, F: Pyflakes, W: pycodestyle Warnings, I: isort
-# C: flake8-comprehensions, N: pep8-naming
-# UP: pyupgrade, B: flake8-bugbear, SIM: flake8-simplify, T20: flake8-print
-select = ["E", "F", "W", "I", "C", "N", "UP", "B", "SIM", "T20", "RUF"]
-
-# Ignore specific rules
-ignore = [
-    "PYI041", # redundant-numeric-union: keep clear 'int | float' for type hinting
-    "N812",    # lowercase-imported-as-non-lowercase
-    "N806",    # non-lowercase-variable-in-function
-    "N803",    # invalid-argument-name
-    "N802",    # invalid-function-name (API compatibility)
-    "C901",    # complexity (non-critical for now)
-    "RUF001", # ambiguous-unicode-character-string
-    "RUF002", # ambiguous-unicode-character-docstring (Chinese prose)
-    "RUF003", # ambiguous-unicode-character-comment
-]
-# No need to ignore E501 (line-too-long), `ruff format` will handle it automatically.
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["T20"]
-"hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
-"hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["hugegraph_llm", "hugegraph_mcp", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
-docstring-code-format = true
-
-[tool.ty.rules]
-# Start permissive; tighten incrementally as errors are fixed
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["server"]
+filterwarnings = ["ignore::DeprecationWarning"]

@@ -1,0 +1,52 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: operation
+  display: Routing operation
+  description: One routing step of a production order
+spec:
+  primaryKey:
+  - operation_id
+  properties:
+    operation_id:
+      type: string
+      display: Operation ID
+      required: true
+    order_id:
+      type: string
+      display: Production order
+      required: true
+    seq:
+      type: integer
+      display: Sequence
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    work_center_id:
+      type: string
+      display: Work centre
+    status:
+      type: enum[QUEUED, RUNNING, COMPLETED, CANCELLED]
+      display: Status
+      owner: ontology
+    standard_minutes:
+      type: integer
+      display: Standard minutes
+    completed_at:
+      type: timestamp
+      display: Completed at
+      owner: ontology
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: operations
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

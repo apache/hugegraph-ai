@@ -1,0 +1,50 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: material
+  display: Material
+  description: Raw material or purchased part with on-hand stock
+spec:
+  primaryKey:
+  - material_id
+  properties:
+    material_id:
+      type: string
+      display: Material ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    unit:
+      type: string
+      display: Unit of measure
+    unit_cost:
+      type: decimal(14,2)
+      display: Unit cost
+      marking: internal
+    stock_qty:
+      type: integer
+      display: On-hand quantity
+      owner: ontology
+    safety_stock:
+      type: integer
+      display: Safety stock
+    lead_time_days:
+      type: integer
+      display: Procurement lead time (days)
+    created_at:
+      type: timestamp
+      display: Created at
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: materials
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

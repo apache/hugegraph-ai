@@ -1,0 +1,720 @@
+/*
+ * Copyright 2026 Apache HugeGraph Authors
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ fonts
+   Orbitron Black, self-hosted. The woff2 is a glyph subset (the ONTOGENY
+   wordmark's letters only, ~1.9 KB) fetched from the Google Fonts API and
+   committed here, so the UI never loads anything from the network. The
+   tagline sentence intentionally does NOT use this font: the subset has no
+   glyphs beyond the wordmark's letters.
+   License: SIL Open Font License 1.1 — see src/assets/fonts/OFL.txt. */
+@font-face {
+  font-family: "Orbitron";
+  src: url("./assets/fonts/orbitron-900-subset.woff2") format("woff2");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ============================================================
+   ontogeny design tokens
+   One source of truth for color/space/type; both themes defined here so
+   components never hard-code a hex value.
+   ============================================================ */
+@theme {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --color-brand-50: #eef3ff;
+  --color-brand-100: #dbe5ff;
+  --color-brand-200: #bccdff;
+  --color-brand-300: #8fabff;
+  --color-brand-400: #5b80ff;
+  --color-brand-500: #2e5bff;
+  --color-brand-600: #1c40e6;
+  --color-brand-700: #1a33b4;
+  --color-brand-800: #1b2e8f;
+  --color-brand-900: #1b2b72;
+
+  --color-ink-50: #f7f8fa;
+  --color-ink-100: #eef0f4;
+  --color-ink-200: #dfe3ea;
+  --color-ink-300: #c3cad6;
+  --color-ink-400: #94a0b3;
+  --color-ink-500: #6b7789;
+  --color-ink-600: #4c5768;
+  --color-ink-700: #37404f;
+  --color-ink-800: #232b37;
+  --color-ink-900: #141a23;
+  --color-ink-950: #0b0f16;
+
+  --radius-card: 12px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-float: 0 4px 12px rgba(16, 24, 40, 0.08), 0 12px 32px rgba(16, 24, 40, 0.08);
+  /* elevation for surfaces that are not cards: canvas nodes, the slide-in
+     drawer, and the small round controls that float on an edge. Tokenised so
+     dark mode can flatten them (a light-mode drop shadow reads as a glow on a
+     dark page). */
+  --shadow-node: 0 1px 3px rgba(16, 24, 40, 0.07);
+  --shadow-node-active: 0 6px 18px rgba(16, 24, 40, 0.12);
+  --shadow-edge: 0 1px 2px rgba(16, 24, 40, 0.08);
+  --shadow-drawer: -8px 0 24px rgba(16, 24, 40, 0.10);
+}
+
+:root {
+  color-scheme: light;
+  --surface-app: #f5f7fa;
+  --surface-card: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eef1f6;
+  --surface-hover: #f2f5fa;
+  --border-subtle: #e3e7ee;
+  --border-strong: #cfd6e2;
+  --text-primary: #141a23;
+  --text-secondary: #4c5768;
+  /* #6b7789 measured 4.01:1 on --surface-sunken (table headers, toolbar strips,
+     inactive segmented controls) and 4.23:1 on --surface-app. Muted text sits on
+     all three surfaces, so the value has to clear 4.5 on the darkest of them. */
+  --text-muted: #5f6b7d;
+  --text-inverse: #ffffff;
+  --sidebar-bg: #ffffff;
+  --sidebar-fg: #4c5768;
+  --sidebar-fg-active: #141a23;
+  --sidebar-hover: #f2f5fa;
+  --sidebar-active: rgba(46, 91, 255, 0.10);
+  --sidebar-border: #e3e7ee;
+  /* 8px/10px uppercase labels: #8b96a8 measured 2.99:1 on white, so the
+     same failure the dark value was fixed for also existed in light mode */
+  --sidebar-muted: #5f6b7d;
+  /* brand tints: the "selected / accented surface" used by toggles, icon
+     tiles and active pills. Tokenised so dark mode can retune them instead of
+     inheriting a light-mode rgba() that all but disappears. */
+  --brand-tint: rgba(46, 91, 255, 0.10);
+  --brand-tint-soft: rgba(46, 91, 255, 0.12);
+  --brand-tint-strong: rgba(46, 91, 255, 0.30);
+  --brand-tint-ring: rgba(46, 91, 255, 0.35);
+  /* semantic tones: ONE source for badges, alerts, status chips and any
+     "state colour". Light values are the original palette; the dark block
+     below only swaps the foregrounds for lighter same-hue steps, so components
+     never branch on the theme. Before this, every tone hard-coded a light-mode
+     hex and dark mode failed WCAG AA on all 15 pages (worst 2.43:1). */
+  --tone-neutral-fg: #4c5768;
+  --tone-neutral-bg: var(--surface-sunken);
+  --tone-neutral-ring: var(--border-subtle);
+  /* Brand as a *foreground*. --color-brand-600 is a background step: on the dark
+     theme it read 2.43:1, and index.css previously patched this per-selector
+     (only .ontogeny-link). One token, one override, every accent follows. */
+  --brand-fg: #1c40e6;
+  --tone-brand-fg: var(--brand-fg);
+  --tone-brand-bg: rgba(46, 91, 255, 0.10);
+  --tone-brand-ring: rgba(46, 91, 255, 0.22);
+  /* Foregrounds are tuned against the *worst* surface a chip lands on, which is
+     the tone's own 10-12% tint over --surface-sunken (table headers, tinted list
+     rows) -- not against white. #047857/#b45309/#0369a1 all cleared 4.5:1 on
+     white but measured 4.33/3.92/4.65 there, and chips do sit on sunken rows. */
+  --tone-success-fg: #036b4e;
+  --tone-success-bg: rgba(5, 150, 105, 0.10);
+  --tone-success-ring: rgba(5, 150, 105, 0.22);
+  --tone-warning-fg: #9a4508;
+  --tone-warning-bg: rgba(217, 119, 6, 0.12);
+  --tone-warning-ring: rgba(217, 119, 6, 0.24);
+  --tone-danger-fg: #b91c1c;
+  --tone-danger-bg: rgba(220, 38, 38, 0.10);
+  --tone-danger-ring: rgba(220, 38, 38, 0.22);
+  --tone-info-fg: #03608f;
+  --tone-info-bg: rgba(2, 132, 199, 0.10);
+  --tone-info-ring: rgba(2, 132, 199, 0.22);
+  --tone-violet-fg: #6d28d9;
+  --tone-violet-bg: rgba(124, 58, 237, 0.10);
+  --tone-violet-ring: rgba(124, 58, 237, 0.22);
+
+  /* Frosted-glass surfaces (the floating agent dock): a translucent card plus a
+     hairline ring, so the page stays visible through the overlay. */
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-ring: rgba(15, 23, 42, 0.10);
+  /* Graph edge colours. A relationship is structural and draws in ink; every
+     other attachment is auxiliary and draws in the accent orange. Both are
+     opaque on purpose — the old grey-on-grey was unreadable at fit zoom. */
+  --graph-edge: #1f2733;
+  --graph-edge-alt: #d9730d;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-app: #0b0f16;
+  --surface-card: #141a23;
+  --surface-raised: #1a212c;
+  --surface-sunken: #10151e;
+  --surface-hover: #1e2632;
+  --border-subtle: #263041;
+  --border-strong: #354156;
+  --text-primary: #eef1f6;
+  --text-secondary: #b3bdcc;
+  --text-muted: #8b96a8;
+  --text-inverse: #0b0f16;
+  --sidebar-bg: #0a0e15;
+  --sidebar-fg: #9aa7bd;
+  --sidebar-fg-active: #ffffff;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-active: rgba(91, 128, 255, 0.18);
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  /* 0.38 measured 3.54:1 on the dark sidebar — below AA for the 10–11px labels
+     it is used for. 0.58 lands at ~6.2:1. */
+  --sidebar-muted: rgba(255, 255, 255, 0.58);
+  --brand-fg: #8fabff;
+  --brand-tint: rgba(91, 128, 255, 0.18);
+  --brand-tint-soft: rgba(91, 128, 255, 0.22);
+  --brand-tint-strong: rgba(91, 128, 255, 0.45);
+  --brand-tint-ring: rgba(91, 128, 255, 0.55);
+  /* tone foregrounds: lighter same-hue steps so a chip stays legible on
+     #141a23 (all ≥ 6:1 measured; see docs/frontend-review.md §3) */
+  --tone-neutral-fg: #b3bdcc;
+  --tone-neutral-bg: var(--surface-sunken);
+  --tone-neutral-ring: var(--border-strong);
+  --tone-brand-fg: var(--brand-fg);
+  --tone-brand-bg: rgba(91, 128, 255, 0.18);
+  --tone-brand-ring: rgba(91, 128, 255, 0.40);
+  --tone-success-fg: #34d399;
+  --tone-success-bg: rgba(5, 150, 105, 0.20);
+  --tone-success-ring: rgba(52, 211, 153, 0.34);
+  --tone-warning-fg: #fbbf24;
+  --tone-warning-bg: rgba(217, 119, 6, 0.22);
+  --tone-warning-ring: rgba(251, 191, 36, 0.34);
+  --tone-danger-fg: #f87171;
+  --tone-danger-bg: rgba(220, 38, 38, 0.20);
+  --tone-danger-ring: rgba(248, 113, 113, 0.34);
+  --tone-info-fg: #38bdf8;
+  --tone-info-bg: rgba(2, 132, 199, 0.20);
+  --tone-info-ring: rgba(56, 189, 248, 0.34);
+  --tone-violet-fg: #a78bfa;
+  --tone-violet-bg: rgba(124, 58, 237, 0.22);
+  --tone-violet-ring: rgba(167, 139, 250, 0.34);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 4px 12px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-node: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-node-active: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --shadow-edge: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-drawer: -8px 0 24px rgba(0, 0, 0, 0.45);
+  --glass-bg: rgba(20, 26, 35, 0.36);
+  --glass-ring: rgba(255, 255, 255, 0.12);
+  --graph-edge: #d7dee9;
+  --graph-edge-alt: #f0a94c;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--surface-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--color-brand-200); color: var(--color-ink-900); }
+
+/* --- scrollbars: unobtrusive but always visible where it matters --- */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: content-box; }
+
+
+/* ============================================================ components */
+@utility surface { background: var(--surface-card); border: 1px solid var(--border-subtle); }
+
+@utility sunken { background: var(--surface-sunken); }
+
+@utility muted { color: var(--text-muted); }
+
+@utility secondary-text { color: var(--text-secondary); }
+
+@utility tnum { font-variant-numeric: tabular-nums; }
+
+@layer components {
+
+
+.ontogeny-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+.ontogeny-card-pad { padding: 18px 20px; }
+
+/* A modal panel: the same surface as a card, but FLAT.
+ *
+ * It already sits on a dimmed backdrop that separates it from the page, so a
+ * drop shadow has nothing left to do — on the dimmed surface it only reads as
+ * a dirty halo smeared around the panel. Every dialog pairs `ontogeny-card ontogeny-modal`,
+ * so the rule lives here once instead of as an inline `boxShadow` in each of
+ * them. */
+.ontogeny-modal { box-shadow: none; }
+
+.ontogeny-btn, .ontogeny-btn-primary, .ontogeny-btn-ghost, .ontogeny-btn-subtle, .ontogeny-btn-danger {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium
+         transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed
+         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60;
+  height: 34px; padding: 0 13px; white-space: nowrap;
+}
+.ontogeny-btn-primary { background: var(--color-brand-500); color: #fff; }
+.ontogeny-btn-primary:hover:not(:disabled) { background: var(--color-brand-600); }
+.ontogeny-btn-ghost {
+  background: var(--surface-card); color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+.ontogeny-btn-ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.ontogeny-btn-subtle { background: transparent; color: var(--text-muted); }
+.ontogeny-btn-subtle:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.ontogeny-btn-danger { background: #dc2626; color: #fff; }
+.ontogeny-btn-danger:hover:not(:disabled) { background: #b91c1c; }
+.ontogeny-btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
+/* Icon-only button: a square of the same height as its text sibling, so a row
+   that mixes both stays on one baseline. `ontogeny-icon-btn` is the resting style for
+   toolbars; `.ontogeny-btn-sm.ontogeny-icon-btn` squares off a small button. Every one of
+   these carries a `title` + `aria-label` — the tooltip IS the label. */
+.ontogeny-icon-btn {
+  width: 34px; padding: 0; flex: none;
+}
+.ontogeny-btn-sm.ontogeny-icon-btn, .ontogeny-btn.ontogeny-icon-btn-sm {
+  width: 28px; padding: 0; flex: none;
+}
+.ontogeny-btn.ontogeny-icon-btn-lg { width: 38px; padding: 0; flex: none; }
+
+/* Floating action dock (the agent): frosted glass, so the page stays visible
+   through it and the button reads as an overlay rather than a solid chip. */
+.ontogeny-glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-ring);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
+  box-shadow: var(--shadow-float);
+}
+/* The agent dock's floating disc: a PURPLE-tinted frosted lens. The blur is
+   only visible when content passes underneath, so the disc carries a faint
+   violet wash and a violet hairline of its own — glass you can see even over
+   the blank paper, and unmistakable over a card. */
+/* longhand on purpose: a multi-layer `background` shorthand with a bare colour
+   layer is easy to get wrong and silently drops the whole declaration */
+.ontogeny-dock-glass {
+  background-color: rgba(255, 255, 255, .08);
+  background-image: linear-gradient(135deg, rgba(124, 58, 237, .12), rgba(124, 58, 237, .03));
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 8px 26px -10px rgba(88, 28, 135, .3);
+}
+[data-theme='dark'] .ontogeny-dock-glass {
+  background-color: rgba(20, 26, 35, .16);
+  background-image: linear-gradient(135deg, rgba(167, 139, 250, .14), rgba(167, 139, 250, .04));
+  box-shadow: 0 8px 26px -10px rgba(0, 0, 0, .5);
+}
+.ontogeny-dock-glass svg { color: #7c3aed; }
+[data-theme='dark'] .ontogeny-dock-glass svg { color: #c4b5fd; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ontogeny-dock-glass { background: var(--surface-card); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* no blur support: fall back to a more opaque surface so text stays legible */
+  .ontogeny-glass { background: var(--surface-card); }
+}
+@keyframes ontogeny-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.ontogeny-float { animation: ontogeny-float 4.5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ontogeny-float { animation: none; }
+}
+
+.ontogeny-input {
+  @apply w-full rounded-lg text-[13px] transition-shadow;
+  height: 34px; padding-block: 0; padding-inline: 11px;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+.ontogeny-input:focus {
+  outline: none; border-color: var(--color-brand-400);
+  box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.14);
+}
+.ontogeny-input::placeholder { color: var(--text-muted); }
+textarea.ontogeny-input { height: auto; padding-block: 9px; line-height: 1.6; }
+
+/* Code editor: a colored <pre> mirror under a transparent-text textarea. Both
+   carry identical font/padding/white-space so glyphs and their colors line up;
+   the textarea owns scrolling and the mirror follows it in JS. Token colors
+   reuse the tone tokens (AA-tuned per theme) instead of a fixed palette, so
+   highlighting survives the dark theme without a second set of values. */
+.ontogeny-code {
+  position: relative; border-radius: 10px; font-size: 12px; line-height: 1.6;
+  background: var(--surface-card); border: 1px solid var(--border-subtle);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.ontogeny-code:focus-within {
+  outline: none; border-color: var(--color-brand-400);
+  box-shadow: 0 0 0 3px rgba(46, 91, 255, 0.14);
+}
+.ontogeny-code-mirror, .ontogeny-code-input {
+  margin: 0; padding: 10px 12px; font: inherit; letter-spacing: normal;
+  white-space: pre; tab-size: 4; overflow-wrap: normal; word-break: normal;
+}
+.ontogeny-code-mirror {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  color: var(--text-primary); border-radius: 10px;
+}
+.ontogeny-code-input {
+  position: relative; display: block; width: 100%; resize: vertical;
+  background: transparent; color: transparent; caret-color: var(--text-primary);
+  border: 0; outline: none; overflow: auto;
+}
+.ontogeny-code-input::selection { background: var(--brand-tint-strong); color: transparent; }
+/* IME composition: the composing text is only in the textarea, so its own
+   color turns opaque and the (stale) mirror hides for the duration. */
+.ontogeny-code-input.ontogeny-code-composing { color: var(--text-primary); }
+.ontogeny-code-mirror.ontogeny-code-hidden { visibility: hidden; }
+.ontogeny-tok-kw { color: var(--tone-violet-fg); font-weight: 600; }
+.ontogeny-tok-str { color: var(--tone-success-fg); }
+.ontogeny-tok-cmt { color: var(--text-muted); font-style: italic; }
+.ontogeny-tok-num { color: var(--tone-warning-fg); }
+.ontogeny-tok-bi { color: var(--tone-info-fg); }
+.ontogeny-tok-fn, .ontogeny-tok-dec { color: var(--brand-fg); }
+
+.ontogeny-label {
+  @apply block text-[11px] font-semibold uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 6px;
+}
+
+.ontogeny-th {
+  @apply text-left text-[11px] font-semibold uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted);
+  padding: 9px 14px; border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken); position: sticky; top: 0; z-index: 1;
+}
+.ontogeny-td { padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.ontogeny-td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+.ontogeny-code {
+  font-family: var(--font-mono); font-size: 11.5px;
+  background: var(--surface-sunken); color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px; padding: 1px 6px; white-space: nowrap;
+}
+[data-theme="dark"] .ontogeny-code { color: var(--text-primary); }
+
+.ontogeny-kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: 5px; padding: 1px 5px; color: var(--text-muted);
+}
+
+.ontogeny-divider { height: 1px; background: var(--border-subtle); }
+
+/* nav */
+.ontogeny-nav-item {
+  @apply flex items-center gap-2.5 rounded-lg text-[13px] transition-colors;
+  padding: 8px 11px; color: var(--sidebar-fg);
+}
+.ontogeny-nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-fg-active); }
+/* one-line footer dock: raised icon toolbar (search · docs · theme ·
+   settings); cells lift on hover and press in, so the strip reads tactile */
+.ontogeny-dock {
+  @apply flex items-stretch;
+  gap: 2px; padding: 3px; border-radius: 12px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .07), 0 4px 10px rgba(15, 23, 42, .09);
+}
+[data-theme='dark'] .ontogeny-dock { box-shadow: 0 1px 2px rgba(0, 0, 0, .55), 0 4px 10px rgba(0, 0, 0, .35); }
+.ontogeny-seg-btn {
+  @apply flex items-center justify-center transition-colors;
+  padding: 5.5px 0; border-radius: 9px; color: var(--sidebar-fg);
+}
+.ontogeny-seg-btn:hover {
+  background: var(--surface-sunken); color: var(--sidebar-fg-active);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .12), 0 3px 8px rgba(15, 23, 42, .12);
+  transform: translateY(-1px);
+}
+[data-theme='dark'] .ontogeny-seg-btn:hover { box-shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 3px 8px rgba(0, 0, 0, .4); }
+.ontogeny-seg-btn:active { transform: translateY(0); box-shadow: inset 0 1px 3px rgba(15, 23, 42, .18); }
+.ontogeny-nav-item[data-active="true"] {
+  background: var(--sidebar-active); color: var(--sidebar-fg-active); font-weight: 600;
+}
+/* Nav-row chip. `extension` marks a surface an extension provides (the account
+   card's admin badge and extension-provided surfaces). */
+.ontogeny-nav-tag {
+  display: inline-flex; align-items: center; flex: none;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+  border-radius: 999px; padding: 0 7px; line-height: 1.7;
+}
+.ontogeny-nav-tag[data-tone='extension'] {
+  color: var(--tone-violet-fg); background: var(--tone-violet-bg);
+  border: 1px solid var(--tone-violet-ring);
+}
+.ontogeny-nav-group {
+  @apply text-[10px] font-bold uppercase;
+  letter-spacing: 0.12em; color: var(--sidebar-muted);
+  padding: 14px 11px 6px;
+}
+/* A divided list whose separator follows the theme border. `divide-y` alone
+   paints Tailwind v4's default border color — currentColor, i.e. near-black
+   text ink — because a borderColor set on the container never reaches the
+   divided children (border-color does not inherit). */
+.divide-subtle > * + * {
+  border-top: 1px solid var(--border-subtle);
+}
+/* pending-write count on the agent-management nav row */
+.ontogeny-nav-count {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-width: 17px; height: 17px; padding: 0 5px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  color: var(--tone-warning-fg); background: var(--tone-warning-bg);
+  border: 1px solid var(--tone-warning-ring);
+  border-radius: 999px; font-variant-numeric: tabular-nums;
+}
+
+/* brand lockup: geometric, techy, all-caps — only used for the wordmark */
+.ontogeny-wordmark {
+  font-family: "Orbitron", var(--font-sans);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+
+.ontogeny-link { color: var(--brand-fg); text-decoration: none; }
+.ontogeny-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+.ontogeny-skeleton {
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--surface-hover) 37%, var(--surface-sunken) 63%);
+  background-size: 400% 100%; animation: ontogeny-shimmer 1.4s ease infinite; border-radius: 6px;
+}
+@keyframes ontogeny-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+@keyframes ontogeny-fade-up { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.ontogeny-animate-in { animation: ontogeny-fade-up 0.22s ease both; }
+
+/* full-bleed graph canvas: a faint dot grid so the surface reads as a canvas
+   (the G6 canvas paints transparent, so the grid shows through). The light
+   theme draws on a WHITE sheet — the cards carry the colour, the ground stays
+   quiet — with a softer, sparser grid. Dark keeps the tinted ground. */
+.ontogeny-canvas-grid {
+  background-color: #ffffff;
+  background-image: radial-gradient(circle, #e8edf5 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+}
+[data-theme='dark'] .ontogeny-canvas-grid {
+  background-color: var(--surface-app);
+  background-image: radial-gradient(circle, var(--border-subtle) 1.1px, transparent 1.1px);
+  background-size: 22px 22px;
+}
+}
+
+/* NodeInfoDrawer slide-in */
+@keyframes ontogeny-drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.ontogeny-drawer { animation: ontogeny-drawer-in .18s ease-out; }
+
+/* --------------------------------------------------- entity cards (canvas)
+   The ontology canvas draws object types as real HTML (EntityCardNode), mounted
+   by @antv/g above the canvas and driven by the camera's world transform. The
+   element's position, size and transform belong to g — everything below is the
+   card's MATERIAL: surface, border, shadow, type. Never set position/size/
+   transform here, or the card leaves its node. */
+.ontogeny-ec {
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  border: 1px solid rgba(46, 91, 255, .38);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, .07),
+    0 10px 26px -8px rgba(15, 23, 42, .22);
+  overflow: hidden;
+  user-select: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+/* Hover lifts the card with light, not with a transform: g owns the transform
+   (camera scale + pan), and a CSS one would be overwritten on the next frame. */
+.ontogeny-ec:hover {
+  border-color: rgba(46, 91, 255, .6);
+  box-shadow:
+    0 2px 4px rgba(15, 23, 42, .08),
+    0 16px 34px -10px rgba(15, 23, 42, .3);
+}
+.ontogeny-ec.is-selected {
+  border-color: var(--color-brand-500, #2e5bff);
+  box-shadow:
+    0 0 0 2px rgba(46, 91, 255, .38),
+    0 18px 38px -12px rgba(46, 91, 255, .45);
+}
+[data-theme='dark'] .ontogeny-ec {
+  background: linear-gradient(180deg, #1d2532 0%, #161d28 100%);
+  border-color: rgba(120, 150, 255, .34);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, .5),
+    0 12px 28px -10px rgba(0, 0, 0, .6);
+}
+[data-theme='dark'] .ontogeny-ec:hover { border-color: rgba(140, 170, 255, .55); }
+[data-theme='dark'] .ontogeny-ec.is-selected {
+  border-color: #7aa2ff;
+  box-shadow:
+    0 0 0 2px rgba(122, 162, 255, .4),
+    0 18px 38px -12px rgba(0, 0, 0, .7);
+}
+
+.ontogeny-ec-body {
+  display: flex;
+  height: 100%;
+  padding-right: 12px;
+}
+.ontogeny-ec-rail {
+  width: 4px;
+  align-self: stretch;
+  margin: 1px 0 1px 1px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+/* The kind glyph: filled with the node's colour, no plate behind it. Sized to
+   sit optically level with the title's cap height rather than to fill a box. */
+/* The content column is vertically CENTRED by its auto margins: the box the
+   layout hands us already reserves equal breathing room top and bottom, and the
+   auto margins make the drawn content agree with that reservation — before this,
+   the content sat flush to the top edge and the whole reserved pad pooled below
+   it, which read as a card with a hollow bottom. */
+.ontogeny-ec-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: auto 0 auto 12px;
+  min-width: 0;
+}
+.ontogeny-ec-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ontogeny-ec-img {
+  width: 30px;
+  height: 30px;
+  display: block;
+  flex: 0 0 auto;
+}
+.ontogeny-ec-title {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 17px;
+  letter-spacing: -0.01em;
+  color: var(--text-primary, #0f172a);
+  white-space: nowrap;
+}
+.ontogeny-ec-line { display: block; }
+
+/* The canvas's hover readout (G6's tooltip plugin). It ships unstyled, which
+   read as a foreign element next to the cards and their material; it now
+   follows the same radius/border/shadow language. */
+.tooltip {
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: var(--surface-card, #fff);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  box-shadow: 0 8px 22px -10px rgba(15, 23, 42, .4);
+  max-width: 260px;
+  pointer-events: none;
+}
+
+/* ====================================================== markdown (model output)
+   `.ontogeny-md` styles what react-markdown emits in assistant bubbles and agent
+   run conclusions. Sizes stay one step below body copy; every colour is a
+   theme var so dark mode and contrast themes follow. */
+.ontogeny-md { font-size: 13px; line-height: 1.7; color: var(--text-primary); overflow-wrap: anywhere; }
+.ontogeny-md > :first-child { margin-top: 0; }
+.ontogeny-md > :last-child { margin-bottom: 0; }
+.ontogeny-md p { margin: 0.45em 0; }
+.ontogeny-md h1, .ontogeny-md h2, .ontogeny-md h3, .ontogeny-md h4, .ontogeny-md h5, .ontogeny-md h6 {
+  margin: 0.8em 0 0.35em; font-weight: 700; line-height: 1.35; letter-spacing: -0.01em;
+}
+.ontogeny-md h1 { font-size: 1.15em; }
+.ontogeny-md h2 { font-size: 1.1em; }
+.ontogeny-md h3 { font-size: 1.05em; }
+.ontogeny-md h4, .ontogeny-md h5, .ontogeny-md h6 { font-size: 1em; }
+.ontogeny-md ul, .ontogeny-md ol { margin: 0.4em 0; padding-left: 1.4em; }
+.ontogeny-md ul { list-style: disc; }
+.ontogeny-md ol { list-style: decimal; }
+.ontogeny-md li { margin: 0.2em 0; }
+.ontogeny-md li > ul, .ontogeny-md li > ol { margin: 0.15em 0; }
+.ontogeny-md li input[type="checkbox"] { margin-right: 0.4em; }
+.ontogeny-md strong { font-weight: 700; }
+.ontogeny-md a { color: var(--brand-fg); text-decoration: underline; text-underline-offset: 2px; }
+.ontogeny-md a:hover { opacity: 0.85; }
+.ontogeny-md blockquote {
+  margin: 0.5em 0; padding: 2px 10px;
+  border-left: 3px solid var(--border-strong, #94a3b8);
+  color: var(--text-secondary);
+}
+.ontogeny-md code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.86em;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+.ontogeny-md pre {
+  margin: 0.5em 0; padding: 10px 12px; overflow-x: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  font-size: 12px; line-height: 1.6;
+}
+.ontogeny-md pre code { background: none; border: none; padding: 0; font-size: inherit; }
+.ontogeny-md table { margin: 0.5em 0; border-collapse: collapse; font-size: 0.92em; }
+.ontogeny-md th, .ontogeny-md td {
+  padding: 5px 10px; border: 1px solid var(--border-subtle); text-align: left;
+}
+.ontogeny-md th { background: var(--surface-card); font-weight: 700; }
+.ontogeny-md hr { margin: 0.7em 0; border: none; border-top: 1px solid var(--border-subtle); }
+.ontogeny-md del { opacity: 0.7; }
+.ontogeny-md img { max-width: 100%; border-radius: 8px; }
+
+/* ====================================================== reduced motion
+   `ontogeny-shimmer` loops forever, `ontogeny-fade-up` runs on every page (AppShell wraps
+   each route in `.ontogeny-animate-in`), and the drawer slides. Honour the OS setting:
+   drop the movement, keep the end state, and stop the infinite loop outright
+   rather than merely shortening it. */
+@media (prefers-reduced-motion: reduce) {
+  .ontogeny-skeleton { animation: none; }
+  .ontogeny-animate-in { animation: none; }
+  .ontogeny-drawer { animation: none; }
+
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

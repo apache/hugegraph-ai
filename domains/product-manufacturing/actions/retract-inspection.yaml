@@ -1,0 +1,21 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: retract-inspection
+  display: Retract inspection
+  description: Soft-delete a mistaken inspection entry; the row stays queryable in
+    history (archive-object)
+spec:
+  target: quality-inspection
+  parameters:
+    reason:
+      type: string
+      display: Reason
+      required: true
+  policy: production
+  effects:
+  - kind: archive-object
+  audit:
+    fields:
+    - target.inspection_id
+    - parameters

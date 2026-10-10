@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: bom-product
+  display: Product has BOM lines
+  description: Which BOM lines a product is made of
+spec:
+  source: product
+  target: bom
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      bom.product_id: product.product_id

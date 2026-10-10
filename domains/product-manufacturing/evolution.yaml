@@ -1,0 +1,52 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: default
+  display: Product manufacturing evolution policy
+  description: RSI governance for the product manufacturing domain — collects query, action,
+    agent and quarantine signals; constitutional changes always require human review
+kind: EvolutionPolicy
+spec:
+  loop: true
+  interval-minutes: 30
+  observability:
+    collect:
+    - query-log
+    - action-trace
+    - agent-trace
+    - quarantine-stats
+    marking-aware: true
+  tiers:
+    t0-auto-merge:
+      mutations:
+      - add-optional-property
+      - enum-widen
+      - index-tune
+      budget:
+        per-week: 10
+        blast-radius: single-namespace
+      requires:
+      - validate
+      - eval-suite-green
+    t1-pr:
+      mutations: []
+      requires: []
+    t2-canary:
+      mutations:
+      - rule-tighten
+      - rule-change
+      - effect-change
+      - function-change
+      requires:
+      - eval-suite-green
+      - shadow-diff-clean
+      - approval
+    t3-human-only:
+      mutations:
+      - policy-loosen
+      - marking-change
+      - ownership-change
+      - eval-passbar-change
+      - destructive-migration
+      requires: []
+  graduation:
+    rule: Ten consecutive clean promotions of the same mutation class + human approval

@@ -1,0 +1,29 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: receive-material
+  display: Adjust material stock
+  description: Record a physical count and set the on-hand quantity
+spec:
+  target: material
+  parameters:
+    counted_qty:
+      type: integer
+      display: Counted on-hand quantity
+      required: true
+    note:
+      type: string
+      display: Note
+  rules:
+  - expr: parameters.counted_qty >= 0
+    message: Counted quantity cannot be negative
+  policy: production
+  effects:
+  - kind: modify-target
+    set:
+      stock_qty: parameters.counted_qty
+  audit:
+    fields:
+    - target.material_id
+    - target.stock_qty
+    - parameters

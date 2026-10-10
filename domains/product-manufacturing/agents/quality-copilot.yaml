@@ -1,0 +1,30 @@
+# Quality copilot: the quality-role agent. Reads inspections and yield,
+# records and retracts inspection results. The write set is exactly what the
+# Cedar policies grant the quality role — nothing more.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: quality-copilot
+  display: Quality copilot
+  description: 'Quality-role agent: inspect quality records and yield, record and
+    retract inspections — writes need human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:quality-copilot"
+    Role: [quality]
+    site: plant-north
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_quality_inspection
+    - search_product
+    - search_production_order
+    - call_order_yield
+    - act_record_inspection
+    - act_retract_inspection
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

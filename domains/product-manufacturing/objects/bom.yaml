@@ -1,0 +1,43 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: bom
+  display: BOM line
+  description: One line of a product's bill of materials
+spec:
+  primaryKey:
+  - bom_id
+  properties:
+    bom_id:
+      type: string
+      display: BOM line ID
+      required: true
+    product_id:
+      type: string
+      display: Product
+      required: true
+    material_id:
+      type: string
+      display: Material
+      required: true
+    qty_per_unit:
+      type: decimal(10,3)
+      display: Quantity per unit
+    scrap_rate:
+      type: decimal(5,4)
+      display: Scrap allowance
+    created_at:
+      type: timestamp
+      display: Created at
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: boms
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

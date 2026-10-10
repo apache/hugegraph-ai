@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: bom-material
+  display: Material is used by BOM lines
+  description: Which BOM lines consume a material
+spec:
+  source: material
+  target: bom
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      bom.material_id: material.material_id

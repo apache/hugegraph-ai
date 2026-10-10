@@ -1,0 +1,14 @@
+apiVersion: ontogeny-ext/v1
+name: graph-hugegraph
+display: HugeGraph 图谱投影
+description: "图谱投影的 HugeGraph 存储实现（1.5/1.7 双方言自适应、批量写入、异步 Gremlin job）；实现 core 的 GraphStore 契约，经 sc.graph_store_factory 注入"
+kind: graph-projection
+provides: [capability:graph-store]
+requires: []
+entry:
+  module: ontogeny_ext_hugegraph
+  function: register
+config:
+  HUGEGRAPH_URL:
+    required: true
+    description: "本体 Projection 资源 endpoint 里的 ${HUGEGRAPH_URL} 环境引用"

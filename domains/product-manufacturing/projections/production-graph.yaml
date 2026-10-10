@@ -1,0 +1,62 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: production-graph
+  display: Production relationship graph
+  description: Orders, routing operations, work centres, materials and inspections
+    projected into HugeGraph for multi-hop traceability and impact analysis
+kind: Projection
+spec:
+  engine: hugegraph
+  endpoint: ${HUGEGRAPH_URL}
+  graph: product_manufacturing
+  graphspace: DEFAULT
+  api: auto
+  include:
+    objects:
+      product:
+        properties:
+        - name
+        - category
+        - status
+      bom:
+        properties:
+        - qty_per_unit
+      material:
+        properties:
+        - name
+        - unit
+        - safety_stock
+      work-center:
+        properties:
+        - name
+        - process
+        - status
+      production-order:
+        properties:
+        - qty
+        - status
+        - priority
+      operation:
+        properties:
+        - seq
+        - name
+        - status
+      quality-inspection:
+        properties:
+        - result
+        - inspector
+    links:
+    - bom-product
+    - bom-material
+    - production-order-product
+    - production-order-operations
+    - production-order-inspections
+    - operation-work-center
+  deletion: remove
+  indexes:
+  - object: production-order
+    property: status
+  - object: operation
+    property: status
+  - object: work-center
+    property: status

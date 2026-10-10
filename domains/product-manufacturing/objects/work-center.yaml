@@ -1,0 +1,54 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: work-center
+  display: Work centre
+  description: A production resource that performs operations
+kind: ObjectType
+spec:
+  primaryKey:
+  - work_center_id
+  properties:
+    work_center_id:
+      type: string
+      display: Work centre ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    process:
+      type: string
+      display: Process type
+      required: false
+    site:
+      type: string
+      display: Site
+      required: false
+    capacity_per_shift:
+      type: integer
+      display: Capacity per shift
+      required: false
+    shifts_per_day:
+      type: integer
+      display: Shifts per day
+      required: false
+    status:
+      type: enum[ACTIVE, IDLE, DOWN]
+      display: Status
+      required: false
+    created_at:
+      type: timestamp
+      display: Created at
+      required: false
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: work_centers
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

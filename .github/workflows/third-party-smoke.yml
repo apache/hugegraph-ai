@@ -1,0 +1,28 @@
+# M0 smoke gate for the third_party/ subtree (docs/hugegraph-ai-merge-plan.md §1.4):
+# deliberately tiny — it only proves the vendored upstream tree is still present
+# with its license and provenance intact. Upstream tests do NOT run here (they
+# need a HugeGraph server / torch; the default gate stays fast).
+name: third-party-smoke
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: third_party present, licensed, registered
+        run: |
+          test -d third_party/hugegraph-llm
+          test -d third_party/hugegraph-ml
+          test -d third_party/hugegraph-python-client
+          test -f third_party/LICENSE
+          test -f THIRD_PARTY.md
+          grep -q "hugegraph-ai" NOTICE
+      - name: zero import coupling (merge-plan §1.7)
+        run: |
+          ! git grep -n "hugegraph_llm" -- server extensions tests
+          ! git grep -n "hugegraph_ml" -- server extensions tests

@@ -1,0 +1,10 @@
+apiVersion: ontogeny/v1
+kind: PolicySet
+metadata:
+  name: default
+  display: Package default policy
+  description: 'Fallback for actions without an explicit policy: deny everything (safe
+    production default)'
+spec:
+  language: cedar
+  source: default.cedar

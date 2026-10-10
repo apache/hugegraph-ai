@@ -1,0 +1,41 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: create-production-order
+  display: Create production order
+  description: Plan a works order for a product quantity
+spec:
+  target: production-order
+  parameters:
+    product_id:
+      type: string
+      display: Product
+      required: true
+    qty:
+      type: integer
+      display: Quantity
+      required: true
+    priority:
+      type: enum[LOW, NORMAL, HIGH]
+      display: Priority
+    due_date:
+      type: date
+      display: Due date
+  rules:
+  - expr: parameters.qty > 0
+    message: Quantity must be positive
+  policy: production
+  effects:
+  - kind: create-object
+    properties:
+      order_id: newId('PO')
+      product_id: parameters.product_id
+      qty: parameters.qty
+      status: PLANNED
+      priority: parameters.priority
+      due_date: parameters.due_date
+      created_at: now()
+  audit:
+    fields:
+    - target.order_id
+    - parameters

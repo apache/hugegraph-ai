@@ -1,0 +1,10 @@
+apiVersion: ontogeny/v1
+kind: Store
+metadata:
+  name: mes
+  display: MES / ERP source
+  description: Manufacturing source system (demo SQLite copy)
+spec:
+  type: sqlite
+  connection: ${ERP_DSN}
+  access: read-write

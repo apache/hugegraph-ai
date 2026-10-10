@@ -1,0 +1,31 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: assign-operation
+  display: Assign operation to work centre
+  description: Move a queued operation to a different work centre by rewriting the
+    operation-work-centre link (set-link)
+spec:
+  target: operation
+  parameters:
+    work_center_id:
+      type: string
+      display: Target work centre
+      required: true
+  rules:
+  - expr: target.status == 'QUEUED'
+    message: Only queued operations can be reassigned
+  - expr: parameters.work_center_id != target.work_center_id
+    message: Operation is already assigned to that work centre
+  policy: production
+  effects:
+  - kind: set-link
+    link: operation-work-center
+    add:
+    - work_center_id: parameters.work_center_id
+    remove:
+    - work_center_id: target.work_center_id
+  audit:
+    fields:
+    - target.operation_id
+    - parameters

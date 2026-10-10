@@ -1,0 +1,24 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: release-production-order
+  display: Release production order
+  description: Release a planned order to the shop floor
+spec:
+  target: production-order
+  rules:
+  - expr: target.status == 'PLANNED'
+    message: Only planned orders can be released
+  policy: production
+  effects:
+  - kind: modify-target
+    set:
+      status: RELEASED
+      released_at: now()
+  - when: target.priority == 'HIGH'
+    kind: webhook
+    url: ${WMS_WEBHOOK}
+  audit:
+    fields:
+    - target.order_id
+    - target.status

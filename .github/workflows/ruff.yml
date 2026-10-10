@@ -1,0 +1,96 @@
+name: "Ruff Code Quality"
+
+on:
+  push:
+    branches:
+      - "main"
+      - "release-*"
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.22"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-3.11-${{ hashFiles('**/pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-3.11-
+
+      - name: Install dev dependencies
+        run: |
+          uv sync --extra dev --extra llm --extra python-client
+
+      - name: Check code formatting with Ruff
+        run: |
+          uv run ruff format --check .
+
+      - name: Lint code with Ruff
+        run: |
+          uv run ruff check .
+
+  ty-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]   # hugegraph-llm requires <3.12
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        run: |
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-${{ matrix.python-version }}-
+
+      - name: Install dev + runtime extras
+        run: |
+          uv sync --extra dev --extra llm --extra python-client
+
+      - name: Type check with ty (non-blocking)
+        run: uv run ty check hugegraph-llm/src hugegraph-python-client/src
+        continue-on-error: true
+        # TODO: extend scope to hugegraph-ml once heavy optional deps (DGL, PyTorch) are handled
+        # TODO: add graph-mcp after its type-check baseline is established

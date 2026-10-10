@@ -17,7 +17,9 @@
 #
 
 # if we don't want to exit after '|', remove "-o pipefail"
-set -exo pipefail
+# Do not trace commands: positional arguments can contain SVN credentials.
+set +x
+set -eo pipefail
 
 GROUP="hugegraph"
 # current repository name

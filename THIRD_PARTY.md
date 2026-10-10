@@ -17,3 +17,7 @@ the vendored copy: `.asf.yaml`, `.github/`, `.gitattributes`, `.licenserc.yaml`,
 `.pre-commit-config.yaml`. The upstream `.gitignore` was merged into the root
 `.gitignore` (entries scoped under `third_party/`). Everything else — code,
 LICENSE, NOTICE, README, workspace `pyproject.toml` — is kept byte-for-byte.
+
+The upstream NOTICE was merged into the root NOTICE (attribution and the
+2022-2026 copyright line are incorporated verbatim); the vendored copy of
+the file was therefore removed. `third_party/LICENSE` is retained as-is.

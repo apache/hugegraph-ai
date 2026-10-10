@@ -29,6 +29,8 @@ spec:
   rules:
   - expr: parameters.inspected_qty > 0
     message: Inspected quantity must be positive
+  - expr: parameters.defect_qty >= 0
+    message: Defect quantity cannot be negative
   - expr: parameters.defect_qty <= parameters.inspected_qty
     message: Defects cannot exceed the inspected quantity
   policy: production

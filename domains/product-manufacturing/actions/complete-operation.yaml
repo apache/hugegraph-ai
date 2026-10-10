@@ -13,6 +13,8 @@ spec:
   rules:
   - expr: target.status != 'COMPLETED'
     message: Operation is already completed
+  - expr: target.status != 'CANCELLED'
+    message: Cancelled operations cannot be completed
   policy: production
   effects:
   - kind: modify-target

@@ -13,8 +13,8 @@ spec:
       display: Target work centre
       required: true
   rules:
-  - expr: target.status != 'COMPLETED'
-    message: Completed operations cannot be reassigned
+  - expr: target.status == 'QUEUED'
+    message: Only queued operations can be reassigned
   - expr: parameters.work_center_id != target.work_center_id
     message: Operation is already assigned to that work centre
   policy: production

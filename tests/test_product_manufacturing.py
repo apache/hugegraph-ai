@@ -160,7 +160,7 @@ class TestPackageContract:
             "receive-material": ("material", "M-101"),
             "release-production-order": ("production-order", "PO-1002"),
             "complete-operation": ("operation", "OP-2001"),
-            "assign-operation": ("operation", "OP-2001"),
+            "assign-operation": ("operation", "OP-2002"),  # QUEUED: reassignable
             "cancel-production-order": ("production-order", "PO-1003"),
             "retract-inspection": ("quality-inspection", "QI-3003"),
         }
@@ -223,6 +223,50 @@ class TestPackageContract:
                          json={"parameters": {"product_id": "P-200", "qty": 0}},
                          headers=_hdr(PLANNER))
         assert r.status_code == 422
+
+    async def test_hardening_rules_reject(self, pm):
+        """Review-hardened rules (PR #380): cancelled operations cannot be
+        completed, only queued operations can be reassigned, defect counts
+        cannot go negative and scrap_rate stays within [0, 1]."""
+        c, _sc = pm
+        # scrap_rate bounds: 1.5 is refused, an omitted rate (null -> 0) passes
+        r = await c.post("/api/v1/actions/add-bom-line/validate",
+                         json={"parameters": {"product_id": "P-300", "material_id": "M-102",
+                                              "qty_per_unit": 0.5, "scrap_rate": 1.5}},
+                         headers=_hdr(PLANNER))
+        assert r.status_code == 200
+        assert any(not rule["ok"] for rule in r.json()["rules"])
+        r = await c.post("/api/v1/actions/add-bom-line/validate",
+                         json={"parameters": {"product_id": "P-300", "material_id": "M-102",
+                                              "qty_per_unit": 0.5}},
+                         headers=_hdr(PLANNER))
+        assert r.status_code == 200
+        assert all(rule["ok"] for rule in r.json()["rules"])
+        # negative defect counts are refused outright
+        r = await c.post("/api/v1/actions/record-inspection/execute",
+                         json={"parameters": {"order_id": "PO-1001", "inspected_qty": 5,
+                                              "defect_qty": -1, "result": "PASS"}},
+                         headers=_hdr(QUALITY))
+        assert r.status_code == 422
+        # only queued operations can be reassigned: OP-2201 is COMPLETED
+        r = await c.post("/api/v1/actions/assign-operation/validate",
+                         json={"parameters": {"work_center_id": "WC-01"},
+                               "target_id": "OP-2201"},
+                         headers=_hdr(PLANNER))
+        assert r.status_code == 200
+        assert any(not rule["ok"] for rule in r.json()["rules"])
+        # cancelling an order cancels its routing with it: those operations
+        # can no longer be completed
+        r = await c.post("/api/v1/actions/cancel-production-order/execute",
+                         json={"parameters": {"reason": "review-fix test"},
+                               "target_id": "PO-1001"},
+                         headers=_hdr(PLANNER))
+        assert r.status_code == 200, r.text
+        r = await c.post("/api/v1/actions/complete-operation/validate",
+                         json={"parameters": {}, "target_id": "OP-2001"},  # RUNNING -> cancelled
+                         headers=_hdr(PLANNER))
+        assert r.status_code == 200
+        assert any(not rule["ok"] for rule in r.json()["rules"])
 
 
 def test_demo_actions_cover_all_seven_effect_kinds():

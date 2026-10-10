@@ -35,7 +35,7 @@ async function api<T = any>(
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const json = resp.status === 204 ? undefined : await resp.json().catch(() => undefined)
-  return { status: resp.status, json }
+  return { status: resp.status, json: json as T }
 }
 
 let llmOk = false

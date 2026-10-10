@@ -14,6 +14,7 @@
 """ontogeny.core -- DSL: models, loading, validation, linting, expression language."""
 
 from .loader import OntologyPackage, load_package
+from .linter import lint  # noqa: F401
 from .models import (  # noqa: F401
     ActionResource,
     AnyResource,

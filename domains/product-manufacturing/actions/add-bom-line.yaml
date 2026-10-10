@@ -25,6 +25,8 @@ spec:
   rules:
   - expr: parameters.qty_per_unit > 0
     message: Quantity per unit must be positive
+  - expr: (parameters.scrap_rate ?? 0) >= 0 and (parameters.scrap_rate ?? 0) <= 1
+    message: Scrap rate must be between 0 and 1
   policy: production
   effects:
   - kind: create-object

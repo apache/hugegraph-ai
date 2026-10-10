@@ -80,6 +80,12 @@ print(res)
 g.close()
 ```
 
+### Graph Configuration Export
+
+`client.graphs().get_graph_config()` returns the graph's local source configuration file as text.
+Graphs loaded without a local file origin (for example from metadata) return HTTP 415 with
+`Can't access the api in a node which started with non local file config.`; the client raises `ServerError`.
+
 ### Schema Management
 
 The `hugegraph-python-client` provides comprehensive schema management capabilities.

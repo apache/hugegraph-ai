@@ -18,6 +18,8 @@
 import unittest
 
 import pytest
+from pyhugegraph.utils.exceptions import ServerError
+from requests import HTTPError
 
 from ..client_utils import ClientUtils
 
@@ -60,5 +62,19 @@ class TestGraphsManager(unittest.TestCase):
         self.assertTrue("backend" in graph_info)
 
     def test_get_graph_config(self):
-        graph_config = self.graphs.get_graph_config()
-        self.assertIsNotNone(graph_config)
+        # GraphsAPI.getConf serves a local source file and explicitly rejects
+        # configurations without a file origin (for example metadata-loaded graphs).
+        try:
+            graph_config = self.graphs.get_graph_config()
+        except ServerError as exc:
+            self.assertIsInstance(exc.__cause__, HTTPError)
+            response = exc.__cause__.response
+            self.assertEqual(response.status_code, 415)
+            self.assertEqual(
+                response.json()["message"],
+                "Can't access the api in a node which started with non local file config.",
+            )
+        else:
+            self.assertIsInstance(graph_config, str)
+            self.assertIn("gremlin.graph", graph_config)
+            self.assertIn("backend", graph_config)

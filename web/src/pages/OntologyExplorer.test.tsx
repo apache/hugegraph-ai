@@ -154,6 +154,9 @@ describe('OntologyExplorer — the editable ontology canvas', () => {
     mock()
     render()
     await waitFor(() => expect(screen.getByTestId('ontology-flow')).toBeInTheDocument())
+    // the graph registers only once the domain's resources have loaded —
+    // same guard as clickNode(), without which g6() is undefined in CI
+    await waitFor(() => expect((g6()?.cfg?.data?.edges ?? []).some((e: { id?: string }) => e.id === 'link:sales-order-customer')).toBe(true))
 
     const link = g6().cfg.data.edges.find((e: { id?: string }) => e.id === 'link:sales-order-customer')
     expect(link).toBeTruthy()

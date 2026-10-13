@@ -153,17 +153,20 @@ def store_prompt(
     schema,
     example_prompt,
     graph_extract_split_type="document",
+    graph_extract_max_workers=1,
 ):
     if (
         prompt.doc_input_text != doc
         or prompt.graph_schema != schema
         or prompt.extract_graph_prompt != example_prompt
         or prompt.graph_extract_split_type != graph_extract_split_type
+        or prompt.graph_extract_max_workers != int(graph_extract_max_workers)
     ):
         prompt.doc_input_text = doc
         prompt.graph_schema = schema
         prompt.extract_graph_prompt = example_prompt
         prompt.graph_extract_split_type = graph_extract_split_type
+        prompt.graph_extract_max_workers = int(graph_extract_max_workers)
         prompt.update_yaml_file()
 
 
@@ -405,6 +408,14 @@ def create_vector_graph_block():
                 label="Graph Extraction Split Type",
                 info=("document keeps the current behavior; paragraph/sentence split long docs before extraction."),
             )
+            graph_extract_max_workers = gr.Slider(
+                minimum=1,
+                maximum=8,
+                value=prompt.graph_extract_max_workers,
+                step=1,
+                label="Graph Extraction Chunk Concurrency",
+                info="Maximum parallel chunk extraction calls. 1 keeps serial behavior.",
+            )
             graph_extract_bt = gr.Button("Extract Graph Data (1)", variant="primary")
             graph_loading_bt = gr.Button("Load into GraphDB (2)", interactive=True)
             graph_index_rebuild_bt = gr.Button("Update Vid Embedding")
@@ -440,6 +451,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
         vector_index_btn1.click(clean_vector_index).then(
@@ -449,6 +461,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
         vector_import_bt.click(build_vector_index, inputs=[input_file, input_text], outputs=out).then(
@@ -458,6 +471,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
         graph_index_btn0.click(get_graph_index_info, outputs=out).then(
@@ -467,6 +481,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
         graph_index_btn1.click(clean_all_graph_index).then(
@@ -476,6 +491,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
         graph_data_btn0.click(clean_all_graph_data).then(
@@ -485,6 +501,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
         graph_index_rebuild_bt.click(update_vid_embedding, outputs=out).then(
@@ -494,6 +511,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
 
@@ -506,6 +524,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
             outputs=[out],
         ).then(
@@ -515,6 +534,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
 
@@ -527,6 +547,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],
         )
 
@@ -542,6 +563,7 @@ def create_vector_graph_block():
                 input_schema,
                 info_extract_template,
                 graph_split_type,
+                graph_extract_max_workers,
             ],  # Persist the updated schema-generator examples
         )
 

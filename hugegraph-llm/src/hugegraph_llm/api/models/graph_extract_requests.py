@@ -21,6 +21,11 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from hugegraph_llm.utils.graph_extract_config import (
+    MAX_GRAPH_EXTRACT_WORKERS,
+    validate_graph_extract_max_workers,
+)
+
 
 class GraphExtractClientConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -44,6 +49,18 @@ class GraphExtractRequest(BaseModel):
     extract_type: Literal["property_graph"] = Query("property_graph", description="Extraction type.")
     language: Literal["zh", "en"] = Query("zh", description="Language for chunk splitting.")
     split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
+    graph_extract_max_workers: int = Query(
+        1,
+        ge=1,
+        le=MAX_GRAPH_EXTRACT_WORKERS,
+        description="Maximum parallel chunk extraction calls.",
+    )
+
+    @field_validator("graph_extract_max_workers", mode="before")
+    @classmethod
+    def validate_graph_extract_max_workers_field(cls, value):
+        return validate_graph_extract_max_workers(value)
+
     include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")
     client_config: Optional[GraphExtractClientConfig] = Field(None, description="Request-scoped HugeGraph connection.")
 

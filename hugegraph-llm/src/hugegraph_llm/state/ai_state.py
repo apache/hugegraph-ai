@@ -24,6 +24,7 @@ class WkFlowInput(GParam):
     texts: Optional[Union[str, List[str]]] = None  # texts input used by ChunkSplit Node
     language: Optional[str] = None  # language configuration used by ChunkSplit Node
     split_type: Optional[str] = None  # split type used by ChunkSplit Node
+    graph_extract_max_workers: int = 1  # bounded chunk extraction concurrency
     example_prompt: Optional[str] = None  # need by graph information extract
     schema: Optional[str] = None  # Schema information requeired by SchemaNode
     # Request-scoped HugeGraph connection; None falls back to global huge_settings.
@@ -86,6 +87,7 @@ class WkFlowInput(GParam):
         self.texts = None
         self.language = None
         self.split_type = None
+        self.graph_extract_max_workers = 1
         self.example_prompt = None
         self.schema = None
         self.graph_client_config = None

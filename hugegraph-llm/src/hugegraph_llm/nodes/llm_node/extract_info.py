@@ -41,7 +41,11 @@ class ExtractNode(BaseNode):
         if extract_type == "triples":
             self.info_extract = InfoExtract(llm, example_prompt)
         elif extract_type == "property_graph":
-            self.property_graph_extract = PropertyGraphExtract(llm, example_prompt)
+            self.property_graph_extract = PropertyGraphExtract(
+                llm,
+                example_prompt,
+                max_workers=self.wk_input.graph_extract_max_workers,
+            )
         else:
             return CStatus(-1, f"Unsupported extract_type: {extract_type}")
         return super().node_init()

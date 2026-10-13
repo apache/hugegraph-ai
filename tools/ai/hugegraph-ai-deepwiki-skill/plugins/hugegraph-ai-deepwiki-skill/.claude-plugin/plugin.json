@@ -1,0 +1,13 @@
+{
+  "name": "hugegraph-ai-deepwiki-skill",
+  "description": "Repository knowledge assistant for Apache HugeGraph AI.",
+  "version": "0.1.4",
+  "author": {
+    "name": "HugeGraph Community"
+  },
+  "homepage": "https://github.com/apache/hugegraph-ai",
+  "repository": "https://github.com/apache/hugegraph-ai",
+  "license": "Apache-2.0",
+  "keywords": ["hugegraph-ai", "deepwiki", "apache", "rag", "knowledge-assistant"],
+  "skills": "./skills/"
+}

@@ -100,6 +100,8 @@ class FakeGremlinEndpoint:
             ids = ast.literal_eval(f"[{match.group(1)}]")
         except SyntaxError as e:
             raise ServerError(f"Server Exception: startup failed: {e}") from e
+        if len(ids) == 1 and isinstance(ids[0], list):  # g.V([...]) is equivalent to g.V(...)
+            ids = ids[0]
         if ".repeat(" in gremlin:
             return {"data": []}
         return {

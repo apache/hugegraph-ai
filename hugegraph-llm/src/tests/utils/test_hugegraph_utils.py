@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import ast
 import json
 import os
 import stat
@@ -29,7 +30,7 @@ import pytest
 
 from hugegraph_llm.config import huge_settings
 from hugegraph_llm.utils import hugegraph_utils
-from hugegraph_llm.utils.hugegraph_utils import get_hg_client, gremlin_str_literal
+from hugegraph_llm.utils.hugegraph_utils import get_hg_client, gremlin_literal
 
 
 def test_request_connection_passes_canonical_validated_url(monkeypatch):
@@ -254,8 +255,19 @@ def test_backup_flow_writes_native_schema_and_cleans_only_reused_directory(tmp_p
         ("1:O'Brien", "'1:O\\'Brien'"),
         ("C:\\path", "'C:\\\\path'"),
         ("1:$100 bill", "'1:$100 bill'"),
-        (42, "'42'"),
+        ("1:line\nbreak\r\tend", "'1:line\\nbreak\\r\\tend'"),
+        ("1:bell\x07", "'1:bell\\u0007'"),
+        (123, "123"),
+        (2**40, "1099511627776"),
+        ("123", "'123'"),
+        (True, "'True'"),
     ],
 )
-def test_gremlin_str_literal_escapes_quotes_and_backslashes(value, expected):
-    assert gremlin_str_literal(value) == expected
+def test_gremlin_literal_escapes_strings_and_keeps_ints_numeric(value, expected):
+    assert gremlin_literal(value) == expected
+
+
+@pytest.mark.parametrize("value", ["1:O'Brien", "C:\\x\\'y", "a\nb\rc\td\be\ff\x00g\x1f\x7f", "$x ${y}"])
+def test_gremlin_literal_round_trips_through_a_single_quoted_literal(value):
+    # Python and Groovy decode these escapes (\\ \' \n \r \t \b \f \uXXXX) the same way in '...' strings.
+    assert ast.literal_eval(gremlin_literal(value)) == value

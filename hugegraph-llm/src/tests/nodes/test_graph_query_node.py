@@ -39,3 +39,14 @@ def test_subgraph_query_escapes_vertex_ids_with_apostrophes():
     assert result["graph_result"] == ["1:O'Brien{name: O'Brien}"]
     assert len(endpoint.scripts) == 2
     assert all("'1:O\\'Brien'" in script for script in endpoint.scripts)
+
+
+def test_subgraph_query_keeps_numeric_vertex_ids_numeric():
+    # Graphs with numeric ids store ints in the vid index; HugeGraph treats 123 and '123' as different ids.
+    endpoint = FakeGremlinEndpoint({123: {"name": "Tom Hanks"}})
+    node = _graph_query_node(endpoint)
+
+    result = node._subgraph_query({"match_vids": [123]})
+
+    assert result["graph_result"] == ["123{name: Tom Hanks}"]
+    assert [script.split(")", 1)[0] for script in endpoint.scripts] == ["g.V(123", "g.V(123"]

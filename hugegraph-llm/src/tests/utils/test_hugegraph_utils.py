@@ -29,7 +29,7 @@ import pytest
 
 from hugegraph_llm.config import huge_settings
 from hugegraph_llm.utils import hugegraph_utils
-from hugegraph_llm.utils.hugegraph_utils import get_hg_client
+from hugegraph_llm.utils.hugegraph_utils import get_hg_client, gremlin_str_literal
 
 
 def test_request_connection_passes_canonical_validated_url(monkeypatch):
@@ -245,3 +245,17 @@ def test_backup_flow_writes_native_schema_and_cleans_only_reused_directory(tmp_p
     assert json.loads((current / "edges.json").read_text(encoding="utf-8"))[0]["outV"] == "alice"
     assert not (current / "schema.groovy").exists()
     assert (historical / "schema.groovy").read_text(encoding="utf-8") == "historic"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1:Tom Hanks", "'1:Tom Hanks'"),
+        ("1:O'Brien", "'1:O\\'Brien'"),
+        ("C:\\path", "'C:\\\\path'"),
+        ("1:$100 bill", "'1:$100 bill'"),
+        (42, "'42'"),
+    ],
+)
+def test_gremlin_str_literal_escapes_quotes_and_backslashes(value, expected):
+    assert gremlin_str_literal(value) == expected

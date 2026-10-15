@@ -17,6 +17,11 @@
 
 # pylint: disable=unused-argument
 
+import ast
+import re
+
+from pyhugegraph.utils.exceptions import ServerError
+
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
 
 
@@ -74,3 +79,31 @@ class VectorIndex:
     def search(self, query_vector, top_k=5):
         # Simply return the first top_k documents.
         return self.documents[: min(top_k, len(self.documents))]
+
+
+class FakeGremlinEndpoint:
+    """Stand-in for HugeGraph's /gremlin endpoint that rejects scripts whose g.V(...) ids don't parse.
+
+    Groovy and Python share the same rules for single-quoted literals with \\' and \\\\ escapes,
+    so ast.literal_eval acts as the parser. Vertex lookups return matching entries from `vertices`;
+    traversals (anything with `.repeat(`) return no paths.
+    """
+
+    def __init__(self, vertices):
+        self.vertices = vertices
+        self.scripts = []
+
+    def exec(self, gremlin):
+        self.scripts.append(gremlin)
+        match = re.match(r"g\.V\((.*?)\)\s*[.\n]", gremlin, re.S)
+        try:
+            ids = ast.literal_eval(f"[{match.group(1)}]")
+        except SyntaxError as e:
+            raise ServerError(f"Server Exception: startup failed: {e}") from e
+        if ".repeat(" in gremlin:
+            return {"data": []}
+        return {
+            "data": [
+                {"id": vid, "label": "person", "properties": self.vertices[vid]} for vid in ids if vid in self.vertices
+            ]
+        }

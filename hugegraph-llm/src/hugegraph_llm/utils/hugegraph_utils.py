@@ -37,6 +37,11 @@ MAX_EDGES = 200000
 BACKUP_DIR = str(os.path.join(resource_path, "backup-graph-data-4020", huge_settings.graph_name))
 
 
+def gremlin_str_literal(value) -> str:
+    """Quote a value as a Groovy single-quoted string literal (no `$` interpolation), e.g. 1:O'Brien -> '1:O\\'Brien'."""
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
 def run_gremlin_query(query, fmt=True, connection=None):
     res = get_hg_client(connection=connection).gremlin().exec(query)
     return json.dumps(res, indent=4, ensure_ascii=False) if fmt else res

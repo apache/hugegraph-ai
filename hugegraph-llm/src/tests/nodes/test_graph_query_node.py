@@ -41,12 +41,29 @@ def test_subgraph_query_escapes_vertex_ids_with_apostrophes():
     assert all("'1:O\\'Brien'" in script for script in endpoint.scripts)
 
 
+def _knows_path(start_id, start_name, end_id, end_name):
+    return {
+        "objects": [
+            {"label": "person", "id": start_id, "props": {"name": start_name}},
+            {"label": "knows", "inV": end_id, "outV": start_id, "props": {}},
+            {"label": "person", "id": end_id, "props": {"name": end_name}},
+        ]
+    }
+
+
 def test_subgraph_query_keeps_numeric_vertex_ids_numeric():
     # Graphs with numeric ids store ints in the vid index; HugeGraph treats 123 and '123' as different ids.
-    endpoint = FakeGremlinEndpoint({123: {"name": "Tom Hanks"}})
+    # Two paths share the start vertex, so the second one hits the v_cache branch with an int id.
+    endpoint = FakeGremlinEndpoint(
+        {123: {"name": "n123"}},
+        paths=[_knows_path(123, "n123", 1, "Alice"), _knows_path(123, "n123", 2, "Bob")],
+    )
     node = _graph_query_node(endpoint)
 
     result = node._subgraph_query({"match_vids": [123]})
 
-    assert result["graph_result"] == ["123{name: Tom Hanks}"]
     assert [script.split(")", 1)[0] for script in endpoint.scripts] == ["g.V(123", "g.V(123"]
+    assert sorted(result["graph_result"]) == [
+        "123--[knows]-->2{name: Bob}",
+        "123{name: n123}--[knows]-->1{name: Alice}",
+    ]

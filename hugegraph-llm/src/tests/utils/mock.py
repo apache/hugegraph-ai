@@ -86,11 +86,12 @@ class FakeGremlinEndpoint:
 
     Groovy and Python share the same rules for single-quoted literals with \\' and \\\\ escapes,
     so ast.literal_eval acts as the parser. Vertex lookups return matching entries from `vertices`;
-    traversals (anything with `.repeat(`) return no paths.
+    traversals (anything with `.repeat(`) return the `paths` that start at one of the requested ids.
     """
 
-    def __init__(self, vertices):
+    def __init__(self, vertices, paths=None):
         self.vertices = vertices
+        self.paths = paths or []
         self.scripts = []
 
     def exec(self, gremlin):
@@ -103,7 +104,7 @@ class FakeGremlinEndpoint:
         if len(ids) == 1 and isinstance(ids[0], list):  # g.V([...]) is equivalent to g.V(...)
             ids = ids[0]
         if ".repeat(" in gremlin:
-            return {"data": []}
+            return {"data": [path for path in self.paths if path["objects"][0]["id"] in ids]}
         return {
             "data": [
                 {"id": vid, "label": "person", "properties": self.vertices[vid]} for vid in ids if vid in self.vertices

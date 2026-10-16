@@ -194,7 +194,7 @@ class GraphQueryNode(BaseNode):
 
         # TODO: we may remove label id or replace with label name
         if matched_str in v_cache:
-            node_str = matched_str
+            node_str = str(matched_str)  # numeric vertex ids are ints
         else:
             v_cache.add(matched_str)
             node_str = f"{item['id']}{{{props_str}}}"

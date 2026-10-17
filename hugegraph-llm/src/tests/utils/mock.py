@@ -18,7 +18,6 @@
 # pylint: disable=unused-argument
 
 import ast
-import re
 
 from pyhugegraph.utils.exceptions import ServerError
 
@@ -94,11 +93,37 @@ class FakeGremlinEndpoint:
         self.paths = paths or []
         self.scripts = []
 
+    @staticmethod
+    def _v_args(gremlin):
+        """Return the text inside g.V(...), skipping quoted content and escapes; None if it never closes."""
+        if not gremlin.startswith("g.V("):
+            return None
+        quote, depth, i = None, 0, len("g.V(")
+        while i < len(gremlin):
+            ch = gremlin[i]
+            if quote:
+                if ch == "\\":
+                    i += 1
+                elif ch == quote:
+                    quote = None
+            elif ch in "'\"":
+                quote = ch
+            elif ch in "([":
+                depth += 1
+            elif ch in ")]":
+                if depth == 0:
+                    return gremlin[len("g.V(") : i]
+                depth -= 1
+            i += 1
+        return None
+
     def exec(self, gremlin):
         self.scripts.append(gremlin)
-        match = re.match(r"g\.V\((.*?)\)\s*[.\n]", gremlin, re.S)
+        args = self._v_args(gremlin)
         try:
-            ids = ast.literal_eval(f"[{match.group(1)}]")
+            if args is None:
+                raise SyntaxError("unterminated g.V(...) call")
+            ids = ast.literal_eval(f"[{args}]")
         except SyntaxError as e:
             raise ServerError(f"Server Exception: startup failed: {e}") from e
         if len(ids) == 1 and isinstance(ids[0], list):  # g.V([...]) is equivalent to g.V(...)

@@ -15,6 +15,7 @@
 
 from unittest.mock import Mock
 
+import pytest
 from pyhugegraph.client import PyHugeClient
 
 from hugegraph_llm.utils.graph_index_utils import get_vertex_details
@@ -30,3 +31,14 @@ def test_get_vertex_details_escapes_apostrophes_in_vertex_ids():
 
     assert [v["id"] for v in result] == ["1:O'Brien"]
     assert endpoint.scripts == ["g.V('1:O\\'Brien').limit(20)"]
+
+
+@pytest.mark.parametrize("vertex_id", ["1:x).y", "1:a', 'b').limit(1", "1:[x](y)", '1:say "hi").z'])
+def test_get_vertex_details_handles_ids_with_gremlin_syntax(vertex_id):
+    endpoint = FakeGremlinEndpoint({vertex_id: {"name": "n"}})
+    client = Mock(spec=PyHugeClient)
+    client.gremlin.return_value = endpoint
+
+    result = get_vertex_details([vertex_id], {"graph_client": client})
+
+    assert [v["id"] for v in result] == [vertex_id]

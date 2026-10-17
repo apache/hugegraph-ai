@@ -24,6 +24,7 @@ from pyhugegraph.client import PyHugeClient
 from hugegraph_llm.config import huge_settings, resource_path
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
+from hugegraph_llm.utils.hugegraph_utils import gremlin_literal
 from hugegraph_llm.utils.log import log
 
 
@@ -64,7 +65,7 @@ class SemanticIdQuery:
         for i in range(vertex_label_num):
             possible_vids.update([f"{i + 1}:{keyword}" for keyword in keywords])
 
-        vids_str = ",".join([f"'{vid}'" for vid in possible_vids])
+        vids_str = ",".join(gremlin_literal(vid) for vid in possible_vids)
         resp = self._client.gremlin().exec(SemanticIdQuery.ID_QUERY_TEMPL.format(vids_str=vids_str))
         searched_vids = [v["id"] for v in resp["data"]]
 

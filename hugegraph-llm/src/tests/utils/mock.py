@@ -17,6 +17,10 @@
 
 # pylint: disable=unused-argument
 
+import ast
+
+from pyhugegraph.utils.exceptions import ServerError
+
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
 
 
@@ -74,3 +78,60 @@ class VectorIndex:
     def search(self, query_vector, top_k=5):
         # Simply return the first top_k documents.
         return self.documents[: min(top_k, len(self.documents))]
+
+
+class FakeGremlinEndpoint:
+    """Stand-in for HugeGraph's /gremlin endpoint that rejects scripts whose g.V(...) ids don't parse.
+
+    Groovy and Python share the same rules for single-quoted literals with \\' and \\\\ escapes,
+    so ast.literal_eval acts as the parser. Vertex lookups return matching entries from `vertices`;
+    traversals (anything with `.repeat(`) return the `paths` that start at one of the requested ids.
+    """
+
+    def __init__(self, vertices, paths=None):
+        self.vertices = vertices
+        self.paths = paths or []
+        self.scripts = []
+
+    @staticmethod
+    def _v_args(gremlin):
+        """Return the text inside g.V(...), skipping quoted content and escapes; None if it never closes."""
+        if not gremlin.startswith("g.V("):
+            return None
+        quote, depth, i = None, 0, len("g.V(")
+        while i < len(gremlin):
+            ch = gremlin[i]
+            if quote:
+                if ch == "\\":
+                    i += 1
+                elif ch == quote:
+                    quote = None
+            elif ch in "'\"":
+                quote = ch
+            elif ch in "([":
+                depth += 1
+            elif ch in ")]":
+                if depth == 0:
+                    return gremlin[len("g.V(") : i]
+                depth -= 1
+            i += 1
+        return None
+
+    def exec(self, gremlin):
+        self.scripts.append(gremlin)
+        args = self._v_args(gremlin)
+        try:
+            if args is None:
+                raise SyntaxError("unterminated g.V(...) call")
+            ids = ast.literal_eval(f"[{args}]")
+        except SyntaxError as e:
+            raise ServerError(f"Server Exception: startup failed: {e}") from e
+        if len(ids) == 1 and isinstance(ids[0], list):  # g.V([...]) is equivalent to g.V(...)
+            ids = ids[0]
+        if ".repeat(" in gremlin:
+            return {"data": [path for path in self.paths if path["objects"][0]["id"] in ids]}
+        return {
+            "data": [
+                {"id": vid, "label": "person", "properties": self.vertices[vid]} for vid in ids if vid in self.vertices
+            ]
+        }

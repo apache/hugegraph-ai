@@ -18,6 +18,7 @@ import json
 from pycgraph import GPipeline
 
 from hugegraph_llm.config import huge_settings
+from hugegraph_llm.extraction_runtime.v1 import ExtractionOptions
 from hugegraph_llm.flows.common import BaseFlow
 from hugegraph_llm.nodes.document_node.chunk_split import ChunkSplitNode
 from hugegraph_llm.nodes.hugegraph_node.schema import SchemaNode
@@ -56,6 +57,10 @@ class GraphExtractFlow(BaseFlow):
         prepared_input.example_prompt = example_prompt
         prepared_input.schema = schema
         prepared_input.extract_type = extract_type
+        review_options = kwargs.get("review_options")
+        prepared_input.review_options = (
+            ExtractionOptions.model_validate(review_options) if review_options is not None else None
+        )
         client_config = kwargs.get("client_config")
         if client_config:
             # URL stays server-controlled; only identity/graphspace are request-scoped.
@@ -110,6 +115,17 @@ class GraphExtractFlow(BaseFlow):
         edges = res.get("edges", [])
         chunk_count = len(res.get("chunks", []))
         log.info("Graph extraction chunk_count: %s", chunk_count)
+        if "chunk_results" in res:
+            return json.dumps(
+                {
+                    "vertices": vertices,
+                    "edges": edges,
+                    "extraction_status": res["extraction_status"],
+                    "chunk_results": res["chunk_results"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
         if not vertices and not edges:
             log.info("Please check the schema.(The schema may not match the Doc)")
             return json.dumps(

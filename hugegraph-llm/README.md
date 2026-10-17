@@ -14,6 +14,15 @@ HugeGraph-LLM is a comprehensive toolkit that combines the power of graph databa
 
 For detailed source code doc, visit our [DeepWiki](https://deepwiki.com/apache/hugegraph-ai) page. (Recommended)
 
+### Reviewed Property-Graph Extraction
+
+Enable optional review, bounded repair, and concurrent chunks through
+`review_options` on `/graph/extract`. Accepted graphs are aggregated while every
+chunk's status, issues, and call counts remain available. Requests without the
+option keep the existing extraction path.
+See the [runtime guide](docs/extraction-runtime.md) for a runnable example and
+response semantics, and the [architecture explanation (中文)](docs/extraction-runtime-architecture.zh-CN.md).
+
 ## 📋 Prerequisites
 
 > [!IMPORTANT]

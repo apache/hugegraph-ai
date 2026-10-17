@@ -28,15 +28,18 @@ from tenacity import (
     wait_exponential,
 )
 
-from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.models.llms.base import BaseLLM, LLMOutputTruncatedError
 from hugegraph_llm.utils.log import log
 
 
 class OllamaClient(BaseLLM):
     """LLM wrapper should take in a prompt and return a string."""
 
-    def __init__(self, model: str, host: str = "127.0.0.1", port: int = 11434, **kwargs):
+    def __init__(
+        self, model: str, host: str = "127.0.0.1", port: int = 11434, *, raise_on_truncation: bool = False, **kwargs
+    ):
         self.model = model
+        self.raise_on_truncation = raise_on_truncation
         self.client = ollama.Client(host=f"http://{host}:{port}", **kwargs)
         self.async_client = ollama.AsyncClient(host=f"http://{host}:{port}", **kwargs)
 
@@ -59,6 +62,8 @@ class OllamaClient(BaseLLM):
                 model=self.model,
                 messages=messages,
             )
+            if self.raise_on_truncation and response.get("done_reason") == "length":
+                raise LLMOutputTruncatedError("done_reason=length")
             usage = {
                 "prompt_tokens": response["prompt_eval_count"],
                 "completion_tokens": response["eval_count"],
@@ -89,6 +94,8 @@ class OllamaClient(BaseLLM):
                 model=self.model,
                 messages=messages,
             )
+            if self.raise_on_truncation and response.get("done_reason") == "length":
+                raise LLMOutputTruncatedError("done_reason=length")
             usage = {
                 "prompt_tokens": response["prompt_eval_count"],
                 "completion_tokens": response["eval_count"],
@@ -112,6 +119,8 @@ class OllamaClient(BaseLLM):
             messages = [{"role": "user", "content": prompt}]
 
         for chunk in self.client.chat(model=self.model, messages=messages, stream=True):
+            if self.raise_on_truncation and chunk.get("done_reason") == "length":
+                raise LLMOutputTruncatedError("done_reason=length")
             if not chunk["message"]:
                 log.debug("Received empty chunk['message'] in streaming chunk: %s", chunk)
                 continue
@@ -134,6 +143,8 @@ class OllamaClient(BaseLLM):
         try:
             async_generator = await self.async_client.chat(model=self.model, messages=messages, stream=True)
             async for chunk in async_generator:
+                if self.raise_on_truncation and chunk.get("done_reason") == "length":
+                    raise LLMOutputTruncatedError("done_reason=length")
                 token = chunk.get("message", {}).get("content", "")
                 if on_token_callback:
                     on_token_callback(token)

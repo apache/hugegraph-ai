@@ -321,6 +321,7 @@ def rag_http_api(
 
                 if req.llm_type in ("openai", "litellm"):
                     res = apply_llm_conf(
+                        "all",
                         req.api_key,
                         req.api_base,
                         req.language_model,
@@ -328,7 +329,7 @@ def rag_http_api(
                         origin_call="http",
                     )
                 else:
-                    res = apply_llm_conf(req.host, req.port, req.language_model, None, origin_call="http")
+                    res = apply_llm_conf("all", req.host, req.port, req.language_model, None, origin_call="http")
                 if not 200 <= res < 300:
                     _restore_settings(llm_settings, original_values)
                 return generate_response(RAGResponse(status_code=res, message="Missing Value"))

@@ -94,7 +94,8 @@ class BaseConfig(BaseSettings):
                     continue
                 if env_config[k] == str(v):
                     continue
-            log.info("Update %s: %s=%s", env_path, k, v)
+            # Any configuration value can contain credentials, regardless of its field name.
+            log.info("Update configuration field %s in %s", k, env_path)
             set_key(env_path, k, v if v else "", quote_mode="never")
 
     def check_env(self):
@@ -114,7 +115,7 @@ class BaseConfig(BaseSettings):
             # Step 2: Add missing config items to .env
             self._sync_object_to_env(env_config, config_dict)
         except Exception as e:
-            log.error("An error occurred when checking the .env variable file: %s", str(e))
+            log.error("Failed to synchronize configuration file %s (%s)", env_path, type(e).__name__)
             raise
 
     def _sync_env_to_object(self, env_config, config_dict):
@@ -125,12 +126,7 @@ class BaseConfig(BaseSettings):
                 obj_value_str = str(obj_value) if obj_value is not None else ""
 
                 if env_value != obj_value_str:
-                    log.info(
-                        "Update configuration from the file: %s=%s (Original value: %s)",
-                        env_key,
-                        env_value,
-                        obj_value_str,
-                    )
+                    log.info("Load configuration field %s from %s", env_key, env_path)
                     # Update the object attribute (using lowercase key)
                     setattr(self, env_key.lower(), env_value)
 
@@ -139,11 +135,7 @@ class BaseConfig(BaseSettings):
         for obj_key, obj_value in config_dict.items():
             if obj_key not in env_config:
                 obj_value_str = str(obj_value) if obj_value is not None else ""
-                log.info(
-                    "Add configuration items to the environment variable file: %s=%s",
-                    obj_key,
-                    obj_value,
-                )
+                log.info("Add configuration field %s to %s", obj_key, env_path)
                 # Add to .env
                 set_key(env_path, obj_key, obj_value_str, quote_mode="never")
 
@@ -167,5 +159,5 @@ class BaseConfig(BaseSettings):
 
             log.info("The %s file was loaded. Class: %s", env_path, self.__class__.__name__)
         except Exception as e:
-            log.error("An error occurred when initializing the configuration object: %s", str(e))
+            log.error("Failed to initialize %s from %s (%s)", self.__class__.__name__, env_path, type(e).__name__)
             raise

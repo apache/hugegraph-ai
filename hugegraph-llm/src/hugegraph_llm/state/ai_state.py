@@ -17,6 +17,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from pycgraph import CStatus, GParam
 
+from hugegraph_llm.extraction_runtime.v1 import ExtractionOptions
 from hugegraph_llm.utils.log import log
 
 
@@ -30,6 +31,7 @@ class WkFlowInput(GParam):
     graph_client_config: Optional[Dict[str, Any]] = None
     data_json: Optional[Dict[str, Any]] = None
     extract_type: Optional[str] = None
+    review_options: Optional[ExtractionOptions] = None
     query_examples: Optional[Any] = None
     few_shot_schema: Optional[Any] = None
     # Fields related to PromptGenerate
@@ -91,6 +93,7 @@ class WkFlowInput(GParam):
         self.graph_client_config = None
         self.data_json = None
         self.extract_type = None
+        self.review_options = None
         self.query_examples = None
         self.few_shot_schema = None
         # PromptGenerate related configuration
@@ -145,6 +148,8 @@ class WkFlowState(GParam):
     vertices: Optional[List[Any]] = None
     triples: Optional[List[Any]] = None
     call_count: Optional[int] = None
+    chunk_results: Optional[List[Dict[str, Any]]] = None
+    extraction_status: Optional[str] = None
 
     keywords: Optional[List[str]] = None
     vector_result: Optional[Any] = None
@@ -203,6 +208,8 @@ class WkFlowState(GParam):
         self.vertices = None
         self.triples = None
         self.call_count = None
+        self.chunk_results = None
+        self.extraction_status = None
 
         self.keywords = None
         self.vector_result = None

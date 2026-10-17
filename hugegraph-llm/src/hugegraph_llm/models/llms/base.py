@@ -16,7 +16,15 @@
 # under the License.
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator, Callable, Dict, Generator, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, Generator, List, Literal, Optional
+
+
+class LLMOutputTruncatedError(RuntimeError):
+    """The provider ended generation before completing the model output."""
+
+    def __init__(self, reason: Literal["finish_reason=length", "done_reason=length"] = "finish_reason=length") -> None:
+        self.reason = reason
+        super().__init__(f"LLM output was truncated ({reason}).")
 
 
 class BaseLLM(ABC):

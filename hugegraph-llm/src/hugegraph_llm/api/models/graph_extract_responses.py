@@ -15,13 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 
 class GraphExtractResponse(BaseModel):
-    status: Literal["succeeded"] = "succeeded"
+    status: Literal["succeeded", "partial", "failed"] = "succeeded"
     result: Dict[str, Any]
     warnings: List[str] = Field(default_factory=list)
     meta: Dict[str, Any] = Field(default_factory=dict)
+    chunk_results: Optional[List[Dict[str, Any]]] = None

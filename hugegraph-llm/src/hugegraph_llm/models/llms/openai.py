@@ -27,7 +27,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.models.llms.base import BaseLLM, LLMOutputTruncatedError
 from hugegraph_llm.utils.log import log
 
 
@@ -39,8 +39,9 @@ class OpenAIClient(BaseLLM):
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         model_name: str = "gpt-4.1-mini",
-        max_tokens: int = 8092,
+        max_tokens: Optional[int] = 8092,
         temperature: float = 0.01,
+        raise_on_truncation: bool = False,
     ) -> None:
         api_key = api_key or ""
         self.client = OpenAI(api_key=api_key, base_url=api_base)
@@ -48,6 +49,8 @@ class OpenAIClient(BaseLLM):
         self.model = model_name
         self.max_tokens = max_tokens
         self.temperature = temperature
+        # Reviewed extraction also needs provider errors instead of legacy error text.
+        self.raise_on_truncation = raise_on_truncation
 
     @retry(
         stop=stop_after_attempt(3),
@@ -67,22 +70,30 @@ class OpenAIClient(BaseLLM):
             completions = self.client.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 messages=messages,
             )
             if not completions.choices:
                 raise RuntimeError(f"Empty choices in LLM response: {str(completions)[:200]}")
             if completions.usage:
                 log.info("Token usage: %s", completions.usage.model_dump_json())
+            if self.raise_on_truncation and completions.choices[0].finish_reason == "length":
+                raise LLMOutputTruncatedError()
             return completions.choices[0].message.content
         # catch context length / do not retry
         except openai.BadRequestError as e:
+            if self.raise_on_truncation:
+                raise
             log.critical("Fatal: %s", e)
             return str(f"Error: {e}")
         # catch authorization errors / do not retry
         except openai.AuthenticationError:
+            if self.raise_on_truncation:
+                raise
             log.critical("The provided OpenAI API key is invalid")
             return "Error: The provided OpenAI API key is invalid"
+        except LLMOutputTruncatedError:
+            raise
         except Exception as e:
             log.error("Retrying LLM call %s", e)
             raise e
@@ -105,22 +116,30 @@ class OpenAIClient(BaseLLM):
             completions = await self.aclient.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 messages=messages,
             )
             if not completions.choices:
                 raise RuntimeError(f"Empty choices in LLM response: {str(completions)[:200]}")
             if completions.usage:
                 log.info("Token usage: %s", completions.usage.model_dump_json())
+            if self.raise_on_truncation and completions.choices[0].finish_reason == "length":
+                raise LLMOutputTruncatedError()
             return completions.choices[0].message.content
         # catch context length / do not retry
         except openai.BadRequestError as e:
+            if self.raise_on_truncation:
+                raise
             log.critical("Fatal: %s", e)
             return str(f"Error: {e}")
         # catch authorization errors / do not retry
         except openai.AuthenticationError:
+            if self.raise_on_truncation:
+                raise
             log.critical("The provided OpenAI API key is invalid")
             return "Error: The provided OpenAI API key is invalid"
+        except LLMOutputTruncatedError:
+            raise
         except Exception as e:
             log.error("Retrying LLM call %s", e)
             raise e
@@ -149,7 +168,7 @@ class OpenAIClient(BaseLLM):
             completions = self.client.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 messages=messages,
                 stream=True,
             )
@@ -158,6 +177,8 @@ class OpenAIClient(BaseLLM):
                 if not chunk.choices:
                     log.debug("Received empty choices in streaming chunk: %s", chunk)
                     continue
+                if self.raise_on_truncation and chunk.choices[0].finish_reason == "length":
+                    raise LLMOutputTruncatedError()
                 delta = chunk.choices[0].delta
                 if delta.content:
                     token = delta.content
@@ -166,9 +187,13 @@ class OpenAIClient(BaseLLM):
                     yield token
 
         except openai.BadRequestError as e:
+            if self.raise_on_truncation:
+                raise
             log.critical("Fatal: %s", e)
             yield str(f"Error: {e}")
         except openai.AuthenticationError:
+            if self.raise_on_truncation:
+                raise
             log.critical("The provided API key is invalid")
             yield "Error: The provided API key is invalid"
         except Exception as e:
@@ -190,7 +215,7 @@ class OpenAIClient(BaseLLM):
             completions = await self.aclient.chat.completions.create(
                 model=self.model,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 messages=messages,
                 stream=True,
             )
@@ -198,6 +223,8 @@ class OpenAIClient(BaseLLM):
                 if not chunk.choices:
                     log.debug("Received empty choices in streaming chunk: %s", chunk)
                     continue
+                if self.raise_on_truncation and chunk.choices[0].finish_reason == "length":
+                    raise LLMOutputTruncatedError()
                 delta = chunk.choices[0].delta
                 if delta.content:
                     token = delta.content
@@ -207,12 +234,18 @@ class OpenAIClient(BaseLLM):
             # TODO: log.info("Token usage: %s", completions.usage.model_dump_json())
         # catch context length / do not retry
         except openai.BadRequestError as e:
+            if self.raise_on_truncation:
+                raise
             log.critical("Fatal: %s", e)
             yield str(f"Error: {e}")
         # catch authorization errors / do not retry
         except openai.AuthenticationError:
+            if self.raise_on_truncation:
+                raise
             log.critical("The provided OpenAI API key is invalid")
             yield "Error: The provided OpenAI API key is invalid"
+        except LLMOutputTruncatedError:
+            raise
         except Exception as e:
             log.error("Retrying LLM call %s", e)
             raise e

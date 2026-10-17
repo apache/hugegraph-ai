@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from hugegraph_llm.extraction_runtime.v1 import ExtractionOptions
+
 
 class GraphExtractClientConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -46,6 +48,10 @@ class GraphExtractRequest(BaseModel):
     split_type: Literal["document", "paragraph", "sentence"] = Query("document", description="Chunk split granularity.")
     include_meta: bool = Query(False, description="Include vertex/edge/text counts in the response.")
     client_config: Optional[GraphExtractClientConfig] = Field(None, description="Request-scoped HugeGraph connection.")
+    review_options: Optional[ExtractionOptions] = Field(
+        None,
+        description="Enable per-chunk review and repair. An empty object uses the default budgets and concurrency.",
+    )
 
     @field_validator("texts")
     @classmethod

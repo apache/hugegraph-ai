@@ -1,0 +1,56 @@
+{
+  "texts": [
+    "Alice works for Acme.",
+    "Bob works for Beta."
+  ],
+  "schema": {
+    "vertexlabels": [
+      {
+        "id": 1,
+        "name": "person",
+        "id_strategy": "PRIMARY_KEY",
+        "primary_keys": [
+          "name"
+        ],
+        "properties": [
+          "name"
+        ],
+        "nullable_keys": []
+      },
+      {
+        "id": 2,
+        "name": "company",
+        "id_strategy": "PRIMARY_KEY",
+        "primary_keys": [
+          "name"
+        ],
+        "properties": [
+          "name"
+        ],
+        "nullable_keys": []
+      }
+    ],
+    "edgelabels": [
+      {
+        "name": "works_for",
+        "source_label": "person",
+        "target_label": "company",
+        "properties": []
+      }
+    ],
+    "propertykeys": [
+      {
+        "name": "name",
+        "data_type": "TEXT",
+        "cardinality": "SINGLE"
+      }
+    ]
+  },
+  "language": "en",
+  "split_type": "document",
+  "review_options": {
+    "max_reviews": 2,
+    "max_fixes": 1,
+    "max_workers": 2
+  }
+}

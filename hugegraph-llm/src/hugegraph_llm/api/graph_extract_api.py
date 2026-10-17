@@ -41,6 +41,7 @@ class GraphExtractService:
                 language=req.language,
                 split_type=req.split_type,
                 client_config=req.client_config,
+                review_options=req.review_options,
             )
             raw = json.loads(result_str)
             warnings = [raw.pop("warning")] if "warning" in raw else []
@@ -52,7 +53,10 @@ class GraphExtractService:
                     "edge_count": len(result["edges"]),
                     "text_count": len(req.texts),
                 }
-            return GraphExtractResponse(result=result, warnings=warnings, meta=meta)
+            review_result = {}
+            if req.review_options is not None:
+                review_result = {"status": raw["extraction_status"], "chunk_results": raw["chunk_results"]}
+            return GraphExtractResponse(result=result, warnings=warnings, meta=meta, **review_result)
         except HTTPException:
             raise
         except Exception as e:
@@ -64,6 +68,11 @@ class GraphExtractService:
 
 
 def graph_extract_http_api(router: APIRouter):
-    @router.post("/graph/extract", status_code=status.HTTP_200_OK, response_model=GraphExtractResponse)
+    @router.post(
+        "/graph/extract",
+        status_code=status.HTTP_200_OK,
+        response_model=GraphExtractResponse,
+        response_model_exclude_none=True,
+    )
     def graph_extract_api(req: GraphExtractRequest):
         return GraphExtractService.extract_sync(req)

@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import json
 from functools import partial, wraps
 from typing import Optional
 
@@ -90,14 +89,15 @@ def test_litellm_chat(api_key, api_base, model_name, max_tokens: int) -> int:
         response = llm_client.generate(messages=[{"role": "user", "content": "hi"}])
         assert len(response) > 0
     except Exception as e:
-        raise gr.Error(f"Error in litellm chat call: {e}") from e
+        raise gr.Error(
+            f"LiteLLM chat connection failed ({type(e).__name__}). Please check the connection settings."
+        ) from None
     gr.Info("Test connection successful~")
     return 200
 
 
 def test_api_connection(url, method="GET", headers=None, params=None, body=None, auth=None, origin_call=None) -> int:
     # TODO: use fastapi.request / starlette instead?
-    log.debug("Request URL: %s", url)
     try:
         if method.upper() == "GET":
             resp = requests.get(url, headers=headers, params=params, timeout=(1.0, 5.0), auth=auth)
@@ -113,10 +113,11 @@ def test_api_connection(url, method="GET", headers=None, params=None, body=None,
         else:
             raise ValueError("Unsupported HTTP method, please use GET/POST instead")
     except requests.exceptions.RequestException as e:
-        msg = f"Connection failed: {e}"
+        # Request exception messages can include credentials or a sensitive URL.
+        msg = f"Connection failed ({type(e).__name__}). Please check the connection settings."
         log.error(msg)
         if origin_call is None:
-            raise gr.Error(msg)
+            raise gr.Error(msg) from None
         return -1  # Error code
 
     if 200 <= resp.status_code < 300:
@@ -124,14 +125,11 @@ def test_api_connection(url, method="GET", headers=None, params=None, body=None,
         log.info(msg)
         gr.Info(msg)
     else:
-        msg = f"Connection failed with status code: {resp.status_code}, error: {resp.text}"
+        # Servers can echo request credentials in any response-body format.
+        msg = f"Connection failed with status code: {resp.status_code}."
         log.error(msg)
-        # TODO: Only the message returned by rag can be processed, and the other return values can't be processed
         if origin_call is None:
-            try:
-                raise gr.Error(json.loads(resp.text).get("message", msg))
-            except (json.decoder.JSONDecodeError, AttributeError) as e:
-                raise gr.Error(resp.text) from e
+            raise gr.Error(msg)
     return resp.status_code
 
 
@@ -303,40 +301,44 @@ def apply_llm_config(
     max_tokens,
     origin_call=None,
 ) -> int:
-    log.debug("current llm in apply_llm_config is %s", current_llm_config)
-    llm_option = getattr(llm_settings, f"{current_llm_config}_llm_type")
-    log.debug("llm option in apply_llm_config is %s", llm_option)
-    status_code = -1
+    roles = ("chat", "extract", "text2gql") if current_llm_config == "all" else (current_llm_config,)
+    if any(role not in ("chat", "extract", "text2gql") for role in roles):
+        raise ValueError(f"Unsupported LLM configuration role: {current_llm_config}")
+    llm_option = getattr(llm_settings, f"{roles[0]}_llm_type")
+    if any(getattr(llm_settings, f"{role}_llm_type") != llm_option for role in roles):
+        raise ValueError("All LLM roles must select the same provider for a shared update")
+    if llm_option in ("openai", "litellm"):
+        fields = {"api_key": api_key_or_host, "api_base": api_base_or_port, "language_model": model_name}
+        if max_tokens is not None:
+            fields["tokens"] = int(max_tokens)
+        prefix = llm_option
+    elif llm_option == "ollama/local":
+        fields = {"host": api_key_or_host, "port": int(api_base_or_port), "language_model": model_name}
+        prefix = "ollama"
+    else:
+        raise ValueError(f"Unsupported LLM provider: {llm_option}")
+    for role in roles:
+        for field, value in fields.items():
+            setattr(llm_settings, f"{prefix}_{role}_{field}", value)
 
     if llm_option == "openai":
-        setattr(llm_settings, f"openai_{current_llm_config}_api_key", api_key_or_host)
-        setattr(llm_settings, f"openai_{current_llm_config}_api_base", api_base_or_port)
-        setattr(llm_settings, f"openai_{current_llm_config}_language_model", model_name)
-        setattr(llm_settings, f"openai_{current_llm_config}_tokens", int(max_tokens))
-
-        test_url = getattr(llm_settings, f"openai_{current_llm_config}_api_base") + "/chat/completions"
         data = {
             "model": model_name,
             "temperature": 0.01,
             "messages": [{"role": "user", "content": "test"}],
         }
-        headers = {"Authorization": f"Bearer {api_key_or_host}"}
-        status_code = test_api_connection(test_url, method="POST", headers=headers, body=data, origin_call=origin_call)
-
+        status_code = test_api_connection(
+            api_base_or_port + "/chat/completions",
+            method="POST",
+            headers={"Authorization": f"Bearer {api_key_or_host}"},
+            body=data,
+            origin_call=origin_call,
+        )
     elif llm_option == "ollama/local":
-        setattr(llm_settings, f"ollama_{current_llm_config}_host", api_key_or_host)
-        setattr(llm_settings, f"ollama_{current_llm_config}_port", int(api_base_or_port))
-        setattr(llm_settings, f"ollama_{current_llm_config}_language_model", model_name)
         status_code = test_api_connection(f"http://{api_key_or_host}:{api_base_or_port}", origin_call=origin_call)
-
-    elif llm_option == "litellm":
-        setattr(llm_settings, f"litellm_{current_llm_config}_api_key", api_key_or_host)
-        setattr(llm_settings, f"litellm_{current_llm_config}_api_base", api_base_or_port)
-        setattr(llm_settings, f"litellm_{current_llm_config}_language_model", model_name)
-        setattr(llm_settings, f"litellm_{current_llm_config}_tokens", int(max_tokens))
-
-        status_code = test_litellm_chat(api_key_or_host, api_base_or_port, model_name, int(max_tokens))
-
+    else:
+        probe_tokens = getattr(llm_settings, f"litellm_{roles[0]}_tokens")
+        status_code = test_litellm_chat(api_key_or_host, api_base_or_port, model_name, probe_tokens)
     return status_code
 
 
@@ -393,7 +395,8 @@ def create_configs_block() -> list:
 
             @gr.render(inputs=[chat_llm_dropdown])
             def chat_llm_settings(llm_type):
-                llm_settings.chat_llm_type = llm_type
+                with runtime_config_lock:
+                    llm_settings.chat_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
                         gr.Textbox(
@@ -475,7 +478,8 @@ def create_configs_block() -> list:
 
             @gr.render(inputs=[extract_llm_dropdown])
             def extract_llm_settings(llm_type):
-                llm_settings.extract_llm_type = llm_type
+                with runtime_config_lock:
+                    llm_settings.extract_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
                         gr.Textbox(
@@ -549,7 +553,8 @@ def create_configs_block() -> list:
 
             @gr.render(inputs=[text2gql_llm_dropdown])
             def text2gql_llm_settings(llm_type):
-                llm_settings.text2gql_llm_type = llm_type
+                with runtime_config_lock:
+                    llm_settings.text2gql_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
                         gr.Textbox(
@@ -622,7 +627,8 @@ def create_configs_block() -> list:
 
         @gr.render(inputs=[embedding_dropdown])
         def embedding_settings(embedding_type):
-            llm_settings.embedding_type = embedding_type
+            with runtime_config_lock:
+                llm_settings.embedding_type = embedding_type
             if embedding_type == "openai":
                 with gr.Row():
                     embedding_config_input = [
@@ -693,7 +699,8 @@ def create_configs_block() -> list:
 
         @gr.render(inputs=[reranker_dropdown])
         def reranker_settings(reranker_type):
-            llm_settings.reranker_type = reranker_type if reranker_type != "None" else None
+            with runtime_config_lock:
+                llm_settings.reranker_type = reranker_type if reranker_type != "None" else None
             if reranker_type == "cohere":
                 with gr.Row():
                     reranker_config_input = [

@@ -23,6 +23,7 @@ __all__ = [
     "resource_path",
     "index_settings",
     "runtime_config_lock",
+    "snapshot_llm_settings",
 ]
 
 import os
@@ -41,7 +42,16 @@ prompt.ensure_yaml_file_exists()
 huge_settings = HugeGraphConfig()
 admin_settings = AdminConfig()
 index_settings = IndexConfig()
+# Shared by configuration transactions, graph runtime operations, and reviewed
+# extraction snapshots. Model inference in reviewed extraction does not hold it.
 runtime_config_lock = threading.RLock()
+
+
+def snapshot_llm_settings() -> LLMConfig:
+    """Copy one complete LLM configuration under the shared runtime lock."""
+    with runtime_config_lock:
+        return llm_settings.model_copy(deep=True)
+
 
 package_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 resource_path = os.path.join(package_path, "resources")

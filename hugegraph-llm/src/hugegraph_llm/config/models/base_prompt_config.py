@@ -71,6 +71,8 @@ yaml.add_representer(LiteralStr, literal_str_representer)
 class BasePromptConfig:
     graph_schema: str = ""
     extract_graph_prompt: str = ""
+    review_graph_prompt: str = ""
+    repair_graph_prompt: str = ""
     default_question: str = ""
     custom_rerank_info: str = ""
     answer_prompt: str = ""
@@ -133,6 +135,8 @@ class BasePromptConfig:
             "graph_schema": to_literal(self.graph_schema),
             "text2gql_graph_schema": to_literal(self.text2gql_graph_schema),
             "extract_graph_prompt": to_literal(self.extract_graph_prompt),
+            "review_graph_prompt": to_literal(self.review_graph_prompt),
+            "repair_graph_prompt": to_literal(self.repair_graph_prompt),
             "default_question": to_literal(self.default_question),
             "custom_rerank_info": to_literal(self.custom_rerank_info),
             "answer_prompt": to_literal(self.answer_prompt),

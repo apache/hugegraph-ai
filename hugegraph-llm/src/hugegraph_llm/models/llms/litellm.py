@@ -27,7 +27,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from hugegraph_llm.models.llms.base import BaseLLM
+from hugegraph_llm.models.llms.base import BaseLLM, LLMOutputTruncatedError
 from hugegraph_llm.utils.log import log
 
 
@@ -39,14 +39,16 @@ class LiteLLMClient(BaseLLM):
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
         model_name: str = "openai/gpt-4.1-mini",  # Can be any model supported by LiteLLM
-        max_tokens: int = 8192,
+        max_tokens: Optional[int] = 8192,
         temperature: float = 0.01,
+        raise_on_truncation: bool = False,
     ) -> None:
         self.api_key = api_key
         self.api_base = api_base
         self.model = model_name
         self.max_tokens = max_tokens
         self.temperature = temperature
+        self.raise_on_truncation = raise_on_truncation
 
     @retry(
         stop=stop_after_attempt(2),
@@ -68,14 +70,16 @@ class LiteLLMClient(BaseLLM):
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 api_key=self.api_key,
                 base_url=self.api_base,
             )
             log.info("Token usage: %s", response.usage)
+            if self.raise_on_truncation and response.choices[0].finish_reason == "length":
+                raise LLMOutputTruncatedError()
             return response.choices[0].message.content
         except (RateLimitError, BudgetExceededError, APIError) as e:
-            log.error("Error in LiteLLM call: %s", e)
+            log.error("LiteLLM call failed (%s)", type(e).__name__)
             raise
 
     @retry(
@@ -98,14 +102,16 @@ class LiteLLMClient(BaseLLM):
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 api_key=self.api_key,
                 base_url=self.api_base,
             )
             log.info("Token usage: %s", response.usage)
+            if self.raise_on_truncation and response.choices[0].finish_reason == "length":
+                raise LLMOutputTruncatedError()
             return response.choices[0].message.content
         except (RateLimitError, BudgetExceededError, APIError) as e:
-            log.error("Error in async LiteLLM call: %s", e)
+            log.error("Async LiteLLM call failed (%s)", type(e).__name__)
             raise
 
     def generate_streaming(
@@ -123,7 +129,7 @@ class LiteLLMClient(BaseLLM):
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 api_key=self.api_key,
                 base_url=self.api_base,
                 stream=True,
@@ -131,15 +137,17 @@ class LiteLLMClient(BaseLLM):
             result = ""
             for chunk in response:
                 if not chunk.choices:
-                    log.debug("Received empty choices in streaming chunk: %s", chunk)
+                    log.debug("Received empty choices in streaming chunk")
                     continue
+                if self.raise_on_truncation and chunk.choices[0].finish_reason == "length":
+                    raise LLMOutputTruncatedError()
                 if chunk.choices[0].delta.content:
                     result += chunk.choices[0].delta.content
                 if on_token_callback:
                     on_token_callback(chunk)
             return result
         except (RateLimitError, BudgetExceededError, APIError) as e:
-            log.error("Error in streaming LiteLLM call: %s", e)
+            log.error("Streaming LiteLLM call failed (%s)", type(e).__name__)
             raise
 
     async def agenerate_streaming(
@@ -157,21 +165,23 @@ class LiteLLMClient(BaseLLM):
                 model=self.model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                **({"max_tokens": self.max_tokens} if self.max_tokens is not None else {}),
                 api_key=self.api_key,
                 base_url=self.api_base,
                 stream=True,
             )
             async for chunk in response:
                 if not chunk.choices:
-                    log.debug("Received empty choices in streaming chunk: %s", chunk)
+                    log.debug("Received empty choices in streaming chunk")
                     continue
+                if self.raise_on_truncation and chunk.choices[0].finish_reason == "length":
+                    raise LLMOutputTruncatedError()
                 if chunk.choices[0].delta.content:
                     if on_token_callback:
                         on_token_callback(chunk)
                     yield chunk.choices[0].delta.content
         except (RateLimitError, BudgetExceededError, APIError) as e:
-            log.error("Error in async streaming LiteLLM call: %s", e)
+            log.error("Async streaming LiteLLM call failed (%s)", type(e).__name__)
             raise
 
     def num_tokens_from_string(self, string: str) -> int:

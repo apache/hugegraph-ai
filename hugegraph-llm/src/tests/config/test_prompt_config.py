@@ -17,9 +17,11 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from hugegraph_llm.config.prompt_config import PromptConfig
 from hugegraph_llm.models.llms.base import BaseLLM
@@ -105,6 +107,39 @@ def test_extract_graph_prompt_en_example_matches_parser_contract():
 
 def test_extract_graph_prompt_cn_example_matches_parser_contract():
     _assert_prompt_example_contract(PromptConfig.extract_graph_prompt_CN, "## 示例")
+
+
+def test_review_and_repair_prompts_survive_yaml_save_and_load(tmp_path, monkeypatch):
+    from hugegraph_llm.config.models import base_prompt_config
+
+    path = tmp_path / "prompts.yaml"
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(path))
+    config = PromptConfig(SimpleNamespace(language="en"))
+    config.extract_graph_prompt = "Existing extraction override"
+    config.review_graph_prompt = "Review override\nwith a second line"
+    config.repair_graph_prompt = "Repair override"
+    config.save_to_yaml()
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert saved["review_graph_prompt"] == config.review_graph_prompt
+    assert saved["repair_graph_prompt"] == config.repair_graph_prompt
+    loaded = PromptConfig(SimpleNamespace(language="en"))
+    loaded.ensure_yaml_file_exists()
+    assert loaded.review_graph_prompt == config.review_graph_prompt
+    assert loaded.repair_graph_prompt == config.repair_graph_prompt
+    assert loaded.extract_graph_prompt == "Existing extraction override"
+
+
+def test_existing_yaml_uses_default_review_and_repair_prompts(tmp_path, monkeypatch):
+    from hugegraph_llm.config.models import base_prompt_config
+
+    path = tmp_path / "prompts.yaml"
+    path.write_text("extract_graph_prompt: custom\n_language_generated: en\n", encoding="utf-8")
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(path))
+    config = PromptConfig(SimpleNamespace(language="en"))
+    config.ensure_yaml_file_exists()
+    assert config.extract_graph_prompt == "custom"
+    assert config.review_graph_prompt == PromptConfig.review_graph_prompt
+    assert config.repair_graph_prompt == PromptConfig.repair_graph_prompt
 
 
 def test_extract_graph_prompt_example_contract_rejects_label_name_vertex_id():

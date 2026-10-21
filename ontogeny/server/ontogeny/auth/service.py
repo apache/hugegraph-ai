@@ -38,7 +38,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 
-from ..errors import AuthenticationError, DSLValidationError, NotFoundError
+from ..errors import ConflictError, AuthenticationError, DSLValidationError, NotFoundError
 from .models import SessionRow, UserRow
 from .passwords import hash_password, new_token, token_fingerprint, verify_password
 
@@ -106,6 +106,7 @@ class AuthService:
             row = await self._user(session, username)
             if row is None:
                 raise NotFoundError(f"user {username!r} not found")
+            was_active_admin = row.is_admin and row.status == "active"
             if "display" in patch and patch["display"] is not None:
                 row.display = str(patch["display"])
             if patch.get("roles") is not None:
@@ -120,6 +121,21 @@ class AuthService:
                 row.status = patch["status"]
             if patch.get("is_admin") is not None:
                 row.is_admin = bool(patch["is_admin"])
+            # demoting or disabling the LAST active administrator locks the
+            # deployment out after the next restart; refuse it outright
+            is_still_active_admin = row.is_admin and row.status == "active"
+            if was_active_admin and not is_still_active_admin:
+                other_active_admins = (await session.execute(
+                    select(func.count()).select_from(UserRow).where(
+                        UserRow.is_admin.is_(True), UserRow.status == "active",
+                        UserRow.id != row.id,
+                    )
+                )).scalar_one()
+                if other_active_admins == 0:
+                    raise ConflictError(
+                        f"cannot demote or disable {username!r}: it is the last active administrator",
+                        details={"username": username},
+                    )
             if patch.get("password"):
                 self._check_password(patch["password"])
                 row.password_hash = hash_password(patch["password"])
@@ -240,13 +256,31 @@ class AuthService:
         """
         async with self.sc.sessionmaker() as session:
             existing = (await session.execute(
-                select(func.count()).select_from(UserRow).where(UserRow.is_admin.is_(True))
+                select(func.count()).select_from(UserRow).where(
+                    UserRow.is_admin.is_(True), UserRow.status == "active"
+                )
             )).scalar_one()
             if existing:
                 return None
 
         username = os.environ.get("ONTOGENY_ADMIN_USER", "admin")
         password = os.environ.get("ONTOGENY_ADMIN_PASSWORD") or "ontogeny@2026"
+        # self-heal instead of crashing: the bootstrap account may already
+        # exist as non-admin or disabled (demoted by a buggy older path), and
+        # create_user would raise "username exists" on the next restart
+        async with self.sc.sessionmaker() as session:
+            row = await self._user(session, username)
+            if row is not None:
+                row.is_admin = True
+                row.status = "active"
+                row.roles = sorted(set(row.roles) | {"admin"})
+                await session.commit()
+                log.warning(
+                    "re-activated the bootstrap administrator %r (it existed but was "
+                    "not an active admin); set ONTOGENY_ADMIN_PASSWORD and change it",
+                    username,
+                )
+                return self._view(row)
         user = await self.create_user(
             username=username, password=password, display="平台管理员",
             roles=["admin"], is_admin=True,

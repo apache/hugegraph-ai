@@ -107,34 +107,31 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
 
     import yaml as _yaml_mod
     # ObjectType store sidecars: the console's data-mount editor declares the
-    # source INLINE as backing.store_spec ({kind, connection}) because a bare
-    # store NAME would be a placeholder, not a source. Materialize it as
-    # stores/<store>.yaml (same pattern as PolicySet cedar sidecars) and strip
-    # it from the object YAML -- BackingSpec has no such field on disk.
-    for res in parsed:
-        if res.kind != "ObjectType":
-            continue
-        backing = (res.spec.get("backing") if isinstance(res.spec, dict) else None) or {}
-        store_spec = backing.get("store_spec")
-        if not isinstance(store_spec, dict):
-            continue
-        store_name = str(backing.get("store") or "").strip()
-        kind = str(store_spec.get("kind") or "").strip()
-        connection = str(store_spec.get("connection") or "").strip()
+    # source INLINE as backing.store_spec ({kind, connection}); the first pass
+    # (above) strips it before the pydantic parse because BackingSpec has no
+    # such field on disk. THIS pass materializes each collected sidecar as
+    # stores/<name>.yaml -- it used to re-read res.spec (already parsed, never
+    # a dict), so the files were never written and publishing an object with a
+    # new backing store failed validation on the missing store.
+    for store_name, kind, connection in store_sidecars:
+        import yaml as _yaml
+
+        from ontogeny.errors import DSLValidationError
+
         if not store_name or not kind or not connection:
             raise DSLValidationError(
-                f"ObjectType/{res.metadata.name}: incomplete data source — "
-                "store name, source type and connection are all required",
+                "ObjectType backing.store_spec: store name, source type and "
+                "connection are all required",
                 details={"store": store_name, "kind": kind},
             )
-        access = "read-only" if kind == "csv" else "read-write"
         stores_dir = pkg_dir / "stores"
         stores_dir.mkdir(parents=True, exist_ok=True)
         (stores_dir / f"{store_name}.yaml").write_text(
-            _yaml_mod.safe_dump({
+            _yaml.safe_dump({
                 "apiVersion": "ontogeny/v1", "kind": "Store",
                 "metadata": {"name": store_name},
-                "spec": {"type": kind, "connection": connection, "access": access},
+                "spec": {"type": kind, "connection": connection,
+                         "access": "read-only" if kind == "csv" else "read-write"},
             }, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )

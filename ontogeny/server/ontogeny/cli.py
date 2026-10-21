@@ -253,8 +253,11 @@ def serve(
 
         paths = prepare_demo(data_dir, package=package or DEFAULT_PACKAGE,
                              reseed=reseed, direct=direct)
+        # operator-provided env wins: --demo used to clobber ONTOGENY_DB_DSN
+        # (and friends), so edits/promotions landed outside the /data volume
+        # and vanished on container recreation
         for k, v in paths.as_env().items():
-            os.environ[k] = v
+            os.environ.setdefault(k, v)
         typer.secho(f"demo data dir: {paths.root.resolve()}", fg=typer.colors.CYAN)
         if direct:
             typer.secho(f"  serving the domain IN PLACE: {paths.package_root}\n"

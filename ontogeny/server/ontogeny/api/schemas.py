@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # ------------------------------------------------------------------ schemas
 
@@ -30,8 +30,10 @@ from pydantic import BaseModel
 class QueryBody(BaseModel):
     filter: Any = None
     sort: Any = None
-    limit: int = 100
-    offset: int = 0
+    # bounded: caller-supplied limits used to be uncapped, letting an
+    # unauthenticated query load entire tables into memory
+    limit: int = Field(100, ge=1, le=1000)
+    offset: int = Field(0, ge=0, le=100_000)
     links: list[str] | None = None
     via: str | None = None
 
@@ -67,9 +69,9 @@ class FunctionBody(BaseModel):
 
 class TraverseBody(BaseModel):
     start_type: str
-    start_ids: list[str]
-    path: list[dict[str, Any]]
-    max_depth: int = 3
+    start_ids: list[str] = Field(max_length=50)
+    path: list[dict[str, Any]] = Field(max_length=6)
+    max_depth: int = Field(3, ge=1, le=6)
 
 
 class EvolveProposalBody(BaseModel):

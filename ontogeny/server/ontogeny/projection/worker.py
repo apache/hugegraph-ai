@@ -177,14 +177,26 @@ class ProjectionWorker:
         counts = {"vertices": 0, "edges": 0}
         for object_type in self.projection.spec.include.objects:
             props_whitelist, pk = self._whitelist(object_type)
-            rows, total = await repo.query(session, object_type, limit=10000)
-            items = []
-            for row in rows:
-                item = {p: row.get(p) for p in props_whitelist}
-                item[pk] = row.get(pk)
-                items.append(item)
-            await self.client.upsert_vertices(object_type, pk, items)
-            counts["vertices"] += len(items)
+            # keyset pagination by PK: the old `limit=10000` without ORDER BY
+            # silently truncated every larger table and left edges pointing
+            # at vertices that were never written
+            batch = 500
+            last = None
+            while True:
+                filt = {"field": pk, "op": "gt", "value": last} if last is not None else None
+                rows, _total = await repo.query(
+                    session, object_type, filt=filt, sort=[[pk, "asc"]], limit=batch,
+                )
+                if not rows:
+                    break
+                items = []
+                for row in rows:
+                    item = {p: row.get(p) for p in props_whitelist}
+                    item[pk] = row.get(pk)
+                    items.append(item)
+                await self.client.upsert_vertices(object_type, pk, items)
+                counts["vertices"] += len(items)
+                last = rows[-1].get(pk)
         for link_name in self.projection.spec.include.links:
             lnk = self.compiled.links[link_name]
             pairs = await self._link_pairs(repo, session, link_name)

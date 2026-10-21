@@ -5,7 +5,7 @@
 **中文** | [English](../../en/architecture/04-actions-and-functions.md)
 
 
-**Action 改世界、Function 算答案**——Palantir Ontology 同为动力学层一等公民，Ontogeny 忠实继承，并把函数生态补齐到四项能力（LLM 注册 · 派生底层 · 发布 API · 流式规划中）。
+**Action 改世界、Function 算答案**——两者同为动力学层的一等公民，函数生态覆盖四项能力（LLM 注册 · 派生底层 · 发布 API · 流式规划中）。
 
 ## 4.1 函数生态四能力
 

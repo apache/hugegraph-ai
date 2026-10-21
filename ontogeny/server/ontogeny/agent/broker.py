@@ -141,7 +141,11 @@ class AgentBroker:
             v = budget.get(field)
             if v is None:
                 return plugin_default
-            return max(int(v), 0)  # 0 = unlimited
+            # a session-creation override may only TIGHTEN the plugin default:
+            # letting it widen would let any driver mint unlimited budgets
+            if plugin_default == 0:  # 0 = unlimited on the plugin: any value ok
+                return max(int(v), 0)
+            return min(max(int(v), 0), plugin_default)
 
         async with self.sc.sessionmaker() as session:
             row = AgentSessionRow(

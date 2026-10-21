@@ -115,6 +115,15 @@ class Promoter:
         eval_report: dict | None = None,
         force_tier: str | None = None,
     ) -> dict[str, Any]:
+        if proposal.status not in ("proposed", "evaluated"):
+            raise DSLValidationError(
+                f"proposal {proposal.id} is {proposal.status!r}; only proposed/evaluated proposals can promote",
+            )
+        if proposal.status in ("promoted", "rejected"):
+            raise DSLValidationError(
+                f"proposal is already {proposal.status}; re-promotion is not allowed",
+                details={"proposal_id": proposal.id, "status": proposal.status},
+            )
         pkg = load_package(pkg_root)
         evo = pkg.evolution_policy()
         tier = force_tier or self.classify(proposal.diff, evo)
@@ -144,6 +153,10 @@ class Promoter:
             if not eval_report.get("passed", False):
                 proposal.status = "rejected"
                 return {"status": "rejected", "reason": "eval suite not green"}
+            if not eval_report.get("suites"):
+                proposal.status = "rejected"
+                return {"status": "rejected",
+                        "reason": "eval report has no suite results; nothing was verified"}
             namespace = pkg.manifest.metadata.name
             cap = self._t0_cap(evo)
             used = await self._budget_check_and_use(session, namespace, cap)

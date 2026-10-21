@@ -196,7 +196,7 @@ def ensure_tables(conn, compiled) -> None:
             if column.name in present or column.primary_key:
                 continue
             ddl_type = column.type.compile(conn.dialect)
-            conn.execute(text(f"ALTER TABLE {t.name} ADD COLUMN {column.name} {ddl_type}"))
+            conn.execute(text(f'ALTER TABLE "{t.name}" ADD COLUMN "{column.name}" {ddl_type}'))
 
 
 def reset_metadata_cache() -> None:

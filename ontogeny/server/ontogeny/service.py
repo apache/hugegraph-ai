@@ -1354,7 +1354,7 @@ class ServiceContext:
                         red = red or not rep["passed"]
                 if red:
                     async with self.sessionmaker() as s3:
-                        rb = await self.promoter.rollback(s3, result["rollback_dir"])
+                        rb = await self.promoter.rollback(s3, self.package_root, result["rollback_dir"])
                     await self.reload()
                     result = {
                         "status": "promoted_then_rolled_back",

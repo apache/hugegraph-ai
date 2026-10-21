@@ -130,7 +130,16 @@ class ObjectRepository:
         stmt = select(t).where(pk == obj_id).order_by(t.c._valid_from)
         return [self.row_to_props(object_type, r) for r in (await session.execute(stmt)).mappings().all()]
 
-    def build_filter(self, object_type: str, filt: Any) -> ColumnElement | None:
+    def _marked_props(self, object_type: str, principal: dict | None) -> set[str]:
+        """Marked properties the principal does NOT hold -- filters and sorts
+        on these would let a caller binary-search a masked value."""
+        obj = self.compiled.objects.get(object_type)
+        if obj is None:
+            return set()
+        claims = set((principal or {}).get("markings") or [])
+        return {p for p, d in obj.spec.properties.items() if d.marking and d.marking not in claims}
+
+    def build_filter(self, object_type: str, filt: Any, principal: dict | None = None) -> ColumnElement | None:
         """Compile the JSON filter AST to a SQLAlchemy expression.
 
         Forms: {"field","op","value"} | {"and":[...]} | {"or":[...]} | {"not":F}
@@ -191,9 +200,11 @@ class ObjectRepository:
         limit: int | None = 100,
         offset: int = 0,
         at: _dt.datetime | None = None,
+        principal: dict | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         t = self._table(object_type)
-        where = _and(self._current_where(object_type, at), self.build_filter(object_type, filt))
+        where = _and(self._current_where(object_type, at),
+                     self.build_filter(object_type, filt, principal))
         total = (await session.execute(select(func.count()).select_from(t).where(where))).scalar_one()
         stmt = select(t).where(where)
         if isinstance(sort, str):
@@ -206,6 +217,11 @@ class ObjectRepository:
             col = getattr(t.c, self.compiled.col(name), None)
             if col is None:
                 raise NotFoundError(f"unknown sort field {name!r}")
+            # sorting by a marked property the principal lacks is an oracle
+            # (binary-search the masked value through ORDER BY)
+            marked = self._marked_props(object_type, principal)
+            if name in marked:
+                raise StoreError(f"sort on marked property {name!r} is not allowed")
             stmt = stmt.order_by(col.desc() if str(direction).lower() == "desc" else col.asc())
         stmt = stmt.limit(limit).offset(offset)
         rows = (await session.execute(stmt)).mappings().all()
@@ -218,13 +234,22 @@ class ObjectRepository:
         fn: str,
         field: str | None,
         *,
+        principal: dict | None = None,
         filt: Any = None,
     ) -> float:
         t = self._table(object_type)
-        where = _and(self._current_where(object_type, None), self.build_filter(object_type, filt))
+        where = _and(self._current_where(object_type, None), self.build_filter(object_type, filt, principal))
         # NOTE: `col if col else ...` truth-tests a Column and raises
         # "Boolean value of this clause is not defined" -- compare with None.
         col = getattr(t.c, self.compiled.col(field)) if field else None
+        marked = self._marked_props(object_type, principal)
+        if field and field in marked:
+            from ..errors import PolicyDeniedError
+
+            raise PolicyDeniedError(
+                f"cannot aggregate {object_type}.{field}: marked property",
+                details={"object_type": object_type, "field": field},
+            )
         target = col if col is not None else t.c._rev
         f = {"count": func.count, "sum": func.sum, "avg": func.avg, "min": func.min, "max": func.max}[fn]
         return (await session.execute(select(f(target)).select_from(t).where(where))).scalar_one()

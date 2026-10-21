@@ -434,7 +434,7 @@ class TestEvolutionOnDomainPackage:
             s.add(proposal)
             await s.flush()
             result = await Promoter(sc.settings, sc.registry).promote(
-                s, proposal, sc.package_root, eval_report={"passed": True}
+                s, proposal, sc.package_root, eval_report={"passed": True, "suites": {"flow": {"passed": True}}}
             )
             await s.commit()
         assert result["status"] == "promoted"

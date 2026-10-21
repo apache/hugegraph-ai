@@ -30,6 +30,7 @@ Protocol (one JSON object per line):
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
 import sys
@@ -45,8 +46,8 @@ class _OO:
 
     def _rpc(self, method: str, params: dict):
         self._id += 1
-        sys.stdout.write(json.dumps({"type": "rpc", "id": self._id, "method": method, "params": params}) + "\n")
-        sys.stdout.flush()
+        _PROTO.write(json.dumps({"type": "rpc", "id": self._id, "method": method, "params": params}) + "\n")
+        _PROTO.flush()
         line = sys.stdin.readline()
         if not line:
             raise RuntimeError("sandbox parent closed the pipe")
@@ -87,9 +88,12 @@ def _load(module_path: str, func_name: str):
     return mod, fn, None
 
 
+_PROTO = sys.stdout  # the protocol stream, bound BEFORE any user-code redirect
+
+
 def _emit(payload: dict) -> None:
-    sys.stdout.write(json.dumps(payload, default=str) + "\n")
-    sys.stdout.flush()
+    _PROTO.write(json.dumps(payload, default=str) + "\n")
+    _PROTO.flush()
 
 
 def main() -> None:
@@ -103,7 +107,12 @@ def main() -> None:
     try:
         mode = init.get("type", "invoke")
         if mode == "invoke":
-            _emit({"type": "result", "value": fn(**(init.get("params") or {}))})
+            # user stdout must never touch the protocol stream (a single
+            # print() used to corrupt the JSON-RPC framing and 500 the whole
+            # call); the parent additionally treats stray non-JSON lines as
+            # SandboxError
+            with contextlib.redirect_stdout(sys.stderr):
+                _emit({"type": "result", "value": fn(**(init.get("params") or {}))})
         elif mode == "map":
             # derivation batch: the runner loops per row inside this process
             # (one spawn for the whole batch); ontogeny.query stays available per row

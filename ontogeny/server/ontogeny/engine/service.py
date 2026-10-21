@@ -83,6 +83,9 @@ class QueryService:
         links: list[str] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
+        # belt over the schema bounds: the MCP surface builds args without
+        # pydantic, so clamp here too
+        limit = max(1, min(int(limit or 100), 1000))
         rows, total = await self.repo.query(
             session, object_type, filt=filt, sort=sort, limit=limit, offset=offset,
         )

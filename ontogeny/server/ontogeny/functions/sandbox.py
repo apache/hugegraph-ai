@@ -242,7 +242,12 @@ class FunctionSandbox:
                 line = await proc.stdout.readline()
                 if not line:
                     raise SandboxError("sandbox exited before returning a result")
-                msg = json.loads(line)
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise SandboxError(
+                        f"protocol stream corrupted by non-JSON output: {line[:200]!r}"
+                    ) from exc
                 if msg.get("type") == "rpc":
                     method = msg.get("method")
                     if method == "llm":

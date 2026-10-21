@@ -648,7 +648,7 @@ class AgentBroker:
         if tdef.kind == "meta":
             return "ok", sc.compiled.to_meta(), {}
         if tdef.kind == "search":
-            limit = int(args.get("limit") or 20)
+            limit = max(1, min(int(args.get("limit") or 20), 1000))
             started = time.perf_counter()
             try:
                 out = await sc.query.query(session, tdef.target, principal,

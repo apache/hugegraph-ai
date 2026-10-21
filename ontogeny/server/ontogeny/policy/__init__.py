@@ -15,12 +15,12 @@
 # specific language governing permissions and
 # limitations under the License.
 
-"""ontogeny.policy -- Cedar-subset engine (portable default driver).
+"""ontogeny.policy -- Cedar-subset engine (the deterministic driver).
 
-If cedarpy is installed it takes precedence at ServiceContext assembly time;
-this module remains the deterministic CI reference.
+``forbid`` statements follow Cedar precedence: a matching forbid overrides
+any permit.
 """
 
-from .engine import PermitRule, PolicyDecision, PolicyEngine, parse_policy_set
+from .engine import PermitRule, PolicyDecision, PolicyEngine, parse_forbids, parse_policy_set
 
-__all__ = ["PolicyEngine", "PolicyDecision", "PermitRule", "parse_policy_set"]
+__all__ = ["PolicyEngine", "PolicyDecision", "PermitRule", "parse_forbids", "parse_policy_set"]

@@ -31,7 +31,7 @@ limitations under the License.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '../api/client'
@@ -66,17 +66,30 @@ export function ActionRunner() {
   const [targetId, setTargetId] = useState('')
   const [idemKey, setIdemKey] = useState('')
   const [expectedRev, setExpectedRev] = useState('')
+  // auto idempotency: two rapid clicks are ONE intent (same key -> the
+  // server's unique index dedupes); a fresh click after settle is a NEW
+  // intent (fresh key), and an operator-provided key always wins
+  const autoKeyRef = useRef<string | null>(null)
+  const freshKey = () =>
+    (globalThis.crypto?.randomUUID?.() ?? `auto-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
 
   const validate = useMutation({
     mutationFn: () => apiClient.validateAction(name, { parameters: values, target_id: targetId || null }),
   })
   const execute = useMutation({
+    onMutate: () => {
+      if (!idemKey && !autoKeyRef.current) autoKeyRef.current = freshKey()
+    },
+    onSettled: () => {
+      // terminal state: the next click is a fresh intent with a fresh key
+      autoKeyRef.current = null
+    },
     mutationFn: () =>
       apiClient.executeAction(name, {
         parameters: values,
         target_id: targetId || null,
         expected_revision: expectedRev ? Number(expectedRev) : null,
-        idempotency_key: idemKey || null,
+        idempotency_key: idemKey || autoKeyRef.current,
       }),
     // an execute writes the target object, its revision history and the audit
     // trail -- invalidate those, not the whole cache (the unscoped call threw
@@ -134,10 +147,10 @@ export function ActionRunner() {
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={() => validate.mutate()} disabled={missing.length > 0} data-testid="validate-action" icon={<IconCheck width={14} height={14} />}>
+            <Button onClick={() => validate.mutate()} disabled={missing.length > 0 || validate.isPending} data-testid="validate-action" icon={<IconCheck width={14} height={14} />}>
               {t('action.validate')}
             </Button>
-            <Button variant="primary" onClick={() => execute.mutate()} disabled={missing.length > 0} data-testid="execute-action" icon={<IconPlay width={14} height={14} />}>
+            <Button variant="primary" onClick={() => execute.mutate()} disabled={missing.length > 0 || execute.isPending} data-testid="execute-action" icon={<IconPlay width={14} height={14} />}>
               {t('action.execute')}
             </Button>
           </div>

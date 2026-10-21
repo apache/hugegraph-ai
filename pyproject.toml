@@ -125,6 +125,8 @@ core = "sysmon"
 # for code format
 [tool.ruff]
 line-length = 120
+# Domain packages ship user function code as data, not platform source.
+extend-exclude = ["ontogeny/domains"]
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -155,7 +157,7 @@ ignore = [
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["hugegraph_llm", "hugegraph_llm_sdk", "hugegraph_mcp", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]
+known-first-party = ["hugegraph_llm", "hugegraph_llm_sdk", "hugegraph_mcp", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client", "ontogeny"]
 
 [tool.ruff.format]
 quote-style = "double"

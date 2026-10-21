@@ -17,9 +17,8 @@
 
 """Regression tests for the structural pass: sandbox env allowlist, MCP
 read-only convergence, and the migrate planner."""
+
 from __future__ import annotations
-
-
 
 # ---------------------------------------------------------------------------
 # sandbox env: an allowlist, not inheritance
@@ -54,8 +53,9 @@ class TestSandboxEnv:
         c, sc = client
         await c.post("/api/v1/admin/sync/work-center")
         await c.post("/api/v1/admin/sync/production-order")
-        r = await c.post("/api/v1/functions/capacity-check/invoke",
-                         json={"parameters": {"work_center_id": "WC-01", "qty": 10}})
+        r = await c.post(
+            "/api/v1/functions/capacity-check/invoke", json={"parameters": {"work_center_id": "WC-01", "qty": 10}}
+        )
         assert r.status_code == 200, r.text
 
 
@@ -76,8 +76,9 @@ class TestReadOnlyConvergence:
         assert out["outcome"] == "ok"
         async with sc.sessionmaker() as s:
             rows = (await s.execute(select(TelemetryQueryRow))).scalars().all()
-        assert any(r.object_type == "work-center" for r in rows), \
-            "sessionless MCP search used to be invisible to the evolution loop"
+        assert any(
+            r.object_type == "work-center" for r in rows
+        ), "sessionless MCP search used to be invisible to the evolution loop"
 
     async def test_sessionless_write_still_refused(self, client):
         c, sc = client
@@ -182,10 +183,7 @@ class TestLayering:
         # evolve/data still list their own console tables (audit trail, proposal
         # queue) -- tolerated readers; the business planes must stay SQL-free
         tolerated = {"routes_data.py", "routes_evolve.py", "routes_agent.py"}
-        offenders = [
-            p.name for p in routes
-            if "select(" in p.read_text(encoding="utf-8") and p.name not in tolerated
-        ]
+        offenders = [p.name for p in routes if "select(" in p.read_text(encoding="utf-8") and p.name not in tolerated]
         assert offenders == [], f"route modules drifted into SQL: {offenders}"
 
     def test_builder_save_is_reachable_at_service_level(self):

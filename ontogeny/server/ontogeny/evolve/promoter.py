@@ -22,12 +22,13 @@ policy-loosen / marking-change / ownership-change / eval-passbar-change /
 destructive-migration are never automatable -- the proposal becomes
 ``awaiting_human`` and the audit trail says why.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import yaml
 from sqlalchemy import select
@@ -42,8 +43,11 @@ from ..registry.store import RegistryService
 from .models import BudgetRow, ProposalRow
 
 CONSTITUTION_MUTATIONS = {
-    "policy-loosen", "marking-change", "ownership-change",
-    "eval-passbar-change", "destructive-migration",
+    "policy-loosen",
+    "marking-change",
+    "ownership-change",
+    "eval-passbar-change",
+    "destructive-migration",
 }
 
 
@@ -78,9 +82,9 @@ class Promoter:
 
     async def _budget_check_and_use(self, session, namespace: str, cap: int) -> int:
         week = _iso_week(_dt.datetime.now(_dt.timezone.utc))
-        row = (await session.execute(
-            select(BudgetRow).where(BudgetRow.namespace == namespace, BudgetRow.week == week)
-        )).scalar_one_or_none()
+        row = (
+            await session.execute(select(BudgetRow).where(BudgetRow.namespace == namespace, BudgetRow.week == week))
+        ).scalar_one_or_none()
         used = row.used if row else 0
         if used + 1 > cap:
             raise BudgetExceededError(
@@ -103,8 +107,13 @@ class Promoter:
     # --------------------------------------------------------------- promote
 
     async def promote(
-        self, session, proposal: ProposalRow, pkg_root: str | Path,
-        *, eval_report: dict | None = None, force_tier: str | None = None,
+        self,
+        session,
+        proposal: ProposalRow,
+        pkg_root: str | Path,
+        *,
+        eval_report: dict | None = None,
+        force_tier: str | None = None,
     ) -> dict[str, Any]:
         pkg = load_package(pkg_root)
         evo = pkg.evolution_policy()
@@ -127,8 +136,11 @@ class Promoter:
             # two of three with no trace.
             if eval_report is None:
                 proposal.status = "proposed"
-                return {"status": "needs_eval", "tier": tier,
-                        "reason": "T0 auto-merge requires a green eval report (run /eval first)"}
+                return {
+                    "status": "needs_eval",
+                    "tier": tier,
+                    "reason": "T0 auto-merge requires a green eval report (run /eval first)",
+                }
             if not eval_report.get("passed", False):
                 proposal.status = "rejected"
                 return {"status": "rejected", "reason": "eval suite not green"}
@@ -140,8 +152,11 @@ class Promoter:
             report = validate(candidate)
             if not report.ok:
                 proposal.status = "rejected"
-                return {"status": "rejected", "reason": "candidate failed validation",
-                        "issues": [f"{i.code}: {i.message}" for i in report.issues if i.severity == "error"]}
+                return {
+                    "status": "rejected",
+                    "reason": "candidate failed validation",
+                    "issues": [f"{i.code}: {i.message}" for i in report.issues if i.severity == "error"],
+                }
             # direction F: a byte-identical backup, so a red post-merge eval
             # can be undone without touching git
             backup_dir = Path(str(pkg_root) + ".evolve-backup")
@@ -156,17 +171,27 @@ class Promoter:
             # direction E: a signal with competing candidates has a winner now
             # -- the losers are marked superseded instead of dangling forever
             if proposal.signal_id is not None:
-                sibs = (await session.execute(
-                    select(ProposalRow).where(
-                        ProposalRow.signal_id == proposal.signal_id,
-                        ProposalRow.id != proposal.id,
-                        ProposalRow.status.in_(("proposed", "evaluated")),
-                    ))).scalars().all()
+                sibs = (
+                    (
+                        await session.execute(
+                            select(ProposalRow).where(
+                                ProposalRow.signal_id == proposal.signal_id,
+                                ProposalRow.id != proposal.id,
+                                ProposalRow.status.in_(("proposed", "evaluated")),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 for sib in sibs:
                     sib.status = "superseded"
                     sib.superseded_by = proposal.id
             return {
-                "status": "promoted", "tier": tier, "budget_used": used, "budget_cap": cap,
+                "status": "promoted",
+                "tier": tier,
+                "budget_used": used,
+                "budget_cap": cap,
                 "content_hash": compiled.content_hash,
                 "rollback_dir": str(backup_dir),
                 "revert": f"ontogeny publish {pkg_root}  # republish the previous git revision",
@@ -203,17 +228,20 @@ class Promoter:
         report = validate(candidate)
         if not report.ok:
             proposal.status = "rejected"
-            return {"status": "rejected", "reason": "candidate failed validation",
-                    "issues": [f"{i.code}: {i.message}" for i in report.issues if i.severity == "error"]}
+            return {
+                "status": "rejected",
+                "reason": "candidate failed validation",
+                "issues": [f"{i.code}: {i.message}" for i in report.issues if i.severity == "error"],
+            }
         proposal.status = "awaiting_human"
         proposal.eval_report = eval_report
-        return {"status": "awaiting_human", "tier": tier, "branch": str(branch),
-                "manual_application": manual}
+        return {"status": "awaiting_human", "tier": tier, "branch": str(branch), "manual_application": manual}
 
     # ------------------------------------------------------------ shadow (B2)
 
-    async def shadow_diff(self, session, pkg_root: str | Path, diff: list[dict],
-                          *, since_days: int = 90) -> dict[str, Any]:
+    async def shadow_diff(
+        self, session, pkg_root: str | Path, diff: list[dict], *, since_days: int = 90
+    ) -> dict[str, Any]:
         """Direction B2: the shadow-diff-clean gate, made real.
 
         Replays the revision history of every action the diff TOUCHES through
@@ -231,8 +259,7 @@ class Promoter:
 
         candidate = compile_package(apply_mutations(load_package(pkg_root), diff))
         cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=since_days)
-        changed = sorted({m["action"] for m in diff
-                          if m.get("mutation") == "rule-tighten" and m.get("action")})
+        changed = sorted({m["action"] for m in diff if m.get("mutation") == "rule-tighten" and m.get("action")})
         actions: list[dict[str, Any]] = []
         clean = True
         for name in changed:
@@ -244,32 +271,44 @@ class Promoter:
             cand_rules = [r.expr for r in cand.spec.rules]
             if live_rules == cand_rules:
                 continue
-            revs = (await session.execute(
-                select(RevisionRow).where(
-                    RevisionRow.action == name,
-                    RevisionRow.outcome == "executed",
-                    RevisionRow.created_at >= cutoff,
-                ).order_by(RevisionRow.created_at)
-            )).scalars().all()
+            revs = (
+                (
+                    await session.execute(
+                        select(RevisionRow)
+                        .where(
+                            RevisionRow.action == name,
+                            RevisionRow.outcome == "executed",
+                            RevisionRow.created_at >= cutoff,
+                        )
+                        .order_by(RevisionRow.created_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             would_reject: list[dict[str, Any]] = []
             for rev in revs:
                 before = rev.before
                 if before is None:
                     continue
-                ctx = ExprContext(target=before, parameters=rev.params or {},
-                                  principal={"id": rev.principal})
+                ctx = ExprContext(target=before, parameters=rev.params or {}, principal={"id": rev.principal})
                 try:
                     live_pass = all(bool(_expr.evaluate(rx, ctx)) for rx in live_rules)
                     cand_pass = all(bool(_expr.evaluate(rx, ctx)) for rx in cand_rules)
-                except Exception:  # noqa: BLE001 -- an undecidable row is not evidence
+                except Exception:
                     continue
                 if live_pass and not cand_pass:
-                    would_reject.append({"revision": rev.id, "object_id": rev.object_id,
-                                         "principal": rev.principal})
+                    would_reject.append({"revision": rev.id, "object_id": rev.object_id, "principal": rev.principal})
             if would_reject:
                 clean = False
-            actions.append({"action": name, "revisions": len(revs),
-                            "would_reject": len(would_reject), "details": would_reject[:20]})
+            actions.append(
+                {
+                    "action": name,
+                    "revisions": len(revs),
+                    "would_reject": len(would_reject),
+                    "details": would_reject[:20],
+                }
+            )
         return {"clean": clean, "actions": actions}
 
     async def rollback(self, session, pkg_root: str | Path, backup_dir: str | Path) -> dict[str, Any]:
@@ -291,7 +330,7 @@ class Promoter:
 
 
 class MutationCfg:  # pragma: no cover -- retained for config defaults documentation
-    mutations: list[str] = []
+    mutations: ClassVar[list[str]] = []
 
 
 def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPackage:
@@ -308,8 +347,10 @@ def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPack
             if m["prop"] in obj.spec.properties:
                 continue  # idempotent
             obj.spec.properties[m["prop"]] = PropertyDef(
-                type=m.get("type", "string"), display=m.get("display") or m["prop"],
-                description=m.get("description"), required=False,
+                type=m.get("type", "string"),
+                display=m.get("display") or m["prop"],
+                description=m.get("description"),
+                required=False,
             )
             column = m.get("column")
             if column and obj.spec.backing is not None:
@@ -357,17 +398,19 @@ def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPack
                 raise DSLValidationError(f"eval case targets unknown object {obj_name!r}")
             # dedupe: an identical regression already in the suite is a no-op
             for existing in suite.spec.queries:
-                if existing.query.get("object") == obj_name and \
-                        existing.query.get("filter") == query.get("filter"):
+                if existing.query.get("object") == obj_name and existing.query.get("filter") == query.get("filter"):
                     break
             else:
                 from ..core.models import QueryCase, QueryExpectation
 
-                suite.spec.queries = [*suite.spec.queries, QueryCase(
-                    name=case.get("name") or f"synth-{obj_name}",
-                    query=query,
-                    expect=QueryExpectation(**(case.get("expect") or {})),
-                )]
+                suite.spec.queries = [
+                    *suite.spec.queries,
+                    QueryCase(
+                        name=case.get("name") or f"synth-{obj_name}",
+                        query=query,
+                        expect=QueryExpectation(**(case.get("expect") or {})),
+                    ),
+                ]
         else:
             raise DSLValidationError(f"unknown mutation {kind!r}")
     return pkg
@@ -380,9 +423,14 @@ def write_package(pkg: OntologyPackage) -> None:
         path = pkg.files.get(key)
         if path is None:
             subdir = {
-                "ObjectType": "objects", "LinkType": "links", "Action": "actions",
-                "Function": "functions", "PolicySet": "policies", "Store": "stores",
-                "Projection": "projections", "EvalSuite": "evals",
+                "ObjectType": "objects",
+                "LinkType": "links",
+                "Action": "actions",
+                "Function": "functions",
+                "PolicySet": "policies",
+                "Store": "stores",
+                "Projection": "projections",
+                "EvalSuite": "evals",
             }.get(res.kind)
             if subdir is None:
                 continue
@@ -402,10 +450,15 @@ async def graduation_streak(session, kind: str) -> int:
     """Direction B3: how long the current clean-promotion streak of a mutation
     class is. Walking the newest proposals backwards, every `promoted` entry
     carrying the class extends the streak; anything else breaks it."""
-    rows = (await session.execute(
-        select(ProposalRow).where(ProposalRow.diff.isnot(None))
-        .order_by(ProposalRow.id.desc()).limit(500)
-    )).scalars().all()
+    rows = (
+        (
+            await session.execute(
+                select(ProposalRow).where(ProposalRow.diff.isnot(None)).order_by(ProposalRow.id.desc()).limit(500)
+            )
+        )
+        .scalars()
+        .all()
+    )
     streak = 0
     for row in rows:
         kinds = {m.get("mutation") for m in (row.diff or []) if isinstance(m, dict)}

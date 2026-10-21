@@ -47,6 +47,7 @@ What declarative functions intentionally do NOT have: loops, branches, or the
 ability to write. Writes belong to Actions, where rules and policy already
 govern them.
 """
+
 from __future__ import annotations
 
 import json
@@ -100,10 +101,7 @@ def _render_text(value: Any) -> str:
         if not value:
             return "(none)"
         if all(isinstance(r, dict) for r in value):
-            return "\n".join(
-                "- " + ", ".join(f"{k}={v}" for k, v in r.items() if v is not None)
-                for r in value
-            )
+            return "\n".join("- " + ", ".join(f"{k}={v}" for k, v in r.items() if v is not None) for r in value)
         return "\n".join(f"- {_render_text(v)}" for v in value)
     if isinstance(value, dict):
         return ", ".join(f"{k}={v}" for k, v in value.items() if v is not None)
@@ -142,7 +140,7 @@ class _Template:
         return _walk(root, path)
 
     def render_text(self, text: str) -> str:
-        def sub(m: "re.Match[str]") -> str:
+        def sub(m: re.Match[str]) -> str:
             return _render_text(self.resolve(m.group(1), m.group(2)))
 
         return _REF.sub(sub, text)
@@ -171,10 +169,18 @@ class DeclarativeRuntime:
     lands on, `llm` is the gateway adapter ``ontogeny.llm`` is routed to.
     """
 
-    def __init__(self, *, llm=None, repo=None, compiled=None,
-                 http_allowlist=None, resolve_ref=None,
-                 llm_call_timeout_s: float = 60.0,
-                 timeout_s: float = 30.0, http: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        llm=None,
+        repo=None,
+        compiled=None,
+        http_allowlist=None,
+        resolve_ref=None,
+        llm_call_timeout_s: float = 60.0,
+        timeout_s: float = 30.0,
+        http: httpx.AsyncClient | None = None,
+    ) -> None:
         # resolves ${VAR} in a capability's allow list / step urls (the same
         # scope DSL endpoint references use)
         self.resolve_ref = resolve_ref
@@ -238,7 +244,7 @@ class DeclarativeRuntime:
         """
         cfg = self._http_capability(fn) or {}
         out: list[str] = []
-        for entry in (cfg.get("allow") or []):
+        for entry in cfg.get("allow") or []:
             text = str(entry)
             if "${" in text:
                 if self.resolve_ref is None:
@@ -288,14 +294,15 @@ class DeclarativeRuntime:
         for step in spec.steps:
             if step.kind == "read":
                 if step.object not in read_ok:
-                    raise SandboxError(
-                        f"capability denied: read-objects does not include {step.object!r}"
-                    )
+                    raise SandboxError(f"capability denied: read-objects does not include {step.object!r}")
                 if self.compiled is None or step.object not in self.compiled.objects:
                     raise SandboxError(f"unknown object type {step.object!r}")
                 filt = tpl.render(step.filter) if step.filter else None
                 rows, _total = await self.repo.query(
-                    session, step.object, filt=filt, limit=int(step.limit or 100),
+                    session,
+                    step.object,
+                    filt=filt,
+                    limit=int(step.limit or 100),
                 )
                 # the same assembly the sandbox's query RPC performs -- see the
                 # module docstring on why a function sees real values
@@ -315,8 +322,7 @@ class DeclarativeRuntime:
                 if model_override and model_override != getattr(self.llm, "model", None):
                     client = self.llm.scoped(str(model_override))
                 out = await client.chat(
-                    ([{"role": "system", "content": system}] if system else [])
-                    + [{"role": "user", "content": prompt}]
+                    ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
                 )
                 steps[step.id] = out.get("content")
             elif step.kind == "http":
@@ -339,9 +345,7 @@ class DeclarativeRuntime:
 
         if spec.returns_step:
             if spec.returns_step not in steps:
-                raise SandboxError(
-                    f"returns_step {spec.returns_step!r} is not a step of this function"
-                )
+                raise SandboxError(f"returns_step {spec.returns_step!r} is not a step of this function")
             return steps[spec.returns_step]
         # no step named: hand back everything, keyed by step id. A one-step
         # function still gets a dict here — predictable beats clever, because a

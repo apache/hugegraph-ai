@@ -25,12 +25,13 @@ Execution semantics (data-layer §3.2):
 4. bad rows quarantine (never block the batch); quarantine rate doubles as an
    evolve fitness signal
 """
+
 from __future__ import annotations
 
 import datetime as _dt
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, JSON, String, Text, select
+from sqlalchemy import JSON, DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..action.models import OutboxRow
@@ -46,9 +47,7 @@ class SyncStateRow(Base):
     store: Mapped[str] = mapped_column(String(200), primary_key=True)
     object_type: Mapped[str] = mapped_column(String(200), primary_key=True)
     watermark: Mapped[str | None] = mapped_column(Text, nullable=True)
-    updated_at: Mapped[_dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class SyncRunRow(Base):
@@ -85,7 +84,10 @@ class QuarantineRow(Base):
 
 
 def _coerce_row(
-    object_type: str, props: dict[str, "PropertyType"], mapped: dict[str, str], raw: dict[str, Any],
+    object_type: str,
+    props: dict[str, PropertyType],
+    mapped: dict[str, str],
+    raw: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """raw source row -> typed property dict; on failure return quarantine info."""
     out: dict[str, Any] = {}
@@ -153,11 +155,13 @@ class SyncEngine:
                 if prop in columns:
                     mapped[prop] = prop
 
-            state = (await session.execute(
-                select(SyncStateRow).where(
-                    SyncStateRow.store == backing.store, SyncStateRow.object_type == object_type
+            state = (
+                await session.execute(
+                    select(SyncStateRow).where(
+                        SyncStateRow.store == backing.store, SyncStateRow.object_type == object_type
+                    )
                 )
-            )).scalar_one_or_none()
+            ).scalar_one_or_none()
             strategy = backing.sync.strategy if backing.sync else "snapshot"
             watermark_col = backing.sync.watermark.column if (backing.sync and backing.sync.watermark) else None
 
@@ -173,7 +177,9 @@ class SyncEngine:
             ptypes = {p: d.ptype() for p, d in obj.spec.properties.items()}
 
             rows = source.fetch(
-                backing.source, watermark_col=watermark_col if strategy == "watermark" else None, after=after,
+                backing.source,
+                watermark_col=watermark_col if strategy == "watermark" else None,
+                after=after,
             )
             async for raw in rows:
                 if strategy == "watermark" and watermark_col is not None:
@@ -187,19 +193,28 @@ class SyncEngine:
                     if pk is None or pk == "None":
                         props, code, reason = None, "MISSING_PK", "primary key missing/None"
                 if props is None:
-                    session.add(QuarantineRow(
-                        object_type=object_type, source_pk=str(raw.get(mapped.get(pk_props[0], pk_props[0]))),
-                        row=_jsonable(raw), code=code or "?", reason=reason or "",
-                    ))
+                    session.add(
+                        QuarantineRow(
+                            object_type=object_type,
+                            source_pk=str(raw.get(mapped.get(pk_props[0], pk_props[0]))),
+                            row=_jsonable(raw),
+                            code=code or "?",
+                            reason=reason or "",
+                        )
+                    )
                     summary["quarantined"] += 1
                     continue
                 seen_pks.add(pk)
                 outcome = await self.repo.sync_upsert(session, object_type, props, started)
                 summary[outcome if outcome in summary else "noop"] += 1
-                session.add(OutboxRow(
-                    object_type=object_type, object_id=pk, op="upsert",
-                    payload={"props": _jsonable(props), "origin": "sync"},
-                ))
+                session.add(
+                    OutboxRow(
+                        object_type=object_type,
+                        object_id=pk,
+                        op="upsert",
+                        payload={"props": _jsonable(props), "origin": "sync"},
+                    )
+                )
 
             # absent-means-archive (snapshot only, unless explicitly disabled)
             deletes = backing.sync.deletes if backing.sync else None
@@ -211,7 +226,13 @@ class SyncEngine:
                     summary["archived"] += 1
 
             if state is None:
-                session.add(SyncStateRow(store=backing.store, object_type=object_type, watermark=str(max_wm) if max_wm is not None else None))
+                session.add(
+                    SyncStateRow(
+                        store=backing.store,
+                        object_type=object_type,
+                        watermark=str(max_wm) if max_wm is not None else None,
+                    )
+                )
             elif max_wm is not None:
                 state.watermark = str(max_wm)
 
@@ -233,7 +254,7 @@ def _jsonable(raw: dict[str, Any]) -> dict[str, Any]:
 
     out = {}
     for k, v in raw.items():
-        if isinstance(v, (d.datetime, d.date)):
+        if isinstance(v, d.datetime | d.date):
             out[k] = v.isoformat()
         else:
             out[k] = v

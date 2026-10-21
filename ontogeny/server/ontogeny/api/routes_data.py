@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Data preview, graph projection views, audit trail and SSE subscriptions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -37,8 +38,9 @@ def register(app: FastAPI, r: APIRouter, sc: ServiceContext) -> None:
     # through it (marking masks and derived properties apply as everywhere else).
 
     @r.get("/data/preview")
-    async def data_preview(limit: int = 3, sc: ServiceContext = Depends(get_sc),
-                           principal: dict = Depends(get_principal)):
+    async def data_preview(
+        limit: int = 3, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         return await sc.data_preview(principal, limit=max(1, min(limit, 50)))
 
     @r.get("/graph/projection")
@@ -46,23 +48,28 @@ def register(app: FastAPI, r: APIRouter, sc: ServiceContext) -> None:
         return await sc.projection_summary()
 
     @r.get("/graph/projection/vertices")
-    async def projection_vertices(label: str, limit: int = 20, sc: ServiceContext = Depends(get_sc),
-                                  principal: dict = Depends(get_principal)):
+    async def projection_vertices(
+        label: str, limit: int = 20, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         return await sc.projection_vertices(label, principal, limit=max(1, min(limit, 200)))
 
     @r.get("/graph/projection/edges")
-    async def projection_edges(label: str, limit: int = 20, sc: ServiceContext = Depends(get_sc),
-                               principal: dict = Depends(get_principal)):
+    async def projection_edges(
+        label: str, limit: int = 20, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         return await sc.projection_edges(label, principal, limit=max(1, min(limit, 200)))
 
     # ---- audit ------------------------------------------------------------
 
-
     @r.get("/audit/revisions")
-    async def audit(object_type: str | None = None, object_id: str | None = None,
-                    action: str | None = None, limit: int = 50,
-                    sc: ServiceContext = Depends(get_sc),
-                    _: dict = Depends(require_authenticated)):
+    async def audit(
+        object_type: str | None = None,
+        object_id: str | None = None,
+        action: str | None = None,
+        limit: int = 50,
+        sc: ServiceContext = Depends(get_sc),
+        _: dict = Depends(require_authenticated),
+    ):
         async with sc.sessionmaker() as s:
             stmt = select(RevisionRow).order_by(RevisionRow.id.desc()).limit(limit)
             if object_type:
@@ -72,11 +79,21 @@ def register(app: FastAPI, r: APIRouter, sc: ServiceContext) -> None:
             if action:
                 stmt = stmt.where(RevisionRow.action == action)
             rows = (await s.execute(stmt)).scalars().all()
-        return {"revisions": [{
-            "id": x.id, "action": x.action, "object_type": x.object_type, "object_id": x.object_id,
-            "principal": x.principal, "outcome": x.outcome, "message": x.message,
-            "created_at": x.created_at.isoformat() if x.created_at else None,
-        } for x in rows]}
+        return {
+            "revisions": [
+                {
+                    "id": x.id,
+                    "action": x.action,
+                    "object_type": x.object_type,
+                    "object_id": x.object_id,
+                    "principal": x.principal,
+                    "outcome": x.outcome,
+                    "message": x.message,
+                    "created_at": x.created_at.isoformat() if x.created_at else None,
+                }
+                for x in rows
+            ]
+        }
 
     # ---- subscriptions (SSE) ----------------------------------------------
 

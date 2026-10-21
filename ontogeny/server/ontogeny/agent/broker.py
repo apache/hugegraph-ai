@@ -23,6 +23,7 @@ ServiceContext, record the step. Writes additionally go through the approval
 gate (M2) -- a pending approval row is created and nothing executes until a
 human consumes it.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -32,7 +33,6 @@ from typing import Any
 
 from sqlalchemy import delete, or_, select, update
 
-from ..action.models import OutboxRow  # noqa: F401  (re-exported for API layer typing)
 from ..errors import ConflictError, NotFoundError, OOError, PolicyDeniedError, StoreError
 from ..registry.compiled import CompiledOntology
 from .catalog import ToolDef, build_catalog, catalog_hash, effective_tools
@@ -47,26 +47,27 @@ def _utcnow() -> _dt.datetime:
 
 def _jsonable(value: Any) -> Any:
     """Row objects carry dates/datetimes/Decimals; JSON columns refuse them."""
-    if isinstance(value, (_dt.datetime, _dt.date)):
+    if isinstance(value, _dt.datetime | _dt.date):
         return value.isoformat()
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_jsonable(v) for v in value]
     try:
         import json as _json
+
         _json.dumps(value)
         return value
     except (TypeError, ValueError):
         return str(value)
 
 
-class SessionBudgetExceeded(OOError):
+class SessionBudgetExceededError(OOError):
     code = "AGENT_BUDGET_EXCEEDED"
     http_status = 429
 
 
-class ToolNotAllowed(OOError):
+class ToolNotAllowedError(OOError):
     code = "AGENT_TOOL_NOT_ALLOWED"
     http_status = 403
 
@@ -95,29 +96,36 @@ class AgentBroker:
         out = []
         for name, plug in self.sc.compiled.agent_plugins.items():
             tools = effective_tools(self.sc.compiled, plug)
-            out.append({
-                "name": name,
-                "display": plug.metadata.display,
-                "description": plug.metadata.description,
-                "transport": plug.spec.transport.kind,
-                "engine": {"kind": plug.spec.engine.kind, "endpoint": plug.spec.engine.endpoint},
-                "principal": plug.spec.principal.as_principal(),
-                "approval": plug.spec.approval.writes,
-                "budget": {
-                    "steps": plug.spec.budget.steps,
-                    "wall_ms": plug.spec.budget.wall_ms,
-                    "writes_per_session": plug.spec.budget.writes_per_session,
-                },
-                "tools": {n: t.to_meta() for n, t in tools.items()},
-            })
+            out.append(
+                {
+                    "name": name,
+                    "display": plug.metadata.display,
+                    "description": plug.metadata.description,
+                    "transport": plug.spec.transport.kind,
+                    "engine": {"kind": plug.spec.engine.kind, "endpoint": plug.spec.engine.endpoint},
+                    "principal": plug.spec.principal.as_principal(),
+                    "approval": plug.spec.approval.writes,
+                    "budget": {
+                        "steps": plug.spec.budget.steps,
+                        "wall_ms": plug.spec.budget.wall_ms,
+                        "writes_per_session": plug.spec.budget.writes_per_session,
+                    },
+                    "tools": {n: t.to_meta() for n, t in tools.items()},
+                }
+            )
         return out
 
     # ------------------------------------------------------------ sessions
 
-    async def open_session(self, plugin_name: str, task: str, *,
-                           budget: dict[str, Any] | None = None,
-                           expires_at: _dt.datetime | None = None,
-                           driver: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def open_session(
+        self,
+        plugin_name: str,
+        task: str,
+        *,
+        budget: dict[str, Any] | None = None,
+        expires_at: _dt.datetime | None = None,
+        driver: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Open a session. ``budget`` overrides the plugin's frozen limits per
         field; 0 (or a negative) means UNLIMITED, an omitted field keeps the
         plugin's value. ``expires_at`` bounds the session's usable life.
@@ -145,8 +153,7 @@ class AgentBroker:
                 budget_writes=_limit("writes_per_session", plug.spec.budget.writes_per_session),
                 expires_at=expires_at,
                 catalog_hash=catalog_hash(tools),
-                driver={"id": driver.get("id", "?"), "via": driver.get("via", "?")}
-                if driver else None,
+                driver={"id": driver.get("id", "?"), "via": driver.get("via", "?")} if driver else None,
                 run_started_at=_utcnow(),
                 # freeze the catalog: a plugin edit mid-session can neither
                 # widen nor narrow a running session (the documented contract)
@@ -163,14 +170,13 @@ class AgentBroker:
         this run's instruction: when given, it becomes the session's task (the
         creation-time text is a description, not the command)."""
         async with self.sc.sessionmaker() as session:
-            row = (await session.execute(
-                select(AgentSessionRow).where(AgentSessionRow.id == session_id)
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(select(AgentSessionRow).where(AgentSessionRow.id == session_id))
+            ).scalar_one_or_none()
             if row is None:
                 raise NotFoundError(f"agent session {session_id} not found")
             if self._check_expired(row):
-                raise OOError("agent session expired",
-                              details={"code": "AGENT_SESSION_EXPIRED"})
+                raise OOError("agent session expired", details={"code": "AGENT_SESSION_EXPIRED"})
             if row.status == "running":
                 return {"id": row.id, "status": "running", "run_count": row.run_count}
             if task and task.strip():
@@ -187,9 +193,11 @@ class AgentBroker:
     def _check_expired(self, row: AgentSessionRow) -> bool:
         """True when the session is past its expires_at (and marks it)."""
         # SQLite returns naive UTC datetimes; normalize before comparing
-        exp = row.expires_at.replace(tzinfo=_dt.timezone.utc) \
-            if row.expires_at is not None and row.expires_at.tzinfo is None \
+        exp = (
+            row.expires_at.replace(tzinfo=_dt.timezone.utc)
+            if row.expires_at is not None and row.expires_at.tzinfo is None
             else row.expires_at
+        )
         if exp is not None and _utcnow() > exp:
             row.status = "expired"
             return True
@@ -197,15 +205,20 @@ class AgentBroker:
 
     async def get_session(self, session_id: int) -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:
-            row = (await session.execute(
-                select(AgentSessionRow).where(AgentSessionRow.id == session_id)
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(select(AgentSessionRow).where(AgentSessionRow.id == session_id))
+            ).scalar_one_or_none()
             if row is None:
                 raise NotFoundError(f"agent session {session_id} not found")
-            steps = (await session.execute(
-                select(AgentStepRow).where(AgentStepRow.session_id == session_id)
-                .order_by(AgentStepRow.seq)
-            )).scalars().all()
+            steps = (
+                (
+                    await session.execute(
+                        select(AgentStepRow).where(AgentStepRow.session_id == session_id).order_by(AgentStepRow.seq)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             plug = self.sc.compiled.agent_plugins.get(row.plugin) if self.sc.compiled else None
             tools = self._frozen_tools(row, plug)
             return self._session_view(row, tools, steps=[self._step_view(s) for s in steps])
@@ -240,9 +253,11 @@ class AgentBroker:
                         f"agent session {session_id} belongs to driver {driver_id!r}",
                         details={"session_id": session_id, "driver": driver_id},
                     )
-            approvals = (await session.execute(
-                select(AgentApprovalRow.id).where(AgentApprovalRow.session_id == session_id)
-            )).scalars().all()
+            approvals = (
+                (await session.execute(select(AgentApprovalRow.id).where(AgentApprovalRow.session_id == session_id)))
+                .scalars()
+                .all()
+            )
             if approvals:
                 raise ConflictError(
                     f"agent session {session_id} carries {len(approvals)} approval record(s); "
@@ -267,9 +282,9 @@ class AgentBroker:
 
     async def finish_session(self, session_id: int, result: dict | None) -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:
-            row = (await session.execute(
-                select(AgentSessionRow).where(AgentSessionRow.id == session_id)
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(select(AgentSessionRow).where(AgentSessionRow.id == session_id))
+            ).scalar_one_or_none()
             if row is None:
                 raise NotFoundError(f"agent session {session_id} not found")
             if row.status == "finished":
@@ -280,15 +295,23 @@ class AgentBroker:
             await session.commit()
             return {"id": row.id, "status": row.status}
 
-    def _session_view(self, row: AgentSessionRow, tools: dict[str, ToolDef] | None = None,
-                      *, steps: list[dict] | None = None) -> dict[str, Any]:
+    def _session_view(
+        self, row: AgentSessionRow, tools: dict[str, ToolDef] | None = None, *, steps: list[dict] | None = None
+    ) -> dict[str, Any]:
         view: dict[str, Any] = {
-            "id": row.id, "plugin": row.plugin, "principal": row.principal,
+            "id": row.id,
+            "plugin": row.plugin,
+            "principal": row.principal,
             "driver": row.driver,
-            "task": row.task, "status": row.status,
-            "budget": {"steps": row.budget_steps, "wall_ms": row.budget_wall_ms,
-                       "writes": row.budget_writes, "writes_used": row.writes_used,
-                       "steps_used": row.steps_used},
+            "task": row.task,
+            "status": row.status,
+            "budget": {
+                "steps": row.budget_steps,
+                "wall_ms": row.budget_wall_ms,
+                "writes": row.budget_writes,
+                "writes_used": row.writes_used,
+                "steps_used": row.steps_used,
+            },
             "catalog_hash": row.catalog_hash,
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "result": row.result,
@@ -305,11 +328,15 @@ class AgentBroker:
     @staticmethod
     def _step_view(step: AgentStepRow) -> dict[str, Any]:
         return {
-            "seq": step.seq, "tool": step.tool, "args": step.args_digest,
+            "seq": step.seq,
+            "tool": step.tool,
+            "args": step.args_digest,
             "thought": step.thought or "",
             "driver": step.driver or "",
-            "outcome": step.outcome, "detail": step.detail,
-            "latency_ms": step.latency_ms, "revision_id": step.revision_id,
+            "outcome": step.outcome,
+            "detail": step.detail,
+            "latency_ms": step.latency_ms,
+            "revision_id": step.revision_id,
             "approval_id": step.approval_id,
             "run_no": step.run_no,
         }
@@ -328,14 +355,13 @@ class AgentBroker:
         from ..errors import NotFoundError, OOError
 
         async with self.sc.sessionmaker() as s:
-            row = (await s.execute(
-                select(AgentApprovalRow).where(AgentApprovalRow.id == approval_id)
-            )).scalar_one_or_none()
+            row = (
+                await s.execute(select(AgentApprovalRow).where(AgentApprovalRow.id == approval_id))
+            ).scalar_one_or_none()
             if row is None:
                 raise NotFoundError(f"agent approval {approval_id} not found")
             if row.status != "pending":
-                raise OOError(f"approval {approval_id} is already {row.status}",
-                              details={"status": row.status})
+                raise OOError(f"approval {approval_id} is already {row.status}", details={"status": row.status})
 
             def _close(status: str) -> None:
                 row.status, row.decided_by = status, principal.get("id", "?")
@@ -346,17 +372,18 @@ class AgentBroker:
                 # refund the writes slot atomically (the write did not happen)
                 await s.execute(
                     update(AgentSessionRow)
-                    .where(AgentSessionRow.id == row.session_id,
-                           AgentSessionRow.writes_used > 0)
+                    .where(AgentSessionRow.id == row.session_id, AgentSessionRow.writes_used > 0)
                     .values(writes_used=AgentSessionRow.writes_used - 1)
-                    .execution_options(synchronize_session=False))
+                    .execution_options(synchronize_session=False)
+                )
                 await s.commit()
                 return {"id": row.id, "status": "rejected", "decided_by": row.decided_by}
 
             target = None
             if row.target_id:
                 target = await self.sc.query.get(
-                    s, self.sc.compiled.action_target(row.action), row.target_id, principal)
+                    s, self.sc.compiled.action_target(row.action), row.target_id, principal
+                )
             try:
                 self.sc.policy.require(principal, row.action, target)
             except Exception:
@@ -366,31 +393,32 @@ class AgentBroker:
             _close("approved")
 
             plug = self.sc.compiled.agent_plugins.get(row.plugin)
-            agent_principal = (plug.spec.principal.as_principal()
-                               if plug else {"id": f"agent:{row.plugin}"})
+            agent_principal = plug.spec.principal.as_principal() if plug else {"id": f"agent:{row.plugin}"}
             try:
-                rev = await self.sc.runtime.execute(s, row.action, agent_principal,
-                                                    row.parameters, row.target_id)
+                rev = await self.sc.runtime.execute(s, row.action, agent_principal, row.parameters, row.target_id)
             except OOError as exc:
                 # approval granted but the runtime refused (state moved between
                 # request and decision): record honestly instead of a 500
                 row.status = "failed"
                 await s.commit()
-                return {"id": row.id, "status": "failed", "error": exc.message,
-                        "decided_by": row.decided_by}
+                return {"id": row.id, "status": "failed", "error": exc.message, "decided_by": row.decided_by}
             row.status, row.revision_id = "executed", rev.id
             await s.commit()
-            return {"id": row.id, "status": "executed", "revision_id": rev.id,
-                    "outcome": rev.outcome, "decided_by": row.decided_by}
+            return {
+                "id": row.id,
+                "status": "executed",
+                "revision_id": rev.id,
+                "outcome": rev.outcome,
+                "decided_by": row.decided_by,
+            }
 
     # ------------------------------------------------------- engine driving
 
-    async def set_status(self, session_id: int, status: str,
-                         result: dict | None = None) -> None:
+    async def set_status(self, session_id: int, status: str, result: dict | None = None) -> None:
         async with self.sc.sessionmaker() as session:
-            row = (await session.execute(
-                select(AgentSessionRow).where(AgentSessionRow.id == session_id)
-            )).scalar_one_or_none()
+            row = (
+                await session.execute(select(AgentSessionRow).where(AgentSessionRow.id == session_id))
+            ).scalar_one_or_none()
             if row is None:
                 return
             row.status = status
@@ -398,22 +426,25 @@ class AgentBroker:
                 row.result = result
             if status in ("finished", "budget_exhausted", "blocked_on_approval"):
                 from .models import _utcnow
+
                 row.finished_at = _utcnow() if status != "blocked_on_approval" else row.finished_at
             await session.commit()
 
     async def steps_of(self, session_id: int) -> list[AgentStepRow]:
         async with self.sc.sessionmaker() as session:
-            return list((await session.execute(
-                select(AgentStepRow).where(AgentStepRow.session_id == session_id)
-                .order_by(AgentStepRow.seq)
-            )).scalars())
+            return list(
+                (
+                    await session.execute(
+                        select(AgentStepRow).where(AgentStepRow.session_id == session_id).order_by(AgentStepRow.seq)
+                    )
+                ).scalars()
+            )
 
     # ---------------------------------------------------------- tool calls
 
     # ----------------------------------------------------- frozen catalog
 
-    def _frozen_tools(self, sess: AgentSessionRow,
-                      plug) -> dict[str, ToolDef]:
+    def _frozen_tools(self, sess: AgentSessionRow, plug) -> dict[str, ToolDef]:
         """The session's OWN catalog: the frozen copy it was opened with.
 
         Legacy rows (pre-freeze) fall back to recomputing from the current
@@ -446,8 +477,7 @@ class AgentBroker:
         elapsed_ms = (_utcnow() - started).total_seconds() * 1000
         return elapsed_ms > sess.budget_wall_ms
 
-    async def read_only_tool(self, name: str, plugin_name: str | None,
-                             args: dict[str, Any]) -> dict[str, Any]:
+    async def read_only_tool(self, name: str, plugin_name: str | None, args: dict[str, Any]) -> dict[str, Any]:
         """Session-less dispatch for read-only tools (the MCP surface's
         no-session path).
 
@@ -466,9 +496,13 @@ class AgentBroker:
         if tdef is None:
             return {"outcome": "NOT_FOUND", "error": f"unknown tool {name!r}"}
         if tdef.writes:
-            return {"outcome": "WRITE_REQUIRES_SESSION",
-                    "error": ("writes need a governed session: call agent_open_session, "
-                              "then pass plugin and session_id on every call")}
+            return {
+                "outcome": "WRITE_REQUIRES_SESSION",
+                "error": (
+                    "writes need a governed session: call agent_open_session, "
+                    "then pass plugin and session_id on every call"
+                ),
+            }
 
         plug = None
         if plugin_name:
@@ -476,17 +510,19 @@ class AgentBroker:
             if plug is None:
                 raise OOError(f"unknown agent plugin {plugin_name!r}")
             if name not in effective_tools(compiled, plug):
-                return {"outcome": "AGENT_TOOL_NOT_ALLOWED",
-                        "error": f"tool {name!r} is not allowed for plugin {plugin_name!r}"}
+                return {
+                    "outcome": "AGENT_TOOL_NOT_ALLOWED",
+                    "error": f"tool {name!r} is not allowed for plugin {plugin_name!r}",
+                }
 
-        principal = (plug.spec.principal.as_principal() if plug
-                     else {"id": "mcp-agent", "Role": [], "via": "mcp-sessionless"})
+        principal = (
+            plug.spec.principal.as_principal() if plug else {"id": "mcp-agent", "Role": [], "via": "mcp-sessionless"}
+        )
         # the session path indexes required arguments strictly; converge on
         # that while keeping the MCP wire envelope structured (never a KeyError)
         for req in (tdef.input_schema or {}).get("required", []):
             if args.get(req) is None:
-                return {"outcome": "ONTOGENY_ERROR",
-                        "error": f"missing required argument {req!r} for tool {name!r}"}
+                return {"outcome": "ONTOGENY_ERROR", "error": f"missing required argument {req!r} for tool {name!r}"}
 
         async with self.sc.sessionmaker() as session:
             try:
@@ -498,9 +534,16 @@ class AgentBroker:
                 # never bare exceptions through the wire (agent-paradigm §3.1)
                 return {"outcome": exc.code, "error": exc.message}
 
-    async def call_tool(self, session_id: int, tool: str, args: dict[str, Any],
-                        *, engine: bool = False, thought: str = "",
-                        driver: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def call_tool(
+        self,
+        session_id: int,
+        tool: str,
+        args: dict[str, Any],
+        *,
+        engine: bool = False,
+        thought: str = "",
+        driver: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """The single door. Returns the tool result, or a pending-approval
         marker for gated writes.
 
@@ -516,19 +559,17 @@ class AgentBroker:
         not just what (I4)."""
         started = time.perf_counter()
         async with self.sc.sessionmaker() as session:
-            sess = (await session.execute(
-                select(AgentSessionRow).where(AgentSessionRow.id == session_id)
-            )).scalar_one_or_none()
+            sess = (
+                await session.execute(select(AgentSessionRow).where(AgentSessionRow.id == session_id))
+            ).scalar_one_or_none()
             if sess is None:
                 raise NotFoundError(f"agent session {session_id} not found")
             if sess.status not in ("open", "running", "blocked_on_approval"):
-                return {"outcome": "AGENT_SESSION_CLOSED",
-                        "error": f"agent session {session_id} is {sess.status}"}
+                return {"outcome": "AGENT_SESSION_CLOSED", "error": f"agent session {session_id} is {sess.status}"}
             if sess.status == "running" and not engine:
                 # a human / third-party driver must not interleave with the
                 # engine that owns the running session (agent-paradigm §2)
-                return {"outcome": "AGENT_SESSION_RUNNING",
-                        "error": "session is being driven by its engine"}
+                return {"outcome": "AGENT_SESSION_RUNNING", "error": "session is being driven by its engine"}
 
             plug = self.sc.compiled.agent_plugins.get(sess.plugin)
             # the FROZEN catalog, not the current plugin definition: a promote
@@ -539,20 +580,23 @@ class AgentBroker:
                 # structured outcomes, not exceptions: distinguish "not a tool
                 # at all" (NOT_FOUND) from "not in your allow list" (403-shaped)
                 if plug is not None and tool in build_catalog(self.sc.compiled):
-                    return {"outcome": ToolNotAllowed.code,
-                            "error": f"tool {tool!r} is not allowed for plugin {sess.plugin!r}"}
+                    return {
+                        "outcome": ToolNotAllowedError.code,
+                        "error": f"tool {tool!r} is not allowed for plugin {sess.plugin!r}",
+                    }
                 return {"outcome": "NOT_FOUND", "error": f"unknown tool {tool!r}"}
 
             if self._check_expired(sess):
-                return {"outcome": "AGENT_SESSION_EXPIRED",
-                        "error": f"agent session {session_id} expired"}
+                return {"outcome": "AGENT_SESSION_EXPIRED", "error": f"agent session {session_id} expired"}
             if self._wall_exceeded(sess):
                 # the platform-side wall clock (all three budget gates are now
                 # enforced): no step is recorded, the session parks as exhausted
                 sess.status = "budget_exhausted"
                 await session.commit()
-                return {"outcome": SessionBudgetExceeded.code,
-                        "error": f"wall budget exhausted ({sess.budget_wall_ms} ms per run)"}
+                return {
+                    "outcome": SessionBudgetExceededError.code,
+                    "error": f"wall budget exhausted ({sess.budget_wall_ms} ms per run)",
+                }
             if sess.run_count == 0:
                 sess.run_count = 1  # an external first drive is run #1
 
@@ -562,33 +606,38 @@ class AgentBroker:
             # Postgres would happily lose the read-modify-write race)
             bumped = await session.execute(
                 update(AgentSessionRow)
-                .where(AgentSessionRow.id == session_id,
-                       or_(AgentSessionRow.budget_steps == 0,
-                           AgentSessionRow.steps_used < AgentSessionRow.budget_steps))
+                .where(
+                    AgentSessionRow.id == session_id,
+                    or_(AgentSessionRow.budget_steps == 0, AgentSessionRow.steps_used < AgentSessionRow.budget_steps),
+                )
                 .values(steps_used=AgentSessionRow.steps_used + 1)
-                .execution_options(synchronize_session=False))
+                .execution_options(synchronize_session=False)
+            )
             if bumped.rowcount == 0:
                 # structured outcome, not an exception: agents need a
                 # machine-readable stop signal, and no step is recorded
-                return {"outcome": SessionBudgetExceeded.code,
-                        "error": f"step budget exhausted ({sess.budget_steps})"}
+                return {
+                    "outcome": SessionBudgetExceededError.code,
+                    "error": f"step budget exhausted ({sess.budget_steps})",
+                }
             await session.refresh(sess, ["steps_used"])
             seq = sess.steps_used
 
-            who = ("engine" if engine
-                   else (driver or {}).get("id")
-                   or ((sess.driver or {}).get("id"))
-                   or "external")
-            step = AgentStepRow(session_id=session_id, seq=seq, tool=tool,
-                                args_digest=args_digest(args if isinstance(args, dict) else {}),
-                                thought=(thought or "")[:4000],
-                                driver=str(who)[:200],
-                                run_no=max(sess.run_count, 1))
+            who = "engine" if engine else (driver or {}).get("id") or ((sess.driver or {}).get("id")) or "external"
+            step = AgentStepRow(
+                session_id=session_id,
+                seq=seq,
+                tool=tool,
+                args_digest=args_digest(args if isinstance(args, dict) else {}),
+                thought=(thought or "")[:4000],
+                driver=str(who)[:200],
+                run_no=max(sess.run_count, 1),
+            )
             session.add(step)
             try:
                 outcome, detail, extra = await self._execute_tool(
-                    session, tools[tool], self._principal_of(plug, sess), args,
-                    plug=plug, sess_row=sess)
+                    session, tools[tool], self._principal_of(plug, sess), args, plug=plug, sess_row=sess
+                )
             except OOError as exc:
                 step.outcome = exc.code
                 step.detail = {"message": exc.message}
@@ -623,11 +672,13 @@ class AgentBroker:
         """Atomically consume one writes slot; False when the ceiling hit."""
         res = await session.execute(
             update(AgentSessionRow)
-            .where(AgentSessionRow.id == session_id,
-                   or_(AgentSessionRow.budget_writes == 0,
-                       AgentSessionRow.writes_used < AgentSessionRow.budget_writes))
+            .where(
+                AgentSessionRow.id == session_id,
+                or_(AgentSessionRow.budget_writes == 0, AgentSessionRow.writes_used < AgentSessionRow.budget_writes),
+            )
             .values(writes_used=AgentSessionRow.writes_used + 1)
-            .execution_options(synchronize_session=False))
+            .execution_options(synchronize_session=False)
+        )
         return res.rowcount > 0
 
     @staticmethod
@@ -635,14 +686,20 @@ class AgentBroker:
         """Give back one writes slot (the write did not happen after all)."""
         await session.execute(
             update(AgentSessionRow)
-            .where(AgentSessionRow.id == session_id,
-                   AgentSessionRow.writes_used > 0)
+            .where(AgentSessionRow.id == session_id, AgentSessionRow.writes_used > 0)
             .values(writes_used=AgentSessionRow.writes_used - 1)
-            .execution_options(synchronize_session=False))
+            .execution_options(synchronize_session=False)
+        )
 
-    async def _execute_tool(self, session, tdef: ToolDef, principal: dict, args: dict[str, Any],
-                            plug=None, sess_row: AgentSessionRow | None = None,
-                            ) -> tuple[str, Any, dict[str, Any]]:
+    async def _execute_tool(
+        self,
+        session,
+        tdef: ToolDef,
+        principal: dict,
+        args: dict[str, Any],
+        plug=None,
+        sess_row: AgentSessionRow | None = None,
+    ) -> tuple[str, Any, dict[str, Any]]:
         """Dispatch one tool against ServiceContext. Returns (outcome, detail, extra)."""
         sc = self.sc
         if tdef.kind == "meta":
@@ -651,25 +708,32 @@ class AgentBroker:
             limit = max(1, min(int(args.get("limit") or 20), 1000))
             started = time.perf_counter()
             try:
-                out = await sc.query.query(session, tdef.target, principal,
-                                           filt=args.get("filter"), limit=limit)
+                out = await sc.query.query(session, tdef.target, principal, filt=args.get("filter"), limit=limit)
             except OOError:
                 # agent queries are fitness signal too: the evolution loop reads
                 # these rows to find filter fields the schema never modelled
                 # (the HTTP query door records the same thing)
                 await sc.telemetry.record_query(
-                    session, tdef.target, principal, args.get("filter"),
-                    (time.perf_counter() - started) * 1000, 0, error=True,
+                    session,
+                    tdef.target,
+                    principal,
+                    args.get("filter"),
+                    (time.perf_counter() - started) * 1000,
+                    0,
+                    error=True,
                 )
                 raise
             await sc.telemetry.record_query(
-                session, tdef.target, principal, args.get("filter"),
-                out["latency_ms"], out["total"],
+                session,
+                tdef.target,
+                principal,
+                args.get("filter"),
+                out["latency_ms"],
+                out["total"],
             )
             return "ok", out, {}
         if tdef.kind == "traverse":
-            out = await sc.query.traverse(session, args["start_type"], args["start_ids"],
-                                          principal, args["path"])
+            out = await sc.query.traverse(session, args["start_type"], args["start_ids"], principal, args["path"])
             return "ok", out, {}
         if tdef.kind == "call":
             fn = sc.compiled.functions.get(tdef.target)
@@ -681,9 +745,15 @@ class AgentBroker:
             return await self._execute_action(session, tdef, principal, args, plug, sess_row)
         raise AgentServiceError(f"unhandled tool kind {tdef.kind!r}")
 
-    async def _execute_action(self, session, tdef: ToolDef, principal: dict,
-                              args: dict[str, Any], plug, sess_row: AgentSessionRow,
-                              ) -> tuple[str, Any, dict[str, Any]]:
+    async def _execute_action(
+        self,
+        session,
+        tdef: ToolDef,
+        principal: dict,
+        args: dict[str, Any],
+        plug,
+        sess_row: AgentSessionRow,
+    ) -> tuple[str, Any, dict[str, Any]]:
         """Writes: validate first (free, no writes), then the approval gate.
 
         The gate comes from the CURRENT plugin row -- the one piece of the
@@ -710,21 +780,33 @@ class AgentBroker:
             # front; a human rejection refunds it (the write did not happen --
             # see decision API)
             if not await self._atomic_bump_writes(session, sess_row.id):
-                return (SessionBudgetExceeded.code, None,
-                        {"error": f"writes budget exhausted ({sess_row.budget_writes})"})
+                return (
+                    SessionBudgetExceededError.code,
+                    None,
+                    {"error": f"writes budget exhausted ({sess_row.budget_writes})"},
+                )
             approval = AgentApprovalRow(
-                session_id=sess_row.id, plugin=sess_row.plugin,
-                tool=tdef.name, action=tdef.target,
-                parameters=params, target_id=target_id,
+                session_id=sess_row.id,
+                plugin=sess_row.plugin,
+                tool=tdef.name,
+                action=tdef.target,
+                parameters=params,
+                target_id=target_id,
                 rationale=str(args.get("rationale") or ""),
             )
             session.add(approval)
             await session.flush()
-            return "pending_approval", {
-                "message": "write requires human approval",
-                "approval_id": approval.id,
-                "action": tdef.target, "parameters": params, "target_id": target_id,
-            }, {"approval_id": approval.id, "write": False}
+            return (
+                "pending_approval",
+                {
+                    "message": "write requires human approval",
+                    "approval_id": approval.id,
+                    "action": tdef.target,
+                    "parameters": params,
+                    "target_id": target_id,
+                },
+                {"approval_id": approval.id, "write": False},
+            )
 
         # auto gate (M3): only the actions listed in auto_actions skip the
         # queue; a vanished plugin row means the whitelist is unknowable.
@@ -732,21 +814,28 @@ class AgentBroker:
         # order as the REST surface): occupy one writes slot atomically,
         # refund it when the whitelist refuses or the execution fails.
         if not await self._atomic_bump_writes(session, sess_row.id):
-            return (SessionBudgetExceeded.code, None,
-                    {"error": f"writes budget exhausted ({sess_row.budget_writes})"})
+            return (
+                SessionBudgetExceededError.code,
+                None,
+                {"error": f"writes budget exhausted ({sess_row.budget_writes})"},
+            )
         if plug is None or tdef.name not in set(plug.spec.approval.auto_actions):
             await self._atomic_refund_writes(session, sess_row.id)
-            raise PolicyDeniedError(
-                f"action {tdef.target!r} is not in the plugin's auto_actions list")
+            raise PolicyDeniedError(f"action {tdef.target!r} is not in the plugin's auto_actions list")
         try:
-            rev = await sc.runtime.execute(session, tdef.target, principal, params, target_id,
-                                           expected_revision=args.get("expected_revision"))
+            rev = await sc.runtime.execute(
+                session, tdef.target, principal, params, target_id, expected_revision=args.get("expected_revision")
+            )
         except OOError:
             # a refused/failed execution consumed nothing in the end
             await self._atomic_refund_writes(session, sess_row.id)
             raise
         await session.commit()
-        return rev.outcome, {"revision_id": rev.id, "object_id": rev.object_id}, {
-            "revision_id": rev.id, "write": False,  # accounted above
-        }
-
+        return (
+            rev.outcome,
+            {"revision_id": rev.id, "object_id": rev.object_id},
+            {
+                "revision_id": rev.id,
+                "write": False,  # accounted above
+            },
+        )

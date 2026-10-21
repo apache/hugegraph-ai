@@ -46,12 +46,13 @@ drives Chrome over CDP and reports:
 
     python3 tools/headless_check.py --base http://127.0.0.1:8000 [--json out.json]
 """
+
 from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -168,10 +169,19 @@ class Chrome:
 
     async def start(self):
         self.proc = subprocess.Popen(
-            [CHROME, "--headless=new", f"--remote-debugging-port={self.port}",
-             f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
-             "--disable-gpu", "--hide-scrollbars", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                CHROME,
+                "--headless=new",
+                f"--remote-debugging-port={self.port}",
+                f"--user-data-dir={self.profile}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-gpu",
+                "--hide-scrollbars",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         for _ in range(60):
             try:
@@ -214,8 +224,14 @@ class Chrome:
             params["modifiers"] = 8
             params["windowsVirtualKeyCode"] = VK.get(key, 0)
         await self.send("Input.dispatchKeyEvent", **params)
-        await self.send("Input.dispatchKeyEvent", type="keyUp", key=key, code=code or key,
-                        windowsVirtualKeyCode=VK.get(key, 0), modifiers=8 if shift else 0)
+        await self.send(
+            "Input.dispatchKeyEvent",
+            type="keyUp",
+            key=key,
+            code=code or key,
+            windowsVirtualKeyCode=VK.get(key, 0),
+            modifiers=8 if shift else 0,
+        )
         await asyncio.sleep(0.06)
 
     async def set_cookie(self, name: str, value: str, url: str):
@@ -223,8 +239,9 @@ class Chrome:
         await self.send("Network.setCookie", name=name, value=value, url=url)
 
     async def set_viewport(self, width, height=900):
-        await self.send("Emulation.setDeviceMetricsOverride", width=width, height=height,
-                        deviceScaleFactor=1, mobile=False)
+        await self.send(
+            "Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=1, mobile=False
+        )
         await asyncio.sleep(0.25)
 
     async def set_theme(self, theme):
@@ -233,8 +250,10 @@ class Chrome:
         await asyncio.sleep(0.2)
 
     async def set_reduced_motion(self, on):
-        await self.send("Emulation.setEmulatedMedia",
-                        features=[{"name": "prefers-reduced-motion", "value": "reduce" if on else "no-preference"}])
+        await self.send(
+            "Emulation.setEmulatedMedia",
+            features=[{"name": "prefers-reduced-motion", "value": "reduce" if on else "no-preference"}],
+        )
 
     async def close(self):
         if self.ws:
@@ -251,11 +270,30 @@ class Chrome:
 VK = {"Tab": 9, "Escape": 27, "Enter": 13, "ArrowDown": 40, "ArrowUp": 38}
 
 ROUTES = [
-    "/", "/demo", "/ontology", "/builder", "/data", "/objects/sales-order",
-    "/actions/confirm-sales-order", "/functions/capacity-check", "/graph",
-    "/agent", "/agent/manage", "/agent/manage?tab=approvals", "/evolve", "/audit", "/admin",
-    "/ontology/sales-order", "/access", "/login", "/knowledge", "/knowledge?tab=links",
-    "/knowledge?tab=projections", "/action", "/action?tab=functions", "/action?tab=policies",
+    "/",
+    "/demo",
+    "/ontology",
+    "/builder",
+    "/data",
+    "/objects/sales-order",
+    "/actions/confirm-sales-order",
+    "/functions/capacity-check",
+    "/graph",
+    "/agent",
+    "/agent/manage",
+    "/agent/manage?tab=approvals",
+    "/evolve",
+    "/audit",
+    "/admin",
+    "/ontology/sales-order",
+    "/access",
+    "/login",
+    "/knowledge",
+    "/knowledge?tab=links",
+    "/knowledge?tab=projections",
+    "/action",
+    "/action?tab=functions",
+    "/action?tab=policies",
 ]
 
 
@@ -268,6 +306,7 @@ def _bootstrap_password() -> str | None:
     if os.environ.get("ONTOGENY_ADMIN_PASSWORD"):
         return os.environ["ONTOGENY_ADMIN_PASSWORD"]
     import re as _re
+
     for log in (".ontogeny-daemon/ontogeny.log", ".ontogeny-demo/ontogeny.log"):
         try:
             text = Path(log).read_text(encoding="utf-8", errors="ignore")
@@ -279,8 +318,7 @@ def _bootstrap_password() -> str | None:
     return None
 
 
-async def audit(base: str, only: str | None = None,
-                user: str = "admin", password: str | None = None) -> dict:
+async def audit(base: str, only: str | None = None, user: str = "admin", password: str | None = None) -> dict:
     ch = Chrome()
     await ch.start()
     report: dict = {"base": base, "contrast": {}, "responsive": {}, "keyboard": {}, "motion": {}}
@@ -297,17 +335,19 @@ async def audit(base: str, only: str | None = None,
         if password:
             try:
                 async with httpx.AsyncClient() as c:
-                    r = await c.post(f"{base}/api/v1/auth/login",
-                                     json={"username": user, "password": password}, timeout=10)
+                    r = await c.post(
+                        f"{base}/api/v1/auth/login", json={"username": user, "password": password}, timeout=10
+                    )
                 if r.status_code == 200:
                     await ch.set_cookie("ontogeny_session", r.json()["token"], base)
                     signed_in = True
-            except Exception as exc:  # noqa: BLE001 -- reported, not fatal
+            except Exception as exc:
                 report["login_error"] = str(exc)
         report["signed_in"] = signed_in
         if not signed_in:
             report["login_error"] = report.get("login_error") or (
-                "no credentials: pass --login-password or set ONTOGENY_ADMIN_PASSWORD")
+                "no credentials: pass --login-password or set ONTOGENY_ADMIN_PASSWORD"
+            )
 
         routes = [r for r in ROUTES if not only or only in r]
         # ---- contrast, both themes ---------------------------------------
@@ -318,8 +358,14 @@ async def audit(base: str, only: str | None = None,
                 await ch.set_theme(theme)
                 bad = await ch.eval(JS_CONTRAST) or []
                 if bad:
-                    failures.append({"route": route, "count": len(bad), "worst": min(b["ratio"] for b in bad),
-                                     "samples": sorted(bad, key=lambda b: b["ratio"])[:4]})
+                    failures.append(
+                        {
+                            "route": route,
+                            "count": len(bad),
+                            "worst": min(b["ratio"] for b in bad),
+                            "samples": sorted(bad, key=lambda b: b["ratio"])[:4],
+                        }
+                    )
             report["contrast"][theme] = {
                 "failingRoutes": len(failures),
                 "totalNodes": sum(f["count"] for f in failures),
@@ -390,16 +436,17 @@ async def audit(base: str, only: str | None = None,
 def summarize(rep: dict) -> int:
     problems = 0
     if not rep.get("signed_in"):
-        print(f"[FAIL] sign-in: {rep.get('login_error')}\n"
-              "        the audit below measured only the login page\n")
+        print(f"[FAIL] sign-in: {rep.get('login_error')}\n" "        the audit below measured only the login page\n")
         problems += 1
     for theme, data in rep["contrast"].items():
         worst = data["worst"]
         status = "OK " if not data["totalNodes"] else "FAIL"
         if data["totalNodes"]:
             problems += 1
-        print(f"[{status}] contrast ({theme}): {data['totalNodes']} failing nodes across "
-              f"{data['failingRoutes']} routes, worst {worst}")
+        print(
+            f"[{status}] contrast ({theme}): {data['totalNodes']} failing nodes across "
+            f"{data['failingRoutes']} routes, worst {worst}"
+        )
         for d in data["details"][:4]:
             print(f"        {d['route']}: {d['count']} nodes, worst {d['worst']}")
             for s in d["samples"][:2]:
@@ -412,16 +459,20 @@ def summarize(rep: dict) -> int:
         flag = "FAIL" if int(width) <= 480 and sample["sidebarWidth"] and sample["sidebarWidth"] > 300 else "OK "
         if flag == "FAIL":
             problems += 1
-        print(f"[{flag}] {width}px: sidebar={sample['sidebarWidth']} main={sample['mainWidth']} "
-              f"collapsed={sample['sidebarCollapsed']} nestedOverflow={len(overflow)} routes")
+        print(
+            f"[{flag}] {width}px: sidebar={sample['sidebarWidth']} main={sample['mainWidth']} "
+            f"collapsed={sample['sidebarCollapsed']} nestedOverflow={len(overflow)} routes"
+        )
 
     print()
     k = rep["keyboard"]
     ok_skip = bool(k["skipLink"] and k["skipLink"]["focused"] and k["skipLink"]["mainFocusable"])
     if not ok_skip:
         problems += 1
-    print(f"[{'OK ' if ok_skip else 'FAIL'}] keyboard: first={k['firstFocusable']!r} "
-          f"afterTab={k['afterOneTab']!r} skipLink={k['skipLink']}")
+    print(
+        f"[{'OK ' if ok_skip else 'FAIL'}] keyboard: first={k['firstFocusable']!r} "
+        f"afterTab={k['afterOneTab']!r} skipLink={k['skipLink']}"
+    )
 
     print()
     for name, m in rep["motion"].items():

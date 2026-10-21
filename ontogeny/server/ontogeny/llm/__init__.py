@@ -24,6 +24,7 @@ an adapter: without a provider extension ``sc.llm`` is ``None`` and every LLM
 consumer degrades explicitly (heuristic proposer, stub-driven agent evals,
 denied sandbox capability).
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,7 @@ class ChatClient(Protocol):
 
     async def health(self) -> dict[str, Any]: ...
 
-    def scoped(self, model: str) -> "ChatClient": ...
+    def scoped(self, model: str) -> ChatClient: ...
 
 
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -74,7 +75,7 @@ def extract_json(text: str) -> Any:
         closer = "}" if text[start] == "{" else "]"
         end = text.rfind(closer)
         if end > start:
-            candidates.append(text[start:end + 1])
+            candidates.append(text[start : end + 1])
     candidates.append(text.strip())
     for cand in candidates:
         try:

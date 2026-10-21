@@ -36,6 +36,7 @@ enforced by the same engine, audited in the same revision stream, versioned by
 the same content hash and hot-reloaded by the same publish path as any other
 policy. There is exactly one place where authorization is decided.
 """
+
 from __future__ import annotations
 
 import re
@@ -81,11 +82,12 @@ def is_managed(name: str) -> bool:
 @dataclass
 class Grant:
     """One permit, reduced to the facts the matrix needs."""
-    policy: str            # the PolicySet that carries it
-    roles: list[str]       # [] means "any authenticated principal"
-    actions: list[str]     # [] means "any action"
-    conditional: bool      # carries a when/unless clause
-    managed: bool          # owned by the role manager (safe to rewrite)
+
+    policy: str  # the PolicySet that carries it
+    roles: list[str]  # [] means "any authenticated principal"
+    actions: list[str]  # [] means "any action"
+    conditional: bool  # carries a when/unless clause
+    managed: bool  # owned by the role manager (safe to rewrite)
 
 
 def parse_grants(cedar_texts: dict[str, str]) -> list[Grant]:
@@ -101,13 +103,15 @@ def parse_grants(cedar_texts: dict[str, str]) -> list[Grant]:
     for policy, text in sorted(cedar_texts.items()):
         for match in _PERMIT_RE.finditer(text or ""):
             body, condition = match.group(1), match.group(2)
-            out.append(Grant(
-                policy=policy,
-                roles=sorted(set(_ROLE_RE.findall(body))),
-                actions=sorted(set(_ACTION_RE.findall(body))),
-                conditional=bool(condition),
-                managed=is_managed(policy),
-            ))
+            out.append(
+                Grant(
+                    policy=policy,
+                    roles=sorted(set(_ROLE_RE.findall(body))),
+                    actions=sorted(set(_ACTION_RE.findall(body))),
+                    conditional=bool(condition),
+                    managed=is_managed(policy),
+                )
+            )
     return out
 
 
@@ -131,9 +135,7 @@ def compile_role_policy(role: str, actions: list[str], *, site: str | None = Non
                 f'when {{ principal has site && principal.site == "{site}" }};'
             )
         else:
-            lines.append(
-                f'permit(principal in Role::"{role}", action == Action::"{action}", resource);'
-            )
+            lines.append(f'permit(principal in Role::"{role}", action == Action::"{action}", resource);')
     if not actions:
         # An explicit, readable "no grants" file: deleting the permits is the
         # revocation, and a comment explains why the file is otherwise empty.
@@ -143,7 +145,9 @@ def compile_role_policy(role: str, actions: list[str], *, site: str | None = Non
 
 
 def effective_matrix(
-    grants: list[Grant], roles: list[str], actions: list[str],
+    grants: list[Grant],
+    roles: list[str],
+    actions: list[str],
 ) -> dict[str, dict[str, dict[str, Any]]]:
     """role -> action -> {granted, source, managed, conditional, scope}.
 
@@ -157,24 +161,29 @@ def effective_matrix(
         targets = grant.roles or ["*"]
         for role in targets:
             bucket = matrix.setdefault(role, {a: {"granted": False} for a in actions})
-            for action in (grant.actions or actions):
+            for action in grant.actions or actions:
                 cell = bucket.setdefault(action, {"granted": False})
                 # a managed grant wins the label (it is the one an admin owns);
                 # otherwise the first hand-written grant is reported
                 if cell.get("granted") and cell.get("managed"):
                     continue
-                cell.update({
-                    "granted": True,
-                    "source": grant.policy,
-                    "managed": grant.managed,
-                    "conditional": grant.conditional,
-                    "anyPrincipal": not grant.roles,
-                })
+                cell.update(
+                    {
+                        "granted": True,
+                        "source": grant.policy,
+                        "managed": grant.managed,
+                        "conditional": grant.conditional,
+                        "anyPrincipal": not grant.roles,
+                    }
+                )
     return matrix
 
 
 def role_catalogue(
-    grants: list[Grant], *, user_roles: list[str], declared_roles: list[str],
+    grants: list[Grant],
+    *,
+    user_roles: list[str],
+    declared_roles: list[str],
 ) -> list[dict[str, Any]]:
     """Every role the deployment knows about, from all three of its sources.
 
@@ -197,6 +206,5 @@ def role_catalogue(
             entry["sources"].append("user")
     for name, entry in seen.items():
         entry["managedPolicy"] = managed_policy_name(name)
-        entry["hasManagedPolicy"] = any(
-            g.managed and name in g.roles for g in grants)
+        entry["hasManagedPolicy"] = any(g.managed and name in g.roles for g in grants)
     return [seen[k] for k in sorted(seen)]

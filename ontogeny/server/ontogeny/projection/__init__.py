@@ -23,6 +23,7 @@ Concrete stores live in ``extensions/`` (``graph-hugegraph`` ships with the
 repo) and are injected via ``sc.graph_store_factory`` -- the graph is a derived,
 rebuildable index, so its absence only means SQL-only operation.
 """
+
 from .compiler import compile_projection
 from .worker import GraphStore, ProjectionWorker
 

@@ -30,6 +30,7 @@ without invalidating existing hashes::
 Verification is constant-time and never raises on a malformed row — a corrupt
 hash is a failed login, not a 500.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,15 +42,14 @@ import secrets
 # `maxmem` must be passed explicitly -- OpenSSL caps scrypt at 32 MB by default,
 # and 128*N*r for these parameters lands just above it, so omitting it fails with
 # "memory limit exceeded" rather than silently weakening the hash.
-_N, _R, _P = 2 ** 15, 8, 1
+_N, _R, _P = 2**15, 8, 1
 _DKLEN = 32
 _MAXMEM = 128 * _N * _R * 2  # headroom over the algorithm's own requirement
 
 
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
-    dk = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=_N, r=_R, p=_P,
-                        dklen=_DKLEN, maxmem=_MAXMEM)
+    dk = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=_N, r=_R, p=_P, dklen=_DKLEN, maxmem=_MAXMEM)
     return f"scrypt${_N}${_R}${_P}${salt.hex()}${dk.hex()}"
 
 
@@ -63,8 +63,13 @@ def verify_password(password: str, stored: str | None) -> bool:
         salt = bytes.fromhex(salt_hex)
         want = bytes.fromhex(want_hex)
         got = hashlib.scrypt(
-            password.encode("utf-8"), salt=salt, n=int(n), r=int(r), p=int(p),
-            dklen=len(want), maxmem=max(_MAXMEM, 128 * int(n) * int(r) * 2),
+            password.encode("utf-8"),
+            salt=salt,
+            n=int(n),
+            r=int(r),
+            p=int(p),
+            dklen=len(want),
+            maxmem=max(_MAXMEM, 128 * int(n) * int(r) * 2),
         )
     except (ValueError, TypeError):
         return False

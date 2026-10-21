@@ -21,6 +21,7 @@ Supported (dsl-spec §3): string, integer, decimal(p,s), boolean, date,
 timestamp, enum[A, B], geo-point, geo-shape, vector(d), media, document,
 array(T), struct{...}.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -31,8 +32,16 @@ from typing import Any
 from ..errors import TypeMismatchError
 
 _SIMPLE = {
-    "string", "integer", "decimal", "boolean", "date", "timestamp",
-    "geo-point", "geo-shape", "media", "document",
+    "string",
+    "integer",
+    "decimal",
+    "boolean",
+    "date",
+    "timestamp",
+    "geo-point",
+    "geo-shape",
+    "media",
+    "document",
 }
 
 
@@ -43,13 +52,13 @@ class PropertyType:
     precision: int | None = None
     scale: int | None = None
     dim: int | None = None
-    inner: "PropertyType | None" = None
-    struct_fields: dict[str, "PropertyType"] = field(default_factory=dict)
+    inner: PropertyType | None = None
+    struct_fields: dict[str, PropertyType] = field(default_factory=dict)
 
     # ---------- parsing ----------
 
     @classmethod
-    def parse(cls, text: str) -> "PropertyType":
+    def parse(cls, text: str) -> PropertyType:
         t = text.strip()
         m = re.fullmatch(r"enum\[(.*)\]", t)
         if m:
@@ -126,11 +135,11 @@ class PropertyType:
             if k in ("geo-point", "geo-shape", "media", "document"):
                 return str(value)
             if k == "vector":
-                if isinstance(value, (list, tuple)):
+                if isinstance(value, list | tuple):
                     return list(map(float, value))
                 raise ValueError("vector value must be a list")
             if k == "array":
-                if isinstance(value, (list, tuple)):
+                if isinstance(value, list | tuple):
                     return [self.inner.coerce(v, prop=prop) for v in value]  # type: ignore[union-attr]
                 raise ValueError("array value must be a list")
             if k == "struct":

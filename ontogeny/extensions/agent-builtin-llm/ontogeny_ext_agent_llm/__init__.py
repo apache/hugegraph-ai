@@ -24,11 +24,10 @@ the reference implementation of the AgentEngine contract: it drives its
 sessions over MCP (same tool surface, same protocol as external agents), and
 only degrades to in-process broker calls when the optional mcp extra is absent.
 """
-from .engine import (BrokerExecutor, BuiltinLlmEngine, EngineResult, McpExecutor,
-                     ToolExecutor)
 
-__all__ = ["BrokerExecutor", "BuiltinLlmEngine", "EngineResult", "McpExecutor",
-           "ToolExecutor", "register"]
+from .engine import BrokerExecutor, BuiltinLlmEngine, EngineResult, McpExecutor, ToolExecutor
+
+__all__ = ["BrokerExecutor", "BuiltinLlmEngine", "EngineResult", "McpExecutor", "ToolExecutor", "register"]
 
 
 def register(sc, host) -> None:

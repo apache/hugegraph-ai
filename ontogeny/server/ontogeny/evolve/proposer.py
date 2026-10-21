@@ -41,6 +41,7 @@ Unexplainable decisions never enter evaluation: a proposal without a rationale
 is discarded. Provenance is kept (``origin``: llm | heuristic) so every promoted
 change says who decided.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -79,23 +80,27 @@ class HeuristicProposer:
         kind = gap.get("kind")
         if kind == "add-optional-property" and gap.get("object") and gap.get("prop"):
             return {
-                "mutations": [{
-                    "mutation": "add-optional-property",
-                    "object": gap["object"],
-                    "prop": gap["prop"],
-                    "type": gap.get("type", "string"),
-                }],
+                "mutations": [
+                    {
+                        "mutation": "add-optional-property",
+                        "object": gap["object"],
+                        "prop": gap["prop"],
+                        "type": gap.get("type", "string"),
+                    }
+                ],
                 "rationale": gap.get("rationale") or f"add {gap.get('prop')} to {gap.get('object')}",
                 "origin": "heuristic",
             }
         if kind == "enum-widen" and all(gap.get(k) for k in ("object", "prop", "value")):
             return {
-                "mutations": [{
-                    "mutation": "enum-widen",
-                    "object": gap["object"],
-                    "prop": gap["prop"],
-                    "value": gap["value"],
-                }],
+                "mutations": [
+                    {
+                        "mutation": "enum-widen",
+                        "object": gap["object"],
+                        "prop": gap["prop"],
+                        "value": gap["value"],
+                    }
+                ],
                 "rationale": gap.get("rationale") or "widen enum domain",
                 "origin": "heuristic",
             }
@@ -169,7 +174,7 @@ def validate_llm_decision(decision: dict[str, Any], gap: dict[str, Any], compile
                 # parameters / user / principal): an expression rooted in a
                 # name the rule context does not carry can never evaluate
                 _expr.evaluate(expr.strip(), _expr.ExprContext())
-            except Exception:  # noqa: BLE001 -- malformed/unknown-root: fail closed
+            except Exception:
                 return None
             if any(r.expr.strip() == expr.strip() for r in act.spec.rules):
                 return None  # the same tightening is already in force
@@ -189,16 +194,29 @@ def validate_llm_decision(decision: dict[str, Any], gap: dict[str, Any], compile
             if expect is not None and not isinstance(expect, dict):
                 return None
             for existing in suite.spec.queries:
-                if existing.query.get("object") == query.get("object") and \
-                        existing.query.get("filter") == query.get("filter"):
+                if existing.query.get("object") == query.get("object") and existing.query.get("filter") == query.get(
+                    "filter"
+                ):
                     return None  # an identical regression is already on file
-            clean.append({"mutation": kind, "suite": m["suite"],
-                          "case": {"name": case.get("name") or f"synth-{query['object']}",
-                                   "query": query, "expect": expect or {}}})
+            clean.append(
+                {
+                    "mutation": kind,
+                    "suite": m["suite"],
+                    "case": {
+                        "name": case.get("name") or f"synth-{query['object']}",
+                        "query": query,
+                        "expect": expect or {},
+                    },
+                }
+            )
     if not clean:
         return None
-    return {"mutations": clean, "rationale": rationale.strip(), "origin": "llm",
-            "analysis": (decision.get("analysis") or "").strip() or None}
+    return {
+        "mutations": clean,
+        "rationale": rationale.strip(),
+        "origin": "llm",
+        "analysis": (decision.get("analysis") or "").strip() or None,
+    }
 
 
 class DecidingProposer:
@@ -218,7 +236,9 @@ class DecidingProposer:
         #: decided each round: the model, or the fallback
         self.stats = {"llm_decided": 0, "llm_declined": 0, "llm_rejected": 0, "fallback": 0}
 
-    def _prompt(self, gap: dict[str, Any], compiled, memory: list[dict[str, Any]] | None = None) -> list[dict[str, str]]:
+    def _prompt(
+        self, gap: dict[str, Any], compiled, memory: list[dict[str, Any]] | None = None
+    ) -> list[dict[str, str]]:
         target = gap.get("object")
         schema: dict[str, Any] = {}
         if compiled is not None and isinstance(target, str):
@@ -243,12 +263,12 @@ class DecidingProposer:
             "6) display/description/rationale 用中文写给人看；rationale 一句话说明证据到方案的推理。\n"
             "当你否决（act=false）但确信存在更好的替代变异时，把它放进 alternative 字段（同样受上述目录与硬约束管辖，"
             "规则层会校验；不合法的 alternative 会被丢弃）。\n"
-            "只输出严格 JSON：{\"act\": true|false, \"analysis\": \"对信号的分析（中文）\", "
-            "\"mutations\": [ ...最多一条... ], \"rationale\": \"...\", \"alternative\": { ...可选... }}"
+            '只输出严格 JSON：{"act": true|false, "analysis": "对信号的分析（中文）", '
+            '"mutations": [ ...最多一条... ], "rationale": "...", "alternative": { ...可选... }}'
         )
-        user = (f"缺口信号：{gap_view!r}\n目标对象现有属性：{schema!r}\n")
+        user = f"缺口信号：{gap_view!r}\n目标对象现有属性：{schema!r}\n"
         if memory:
-            user += (f"\n历史记忆（此前同类提案被拒，避免重蹈覆辙）：{memory!r}\n")
+            user += f"\n历史记忆（此前同类提案被拒，避免重蹈覆辙）：{memory!r}\n"
         user += "请决策。act=false 时 mutations 留空数组。"
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -256,8 +276,9 @@ class DecidingProposer:
         """Backwards-compatible door: the proposal only."""
         return (await self.propose_full(gap, compiled)).proposal
 
-    async def propose_full(self, gap: dict[str, Any], compiled,
-                           memory: list[dict[str, Any]] | None = None) -> ProposeOutcome:
+    async def propose_full(
+        self, gap: dict[str, Any], compiled, memory: list[dict[str, Any]] | None = None
+    ) -> ProposeOutcome:
         from ..llm import extract_json
 
         if self.client is None:
@@ -266,14 +287,12 @@ class DecidingProposer:
         try:
             out = await self.client.chat(self._prompt(gap, compiled, memory))
             decision = extract_json(str(out.get("content", "")))
-        except Exception:  # noqa: BLE001 -- the model being wrong/late is a normal state
+        except Exception:
             self.stats["fallback"] += 1
-            return ProposeOutcome(proposal=self.fallback.propose(gap),
-                                   decline_reason="llm_unavailable")
+            return ProposeOutcome(proposal=self.fallback.propose(gap), decline_reason="llm_unavailable")
         if not isinstance(decision, dict):
             self.stats["fallback"] += 1
-            return ProposeOutcome(proposal=self.fallback.propose(gap),
-                                   decline_reason="llm_unparsable")
+            return ProposeOutcome(proposal=self.fallback.propose(gap), decline_reason="llm_unparsable")
         analysis = (decision.get("analysis") or "").strip() or None
         if decision.get("act") is False:
             # the model declined. For INFORMATIONAL signals that veto stands —
@@ -291,21 +310,29 @@ class DecidingProposer:
             if isinstance(alt_raw, dict) and alt_raw:
                 candidate = validate_llm_decision(
                     {"mutations": [alt_raw], "rationale": decision.get("rationale") or analysis or "alternative"},
-                    gap, compiled)
+                    gap,
+                    compiled,
+                )
                 if candidate is not None:
                     alternative = candidate
             if gap.get("informational"):
-                return ProposeOutcome(analysis=analysis, declined=True,
-                                       alternative=alternative, decline_reason="model_declined")
-            return ProposeOutcome(proposal=self.fallback.propose(gap), analysis=analysis,
-                                   declined=True, alternative=alternative,
-                                   decline_reason="model_declined_concrete_gap")
+                return ProposeOutcome(
+                    analysis=analysis, declined=True, alternative=alternative, decline_reason="model_declined"
+                )
+            return ProposeOutcome(
+                proposal=self.fallback.propose(gap),
+                analysis=analysis,
+                declined=True,
+                alternative=alternative,
+                decline_reason="model_declined_concrete_gap",
+            )
         proposal = validate_llm_decision(decision, gap, compiled)
         if proposal is None:
             # the decision stepped outside its bounded space: fall back, and
             # count it -- a model that keeps being rejected is visible in /evolve
             self.stats["llm_rejected"] += 1
-            return ProposeOutcome(proposal=self.fallback.propose(gap), analysis=analysis,
-                                   decline_reason="decision_rejected_by_rules")
+            return ProposeOutcome(
+                proposal=self.fallback.propose(gap), analysis=analysis, decline_reason="decision_rejected_by_rules"
+            )
         self.stats["llm_decided"] += 1
         return ProposeOutcome(proposal=proposal, analysis=analysis)

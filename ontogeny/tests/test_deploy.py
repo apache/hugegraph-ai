@@ -21,6 +21,7 @@ The docker daemon is not available in CI here, so these verify the things that
 actually break deployments when code moves: referenced paths, compose parsing,
 env/volume coherence, and the exact CLI flags used by the image CMD.
 """
+
 from __future__ import annotations
 
 import re
@@ -97,7 +98,7 @@ class TestDockerfile:
         assert "ONTOGENY_UI_DIR=/app/web/dist" in dockerfile
 
     def test_runs_demo_bootstrap_on_the_volume(self, dockerfile):
-        cmd = re.search(r'^CMD \[(.+)\]$', dockerfile, flags=re.MULTILINE)
+        cmd = re.search(r"^CMD \[(.+)\]$", dockerfile, flags=re.MULTILINE)
         assert cmd, "no CMD found"
         cmd_text = cmd.group(1)
         assert "--demo" in cmd_text

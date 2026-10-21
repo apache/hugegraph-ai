@@ -17,6 +17,7 @@
 
 """Diagnoser: deterministic gap hypotheses from signals (LLM explains, rules
 decide -- the selection function is never outsourced)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -34,23 +35,28 @@ def diagnose(signals: list[EvolveSignalRow], compiled) -> list[dict[str, Any]]:
         ev = sig.evidence or {}
         kind = sig.kind
         if kind == "unmapped_filter_field":
-            concrete.append({
-                "kind": "add-optional-property",
-                "object": ev.get("object_type"),
-                "prop": ev.get("field"),
-                "type": "string",
-                "signal_id": sig.id,
-                "rationale": (
-                    f"filter field {ev.get('field')!r} used {ev.get('count')}x on "
-                    f"{ev.get('object_type')!r} but is not modeled; add as optional property"
-                ),
-            })
+            concrete.append(
+                {
+                    "kind": "add-optional-property",
+                    "object": ev.get("object_type"),
+                    "prop": ev.get("field"),
+                    "type": "string",
+                    "signal_id": sig.id,
+                    "rationale": (
+                        f"filter field {ev.get('field')!r} used {ev.get('count')}x on "
+                        f"{ev.get('object_type')!r} but is not modeled; add as optional property"
+                    ),
+                }
+            )
         elif kind == "quarantine_rate" and ev.get("code") == "TYPE_MISMATCH":
             # a plausible enum member the source produced -> widen the domain.
             # The evidence (prop/value) is attached by the caller from the
             # quarantine row; without it the gap stays informational.
-            widen = enum_widen_gap(ev.get("object_type"), ev.get("prop"), ev.get("value"), compiled) \
-                if ev.get("prop") and ev.get("value") else None
+            widen = (
+                enum_widen_gap(ev.get("object_type"), ev.get("prop"), ev.get("value"), compiled)
+                if ev.get("prop") and ev.get("value")
+                else None
+            )
             if widen is not None:
                 widen["signal_id"] = sig.id
                 widen["rationale"] = (
@@ -59,12 +65,16 @@ def diagnose(signals: list[EvolveSignalRow], compiled) -> list[dict[str, Any]]:
                 )
                 concrete.append(widen)
             else:
-                concrete.append({
-                    "kind": "schema-mismatch",
-                    "object": ev.get("object_type"),
-                    "signal_id": sig.id,
-                    "rationale": f"{ev.get('count')} quarantined rows on {ev.get('object_type')!r}; review mapping/types",
-                })
+                concrete.append(
+                    {
+                        "kind": "schema-mismatch",
+                        "object": ev.get("object_type"),
+                        "signal_id": sig.id,
+                        "rationale": (
+                            f"{ev.get('count')} quarantined rows on " f"{ev.get('object_type')!r}; review mapping/types"
+                        ),
+                    }
+                )
         elif kind == "hot_query" and ev.get("object_type") and ev.get("filter"):
             # a recurring filter that returns data -> keep it working forever:
             # synthesize a regression case into the owned eval suite
@@ -96,29 +106,37 @@ def diagnose(signals: list[EvolveSignalRow], compiled) -> list[dict[str, Any]]:
     for obj, items in by_object.items():
         if len(items) >= 2:
             clustered_ids.update(i["signal_id"] for i in items)
-            concrete.append({
-                "kind": "cluster",
-                "object": obj,
-                "evidence": {"object": obj, "signals": [i["evidence"] for i in items]},
-                "signal_id": items[0]["signal_id"],
-                "informational": True,
-                "is_cluster": True,
-                "rationale": f"{len(items)} signals converge on {obj!r} -- review together",
-                "context": items,
-            })
+            concrete.append(
+                {
+                    "kind": "cluster",
+                    "object": obj,
+                    "evidence": {"object": obj, "signals": [i["evidence"] for i in items]},
+                    "signal_id": items[0]["signal_id"],
+                    "informational": True,
+                    "is_cluster": True,
+                    "rationale": f"{len(items)} signals converge on {obj!r} -- review together",
+                    "context": items,
+                }
+            )
     for gap in concrete:
         related = by_object.get(gap.get("object"))
         if related:
             gap["context"] = related[:5]
-    return [g for g in concrete
-            if not (g.get("informational") and not g.get("is_cluster")
-                    and g.get("signal_id") in clustered_ids)]
+    return [
+        g
+        for g in concrete
+        if not (g.get("informational") and not g.get("is_cluster") and g.get("signal_id") in clustered_ids)
+    ]
 
 
 def _info_gap(sig: EvolveSignalRow, ev: dict[str, Any]) -> dict[str, Any]:
-    return {"kind": sig.kind, "evidence": ev, "signal_id": sig.id,
-            "object": ev.get("object_type") or ev.get("object"),
-            "informational": True}
+    return {
+        "kind": sig.kind,
+        "evidence": ev,
+        "signal_id": sig.id,
+        "object": ev.get("object_type") or ev.get("object"),
+        "informational": True,
+    }
 
 
 def eval_case_gap(ev: dict[str, Any], compiled) -> dict[str, Any] | None:
@@ -128,8 +146,7 @@ def eval_case_gap(ev: dict[str, Any], compiled) -> dict[str, Any] | None:
     suites = getattr(compiled, "eval_suites", {}) if compiled is not None else {}
     for suite in suites.values():
         for existing in suite.spec.queries:
-            if existing.query.get("object") == object_type and \
-                    existing.query.get("filter") == filt:
+            if existing.query.get("object") == object_type and existing.query.get("filter") == filt:
                 return None  # already pinned as a regression
     suite_name = next(iter(suites), None)
     if suite_name is None:
@@ -142,15 +159,18 @@ def eval_case_gap(ev: dict[str, Any], compiled) -> dict[str, Any] | None:
     return {
         "kind": "eval-case-synth",
         "suite": suite_name,
-        "case": {"name": f"hot-{object_type}-{abs(hash(json_dumps(filt))) % 10000}",
-                 "query": {"object": object_type, "filter": filt, "limit": 50},
-                 "expect": expect},
+        "case": {
+            "name": f"hot-{object_type}-{abs(hash(json_dumps(filt))) % 10000}",
+            "query": {"object": object_type, "filter": filt, "limit": 50},
+            "expect": expect,
+        },
         "object": object_type,
     }
 
 
 def json_dumps(x: Any) -> str:
     import json
+
     return json.dumps(x, sort_keys=True, ensure_ascii=True, default=str)
 
 

@@ -29,13 +29,14 @@ platform mini-expr (``&&``->``and``) so there is exactly ONE expression
 semantics in the system. ``forbid`` statements follow Cedar precedence: a
 matching forbid overrides any permit.
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-from ..errors import ExpressionError, PolicyDeniedError
 from ..core import expr as _expr
+from ..errors import ExpressionError, PolicyDeniedError
 
 _PERMIT_RE = re.compile(
     r"permit\s*\(\s*(?P<principal>[^,]+?)\s*,\s*action\s*==\s*Action::\"(?P<action>[^\"]+)\"\s*,\s*(?P<resource>[^)]*?)s*\)\s*(?:when\s*\{(?P<when>.*?)\}\s*)?;",
@@ -83,7 +84,9 @@ def parse_policy_set(text: str) -> list[PermitRule]:
         elif principal != "principal":
             continue  # unsupported principal clause -> rule skipped (fail closed)
         when = m.group("when")
-        rules.append(PermitRule(role=role, action=m.group("action"), when=translate_when(when.strip()) if when else None))
+        rules.append(
+            PermitRule(role=role, action=m.group("action"), when=translate_when(when.strip()) if when else None)
+        )
     return rules
 
 
@@ -99,7 +102,9 @@ def parse_forbids(text: str) -> list[PermitRule]:
         elif principal != "principal":
             continue
         when = m.group("when")
-        rules.append(PermitRule(role=role, action=m.group("action"), when=translate_when(when.strip()) if when else None))
+        rules.append(
+            PermitRule(role=role, action=m.group("action"), when=translate_when(when.strip()) if when else None)
+        )
     return rules
 
 
@@ -140,12 +145,7 @@ class PolicyEngine:
         if act is not None and act.spec.policy:
             preferred = act.spec.policy
         ordered = [preferred, *(n for n in self._sets if n != preferred)]
-        return [
-            (name, rule)
-            for name in ordered
-            for rule in self._sets.get(name, [])
-            if rule.action == action_name
-        ]
+        return [(name, rule) for name in ordered for rule in self._sets.get(name, []) if rule.action == action_name]
 
     def _forbidden_by(self, principal: dict, action_name: str, resource: dict | None) -> str | None:
         """The policy-set name whose forbid matches, if any (Cedar precedence:
@@ -160,9 +160,16 @@ class PolicyEngine:
                 if rule.when is None:
                     return name
                 try:
-                    if bool(_expr.evaluate(rule.when, _expr.ExprContext(
-                        target=resource or {}, parameters={}, principal=principal,
-                    ))):
+                    if bool(
+                        _expr.evaluate(
+                            rule.when,
+                            _expr.ExprContext(
+                                target=resource or {},
+                                parameters={},
+                                principal=principal,
+                            ),
+                        )
+                    ):
                         return name
                 except ExpressionError:
                     continue
@@ -177,17 +184,23 @@ class PolicyEngine:
                 matched = (True, f"permit by {policy_name} (unconditional)")
             else:
                 try:
-                    ok = bool(_expr.evaluate(rule.when, _expr.ExprContext(
-                        target=resource or {}, parameters={}, principal=principal,
-                    )))
+                    ok = bool(
+                        _expr.evaluate(
+                            rule.when,
+                            _expr.ExprContext(
+                                target=resource or {},
+                                parameters={},
+                                principal=principal,
+                            ),
+                        )
+                    )
                 except ExpressionError:
                     continue  # malformed condition -> fail closed for this rule
                 matched = (ok, f"permit by {policy_name} (when-clause)")
             if matched[0]:
                 forbidden = self._forbidden_by(principal, action_name, resource)
                 if forbidden is not None:
-                    return PolicyDecision(False, rule,
-                                           f"forbidden by {forbidden} (forbid overrides permit)")
+                    return PolicyDecision(False, rule, f"forbidden by {forbidden} (forbid overrides permit)")
                 return PolicyDecision(True, rule, matched[1])
         return PolicyDecision(False, None, "default deny")
 

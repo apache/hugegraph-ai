@@ -28,6 +28,7 @@ instead of Python. What these tests defend is the part that makes that safe:
 * the content version moves when the body moves — otherwise pinning a
   declarative function would be theatre.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,7 +38,12 @@ import httpx
 import pytest
 
 from ontogeny.core.models import (
-    Capability, FunctionResource, FunctionSpec, FunctionStep, ParamDef, ResourceMeta,
+    Capability,
+    FunctionResource,
+    FunctionSpec,
+    FunctionStep,
+    ParamDef,
+    ResourceMeta,
 )
 from ontogeny.core.validator import _validate_function_body
 from ontogeny.errors import SandboxError
@@ -47,8 +53,7 @@ from ontogeny.functions.declarative import DeclarativeRuntime, _render_text, _Te
 
 def _fn(**kw) -> FunctionResource:
     spec = FunctionSpec(**kw)
-    return FunctionResource(apiVersion="ontogeny/v1", kind="Function",
-                            metadata=ResourceMeta(name="probe"), spec=spec)
+    return FunctionResource(apiVersion="ontogeny/v1", kind="Function", metadata=ResourceMeta(name="probe"), spec=spec)
 
 
 def _codes(fn, rep=None) -> list[str]:
@@ -57,8 +62,11 @@ def _codes(fn, rep=None) -> list[str]:
 
 class TestValidator:
     def test_a_read_step_must_be_declared(self):
-        fn = _fn(runtime="declarative", steps=[FunctionStep(id="a", kind="read", object="work-center")],
-                 capabilities=[Capability(**{"read-objects": ["production-order"]})])
+        fn = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="read", object="work-center")],
+            capabilities=[Capability(**{"read-objects": ["production-order"]})],
+        )
         assert "FN-STEP-CAP" in _codes(fn)
 
     def test_an_llm_step_needs_the_llm_capability(self):
@@ -66,63 +74,80 @@ class TestValidator:
         assert "FN-STEP-CAP" in _codes(fn)
 
     def test_an_http_step_needs_the_capability_and_a_host_on_the_list(self):
-        undeclared = _fn(runtime="declarative",
-                         steps=[FunctionStep(id="a", kind="http", url="https://x.test/y")])
+        undeclared = _fn(runtime="declarative", steps=[FunctionStep(id="a", kind="http", url="https://x.test/y")])
         assert "FN-STEP-CAP" in _codes(undeclared)
 
-        off_list = _fn(runtime="declarative",
-                       steps=[FunctionStep(id="a", kind="http", url="https://evil.test/y")],
-                       capabilities=[Capability(**{"http": {"allow": ["good.test"]}})])
+        off_list = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="http", url="https://evil.test/y")],
+            capabilities=[Capability(**{"http": {"allow": ["good.test"]}})],
+        )
         assert "FN-STEP-CAP" in _codes(off_list)
 
-        ok = _fn(runtime="declarative",
-                 steps=[FunctionStep(id="a", kind="http", url="https://good.test/y")],
-                 capabilities=[Capability(**{"http": {"allow": ["good.test"]}})])
+        ok = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="http", url="https://good.test/y")],
+            capabilities=[Capability(**{"http": {"allow": ["good.test"]}})],
+        )
         assert _codes(ok) == []
 
     def test_a_reference_must_exist_before_it_is_used(self):
-        forward = _fn(runtime="declarative",
-                      steps=[FunctionStep(id="a", kind="llm", prompt="see ${b}"),
-                             FunctionStep(id="b", kind="llm", prompt="x")],
-                      capabilities=[Capability(**{"llm": True})])
+        forward = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="llm", prompt="see ${b}"), FunctionStep(id="b", kind="llm", prompt="x")],
+            capabilities=[Capability(**{"llm": True})],
+        )
         assert "FN-REF" in _codes(forward)
 
-        later = _fn(runtime="declarative",
-                    steps=[FunctionStep(id="a", kind="llm", prompt="x"),
-                           FunctionStep(id="b", kind="llm", prompt="see ${a}")],
-                    capabilities=[Capability(**{"llm": True})])
+        later = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="llm", prompt="x"), FunctionStep(id="b", kind="llm", prompt="see ${a}")],
+            capabilities=[Capability(**{"llm": True})],
+        )
         assert _codes(later) == []
 
     def test_parameters_are_valid_references(self):
-        fn = _fn(runtime="declarative",
-                 parameters={"who": ParamDef(type="string")},
-                 steps=[FunctionStep(id="a", kind="llm", prompt="hi ${who}")],
-                 capabilities=[Capability(**{"llm": True})])
+        fn = _fn(
+            runtime="declarative",
+            parameters={"who": ParamDef(type="string")},
+            steps=[FunctionStep(id="a", kind="llm", prompt="hi ${who}")],
+            capabilities=[Capability(**{"llm": True})],
+        )
         assert _codes(fn) == []
 
     def test_returns_step_must_name_a_step(self):
-        fn = _fn(runtime="declarative", returns_step="nope",
-                 steps=[FunctionStep(id="a", kind="llm", prompt="x")],
-                 capabilities=[Capability(**{"llm": True})])
+        fn = _fn(
+            runtime="declarative",
+            returns_step="nope",
+            steps=[FunctionStep(id="a", kind="llm", prompt="x")],
+            capabilities=[Capability(**{"llm": True})],
+        )
         assert "FN-RETURNS" in _codes(fn)
 
     def test_duplicate_step_ids_are_refused(self):
-        fn = _fn(runtime="declarative",
-                 steps=[FunctionStep(id="a", kind="llm", prompt="x"),
-                        FunctionStep(id="a", kind="llm", prompt="y")],
-                 capabilities=[Capability(**{"llm": True})])
+        fn = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="llm", prompt="x"), FunctionStep(id="a", kind="llm", prompt="y")],
+            capabilities=[Capability(**{"llm": True})],
+        )
         assert "FN-STEP-ID" in _codes(fn)
 
     def test_a_code_function_keeps_its_entry_contract(self):
         assert _codes(_fn(runtime="python", entry="")) == ["FN-ENTRY"]
         assert _codes(_fn(runtime="python", entry="a.py:main")) == []
-        assert "FN-BODY" in _codes(_fn(runtime="python", entry="a.py:main",
-                                       steps=[FunctionStep(id="a", kind="llm", prompt="x")]))
+        assert "FN-BODY" in _codes(
+            _fn(runtime="python", entry="a.py:main", steps=[FunctionStep(id="a", kind="llm", prompt="x")])
+        )
 
     def test_a_declarative_function_has_no_file(self):
-        assert "FN-ENTRY" in _codes(_fn(runtime="declarative", entry="a.py:main",
-                                        steps=[FunctionStep(id="a", kind="llm", prompt="x")],
-                                        capabilities=[Capability(**{"llm": True})]))
+        assert "FN-ENTRY" in _codes(
+            _fn(
+                runtime="declarative",
+                entry="a.py:main",
+                steps=[FunctionStep(id="a", kind="llm", prompt="x")],
+                capabilities=[Capability(**{"llm": True})],
+            )
+        )
         assert "FN-STEPS" in _codes(_fn(runtime="declarative"))
 
 
@@ -154,7 +179,8 @@ class TestTemplate:
     def test_nested_structures_render_recursively(self):
         t = _Template({"q": "x"}, {})
         assert t.render({"filter": {"a": "${q}"}, "list": ["${q}"]}) == {
-            "filter": {"a": "x"}, "list": ["x"],
+            "filter": {"a": "x"},
+            "list": ["x"],
         }
 
 
@@ -179,8 +205,7 @@ class TestRuntime:
         # a read step has nothing to read until a sync has run
         for object_type in ("work-center", "production-order", "material"):
             await sc.sync(object_type)
-        return DeclarativeRuntime(llm=_FakeLLM("ADVICE"), repo=sc.repo,
-                                  compiled=sc.compiled)
+        return DeclarativeRuntime(llm=_FakeLLM("ADVICE"), repo=sc.repo, compiled=sc.compiled)
 
     async def _run(self, client, runtime, fn, params):
         _, sc = client
@@ -188,9 +213,12 @@ class TestRuntime:
             return await runtime.run(session, fn, params)
 
     async def test_a_read_step_returns_engine_assembled_rows(self, client, runtime):
-        fn = _fn(runtime="declarative", returns_step="rows",
-                 steps=[FunctionStep(id="rows", kind="read", object="work-center", limit=3)],
-                 capabilities=[Capability(**{"read-objects": ["work-center"]})])
+        fn = _fn(
+            runtime="declarative",
+            returns_step="rows",
+            steps=[FunctionStep(id="rows", kind="read", object="work-center", limit=3)],
+            capabilities=[Capability(**{"read-objects": ["work-center"]})],
+        )
         rows = await self._run(client, runtime, fn, {})
         assert isinstance(rows, list) and rows
         # the same assembly every other read uses (derived props computed,
@@ -209,43 +237,57 @@ class TestRuntime:
         *silently* — as a policy denial several steps later, which is how it was
         noticed.
         """
-        fn = _fn(runtime="declarative", returns_step="rows",
-                 steps=[FunctionStep(id="rows", kind="read", object="material", limit=3)],
-                 capabilities=[Capability(**{"read-objects": ["material"]})])
+        fn = _fn(
+            runtime="declarative",
+            returns_step="rows",
+            steps=[FunctionStep(id="rows", kind="read", object="material", limit=3)],
+            capabilities=[Capability(**{"read-objects": ["material"]})],
+        )
         rows = await self._run(client, runtime, fn, {})
         # the marked property arrives REAL: masking must not leak into functions
-        assert rows and all(isinstance(r.get("unit_cost"), float) and r["unit_cost"] > 0
-                            for r in rows)
+        assert rows and all(isinstance(r.get("unit_cost"), float) and r["unit_cost"] > 0 for r in rows)
 
     async def test_the_prompt_sees_rendered_facts(self, client, runtime):
-        fn = _fn(runtime="declarative", returns_step="advice",
-                 parameters={"work_center_id": ParamDef(type="string")},
-                 steps=[FunctionStep(id="rows", kind="read", object="work-center",
-                                     filter={"work_center_id": "${work_center_id}"}, limit=1),
-                        FunctionStep(id="advice", kind="llm",
-                                     prompt="facts:\n${rows}\nfocus: ${work_center_id}")],
-                 capabilities=[Capability(**{"read-objects": ["work-center"]}),
-                               Capability(**{"llm": {"max-calls": 1}})])
+        fn = _fn(
+            runtime="declarative",
+            returns_step="advice",
+            parameters={"work_center_id": ParamDef(type="string")},
+            steps=[
+                FunctionStep(
+                    id="rows",
+                    kind="read",
+                    object="work-center",
+                    filter={"work_center_id": "${work_center_id}"},
+                    limit=1,
+                ),
+                FunctionStep(id="advice", kind="llm", prompt="facts:\n${rows}\nfocus: ${work_center_id}"),
+            ],
+            capabilities=[Capability(**{"read-objects": ["work-center"]}), Capability(**{"llm": {"max-calls": 1}})],
+        )
         out = await self._run(client, runtime, fn, {"work_center_id": "WC-01"})
         assert out == "ADVICE"
         prompt = runtime.llm.seen[-1][-1]["content"]
-        assert "WC-01" in prompt               # the parameter rendered
-        assert "- work_center_id=" in prompt   # rows rendered as lines, not JSON
+        assert "WC-01" in prompt  # the parameter rendered
+        assert "- work_center_id=" in prompt  # rows rendered as lines, not JSON
 
     async def test_llm_budget_is_enforced(self, client, runtime):
-        fn = _fn(runtime="declarative",
-                 steps=[FunctionStep(id="a", kind="llm", prompt="1"),
-                        FunctionStep(id="b", kind="llm", prompt="2")],
-                 capabilities=[Capability(**{"llm": {"max-calls": 1}})])
+        fn = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="a", kind="llm", prompt="1"), FunctionStep(id="b", kind="llm", prompt="2")],
+            capabilities=[Capability(**{"llm": {"max-calls": 1}})],
+        )
         with pytest.raises(SandboxError, match="budget exhausted"):
             await self._run(client, runtime, fn, {})
 
     async def test_without_returns_step_every_step_comes_back(self, client, runtime):
-        fn = _fn(runtime="declarative",
-                 steps=[FunctionStep(id="a", kind="read", object="work-center", limit=1),
-                        FunctionStep(id="b", kind="llm", prompt="x")],
-                 capabilities=[Capability(**{"read-objects": ["work-center"]}),
-                               Capability(**{"llm": True})])
+        fn = _fn(
+            runtime="declarative",
+            steps=[
+                FunctionStep(id="a", kind="read", object="work-center", limit=1),
+                FunctionStep(id="b", kind="llm", prompt="x"),
+            ],
+            capabilities=[Capability(**{"read-objects": ["work-center"]}), Capability(**{"llm": True})],
+        )
         out = await self._run(client, runtime, fn, {})
         assert set(out) == {"a", "b"} and out["b"] == "ADVICE"
 
@@ -270,9 +312,9 @@ class TestHttpStep:
         calls: list[httpx.Request] = []
         http = self._router(calls, payload={"delivered": True})
         out = await self._run(
-            client, http,
-            [FunctionStep(id="post", kind="http", method="POST", url="https://hooks.test/x",
-                          body={"text": "hi"})],
+            client,
+            http,
+            [FunctionStep(id="post", kind="http", method="POST", url="https://hooks.test/x", body={"text": "hi"})],
             [Capability(**{"http": {"allow": ["hooks.test"]}})],
         )
         assert out["post"]["json"] == {"delivered": True} and calls[0].method == "POST"
@@ -282,7 +324,8 @@ class TestHttpStep:
         http = self._router(calls)
         with pytest.raises(SandboxError, match="not in the http allowlist"):
             await self._run(
-                client, http,
+                client,
+                http,
                 [FunctionStep(id="post", kind="http", url="https://evil.test/x")],
                 [Capability(**{"http": {"allow": ["hooks.test"]}})],
             )
@@ -292,11 +335,12 @@ class TestHttpStep:
         calls: list[httpx.Request] = []
         http = self._router(calls)
         _, sc = client
-        rt = DeclarativeRuntime(repo=sc.repo, compiled=sc.compiled, http=http,
-                                http_allowlist=["corp.test"])
-        fn = _fn(runtime="declarative",
-                 steps=[FunctionStep(id="post", kind="http", url="https://hooks.test/x")],
-                 capabilities=[Capability(**{"http": {"allow": ["hooks.test"]}})])
+        rt = DeclarativeRuntime(repo=sc.repo, compiled=sc.compiled, http=http, http_allowlist=["corp.test"])
+        fn = _fn(
+            runtime="declarative",
+            steps=[FunctionStep(id="post", kind="http", url="https://hooks.test/x")],
+            capabilities=[Capability(**{"http": {"allow": ["hooks.test"]}})],
+        )
         async with sc.sessionmaker() as session:
             with pytest.raises(SandboxError, match="deployment allowlist"):
                 await rt.run(session, fn, {})
@@ -305,27 +349,36 @@ class TestHttpStep:
         calls: list[httpx.Request] = []
         http = self._router(calls)
         with pytest.raises(SandboxError, match="no allowed hosts"):
-            await self._run(client, http,
-                            [FunctionStep(id="post", kind="http", url="https://x.test/y")],
-                            [Capability(**{"http": {}})])
+            await self._run(
+                client,
+                http,
+                [FunctionStep(id="post", kind="http", url="https://x.test/y")],
+                [Capability(**{"http": {}})],
+            )
         assert calls == []
 
     async def test_credentials_may_not_ride_in_the_url(self, client):
         calls: list[httpx.Request] = []
         http = self._router(calls)
         with pytest.raises(SandboxError, match="must not embed credentials"):
-            await self._run(client, http,
-                            [FunctionStep(id="post", kind="http", url="https://u:p@hooks.test/x")],
-                            [Capability(**{"http": {"allow": ["hooks.test"]}})])
+            await self._run(
+                client,
+                http,
+                [FunctionStep(id="post", kind="http", url="https://u:p@hooks.test/x")],
+                [Capability(**{"http": {"allow": ["hooks.test"]}})],
+            )
         assert calls == []
 
     async def test_a_non_http_scheme_is_refused(self, client):
         calls: list[httpx.Request] = []
         http = self._router(calls)
         with pytest.raises(SandboxError, match="must use http"):
-            await self._run(client, http,
-                            [FunctionStep(id="post", kind="http", url="file:///etc/passwd")],
-                            [Capability(**{"http": {"allow": ["hooks.test"]}})])
+            await self._run(
+                client,
+                http,
+                [FunctionStep(id="post", kind="http", url="file:///etc/passwd")],
+                [Capability(**{"http": {"allow": ["hooks.test"]}})],
+            )
 
 
 class TestDispatcher:
@@ -339,9 +392,12 @@ class TestDispatcher:
         """map_rows is how derived properties work; a declarative function must be
         usable there too, not only from the API."""
         _, sc = client
-        fn = _fn(runtime="declarative", returns_step="rows",
-                 steps=[FunctionStep(id="rows", kind="read", object="work-center", limit=1)],
-                 capabilities=[Capability(**{"read-objects": ["work-center"]})])
+        fn = _fn(
+            runtime="declarative",
+            returns_step="rows",
+            steps=[FunctionStep(id="rows", kind="read", object="work-center", limit=1)],
+            capabilities=[Capability(**{"read-objects": ["work-center"]})],
+        )
         async with sc.sessionmaker() as session:
             values = await sc.functions.map_rows(session, fn, [{"obj": 1}, {"obj": 2}])
         assert len(values) == 2 and all(isinstance(v, list) for v in values)
@@ -390,8 +446,7 @@ class TestFunctionBoundaryRule:
     rule is a decision someone makes rather than something that drifts.
     """
 
-    async def test_a_code_function_reads_the_same_rows_a_declarative_one_does(
-            self, client, tmp_path):
+    async def test_a_code_function_reads_the_same_rows_a_declarative_one_does(self, client, tmp_path):
         import textwrap
 
         from ontogeny.core.models import FunctionResource, FunctionSpec, ResourceMeta
@@ -399,15 +454,24 @@ class TestFunctionBoundaryRule:
         _, sc = client
         await sc.sync("work-center")
         src = tmp_path / "peek.py"
-        src.write_text(textwrap.dedent('''
+        src.write_text(
+            textwrap.dedent("""
             def peek() -> dict:
                 rows = ontogeny.query("work-center", limit=1)
                 return rows[0] if rows else {}
-        '''), encoding="utf-8")
+        """),
+            encoding="utf-8",
+        )
         fn = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function", metadata=ResourceMeta(name="peek"),
-            spec=FunctionSpec(runtime="python", entry=f"{src}:peek", parameters={},
-                              capabilities=[Capability(**{"read-objects": ["work-center"]})]),
+            apiVersion="ontogeny/v1",
+            kind="Function",
+            metadata=ResourceMeta(name="peek"),
+            spec=FunctionSpec(
+                runtime="python",
+                entry=f"{src}:peek",
+                parameters={},
+                capabilities=[Capability(**{"read-objects": ["work-center"]})],
+            ),
         )
         async with sc.sessionmaker() as session:
             row = await sc.functions.run(session, fn, {})
@@ -427,8 +491,8 @@ class TestLlmBudgetParsing:
         from ontogeny.functions.sandbox import _llm_budget as _s
 
         for parse in (_s, _d):
-            assert parse(None) == 10          # undeclared budget: the default
-            assert parse({}) == 10            # `llm: true`
+            assert parse(None) == 10  # undeclared budget: the default
+            assert parse({}) == 10  # `llm: true`
             assert parse({"max-calls": 0}) == 0
             assert parse({"max-calls": 3}) == 3
             assert parse({"max-calls": 1}) == 1
@@ -441,14 +505,16 @@ class TestFunctionSourceEditing:
     async def _python_fn(self, sc, tmp_path, name="editable"):
         import textwrap
 
-
         root = Path(sc.package_root) / "functions"
         root.mkdir(parents=True, exist_ok=True)
         src = root / f"{name}.py"
-        src.write_text(textwrap.dedent(f"""
+        src.write_text(
+            textwrap.dedent(f"""
             def {name}() -> dict:
                 return {{"version": 1}}
-        """).lstrip(), encoding="utf-8")
+        """).lstrip(),
+            encoding="utf-8",
+        )
         (root / f"{name}.yaml").write_text(
             "apiVersion: ontogeny/v1\nkind: Function\n"
             f"metadata: {{name: {name}}}\n"
@@ -466,8 +532,7 @@ class TestFunctionSourceEditing:
         _fn, src = await self._python_fn(sc, tmp_path)
         before = src.read_text(encoding="utf-8")
         with pytest.raises(DSLValidationError, match="syntax error"):
-            await sc.save_function_source("editable", "def broken(:\n",
-                                          principal={"id": "admin"})
+            await sc.save_function_source("editable", "def broken(:\n", principal={"id": "admin"})
         # nothing written, nothing published, package still importable
         assert src.read_text(encoding="utf-8") == before
 
@@ -478,13 +543,17 @@ class TestFunctionSourceEditing:
         _fn, src = await self._python_fn(sc, tmp_path)
         old_version = sc.compiled.function_versions["editable"]
 
-        out = await sc.save_function_source("editable", textwrap.dedent("""
+        out = await sc.save_function_source(
+            "editable",
+            textwrap.dedent("""
             def editable() -> dict:
                 return {"version": 2}
-        """).lstrip(), principal={"id": "u-admin"})
+        """).lstrip(),
+            principal={"id": "u-admin"},
+        )
 
         assert out["changed"] is True and out["version"] != old_version
-        assert "version\": 2" in src.read_text(encoding="utf-8")
+        assert 'version": 2' in src.read_text(encoding="utf-8")
         revisions = await sc.function_source_revisions("editable")
         assert revisions and revisions[0]["principal"] == "u-admin"
         assert revisions[0]["version"] == out["version"]
@@ -492,8 +561,7 @@ class TestFunctionSourceEditing:
     async def test_a_no_op_save_produces_no_revision(self, client, tmp_path):
         _, sc = client
         _fn, src = await self._python_fn(sc, tmp_path)
-        out = await sc.save_function_source("editable", src.read_text(encoding="utf-8"),
-                                            principal={"id": "u-admin"})
+        out = await sc.save_function_source("editable", src.read_text(encoding="utf-8"), principal={"id": "u-admin"})
         assert out["changed"] is False
         assert await sc.function_source_revisions("editable") == []
 
@@ -521,8 +589,9 @@ class TestFunctionSourceEditing:
         first is the separate test endpoint."""
         _, sc = client
         _fn, _src = await self._python_fn(sc, tmp_path)
-        out = await sc.save_function_source("editable", "def editable():\n    return {'a': 1}\n",
-                                            principal={"id": "admin"})
+        out = await sc.save_function_source(
+            "editable", "def editable():\n    return {'a': 1}\n", principal={"id": "admin"}
+        )
         assert "smoke" not in out and "value" not in out
 
     async def test_a_broken_body_restores_the_previous_file(self, client, tmp_path):
@@ -542,8 +611,7 @@ class TestFunctionSourceEditing:
             encoding="utf-8",
         )
         with pytest.raises(DSLValidationError):
-            await sc.save_function_source("editable", good + "\n# touched\n",
-                                          principal={"id": "admin"})
+            await sc.save_function_source("editable", good + "\n# touched\n", principal={"id": "admin"})
         # the edit was rolled back, so the package is still publishable
         assert src.read_text(encoding="utf-8") == good
         (Path(sc.package_root) / "functions" / "broken.yaml").unlink()
@@ -560,14 +628,16 @@ class TestFunctionSourceTesting:
     async def _python_fn(self, sc, tmp_path, name="editable"):
         import textwrap
 
-
         root = Path(sc.package_root) / "functions"
         root.mkdir(parents=True, exist_ok=True)
         src = root / f"{name}.py"
-        src.write_text(textwrap.dedent(f"""
+        src.write_text(
+            textwrap.dedent(f"""
             def {name}() -> dict:
                 return {{"version": 1}}
-        """).lstrip(), encoding="utf-8")
+        """).lstrip(),
+            encoding="utf-8",
+        )
         (root / f"{name}.yaml").write_text(
             "apiVersion: ontogeny/v1\nkind: Function\n"
             f"metadata: {{name: {name}}}\n"
@@ -602,8 +672,7 @@ class TestFunctionSourceTesting:
     async def test_a_failing_run_reports_the_error_not_an_exception(self, client, tmp_path):
         _, sc = client
         _fn, _src = await self._python_fn(sc, tmp_path)
-        out = await sc.test_function_source(
-            "editable", "def editable():\n    raise ValueError('boom')\n")
+        out = await sc.test_function_source("editable", "def editable():\n    raise ValueError('boom')\n")
         assert out["ok"] is False
         assert "boom" in out["message"]
 
@@ -616,7 +685,8 @@ class TestFunctionSourceTesting:
 
         c, sc = client
         sc.compiled.functions["no-entry"] = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function",
+            apiVersion="ontogeny/v1",
+            kind="Function",
             metadata=ResourceMeta(name="no-entry"),
             spec=FunctionSpec(runtime="python", entry="just_a_filename"),
         )
@@ -624,14 +694,15 @@ class TestFunctionSourceTesting:
             await sc.test_function_source("no-entry", "def f():\n    return 1\n")
         # the save path carries the same guard (it used to raise SandboxError -> 500)
         with pytest.raises(DSLValidationError, match="entry must be"):
-            await sc.save_function_source("no-entry", "def f():\n    return 1\n",
-                                          principal={"id": "admin"})
+            await sc.save_function_source("no-entry", "def f():\n    return 1\n", principal={"id": "admin"})
 
         # and through the HTTP route (admin principal) it is a 400, not a 500
         admin = {"id": "admin", "Role": ["admin"], "is_admin": True}
-        r = await c.post("/api/v1/functions/no-entry/test",
-                         json={"source": "def f():\n    return 1\n"},
-                         headers={"X-Ontogeny-Principal": json.dumps(admin)})
+        r = await c.post(
+            "/api/v1/functions/no-entry/test",
+            json={"source": "def f():\n    return 1\n"},
+            headers={"X-Ontogeny-Principal": json.dumps(admin)},
+        )
         assert r.status_code == 400, r.text
         assert "entry must be" in r.json()["message"]
 
@@ -683,9 +754,11 @@ class TestSmokeParams:
         )
         await sc.publish(str(sc.package_root), created_by="test")
 
-        code = ("def pk_probe(work_center_id: str = '') -> dict:\n"
-                "    rows = ontogeny.query('work-center', filter={'work_center_id': work_center_id}, limit=1)\n"
-                "    return {'found': len(rows), 'id': work_center_id}\n")
+        code = (
+            "def pk_probe(work_center_id: str = '') -> dict:\n"
+            "    rows = ontogeny.query('work-center', filter={'work_center_id': work_center_id}, limit=1)\n"
+            "    return {'found': len(rows), 'id': work_center_id}\n"
+        )
         out = await sc.test_function_source("pk-probe", code)
         assert out["ok"] is True, out
         assert out["params"]["work_center_id"] == "WC-01"
@@ -697,15 +770,20 @@ class TestSmokeParams:
 
         _, sc = client
         fn = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function", metadata=ResourceMeta(name="probe"),
-            spec=FunctionSpec(runtime="python", entry="probe.py:run", capabilities=[
-                Capability(**{"read-objects": ["work-center"]})],
+            apiVersion="ontogeny/v1",
+            kind="Function",
+            metadata=ResourceMeta(name="probe"),
+            spec=FunctionSpec(
+                runtime="python",
+                entry="probe.py:run",
+                capabilities=[Capability(**{"read-objects": ["work-center"]})],
                 parameters={
                     "window_days": ParamDef(type="integer", default=30),
                     "kind": ParamDef(type="enum[LOW, HIGH]", required=True),
                     "flag": ParamDef(type="boolean", required=True),
                     "note": ParamDef(type="string", required=True),
-                }),
+                },
+            ),
         )
         async with sc.sessionmaker() as session:
             params, sources = await sc._smoke_params(session, fn)

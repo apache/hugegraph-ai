@@ -21,6 +21,7 @@ Talks to an Ollama /api/chat endpoint (stream=false); understands the
 ``thinking`` field emitted by reasoning models (qwen3 etc.). JSON extraction
 is core-provided (ontogeny.llm.extract_json) so adapters only own transport.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -31,8 +32,9 @@ from ontogeny.llm import LLMError, extract_json  # core contract, never the reve
 
 
 class OllamaChat:
-    def __init__(self, base_url: str, model: str, *, http: httpx.AsyncClient | None = None,
-                 timeout: float = 120.0) -> None:
+    def __init__(
+        self, base_url: str, model: str, *, http: httpx.AsyncClient | None = None, timeout: float = 120.0
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self._http = http
@@ -57,8 +59,9 @@ class OllamaChat:
         except httpx.HTTPError as exc:
             return {"ok": False, "error": str(exc)}
 
-    async def chat(self, messages: list[dict[str, str]], *, think: bool = False,
-                   options: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def chat(
+        self, messages: list[dict[str, str]], *, think: bool = False, options: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         c = await self.client()
         payload: dict[str, Any] = {"model": self.model, "stream": False, "messages": messages}
         if think:
@@ -85,7 +88,7 @@ class OllamaChat:
         out = await self.chat(messages, **kw)
         return {"value": extract_json(out["content"]), "raw": out}
 
-    def scoped(self, model: str) -> "OllamaChat":
+    def scoped(self, model: str) -> OllamaChat:
         """Same gateway, another model name (sandbox model-override path);
         shares the transport, so nothing to close by the caller."""
         return OllamaChat(self.base_url, model, http=self._http, timeout=self.timeout)
@@ -94,8 +97,15 @@ class OllamaChat:
 class OpenAICompatibleChat:
     """Generic OpenAI-compatible /chat/completions client for external gateways."""
 
-    def __init__(self, base_url: str, model: str, *, api_key: str | None = None,
-                 http: httpx.AsyncClient | None = None, timeout: float = 120.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        *,
+        api_key: str | None = None,
+        http: httpx.AsyncClient | None = None,
+        timeout: float = 120.0,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key or ""
@@ -120,13 +130,13 @@ class OpenAICompatibleChat:
         try:
             resp = await c.get(f"{self.base_url}/models", headers=self._headers(), timeout=5.0)
             data = resp.json() if resp.status_code == 200 else {}
-            return {"ok": resp.status_code == 200,
-                    "models": [m.get("id") for m in data.get("data", []) if m.get("id")]}
+            return {"ok": resp.status_code == 200, "models": [m.get("id") for m in data.get("data", []) if m.get("id")]}
         except httpx.HTTPError as exc:
             return {"ok": False, "error": str(exc)}
 
-    async def chat(self, messages: list[dict[str, str]], *, think: bool = False,
-                   options: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def chat(
+        self, messages: list[dict[str, str]], *, think: bool = False, options: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         c = await self.client()
         payload: dict[str, Any] = {"model": self.model, "stream": False, "messages": messages}
         if options:
@@ -152,6 +162,5 @@ class OpenAICompatibleChat:
         out = await self.chat(messages, **kw)
         return {"value": extract_json(out["content"]), "raw": out}
 
-    def scoped(self, model: str) -> "OpenAICompatibleChat":
-        return OpenAICompatibleChat(self.base_url, model, api_key=self.api_key,
-                                    http=self._http, timeout=self.timeout)
+    def scoped(self, model: str) -> OpenAICompatibleChat:
+        return OpenAICompatibleChat(self.base_url, model, api_key=self.api_key, http=self._http, timeout=self.timeout)

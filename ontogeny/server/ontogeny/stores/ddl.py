@@ -23,6 +23,7 @@ append-only: updates close the current row and insert a successor; the
 "alive current" state is exactly ``_valid_to IS NULL``. Derived properties are
 never stored (computed at assembly time).
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -76,6 +77,7 @@ class UTCDateTime(TypeDecorator):
             return value.replace(tzinfo=_dt.timezone.utc)
         return value.astimezone(_dt.timezone.utc)
 
+
 # One MetaData per ontology snapshot: two packages may both define an
 # `equipment` table with different columns, and a republished package may change
 # them. Sharing one global MetaData by table name silently returned the wrong
@@ -128,12 +130,15 @@ def object_table(compiled, object_type: str) -> Table:
         # function deriveds are MATERIALIZED by the derivation worker (column)
         if pdef.derived_kind() == "expr":
             continue
-        cols.append(Column(
-            compiled.col(prop), sql_type(pdef.ptype()),
-            nullable=not pdef.required,
-            # composite PK: business key + _valid_from -> versions coexist
-            primary_key=compiled.col(prop) in pk_cols,
-        ))
+        cols.append(
+            Column(
+                compiled.col(prop),
+                sql_type(pdef.ptype()),
+                nullable=not pdef.required,
+                # composite PK: business key + _valid_from -> versions coexist
+                primary_key=compiled.col(prop) in pk_cols,
+            )
+        )
     cols += [
         Column("_rev", BigInteger, nullable=False),
         Column("_valid_from", DateTime(timezone=True), nullable=False, primary_key=True),
@@ -153,7 +158,8 @@ def link_table(compiled, link_name: str) -> Table:
     if cached is not None:
         return cached
     return Table(
-        name, metadata,
+        name,
+        metadata,
         # _valid_from is part of the key: without it, link_add -> link_remove ->
         # link_add of the same pair collided with the soft-closed row's PK
         # (objects solved this with (business key, _valid_from); links must too).
@@ -179,8 +185,7 @@ def ensure_tables(conn, compiled) -> None:
     tables: list[Table] = [
         object_table(compiled, t) for t, o in compiled.objects.items() if o.spec.backing is not None
     ] + [
-        link_table(compiled, lnk) for lnk in compiled.links
-        if isinstance(compiled.links[lnk].spec.join, JoinTableJoin)
+        link_table(compiled, lnk) for lnk in compiled.links if isinstance(compiled.links[lnk].spec.join, JoinTableJoin)
     ]
     for t in tables:
         if t.name not in existing:
@@ -191,7 +196,7 @@ def ensure_tables(conn, compiled) -> None:
             if column.name in present or column.primary_key:
                 continue
             ddl_type = column.type.compile(conn.dialect)
-            conn.execute(text(f'ALTER TABLE {t.name} ADD COLUMN {column.name} {ddl_type}'))
+            conn.execute(text(f"ALTER TABLE {t.name} ADD COLUMN {column.name} {ddl_type}"))
 
 
 def reset_metadata_cache() -> None:

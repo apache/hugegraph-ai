@@ -18,6 +18,7 @@
 """M3: AgentCase eval -- scripted trajectories replayed through the real
 broker as a deterministic selection function for agent-affecting changes.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -84,8 +85,7 @@ async def sc(golden_pkg_path, tmp_path):
     settings = Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
     ctx = ServiceContext(settings, str(root))
     await ctx.initialize()
@@ -117,11 +117,9 @@ class TestAgentEval:
         suite = sc.compiled.eval_suites["planning-suite"]
         plug = sc.compiled.agent_plugins["planning-copilot"]
         stripped = plug.model_copy(deep=True)
-        stripped.spec.tools.allow = [t for t in stripped.spec.tools.allow
-                                     if t != "act_release_production_order"]
+        stripped.spec.tools.allow = [t for t in stripped.spec.tools.allow if t != "act_release_production_order"]
         original_compiled = sc.compiled
-        sc.compiled = dc_replace(original_compiled,
-                                 agent_plugins={"planning-copilot": stripped})
+        sc.compiled = dc_replace(original_compiled, agent_plugins={"planning-copilot": stripped})
         try:
             async with sc.sessionmaker() as s:
                 report = await sc.eval_runner.run(s, suite)

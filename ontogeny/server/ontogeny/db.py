@@ -21,8 +21,8 @@ Portable by design: the same code runs on SQLite (tests / demo) and Postgres
 (production); Postgres-only affordances (pgvector, LISTEN/NOTIFY) live behind
 capability checks in the layers that use them.
 """
-from __future__ import annotations
 
+from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -88,15 +88,13 @@ ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
 
 async def init_schema(engine: AsyncEngine) -> None:
     """Create all tables declared against Base, then top up new columns."""
+    import contextlib
     import importlib
 
-    from . import registry  # noqa: F401 -- core metadata tables
-
     for mod in ("stores", "action", "telemetry", "evolve", "agent.models", "auth.models", "runtime_config"):
-        try:
+        # a layer not implemented yet: its tables register once it exists
+        with contextlib.suppress(ModuleNotFoundError):
             importlib.import_module(f".{mod}", package="ontogeny")
-        except ModuleNotFoundError:
-            pass  # layer not implemented yet; its tables register once it exists
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -22,6 +22,7 @@ a human message. Governance paths (rules, policy, optimistic locking,
 idempotency, budgets, constitution) raise dedicated subclasses so callers can
 react precisely instead of string-matching.
 """
+
 from __future__ import annotations
 
 from typing import Any

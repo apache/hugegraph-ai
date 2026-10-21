@@ -22,6 +22,7 @@ The shipped extensions/ directory is the default discovery root, so the tests
 that exercise the real host also prove the three bundled extensions load and
 register their contracts (llm gateway, engine factory, graph store factory).
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -33,8 +34,9 @@ from ontogeny.config import Settings
 from ontogeny.ext_host import ExtensionHost
 
 
-def _host(tmp_path, packages: dict[str, str], manifests: dict[str, str],
-          settings: Settings | None = None, monkeypatch=None):
+def _host(
+    tmp_path, packages: dict[str, str], manifests: dict[str, str], settings: Settings | None = None, monkeypatch=None
+):
     """An ExtensionHost over a synthetic extensions directory."""
     root = tmp_path / "extensions"
     for name, manifest in manifests.items():
@@ -45,8 +47,7 @@ def _host(tmp_path, packages: dict[str, str], manifests: dict[str, str],
         pkg.mkdir(exist_ok=True)
         (pkg / "__init__.py").write_text(packages[name], encoding="utf-8")
     settings = settings or Settings(extensions_dir=str(root))
-    sc = SimpleNamespace(settings=settings, agent_engines={}, llm=None,
-                         graph_store_factory=None, agents=None)
+    sc = SimpleNamespace(settings=settings, agent_engines={}, llm=None, graph_store_factory=None, agents=None)
     host = ExtensionHost(sc)
     host.discover()
     return sc, host
@@ -106,7 +107,8 @@ class TestDiscoveryAndLoading:
 
     async def test_broken_extension_is_isolated(self, tmp_path, monkeypatch):
         broken = GOOD_PROVIDER.replace("name: fake-llm", "name: broken-llm").replace(
-            "module: pkg_fake_llm", "module: pkg_broken_llm")
+            "module: pkg_fake_llm", "module: pkg_broken_llm"
+        )
         engine_no_req = GOOD_ENGINE.replace("requires: [capability:llm]\n", "")
         sc, host = _host(
             tmp_path,
@@ -166,8 +168,7 @@ class TestShippedExtensions:
 
     async def test_default_dir_discovers_three_extensions(self, monkeypatch):
         monkeypatch.delenv("ONTOGENY_EXTENSIONS", raising=False)
-        sc = SimpleNamespace(settings=Settings(), agent_engines={}, llm=None,
-                             graph_store_factory=None, agents=None)
+        sc = SimpleNamespace(settings=Settings(), agent_engines={}, llm=None, graph_store_factory=None, agents=None)
         host = ExtensionHost(sc)
         host.discover()
         names = {r.name for r in host.records}
@@ -178,8 +179,11 @@ class TestShippedExtensions:
         engines: dict = {}
         sc = SimpleNamespace(
             settings=Settings(llm_base_url="http://ollama.test", llm_model="m1"),
-            agent_engines=engines, llm=None, graph_store_factory=None,
-            llm_http=None, agents=None,
+            agent_engines=engines,
+            llm=None,
+            graph_store_factory=None,
+            llm_http=None,
+            agents=None,
         )
         host = ExtensionHost(sc)
         host.discover()
@@ -197,8 +201,9 @@ class TestShippedExtensions:
     async def test_without_base_url_llm_capability_is_absent_but_engine_registers(self, monkeypatch):
         monkeypatch.delenv("ONTOGENY_EXTENSIONS", raising=False)
         engines: dict = {}
-        sc = SimpleNamespace(settings=Settings(), agent_engines=engines, llm=None,
-                             graph_store_factory=None, llm_http=None, agents=None)
+        sc = SimpleNamespace(
+            settings=Settings(), agent_engines=engines, llm=None, graph_store_factory=None, llm_http=None, agents=None
+        )
         host = ExtensionHost(sc)
         host.discover()
         host.load()
@@ -218,15 +223,22 @@ async def api(golden_pkg_path, tmp_path):
 
     pkg_root = tmp_path / "pkg"
     shutil.copytree(golden_pkg_path, pkg_root)
-    settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-                        env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"})
+    settings = Settings(
+        dev_auth=True,
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"},
+    )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
     import json as J
-    async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                 headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})}) as c:
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})},
+    ) as c:
         yield c
 
 
@@ -238,5 +250,6 @@ class TestExtensionsEndpoint:
         names = {e["name"] for e in body["extensions"]}
         assert {"llm-ollama", "agent-builtin-llm", "graph-hugegraph"} <= names
         statuses = {e["name"]: e["status"] for e in body["extensions"]}
-        assert all(v == "loaded" for k, v in statuses.items()
-                   if k in {"llm-ollama", "agent-builtin-llm", "graph-hugegraph"})
+        assert all(
+            v == "loaded" for k, v in statuses.items() if k in {"llm-ollama", "agent-builtin-llm", "graph-hugegraph"}
+        )

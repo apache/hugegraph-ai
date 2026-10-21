@@ -22,6 +22,7 @@ Two tiers: *errors* block publish; *warnings* are informational. The validator
 is pure (no DB) so it runs in CI, in the CLI and inside the evolution
 promoter before any auto-merge.
 """
+
 from __future__ import annotations
 
 import re
@@ -121,8 +122,10 @@ def tool_vocabulary(pkg: OntologyPackage) -> set[str]:
     Single source of truth shared by the validator (reference integrity) and
     the agent broker (runtime catalog).
     """
+
     def snake(n: str) -> str:
         import re
+
         return re.sub(r"[^a-z0-9_]+", "_", n.strip().lower()).strip("_")
 
     names = {"describe_ontology", "traverse_graph"}
@@ -155,7 +158,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
             rep.error("STORE-ENV", f"Store/{s.metadata.name}", "malformed ${VAR} reference in connection")
         if s.spec.access == "read-write" and s.spec.type not in ("postgres", "sqlite"):
             rep.error(
-                "STORE-TX", f"Store/{s.metadata.name}",
+                "STORE-TX",
+                f"Store/{s.metadata.name}",
                 f"read-write requires a transactional store, got {s.spec.type}",
             )
 
@@ -199,7 +203,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                     rdef = obj.spec.properties.get(rfield)
                     if rdef is not None and rdef.marking and not pdef.marking:
                         rep.error(
-                            "DERIVED-MARKING", res_id,
+                            "DERIVED-MARKING",
+                            res_id,
                             f"derived property {pname!r} reads marked property "
                             f"{rfield!r} (marking {rdef.marking!r}) but declares no "
                             "marking; declare an equal-or-stricter marking or drop "
@@ -208,8 +213,11 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
             elif pdef.derived_kind() == "function":
                 entry = pdef.derived_entry()
                 if not entry or entry.count(":") != 1:
-                    rep.error("DERIVED-FN", res_id,
-                              f"function-derived {pname}: entry must be 'file.py:function', got {entry!r}")
+                    rep.error(
+                        "DERIVED-FN",
+                        res_id,
+                        f"function-derived {pname}: entry must be 'file.py:function', got {entry!r}",
+                    )
             if pdef.derived is not None and pdef.owner == "source":
                 rep.error("OWNER-DERIVED", res_id, f"derived property {pname} cannot be source-owned")
 
@@ -237,7 +245,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                     pa, pb = ta.spec.properties.get(a_prop), tb.spec.properties.get(b_prop)
                     if pa and pb and pa.type != pb.type:
                         rep.error(
-                            "LINK-KEY-TYPE", res_id,
+                            "LINK-KEY-TYPE",
+                            res_id,
                             f"join key types differ: {a_prop}:{pa.type} vs {b_prop}:{pb.type}",
                         )
         else:
@@ -248,8 +257,7 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                     # an unknown side used to crash validate() outright
                     # (AttributeError), taking the whole publish/import gate
                     # with it instead of producing this report entry.
-                    rep.error("LINK-KEY", res_id,
-                              f"join-table keys side {side_name!r} must be 'source' or 'target'")
+                    rep.error("LINK-KEY", res_id, f"join-table keys side {side_name!r} must be 'source' or 'target'")
                     continue
                 obj_name = getattr(lnk.spec, side_name)
                 tgt = objects.get(obj_name)
@@ -269,7 +277,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         authored = len(_re.findall(r"\bforbid\s*\(", text))
         if authored and authored != len(parse_forbids(text)):
             rep.error(
-                "POLICY-FORBID", f"PolicySet/{pol.metadata.name}",
+                "POLICY-FORBID",
+                f"PolicySet/{pol.metadata.name}",
                 "contains a forbid() statement this engine cannot parse; refusing to "
                 "publish (an unparsed forbid would silently grant instead of deny)",
             )
@@ -308,7 +317,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         res_id = f"Projection/{prj.metadata.name}"
         if prj.spec.graph != expected_graph:
             rep.error(
-                "PROJ-GRAPH-NAME", res_id,
+                "PROJ-GRAPH-NAME",
+                res_id,
                 f"graph {prj.spec.graph!r} must be the domain's own name "
                 f"{expected_graph!r} (graph and domain are one-to-one)",
             )
@@ -323,7 +333,12 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 if pdef is None:
                     rep.error("PROJ-WHITELIST", res_id, f"{obj_name}.{prop} is not a property")
                 elif pdef.marking:
-                    rep.error("PROJ-MARKING", res_id, f"{obj_name}.{prop} carries marking {pdef.marking!r}; marked properties must not enter the graph")
+                    rep.error(
+                        "PROJ-MARKING",
+                        res_id,
+                        f"{obj_name}.{prop} carries marking {pdef.marking!r}; "
+                        "marked properties must not enter the graph",
+                    )
         for lnk in inc.links:
             if lnk not in links:
                 rep.error("PROJ-LINK", res_id, f"included link {lnk!r} does not exist")
@@ -332,7 +347,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 for side in ("source", "target"):
                     if getattr(lres.spec, side) not in inc.objects:
                         rep.error(
-                            "PROJ-LINK-ENDPOINT", res_id,
+                            "PROJ-LINK-ENDPOINT",
+                            res_id,
                             f"link {lnk!r} {side} {getattr(lres.spec, side)!r} is not included in the projection",
                         )
 
@@ -363,13 +379,15 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         if not pid:
             rep.error("AGENT-PRINCIPAL", res_id, "principal.id must be a non-empty string")
         elif not pid.startswith("agent:"):
-            rep.warn("AGENT-PRINCIPAL", res_id,
-                     f'principal.id {pid!r} does not follow the "agent:<name>" convention')
+            rep.warn("AGENT-PRINCIPAL", res_id, f'principal.id {pid!r} does not follow the "agent:<name>" convention')
         for role in sorted(set(spec.principal.Role) | set(spec.principal.roles)):
             if role not in known_roles:
-                rep.error("AGENT-ROLE-UNKNOWN", res_id,
-                          f"principal role {role!r} is not referenced by any policy "
-                          "(Role::\"...\") -- a typo here silently grants nothing")
+                rep.error(
+                    "AGENT-ROLE-UNKNOWN",
+                    res_id,
+                    f"principal role {role!r} is not referenced by any policy "
+                    '(Role::"...") -- a typo here silently grants nothing',
+                )
         allow, deny = set(spec.tools.allow), set(spec.tools.deny)
         for t in sorted(allow | deny):
             if t not in vocab:
@@ -378,24 +396,25 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
             rep.error("AGENT-TOOL-CONFLICT", res_id, f"tool {t!r} appears in both allow and deny")
         writes = spec.tools.allow
         if spec.approval.writes == "never" and any(t.startswith("act_") for t in writes):
-            rep.warn("AGENT-APPROVAL", res_id,
-                     "approval.writes=never but act_* tools are allowed; writes will be refused")
+            rep.warn(
+                "AGENT-APPROVAL", res_id, "approval.writes=never but act_* tools are allowed; writes will be refused"
+            )
         if spec.approval.writes == "auto":
             autos = set(spec.approval.auto_actions)
             if not autos:
-                rep.error("AGENT-APPROVAL", res_id,
-                          "approval.writes=auto requires a non-empty auto_actions list")
+                rep.error("AGENT-APPROVAL", res_id, "approval.writes=auto requires a non-empty auto_actions list")
             for t in sorted(autos):
                 if not t.startswith("act_"):
-                    rep.error("AGENT-APPROVAL", res_id,
-                              f"auto_actions entry {t!r} must be an act_* tool")
+                    rep.error("AGENT-APPROVAL", res_id, f"auto_actions entry {t!r} must be an act_* tool")
                 elif t not in allow:
-                    rep.error("AGENT-APPROVAL", res_id,
-                              f"auto_actions entry {t!r} is not in tools.allow")
+                    rep.error("AGENT-APPROVAL", res_id, f"auto_actions entry {t!r} is not in tools.allow")
         if spec.principal.markings:
-            rep.warn("AGENT-MARKING", res_id,
-                     f"plugin principal holds markings {spec.principal.markings}: "
-                     "data carrying those markings will be VISIBLE to this agent")
+            rep.warn(
+                "AGENT-MARKING",
+                res_id,
+                f"plugin principal holds markings {spec.principal.markings}: "
+                "data carrying those markings will be VISIBLE to this agent",
+            )
         b = spec.budget
         if b.steps <= 0 or b.wall_ms <= 0 or b.writes_per_session < 0:
             rep.error("AGENT-BUDGET", res_id, "budget fields must be positive (writes_per_session >= 0)")
@@ -403,15 +422,17 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         if eng.kind == "external-push":
             ep = (eng.endpoint or "").strip()
             if not ep.startswith(("http://", "https://")):
-                rep.error("AGENT-ENGINE-ENDPOINT", res_id,
-                          "engine.kind=external-push requires an http(s) endpoint")
+                rep.error("AGENT-ENGINE-ENDPOINT", res_id, "engine.kind=external-push requires an http(s) endpoint")
             # the platform-side drive loop for push engines is not implemented
             # yet: the fields validate and round-trip, but /run refuses the
             # kind. Say so at package-check time, not at first drive.
-            rep.warn("AGENT-ENGINE-UNIMPLEMENTED", res_id,
-                     "engine.kind=external-push is declared but not implemented "
-                     "in this release: the platform will not drive this plugin "
-                     "(use external-pull or builtin-llm)")
+            rep.warn(
+                "AGENT-ENGINE-UNIMPLEMENTED",
+                res_id,
+                "engine.kind=external-push is declared but not implemented "
+                "in this release: the platform will not drive this plugin "
+                "(use external-pull or builtin-llm)",
+            )
 
     return rep
 
@@ -440,10 +461,8 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
     if not spec.steps:
         out.append(("FN-STEPS", "runtime=declarative needs at least one step"))
 
-    declared = {k for cap in spec.capabilities
-                for k in cap.model_dump(exclude_none=True).keys()}
-    read_ok = {o for cap in spec.capabilities
-               for o in (cap.model_dump(exclude_none=True).get("read-objects") or [])}
+    declared = {k for cap in spec.capabilities for k in cap.model_dump(exclude_none=True)}
+    read_ok = {o for cap in spec.capabilities for o in (cap.model_dump(exclude_none=True).get("read-objects") or [])}
     http_ok: list[str] = []
     for cap in spec.capabilities:
         cfg = cap.model_dump(exclude_none=True).get("http")
@@ -451,7 +470,7 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
             http_ok += [str(h) for h in (cfg.get("allow") or [])]
 
     seen: set[str] = set()
-    for i, step in enumerate(spec.steps):
+    for _i, step in enumerate(spec.steps):
         if step.id in seen:
             out.append(("FN-STEP-ID", f"duplicate step id {step.id!r}"))
         seen.add(step.id)
@@ -459,27 +478,40 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
             if not step.object:
                 out.append(("FN-STEP", f"step {step.id!r}: read needs 'object'"))
             elif step.object not in read_ok:
-                out.append(("FN-STEP-CAP",
-                            f"step {step.id!r} reads {step.object!r}, which read-objects "
-                            f"does not include (declared: {sorted(read_ok)})"))
+                out.append(
+                    (
+                        "FN-STEP-CAP",
+                        f"step {step.id!r} reads {step.object!r}, which read-objects "
+                        f"does not include (declared: {sorted(read_ok)})",
+                    )
+                )
         elif step.kind == "llm":
             if not step.prompt:
                 out.append(("FN-STEP", f"step {step.id!r}: llm needs 'prompt'"))
             if "llm" not in declared:
-                out.append(("FN-STEP-CAP",
-                            f"step {step.id!r} calls the model but the function does not "
-                            "declare the llm capability"))
+                out.append(
+                    (
+                        "FN-STEP-CAP",
+                        f"step {step.id!r} calls the model but the function does not " "declare the llm capability",
+                    )
+                )
         elif step.kind == "http":
             if not step.url:
                 out.append(("FN-STEP", f"step {step.id!r}: http needs 'url'"))
             if "http" not in declared:
-                out.append(("FN-STEP-CAP",
-                            f"step {step.id!r} calls an endpoint but the function does not "
-                            "declare the http capability"))
+                out.append(
+                    (
+                        "FN-STEP-CAP",
+                        f"step {step.id!r} calls an endpoint but the function does not " "declare the http capability",
+                    )
+                )
             elif not http_ok:
-                out.append(("FN-STEP-CAP",
-                            f"step {step.id!r}: the http capability allows no hosts; "
-                            "add http: {allow: [host]}"))
+                out.append(
+                    (
+                        "FN-STEP-CAP",
+                        f"step {step.id!r}: the http capability allows no hosts; " "add http: {allow: [host]}",
+                    )
+                )
             elif step.url:
                 # a literal host can be checked here; a ${ref} host is checked at
                 # call time (the runtime refuses anything not on the list)
@@ -487,9 +519,9 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
                 if host:
                     h = host.group(1).split("@")[-1].split(":")[0]
                     if not any(h == a or h.endswith("." + a.lstrip(".")) for a in http_ok):
-                        out.append(("FN-STEP-CAP",
-                                    f"step {step.id!r}: host {h!r} is not in the http "
-                                    f"allowlist {http_ok}"))
+                        out.append(
+                            ("FN-STEP-CAP", f"step {step.id!r}: host {h!r} is not in the http " f"allowlist {http_ok}")
+                        )
 
     if spec.returns_step and spec.returns_step not in {s.id for s in spec.steps}:
         out.append(("FN-RETURNS", f"returns_step {spec.returns_step!r} is not a step"))
@@ -505,9 +537,13 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
         for ref in _step_refs(step):
             if _ENV_NAME_RE.fullmatch(ref) or ref in known:
                 continue
-            out.append(("FN-REF",
-                        f"step {step.id!r} references ${{{ref}}}, which is neither a "
-                        f"parameter nor an earlier step (known: {sorted(known)})"))
+            out.append(
+                (
+                    "FN-REF",
+                    f"step {step.id!r} references ${{{ref}}}, which is neither a "
+                    f"parameter nor an earlier step (known: {sorted(known)})",
+                )
+            )
         known.add(step.id)
     return out
 
@@ -560,8 +596,9 @@ def _validate_action_against(
     if spec.execution is not None and spec.execution.entry.count(":") != 1:
         rep.error("ACTION-EXEC", res_id, f"execution.entry must be 'file.py:function', got {spec.execution.entry!r}")
 
-    def check_set(mapping: dict[str, str], obj_res: ObjectTypeResource, label: str,
-                  *, check_owner: bool = True) -> None:
+    def check_set(
+        mapping: dict[str, str], obj_res: ObjectTypeResource, label: str, *, check_owner: bool = True
+    ) -> None:
         for prop, value_expr in mapping.items():
             pdef = obj_res.spec.properties.get(prop)
             if pdef is None:
@@ -571,7 +608,8 @@ def _validate_action_against(
                 rep.error("ACTION-DERIVED", res_id, f"{label} cannot set derived property {prop!r}")
             if check_owner and effective_owner(obj_res, prop) != "ontology":
                 rep.error(
-                    "ACTION-OWNER", res_id,
+                    "ACTION-OWNER",
+                    res_id,
                     f"{label} sets source-owned property {prop!r} (owner must be ontology)",
                 )
             _static_expr(rep, res_id, value_expr, spec, target, objects, allow_enum_literal=True)
@@ -626,7 +664,8 @@ def _validate_action_against(
                 pass  # an environment reference: resolved at delivery
             elif not url.startswith(("http://", "https://")):
                 rep.error(
-                    "ACTION-WEBHOOK-URL", res_id,
+                    "ACTION-WEBHOOK-URL",
+                    res_id,
                     f"webhook url {url!r} must be http(s) or a ${{VAR}} reference",
                 )
 
@@ -641,9 +680,14 @@ def _validate_action_against(
 
 
 def _static_expr(
-    rep: ValidationReport, res_id: str, src: str,
-    act_spec, target: ObjectTypeResource, objects: dict[str, ObjectTypeResource],
-    *, allow_enum_literal: bool = False,
+    rep: ValidationReport,
+    res_id: str,
+    src: str,
+    act_spec,
+    target: ObjectTypeResource,
+    objects: dict[str, ObjectTypeResource],
+    *,
+    allow_enum_literal: bool = False,
 ) -> None:
     if allow_enum_literal:
         bare = _expr.is_bare_identifier(src)
@@ -658,8 +702,12 @@ def _static_expr(
 
 
 def _check_paths(
-    rep: ValidationReport, res_id: str, paths: set[tuple[str, str]],
-    act_spec, target: ObjectTypeResource, objects: dict[str, ObjectTypeResource],
+    rep: ValidationReport,
+    res_id: str,
+    paths: set[tuple[str, str]],
+    act_spec,
+    target: ObjectTypeResource,
+    objects: dict[str, ObjectTypeResource],
 ) -> None:
     for root_name, field_name in paths:
         if root_name == "target":

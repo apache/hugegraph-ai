@@ -46,6 +46,7 @@ Loading rules (deliberately boring):
   with a recorded reason (e.g. an engine that hard-needs an LLM provider);
 - core code NEVER imports an extension module; extension code may import core.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -76,16 +77,22 @@ class ExtensionRecord:
     provides: list[str] = field(default_factory=list)
     requires: list[str] = field(default_factory=list)
     entry: str = ""
-    status: str = "discovered"   # discovered|disabled|loaded|error|skipped
+    status: str = "discovered"  # discovered|disabled|loaded|error|skipped
     error: str | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
 
     def to_meta(self) -> dict[str, Any]:
         return {
-            "name": self.name, "kind": self.kind, "display": self.display,
-            "description": self.description, "provides": self.provides,
-            "requires": self.requires, "entry": self.entry,
-            "status": self.status, "error": self.error, "path": self.path,
+            "name": self.name,
+            "kind": self.kind,
+            "display": self.display,
+            "description": self.description,
+            "provides": self.provides,
+            "requires": self.requires,
+            "entry": self.entry,
+            "status": self.status,
+            "error": self.error,
+            "path": self.path,
         }
 
 
@@ -128,9 +135,7 @@ class ExtensionHost:
                 rec = self._parse(manifest_path, root)
                 if rec is None:
                     continue
-                if not rec.manifest.get("enabled", True):
-                    rec.status = "disabled"
-                elif selected is not None and rec.name not in selected:
+                if not rec.manifest.get("enabled", True) or selected is not None and rec.name not in selected:
                     rec.status = "disabled"
                 self.records.append(rec)
         for rec in self.records:
@@ -163,7 +168,7 @@ class ExtensionHost:
                 # host.provide() -- a provider may legitimately register without
                 # providing (e.g. llm-ollama with no ONTOGENY_LLM_BASE_URL), and the
                 # requires check must see what is actually there, not promises.
-            except Exception as exc:  # noqa: BLE001 -- isolation is the point
+            except Exception as exc:
                 rec.status = "error"
                 rec.error = f"{type(exc).__name__}: {exc}"
                 log.exception("extension %s failed to load", rec.name)
@@ -181,7 +186,7 @@ class ExtensionHost:
                 continue
             try:
                 self._load_one(rec)
-            except Exception as exc:  # noqa: BLE001 -- keep the old provider state
+            except Exception as exc:
                 rec.status = "error"
                 rec.error = f"{type(exc).__name__}: {exc}"
                 log.exception("extension %s failed to reload", rec.name)
@@ -230,7 +235,8 @@ class ExtensionHost:
         if owner is not None and owner != rec.name:
             raise ImportError(
                 f"entry.module {module_name!r} is already provided by extension "
-                f"{owner!r}; rename one of the packages")
+                f"{owner!r}; rename one of the packages"
+            )
         # the extension's own directory goes on sys.path: its Python package
         # (entry.module) lives directly inside it
         if rec.path not in sys.path:

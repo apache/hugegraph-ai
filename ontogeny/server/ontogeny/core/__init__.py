@@ -18,7 +18,7 @@
 """ontogeny.core -- DSL: models, loading, validation, linting, expression language."""
 
 from .loader import OntologyPackage, load_package
-from .models import (  # noqa: F401
+from .models import (
     ActionResource,
     AnyResource,
     EvalSuiteResource,
@@ -30,10 +30,25 @@ from .models import (  # noqa: F401
     ProjectionResource,
     StoreResource,
 )
-from .types import PropertyType  # noqa: F401
+from .types import PropertyType
 from .validator import ValidationReport, effective_owner, validate
 
 __all__ = [
-    "OntologyPackage", "load_package", "validate", "lint", "ValidationReport",
-    "effective_owner", "PropertyType",
+    "OntologyPackage",
+    "load_package",
+    "validate",
+    "lint",
+    "ValidationReport",
+    "effective_owner",
+    "PropertyType",
+    "ActionResource",
+    "AnyResource",
+    "EvalSuiteResource",
+    "EvolutionPolicyResource",
+    "FunctionResource",
+    "LinkTypeResource",
+    "ObjectTypeResource",
+    "PolicySetResource",
+    "ProjectionResource",
+    "StoreResource",
 ]

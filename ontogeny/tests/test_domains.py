@@ -21,6 +21,7 @@ The registry holds exactly one domain's rows; activating another retires the
 previous rows (soft delete) so ``load_latest`` rebuilds only the active domain
 — including across a restart. The HTTP surface is the console's domain picker.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -47,9 +48,14 @@ async def test_list_domains_active_first(client):
 async def test_create_activate_and_switch_back(client):
     c, sc = client
     # create an empty domain and land in it
-    r = await c.post("/api/v1/admin/domains", json={
-        "name": "logistics", "display": "物流域", "description": "test domain",
-    })
+    r = await c.post(
+        "/api/v1/admin/domains",
+        json={
+            "name": "logistics",
+            "display": "物流域",
+            "description": "test domain",
+        },
+    )
     assert r.status_code == 200
     assert r.json()["active"] is True
 
@@ -81,11 +87,11 @@ async def test_switch_survives_restart(client):
     # and its package root re-derives to the domain directory on disk
     sc2 = ServiceContext(sc.settings, sc.package_root)
     await sc2.initialize()
-    from pathlib import Path as _P
+    from pathlib import Path
 
     assert sc2.compiled is not None
     assert sc2.compiled.package_name == "logistics"
-    assert (_P(sc2.compiled.package_root) / "ontology.yaml").is_file()
+    assert (Path(sc2.compiled.package_root) / "ontology.yaml").is_file()
 
 
 async def test_create_rejects_bad_and_duplicate_names(client):
@@ -120,8 +126,8 @@ async def test_domain_check_flags_a_broken_package(client):
     broken = sc.domains_root() / "broken"
     (broken / "objects").mkdir(parents=True)
     (broken / "ontology.yaml").write_text(
-        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata:\n  name: broken\nspec: {}\n",
-        encoding="utf-8")
+        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata:\n  name: broken\nspec: {}\n", encoding="utf-8"
+    )
     (broken / "objects" / "bad.yaml").write_text("::: not yaml [", encoding="utf-8")
 
     r = await c.get("/api/v1/admin/domains")

@@ -20,6 +20,7 @@
 These cover the "one command" promise: seed -> copy package -> publish -> sync
 -> serve, with the UI mounted on the same port as the API.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -39,8 +40,7 @@ from ontogeny.demo import (
     seed_source_db,
 )
 
-OBJECT_TYPES = ("product", "material", "bom", "work-center",
-                "production-order", "operation", "quality-inspection")
+OBJECT_TYPES = ("product", "material", "bom", "work-center", "production-order", "operation", "quality-inspection")
 
 
 class TestSeedSource:
@@ -152,8 +152,12 @@ class TestPrepareDemo:
             app = build_app(sc)
             transport = httpx.ASGITransport(app=app)
             import json as _json
-            async with httpx.AsyncClient(transport=transport, base_url="http://t",
-                                         headers={"X-Ontogeny-Principal": _json.dumps({"id": "ci-admin", "is_admin": True})}) as c:
+
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://t",
+                headers={"X-Ontogeny-Principal": _json.dumps({"id": "ci-admin", "is_admin": True})},
+            ) as c:
                 r = await c.get("/api/v1/admin/builder/resources")
                 assert r.status_code == 200
                 assert r.json()["layout"]["type:product"] == {"x": 111, "y": 60}
@@ -203,8 +207,12 @@ class TestDemoIsRunnable:
         transport = httpx.ASGITransport(app=app)
         # admin/evolve planes are gated: default identity for headerless calls
         import json as _json
-        async with httpx.AsyncClient(transport=transport, base_url="http://demo",
-                                     headers={"X-Ontogeny-Principal": _json.dumps({"id": "ci-admin", "is_admin": True})}) as client:
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://demo",
+            headers={"X-Ontogeny-Principal": _json.dumps({"id": "ci-admin", "is_admin": True})},
+        ) as client:
             yield client, ctx
 
     async def test_syncs_seeded_data(self, sc):
@@ -214,8 +222,7 @@ class TestDemoIsRunnable:
             assert r.status_code == 200
             assert r.json()["inserted"] > 0
 
-        r = await client.post("/api/v1/objects/production-order/query",
-                              json={"filter": {"status": "RELEASED"}})
+        r = await client.post("/api/v1/objects/production-order/query", json={"filter": {"status": "RELEASED"}})
         assert r.json()["total"] == 2
 
     async def test_release_production_order_against_sqlite_source(self, sc):
@@ -266,8 +273,9 @@ class TestSpaServing:
         (ui / "index.html").write_text("<html><body>OO SPA SHELL</body></html>", encoding="utf-8")
         (ui / "assets" / "app.js").write_text("console.log('ontogeny')", encoding="utf-8")
 
-        settings = Settings(db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}",
-                            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"})
+        settings = Settings(
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"}
+        )
         ctx = ServiceContext(settings, str(golden_pkg_path), ui_dir=str(ui))
         await ctx.initialize()
         transport = httpx.ASGITransport(app=build_app(ctx))

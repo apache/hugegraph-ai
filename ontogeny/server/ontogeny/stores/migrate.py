@@ -27,6 +27,7 @@ Deliberately a PLAN generator, not an executor: destructive statements against
 authoritative data are printed for a human to review and run. ``--apply`` runs
 only the safe class (additive); destructive steps always stay manual.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -87,8 +88,9 @@ def plan_migration(conn, compiled) -> MigrationPlan:
     plan = MigrationPlan()
 
     live_object_tables = {t for t in existing_tables if t.startswith("ontogeny_obj_")}
-    dsl_tables = {compiled.table_name(name): name for name, obj in compiled.objects.items()
-                  if obj.spec.backing is not None}
+    dsl_tables = {
+        compiled.table_name(name): name for name, obj in compiled.objects.items() if obj.spec.backing is not None
+    }
 
     for table, object_type in sorted(dsl_tables.items()):
         t = object_table(compiled, object_type)
@@ -105,26 +107,38 @@ def plan_migration(conn, compiled) -> MigrationPlan:
                 fam_live = _type_family(live_type)
                 fam_dsl = _type_family(dsl_type)
                 if fam_live and fam_dsl and fam_live != fam_dsl:
-                    plan.steps.append(MigrationStep(
-                        "type-change", table, column.name,
-                        sql=f"-- live {live_type} vs DSL {dsl_type}",
-                        note=(f"cannot be applied automatically: back up, convert the "
-                              f"column data, then ALTER TABLE {table} ALTER COLUMN "
-                              f"{column.name} TYPE {dsl_type}"),
-                    ))
+                    plan.steps.append(
+                        MigrationStep(
+                            "type-change",
+                            table,
+                            column.name,
+                            sql=f"-- live {live_type} vs DSL {dsl_type}",
+                            note=(
+                                f"cannot be applied automatically: back up, convert the "
+                                f"column data, then ALTER TABLE {table} ALTER COLUMN "
+                                f"{column.name} TYPE {dsl_type}"
+                            ),
+                        )
+                    )
             else:
                 ddl_type = column.type.compile(conn.dialect)
-                plan.steps.append(MigrationStep(
-                    "add-column", table, column.name,
-                    sql=f"ALTER TABLE {table} ADD COLUMN {column.name} {ddl_type}",
-                    note="safe: ensure_tables applies this on next start too",
-                ))
+                plan.steps.append(
+                    MigrationStep(
+                        "add-column",
+                        table,
+                        column.name,
+                        sql=f"ALTER TABLE {table} ADD COLUMN {column.name} {ddl_type}",
+                        note="safe: ensure_tables applies this on next start too",
+                    )
+                )
 
     # orphaned object tables: the DSL no longer declares this object (rename or
     # delete). Renames need data movement; deletes need a decision.
     for table in sorted(live_object_tables - set(dsl_tables)):
-        note = ("the DSL no longer declares this object: if it was RENAMED, move the "
-                "rows to the new table by hand; only DROP when the object is really gone")
+        note = (
+            "the DSL no longer declares this object: if it was RENAMED, move the "
+            "rows to the new table by hand; only DROP when the object is really gone"
+        )
         plan.steps.append(MigrationStep("drop-table", table, sql=f"DROP TABLE {table}", note=note))
 
     # dropped/renamed properties: a column the live table has but the DSL no
@@ -136,13 +150,19 @@ def plan_migration(conn, compiled) -> MigrationPlan:
         dsl_cols = {c.name for c in t.columns}
         present = {c["name"] for c in inspector.get_columns(table)}
         for column in sorted(present - dsl_cols):
-            plan.steps.append(MigrationStep(
-                "drop-column", table, column,
-                sql=f"ALTER TABLE {table} DROP COLUMN {column}",
-                note=("the DSL no longer declares this property: if it was RENAMED, "
-                      "back the value up first (ALTER TABLE ... RENAME COLUMN is the "
-                      "data-preserving form)"),
-            ))
+            plan.steps.append(
+                MigrationStep(
+                    "drop-column",
+                    table,
+                    column,
+                    sql=f"ALTER TABLE {table} DROP COLUMN {column}",
+                    note=(
+                        "the DSL no longer declares this property: if it was RENAMED, "
+                        "back the value up first (ALTER TABLE ... RENAME COLUMN is the "
+                        "data-preserving form)"
+                    ),
+                )
+            )
     return plan
 
 
@@ -176,6 +196,7 @@ def summary_payload(plan: MigrationPlan) -> dict[str, Any]:
     """Machine-readable form (tests / future API surface)."""
     return {
         "safe": [{"table": s.table, "column": s.column, "sql": s.sql} for s in plan.safe],
-        "destructive": [{"kind": s.kind, "table": s.table, "column": s.column,
-                         "note": s.note} for s in plan.destructive],
+        "destructive": [
+            {"kind": s.kind, "table": s.table, "column": s.column, "note": s.note} for s in plan.destructive
+        ],
     }

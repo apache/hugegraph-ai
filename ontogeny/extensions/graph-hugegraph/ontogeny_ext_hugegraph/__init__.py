@@ -21,17 +21,27 @@ Registers a *factory* into ``sc.graph_store_factory``; the core invokes it only
 when an ontology declares a Projection with a resolvable endpoint, and the
 graph remains a derived, rebuildable index (deleting it is always safe).
 """
+
 from .adapter import HugeGraphClient
 
 __all__ = ["HugeGraphClient", "register"]
 
 
-def make_graph_store(endpoint: str, graph: str, *, graphspace: str = "DEFAULT",
-                     api: str = "auto", http=None, user: str | None = None,
-                     password: str | None = None, data_dir: str | None = None,
-                     **_: object) -> HugeGraphClient:
-    return HugeGraphClient(endpoint, graph, graphspace=graphspace, api=api, http=http,
-                           user=user, password=password, data_dir=data_dir)
+def make_graph_store(
+    endpoint: str,
+    graph: str,
+    *,
+    graphspace: str = "DEFAULT",
+    api: str = "auto",
+    http=None,
+    user: str | None = None,
+    password: str | None = None,
+    data_dir: str | None = None,
+    **_: object,
+) -> HugeGraphClient:
+    return HugeGraphClient(
+        endpoint, graph, graphspace=graphspace, api=api, http=http, user=user, password=password, data_dir=data_dir
+    )
 
 
 def register(sc, host) -> None:

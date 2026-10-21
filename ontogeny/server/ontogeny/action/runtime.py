@@ -23,10 +23,12 @@ evolution replay engine share this single door. Function-backed actions never
 write directly either: the sandbox returns an *effect plan* which this runtime
 applies, keeping transactions/audit/policy inside the engine.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import select
 
@@ -74,11 +76,11 @@ class Literal:
 
 
 def _jsonable(value: Any) -> Any:
-    if isinstance(value, (_dt.datetime, _dt.date)):
+    if isinstance(value, _dt.datetime | _dt.date):
         return value.isoformat()
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_jsonable(v) for v in value]
     return value
 
@@ -124,8 +126,12 @@ class ActionRuntime:
     # ---------------------------------------------------------------- public
 
     async def validate(
-        self, session, action_name: str, principal: dict,
-        parameters: dict[str, Any], target_id: str | None,
+        self,
+        session,
+        action_name: str,
+        principal: dict,
+        parameters: dict[str, Any],
+        target_id: str | None,
     ) -> dict[str, Any]:
         """Dry-run: parameters + rules + policy WITHOUT any writes."""
         action = self.compiled.actions.get(action_name)
@@ -137,9 +143,15 @@ class ActionRuntime:
         rule_results = []
         for rule in action.spec.rules:
             ok = bool(_expr.evaluate(rule.expr, ctx))
-            rule_results.append({"expr": rule.expr, "ok": ok, "message": None if ok else (rule.message or "rule rejected")})
+            rule_results.append(
+                {"expr": rule.expr, "ok": ok, "message": None if ok else (rule.message or "rule rejected")}
+            )
         decision = self.policy.decide(principal, action_name, target)
-        return {"parameters": params, "rules": rule_results, "policy": {"allow": decision.allow, "reason": decision.reason}}
+        return {
+            "parameters": params,
+            "rules": rule_results,
+            "policy": {"allow": decision.allow, "reason": decision.reason},
+        }
 
     async def execute(
         self,
@@ -158,28 +170,38 @@ class ActionRuntime:
 
         # 1) idempotent replay
         if idempotency_key:
-            existing = (await session.execute(
-                select(RevisionRow).where(RevisionRow.idempotency_key == idempotency_key)
-            )).scalar_one_or_none()
+            existing = (
+                await session.execute(select(RevisionRow).where(RevisionRow.idempotency_key == idempotency_key))
+            ).scalar_one_or_none()
             if existing is not None:
                 if existing.outcome == "executed":
                     return existing
-                raise ConflictError(
-                    f"idempotency key {idempotency_key!r} belongs to a {existing.outcome} revision"
-                )
+                raise ConflictError(f"idempotency key {idempotency_key!r} belongs to a {existing.outcome} revision")
 
         params = self._bind_parameters(action, parameters)
 
-        async def _record(outcome: str, message: str | None, before=None, after=None,
-                          rules_hit=None, decision=None, obj_id: str | None = None) -> RevisionRow:
+        async def _record(
+            outcome: str,
+            message: str | None,
+            before=None,
+            after=None,
+            rules_hit=None,
+            decision=None,
+            obj_id: str | None = None,
+        ) -> RevisionRow:
             rev = RevisionRow(
-                action=action_name, object_type=action.spec.target,
+                action=action_name,
+                object_type=action.spec.target,
                 object_id=str(obj_id or target_id or ""),
                 principal=str(principal.get("id", "anonymous")),
-                params=_jsonable(params), before=_jsonable(before), after=_jsonable(after),
-                rules_hit=rules_hit, policy_decision=None if decision is None
-                else {"allow": decision.allow, "reason": decision.reason},
-                outcome=outcome, message=message, idempotency_key=idempotency_key,
+                params=_jsonable(params),
+                before=_jsonable(before),
+                after=_jsonable(after),
+                rules_hit=rules_hit,
+                policy_decision=None if decision is None else {"allow": decision.allow, "reason": decision.reason},
+                outcome=outcome,
+                message=message,
+                idempotency_key=idempotency_key,
             )
             session.add(rev)
             await session.flush()
@@ -191,14 +213,17 @@ class ActionRuntime:
             target = await self.repo.get(session, action.spec.target, target_id, for_update=True)
             if target is None:
                 raise NotFoundError(f"{action.spec.target}/{target_id} not found (or archived)")
-        ctx = _expr.ExprContext(target=target or {}, parameters=params, principal=principal,
-                                now=utcnow(), _seq=self._id_seq)
+        ctx = _expr.ExprContext(
+            target=target or {}, parameters=params, principal=principal, now=utcnow(), _seq=self._id_seq
+        )
         rules_hit = []
         for rule in action.spec.rules:
             ok = bool(_expr.evaluate(rule.expr, ctx))
             rules_hit.append({"expr": rule.expr, "ok": ok})
             if not ok:
-                rev = await _record("rejected_rule", rule.message or "rule rejected", before=target, rules_hit=rules_hit)
+                rev = await _record(
+                    "rejected_rule", rule.message or "rule rejected", before=target, rules_hit=rules_hit
+                )
                 # Rules run before any data write, so the session holds nothing but
                 # this audit row: commit it here and the rejection is recorded no
                 # matter which shell (REST/MCP/CLI/eval) invoked the action.
@@ -237,7 +262,9 @@ class ActionRuntime:
         for eff in effects:
             if getattr(eff, "when", None) is not None and not bool(_expr.evaluate(eff.when, ctx)):
                 continue
-            outcome = await self._apply_effect(session, action, eff, ctx, target_id, expected_revision if after is None and before else None, ts)
+            outcome = await self._apply_effect(
+                session, action, eff, ctx, target_id, expected_revision if after is None and before else None, ts
+            )
             if outcome is not None:
                 after, created_id = outcome[0], outcome[1] or created_id
                 linked_pairs.extend(outcome[2] or [])
@@ -246,16 +273,28 @@ class ActionRuntime:
         effective_id = created_id or target_id
         if after is None:
             after = await self.repo.get(session, action.spec.target, effective_id)
-        rev = await _record("executed", None, before=before, after=after, rules_hit=rules_hit, decision=decision, obj_id=effective_id)
+        rev = await _record(
+            "executed", None, before=before, after=after, rules_hit=rules_hit, decision=decision, obj_id=effective_id
+        )
         for op, oid, payload in self._outbox_events(
-            action, effects, before, after, effective_id, ctx, linked_pairs,
+            action,
+            effects,
+            before,
+            after,
+            effective_id,
+            ctx,
+            linked_pairs,
         ):
-            session.add(OutboxRow(
-                # linked-object events carry their own type in the payload
-                object_type=payload.get("object_type", action.spec.target),
-                object_id=oid or "", op=op,
-                payload=_jsonable(payload), revision_id=rev.id,
-            ))
+            session.add(
+                OutboxRow(
+                    # linked-object events carry their own type in the payload
+                    object_type=payload.get("object_type", action.spec.target),
+                    object_id=oid or "",
+                    op=op,
+                    payload=_jsonable(payload),
+                    revision_id=rev.id,
+                )
+            )
         return rev
 
     # --------------------------------------------------------------- effects
@@ -285,21 +324,25 @@ class ActionRuntime:
         return out
 
     async def _apply_effect(self, session, action, eff, ctx, target_id, expected_revision, ts):
-
         if isinstance(eff, ModifyTargetEffect):
-            changes = self._coerce_props(action.spec.target, {
-                k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()
-            })
+            changes = self._coerce_props(
+                action.spec.target, {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()}
+            )
             new = await self.repo.action_update(
-                session, action.spec.target, target_id, changes, ts, expected_revision=expected_revision,
+                session,
+                action.spec.target,
+                target_id,
+                changes,
+                ts,
+                expected_revision=expected_revision,
             )
             ctx.target = new
             return new, None, []
 
         if isinstance(eff, CreateObjectEffect):
-            props = self._coerce_props(action.spec.target, {
-                k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.properties.items()
-            })
+            props = self._coerce_props(
+                action.spec.target, {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.properties.items()}
+            )
             created = await self.repo.action_insert(session, action.spec.target, props, ts)
             pk = self.compiled.objects[action.spec.target].spec.primaryKey[0]
             created_id = str(created[pk]) if created else None
@@ -320,30 +363,39 @@ class ActionRuntime:
                 # so the only supported direction is acting on that side.
                 # Picking the side relative to the actor (as this used to)
                 # made acting *from* the carrier raise for everyone.
-                (tgt_side, _src_side), = lnk.spec.join.keys.items()
+                ((tgt_side, _src_side),) = lnk.spec.join.keys.items()
                 fk_obj, fk_prop = tgt_side.split(".", 1)
                 if fk_obj != action.spec.target:
-                    raise OOError(
-                        f"set-link on FK link {eff.link!r} is only supported from the FK-carrying side"
-                    )
+                    raise OOError(f"set-link on FK link {eff.link!r} is only supported from the FK-carrying side")
                 fk_written = False
                 for entry in eff.add:
-                    resolved = {k: self._eval_value(str(v), ctx, ctx.target or {}) for k, v in entry.model_dump(exclude_none=True).items()}
+                    resolved = {
+                        k: self._eval_value(str(v), ctx, ctx.target or {})
+                        for k, v in entry.model_dump(exclude_none=True).items()
+                    }
                     if not resolved:
                         continue
-                    await self.repo.action_update(session, action.spec.target, target_id, {fk_prop: next(iter(resolved.values()))}, ts)
+                    await self.repo.action_update(
+                        session, action.spec.target, target_id, {fk_prop: next(iter(resolved.values()))}, ts
+                    )
                     fk_written = True
                 for entry in eff.remove:
                     if fk_written:
                         continue  # the add already re-pointed the FK: that IS the removal
-                    resolved = {k: self._eval_value(str(v), ctx, ctx.target or {}) for k, v in entry.model_dump(exclude_none=True).items()}
+                    resolved = {
+                        k: self._eval_value(str(v), ctx, ctx.target or {})
+                        for k, v in entry.model_dump(exclude_none=True).items()
+                    }
                     cur = (ctx.target or {}).get(fk_prop)
                     if resolved and cur is not None and str(cur) == str(next(iter(resolved.values()))):
                         # FK membership has no "absent" row: removing = clearing the FK
                         await self.repo.action_update(session, action.spec.target, target_id, {fk_prop: None}, ts)
             else:
                 for entry in eff.add:
-                    resolved = {k: self._eval_value(str(v), ctx, ctx.target or {}) for k, v in entry.model_dump(exclude_none=True).items()}
+                    resolved = {
+                        k: self._eval_value(str(v), ctx, ctx.target or {})
+                        for k, v in entry.model_dump(exclude_none=True).items()
+                    }
                     if not resolved:
                         continue
                     # join-table links: entry keys are target-side props; the single
@@ -351,9 +403,14 @@ class ActionRuntime:
                     dst = next(iter(resolved.values()))
                     await self.repo.link_add(session, eff.link, str(target_id), str(dst), ts)
                 for entry in eff.remove:
-                    resolved = {k: self._eval_value(str(v), ctx, ctx.target or {}) for k, v in entry.model_dump(exclude_none=True).items()}
+                    resolved = {
+                        k: self._eval_value(str(v), ctx, ctx.target or {})
+                        for k, v in entry.model_dump(exclude_none=True).items()
+                    }
                     if resolved:
-                        await self.repo.link_remove(session, eff.link, str(target_id), str(next(iter(resolved.values()))), ts)
+                        await self.repo.link_remove(
+                            session, eff.link, str(target_id), str(next(iter(resolved.values()))), ts
+                        )
             return None, None, []
 
         if isinstance(eff, ModifyLinkedEffect):
@@ -362,9 +419,9 @@ class ActionRuntime:
             other = lnk.spec.target if from_source else lnk.spec.source
             linked_ids = await self._linked_ids(session, eff.link, target_id, from_source)
             for oid in linked_ids:
-                changes = self._coerce_props(other, {
-                    k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()
-                })
+                changes = self._coerce_props(
+                    other, {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()}
+                )
                 await self.repo.action_update(session, other, oid, changes, ts)
             # linked rows changed: the caller emits outbox events for them so the
             # derivation worker re-materializes their function-derived properties
@@ -381,7 +438,10 @@ class ActionRuntime:
         if isinstance(lnk.spec.join, ForeignKeyJoin):
             return await self.repo.fk_linked_ids(session, link_name, obj_id, from_source=from_source)
         members = await self.repo.link_members(
-            session, link_name, src_id=obj_id if from_source else None, dst_id=obj_id if not from_source else None,
+            session,
+            link_name,
+            src_id=obj_id if from_source else None,
+            dst_id=obj_id if not from_source else None,
         )
         return [dst if from_source else src for src, dst in members]
 
@@ -417,10 +477,11 @@ class ActionRuntime:
             if not data_keys[field] or not hasattr(eff, field):
                 continue
             original = entry[field]
-            setattr(eff, field, {
-                k: (Literal(original[k]) if k in data_keys[field] else v)
-                for k, v in getattr(eff, field).items()
-            })
+            setattr(
+                eff,
+                field,
+                {k: (Literal(original[k]) if k in data_keys[field] else v) for k, v in getattr(eff, field).items()},
+            )
         return eff
 
     def _outbox_events(self, action, effects, before, after, obj_id, ctx, linked_pairs=None):
@@ -432,9 +493,17 @@ class ActionRuntime:
                 # store the template; the dispatcher resolves ${VAR} at delivery
                 # time so a missing env var cannot abort a business transaction
                 # (fix the config and replay the event instead)
-                events.append(("event", obj_id, {
-                    "kind": "webhook", "url_template": eff.url, "object_id": obj_id,
-                }))
+                events.append(
+                    (
+                        "event",
+                        obj_id,
+                        {
+                            "kind": "webhook",
+                            "url_template": eff.url,
+                            "object_id": obj_id,
+                        },
+                    )
+                )
             elif isinstance(eff, EmitEventEffect):
                 events.append(("event", obj_id, {"kind": "emit", "payload": eff.payload}))
         if after is not None and before is None:
@@ -443,6 +512,6 @@ class ActionRuntime:
             events.append(("upsert", obj_id, {"origin": "action:modify"}))
         # linked objects changed via modify-linked: their rows moved too, so the
         # derivation worker must re-materialize their function-derived props
-        for linked_type, linked_id in (linked_pairs or []):
+        for linked_type, linked_id in linked_pairs or []:
             events.append(("upsert", linked_id, {"origin": "action:linked", "object_type": linked_type}))
         return events

@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Neighbourhood exploration: random start + N nodes, depth-first."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -88,8 +89,7 @@ class TestExplore:
 
     async def test_depth_limit_bounds_the_walk(self, sc):
         async with sc.sessionmaker() as s:
-            shallow = await sc.query.explore(s, ("work-center", "WC-01"), PRINCIPAL,
-                                             n=50, max_depth=1)
+            shallow = await sc.query.explore(s, ("work-center", "WC-01"), PRINCIPAL, n=50, max_depth=1)
         # depth 1 from WC-01: neighbouring operations only, no chains
         ids = {(n["_type"], n["_id"]) for n in shallow["nodes"]}
         assert ("work-center", "WC-01") in ids
@@ -122,8 +122,9 @@ class TestExplore:
             async with sc.sessionmaker() as s:
                 # depth 2 + n=10 cover PO-1003's whole 8-node neighbourhood, so
                 # nothing is hidden by the caps: a missed branch is a missed branch
-                out = await sc.query.explore(s, ("production-order", "PO-1003"), PRINCIPAL,
-                                             n=10, max_depth=2, seed=seed)
+                out = await sc.query.explore(
+                    s, ("production-order", "PO-1003"), PRINCIPAL, n=10, max_depth=2, seed=seed
+                )
             types_found = {n["_type"] for n in out["nodes"]}
             assert len(out["nodes"]) >= 7, [n["_id"] for n in out["nodes"]]
             assert {"product", "operation", "quality-inspection"} <= types_found, types_found
@@ -132,8 +133,9 @@ class TestExplore:
         """Backtracking is structural, not luck: no seed may collapse to one branch."""
         for seed in range(6):
             async with sc.sessionmaker() as s:
-                out = await sc.query.explore(s, ("production-order", "PO-1003"), PRINCIPAL,
-                                             n=10, max_depth=2, seed=seed)
+                out = await sc.query.explore(
+                    s, ("production-order", "PO-1003"), PRINCIPAL, n=10, max_depth=2, seed=seed
+                )
             types_found = {n["_type"] for n in out["nodes"]}
             assert len(types_found) >= 4, (seed, types_found)
 
@@ -183,8 +185,7 @@ class TestExploreAPI:
             assert r2.json()["start"] == body["start"]
             assert [n["_id"] for n in r2.json()["nodes"]] == [n["_id"] for n in body["nodes"]]
 
-            r3 = await c.post("/api/v1/graph/explore",
-                              json={"start_type": "work-center", "start_id": "WC-02", "n": 4})
+            r3 = await c.post("/api/v1/graph/explore", json={"start_type": "work-center", "start_id": "WC-02", "n": 4})
             assert r3.status_code == 200
             assert r3.json()["start"] == {"type": "work-center", "id": "WC-02"}
         await ctx.engine.dispose()

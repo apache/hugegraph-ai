@@ -20,6 +20,7 @@
 Recording is marking-aware by design: principals are hashed, filters are kept
 (pure schema diagnostics), row values never leave their tables.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -82,15 +83,30 @@ class TelemetryService:
     def __init__(self, compiled) -> None:
         self.compiled = compiled
 
-    async def record_query(self, session, object_type: str, principal: dict | None,
-                           filt: Any, latency_ms: float, n_results: int, error: bool = False) -> None:
-        session.add(TelemetryQueryRow(
-            principal_hash=hash_principal(principal), object_type=object_type,
-            filter=_jsonable_filter(filt), latency_ms=latency_ms, n_results=n_results, error=error,
-        ))
+    async def record_query(
+        self,
+        session,
+        object_type: str,
+        principal: dict | None,
+        filt: Any,
+        latency_ms: float,
+        n_results: int,
+        error: bool = False,
+    ) -> None:
+        session.add(
+            TelemetryQueryRow(
+                principal_hash=hash_principal(principal),
+                object_type=object_type,
+                filter=_jsonable_filter(filt),
+                latency_ms=latency_ms,
+                n_results=n_results,
+                error=error,
+            )
+        )
 
-    async def record_action(self, session, action: str, outcome: str,
-                            rule_expr: str | None = None, duration_ms: float | None = None) -> None:
+    async def record_action(
+        self, session, action: str, outcome: str, rule_expr: str | None = None, duration_ms: float | None = None
+    ) -> None:
         session.add(TelemetryActionRow(action=action, outcome=outcome, rule_expr=rule_expr, duration_ms=duration_ms))
 
     async def record_agent(self, session, tool: str, error: str | None = None, retries: int = 0) -> None:
@@ -98,8 +114,9 @@ class TelemetryService:
 
     # ------------------------------------------------------------ aggregation
 
-    async def aggregate_signals(self, session, *, window_hours: int = 168,
-                                thresholds: dict[str, float] | None = None) -> list[dict]:
+    async def aggregate_signals(
+        self, session, *, window_hours: int = 168, thresholds: dict[str, float] | None = None
+    ) -> list[dict]:
         """Deterministic detectors -> ontogeny_evolve_signal rows.
 
         Aggregation is idempotent within the window: a (kind, evidence) pair that
@@ -137,22 +154,26 @@ class TelemetryService:
 
         # 1) empty-result rate per object type
         empty_sum = func.sum(case((TelemetryQueryRow.n_results == 0, 1), else_=0))
-        rows = (await session.execute(
-            select(TelemetryQueryRow.object_type, func.count().label("n"), empty_sum.label("empty"))
-            .where(TelemetryQueryRow.ts >= since, TelemetryQueryRow.error.is_(False))
-            .group_by(TelemetryQueryRow.object_type)
-        )).all()
+        rows = (
+            await session.execute(
+                select(TelemetryQueryRow.object_type, func.count().label("n"), empty_sum.label("empty"))
+                .where(TelemetryQueryRow.ts >= since, TelemetryQueryRow.error.is_(False))
+                .group_by(TelemetryQueryRow.object_type)
+            )
+        ).all()
         rate_th = float(th.get("empty_query_rate", 0.1))
         for object_type, n, empty in rows:
             if n and (empty or 0) / n >= rate_th:
-                created.append({"kind": "empty_query_rate",
-                                "evidence": {"object_type": object_type, "rate": round((empty or 0) / n, 3), "samples": int(n)}})
+                created.append(
+                    {
+                        "kind": "empty_query_rate",
+                        "evidence": {"object_type": object_type, "rate": round((empty or 0) / n, 3), "samples": int(n)},
+                    }
+                )
 
         # 2) filters referencing fields that are not properties (schema gap);
         #    error queries carry the strongest signal here, so no error filter
-        qrows = (await session.execute(
-            select(TelemetryQueryRow).where(TelemetryQueryRow.ts >= since)
-        )).scalars()
+        qrows = (await session.execute(select(TelemetryQueryRow).where(TelemetryQueryRow.ts >= since))).scalars()
         unmapped: dict[tuple[str, str], int] = {}
         hot: dict[tuple[str, str], dict] = {}
         unmapped_min = int(th.get("unmapped_filter_min", 5))
@@ -170,19 +191,33 @@ class TelemetryService:
                 entry["count"] += 1
         for (object_type, field), count in sorted(unmapped.items()):
             if count >= unmapped_min:
-                created.append({"kind": "unmapped_filter_field",
-                                "evidence": {"object_type": object_type, "field": field, "count": count}})
+                created.append(
+                    {
+                        "kind": "unmapped_filter_field",
+                        "evidence": {"object_type": object_type, "field": field, "count": count},
+                    }
+                )
         for entry in sorted(hot.values(), key=lambda e: (-e["count"], e["object_type"]))[:5]:
             if entry["count"] >= hot_min:
-                created.append({"kind": "hot_query",
-                                "evidence": {"object_type": entry["object_type"],
-                                             "filter": entry["filter"], "count": entry["count"]}})
+                created.append(
+                    {
+                        "kind": "hot_query",
+                        "evidence": {
+                            "object_type": entry["object_type"],
+                            "filter": entry["filter"],
+                            "count": entry["count"],
+                        },
+                    }
+                )
 
         # 3) action rule-reject rate
-        arows = (await session.execute(
-            select(TelemetryActionRow.action, TelemetryActionRow.outcome, func.count())
-            .where(TelemetryActionRow.ts >= since).group_by(TelemetryActionRow.action, TelemetryActionRow.outcome)
-        )).all()
+        arows = (
+            await session.execute(
+                select(TelemetryActionRow.action, TelemetryActionRow.outcome, func.count())
+                .where(TelemetryActionRow.ts >= since)
+                .group_by(TelemetryActionRow.action, TelemetryActionRow.outcome)
+            )
+        ).all()
         totals: dict[str, dict[str, int]] = {}
         for action, outcome, n in arows:
             totals.setdefault(action, {})[outcome] = int(n)
@@ -192,26 +227,36 @@ class TelemetryService:
             total = sum(by_outcome.values())
             rejected = by_outcome.get("rejected_rule", 0)
             if total >= rr_min and rejected / total >= rr_rate:
-                created.append({"kind": "action_rule_reject",
-                                "evidence": {"action": action, "rate": round(rejected / total, 3), "samples": total}})
+                created.append(
+                    {
+                        "kind": "action_rule_reject",
+                        "evidence": {"action": action, "rate": round(rejected / total, 3), "samples": total},
+                    }
+                )
 
         # 4) agent tool errors
-        tool_rows = (await session.execute(
-            select(TelemetryAgentRow.tool, func.count())
-            .where(TelemetryAgentRow.ts >= since, TelemetryAgentRow.error.is_not(None))
-            .group_by(TelemetryAgentRow.tool)
-        )).all()
+        tool_rows = (
+            await session.execute(
+                select(TelemetryAgentRow.tool, func.count())
+                .where(TelemetryAgentRow.ts >= since, TelemetryAgentRow.error.is_not(None))
+                .group_by(TelemetryAgentRow.tool)
+            )
+        ).all()
         ae_min = int(th.get("agent_error_min", 3))
         for tool, n in tool_rows:
             if n >= ae_min:
                 created.append({"kind": "agent_tool_error", "evidence": {"tool": tool, "count": int(n)}})
 
         # 5) slow queries: p95 latency per object type over the window
-        lat_rows = (await session.execute(
-            select(TelemetryQueryRow.object_type, TelemetryQueryRow.latency_ms)
-            .where(TelemetryQueryRow.ts >= since, TelemetryQueryRow.error.is_(False),
-                   TelemetryQueryRow.latency_ms.is_not(None))
-        )).all()
+        lat_rows = (
+            await session.execute(
+                select(TelemetryQueryRow.object_type, TelemetryQueryRow.latency_ms).where(
+                    TelemetryQueryRow.ts >= since,
+                    TelemetryQueryRow.error.is_(False),
+                    TelemetryQueryRow.latency_ms.is_not(None),
+                )
+            )
+        ).all()
         by_type: dict[str, list[float]] = {}
         for object_type, latency in lat_rows:
             by_type.setdefault(object_type, []).append(float(latency))
@@ -222,9 +267,12 @@ class TelemetryService:
             lats.sort()
             p95 = lats[min(len(lats) - 1, int(round(0.95 * (len(lats) - 1))))]
             if p95 >= p95_th:
-                created.append({"kind": "slow_query_p95",
-                                "evidence": {"object_type": object_type,
-                                             "p95_ms": round(p95, 1), "samples": len(lats)}})
+                created.append(
+                    {
+                        "kind": "slow_query_p95",
+                        "evidence": {"object_type": object_type, "p95_ms": round(p95, 1), "samples": len(lats)},
+                    }
+                )
 
         # 6) approval friction: humans rejecting an agent's writes is a policy
         # mismatch signal (the plugin keeps asking for things people keep saying
@@ -238,12 +286,16 @@ class TelemetryService:
             from ..agent.models import AgentApprovalRow
         except ModuleNotFoundError:  # pragma: no cover -- agent layer absent
             return []
-        rows = (await session.execute(
-            select(AgentApprovalRow.plugin, AgentApprovalRow.status, func.count())
-            .where(AgentApprovalRow.requested_at >= since,
-                   AgentApprovalRow.status.in_(("rejected", "executed", "approved")))
-            .group_by(AgentApprovalRow.plugin, AgentApprovalRow.status)
-        )).all()
+        rows = (
+            await session.execute(
+                select(AgentApprovalRow.plugin, AgentApprovalRow.status, func.count())
+                .where(
+                    AgentApprovalRow.requested_at >= since,
+                    AgentApprovalRow.status.in_(("rejected", "executed", "approved")),
+                )
+                .group_by(AgentApprovalRow.plugin, AgentApprovalRow.status)
+            )
+        ).all()
         rate_th = float(th.get("approval_reject_rate", 0.3))
         min_th = int(th.get("approval_reject_min", 5))
         by_plugin: dict[str, dict[str, int]] = {}
@@ -254,29 +306,36 @@ class TelemetryService:
             total = sum(by_status.values())
             rejected = by_status.get("rejected", 0)
             if total >= min_th and rejected / total >= rate_th:
-                created.append({"kind": "approval_reject_rate",
-                                "evidence": {"plugin": plugin,
-                                             "rate": round(rejected / total, 3), "samples": total}})
+                created.append(
+                    {
+                        "kind": "approval_reject_rate",
+                        "evidence": {"plugin": plugin, "rate": round(rejected / total, 3), "samples": total},
+                    }
+                )
         return created
 
     async def _detect_quarantine(self, session, since) -> list[dict]:
         from ..stores.sync import QuarantineRow
 
-        rows = (await session.execute(
-            select(QuarantineRow.object_type, QuarantineRow.code, func.count())
-            .where(QuarantineRow.created_at >= since).group_by(QuarantineRow.object_type, QuarantineRow.code)
-        )).all()
+        rows = (
+            await session.execute(
+                select(QuarantineRow.object_type, QuarantineRow.code, func.count())
+                .where(QuarantineRow.created_at >= since)
+                .group_by(QuarantineRow.object_type, QuarantineRow.code)
+            )
+        ).all()
         return [
-            {"kind": "quarantine_rate",
-             "evidence": {"object_type": object_type, "code": code, "count": int(n)}}
+            {"kind": "quarantine_rate", "evidence": {"object_type": object_type, "code": code, "count": int(n)}}
             for object_type, code, n in rows
         ]
 
     async def _known_signal_keys(self, session, since) -> set[str]:
         """(kind, evidence) fingerprints already recorded inside the window."""
-        rows = (await session.execute(
-            select(EvolveSignalRow.kind, EvolveSignalRow.evidence).where(EvolveSignalRow.created_at >= since)
-        )).all()
+        rows = (
+            await session.execute(
+                select(EvolveSignalRow.kind, EvolveSignalRow.evidence).where(EvolveSignalRow.created_at >= since)
+            )
+        ).all()
         return {_signal_key({"kind": kind, "evidence": evidence or {}}) for kind, evidence in rows}
 
 
@@ -295,7 +354,7 @@ def _filter_fields(filt: Any) -> list[str]:
             return [f for sub in filt.get("and", []) + filt.get("or", []) for f in _filter_fields(sub)]
         if "not" in filt:
             return _filter_fields(filt["not"])
-        return [str(k) for k in filt.keys()]
+        return [str(k) for k in filt]
     return []
 
 
@@ -306,6 +365,6 @@ def _jsonable_filter(filt: Any) -> Any:
         return {k: _jsonable_filter(v) for k, v in filt.items()}
     if isinstance(filt, list):
         return [_jsonable_filter(v) for v in filt]
-    if isinstance(filt, (_dt.datetime, _dt.date)):
+    if isinstance(filt, _dt.datetime | _dt.date):
         return filt.isoformat()
     return filt

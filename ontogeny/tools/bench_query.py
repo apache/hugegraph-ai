@@ -28,6 +28,7 @@ query-engine changes and compare like with like:
 Measures per object type: search-all, filtered search, and (for the golden
 package) a 2-hop traversal. Reports p50/p95 in milliseconds.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -61,19 +62,19 @@ async def bench(sc, iters: int) -> None:
         target = catalog[name].target
         # a real field to filter on, so the filter path is exercised too
         field = next(iter(sc.compiled.objects[target].spec.properties))
-        async def _run(s, filt=None):
-            return await sc.query.query(s, target, PRINCIPAL, filt=filt, limit=20)
-        for label, filt in (("all", None),
-                            (f"filter:{field}", {"field": field, "op": "contains", "value": ""})):
+
+        async def _run(s, filt=None, *, _t=target):
+            return await sc.query.query(s, _t, PRINCIPAL, filt=filt, limit=20)
+
+        for label, filt in (("all", None), (f"filter:{field}", {"field": field, "op": "contains", "value": ""})):
             samples = []
             for _ in range(iters):
                 async with sc.sessionmaker() as s:
                     t0 = time.perf_counter()
                     await _run(s, filt)
                     samples.append((time.perf_counter() - t0) * 1000)
-            print(f"{name} [{label}]".ljust(44)
-                  + f" {pct(samples, .5):8.1f} {pct(samples, .95):8.1f} {iters:5d}")
-    for name in traverses:
+            print(f"{name} [{label}]".ljust(44) + f" {pct(samples, .5):8.1f} {pct(samples, .95):8.1f} {iters:5d}")
+    for _name in traverses:
         # a cheap deterministic traversal: first object of the first type
         first_type = sorted(sc.compiled.objects)[0]
         async with sc.sessionmaker() as s:
@@ -92,8 +93,7 @@ async def bench(sc, iters: int) -> None:
                 t0 = time.perf_counter()
                 await sc.query.traverse(s, first_type, [start_id], PRINCIPAL, path)
                 samples.append((time.perf_counter() - t0) * 1000)
-        print(f"traverse[{links[0]},1hop]:".ljust(44)
-              + f" {pct(samples, .5):8.1f} {pct(samples, .95):8.1f} {iters:5d}")
+        print(f"traverse[{links[0]},1hop]:".ljust(44) + f" {pct(samples, .5):8.1f} {pct(samples, .95):8.1f} {iters:5d}")
 
 
 async def main() -> None:
@@ -107,15 +107,13 @@ async def main() -> None:
 
     tmp = Path(tempfile.mkdtemp(prefix="ontogeny-bench-"))
     try:
-        pkg_src = Path(os.environ.get("ONTOGENY_BENCH_PACKAGE")
-                       or REPO / "domains" / "product-manufacturing")
+        pkg_src = Path(os.environ.get("ONTOGENY_BENCH_PACKAGE") or REPO / "domains" / "product-manufacturing")
         pkg = tmp / "pkg"
         shutil.copytree(pkg_src, pkg)
         src = tmp / "src.db"
         seed_from_package(pkg_src, src, force=True)
         dsn = os.environ.get("ONTOGENY_BENCH_DSN") or f"sqlite+aiosqlite:///{tmp/'main.db'}"
-        sc = ServiceContext(Settings(db_dsn=dsn,
-                                     env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}), str(pkg))
+        sc = ServiceContext(Settings(db_dsn=dsn, env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}), str(pkg))
         await sc.initialize()
         for t in sc.compiled.objects:
             await sc.sync(t)

@@ -21,6 +21,7 @@ always validate, and runtime fixtures are derived from it.
 A session-scoped guard snapshots the golden package tree and fails the session
 if any test mutates it on disk -- promotion tests must work on temp copies.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -83,14 +84,15 @@ def golden_pkg(golden_pkg_path):
 
 # HTTP client over a real ServiceContext (ASGI transport) — shared by the
 # api and guided-demo test modules.
-import shutil  # noqa: E402
+import shutil
 
-import httpx  # noqa: E402
-import pytest_asyncio  # noqa: E402
+import httpx
+import pytest_asyncio
 
-from ontogeny.api import build_app  # noqa: E402
-from ontogeny.config import Settings  # noqa: E402
-from ontogeny.service import ServiceContext  # noqa: E402
+from ontogeny.api import build_app
+from ontogeny.config import Settings
+from ontogeny.service import ServiceContext
+
 
 @pytest_asyncio.fixture()
 async def client(golden_pkg_path, tmp_path):
@@ -103,12 +105,13 @@ async def client(golden_pkg_path, tmp_path):
 
     seed_from_package(golden_pkg_path, src, force=True)
 
-    settings = Settings(db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-                        # the platform's production default is dev_auth OFF;
-                        # tests opt INTO the identity simulation explicitly
-                        dev_auth=True,
-                        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-                             "WMS_WEBHOOK": "https://wms.example.test/hook"})
+    settings = Settings(
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        # the platform's production default is dev_auth OFF;
+        # tests opt INTO the identity simulation explicitly
+        dev_auth=True,
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+    )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
     app = build_app(sc)
@@ -118,7 +121,5 @@ async def client(golden_pkg_path, tmp_path):
     # exercise identity still pass their own X-Ontogeny-Principal header, which
     # overrides this default for that request.
     default_headers = {"X-Ontogeny-Principal": json.dumps({"id": "ci-admin", "is_admin": True})}
-    async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                 headers=default_headers) as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=default_headers) as c:
         yield c, sc
-

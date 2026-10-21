@@ -22,6 +22,7 @@ the whole design claim is that the role matrix writes *Cedar*, so a permission a
 administrator toggles on is enforced by the same policy plane that decides every
 other request — not by a second table the engine never reads.
 """
+
 from __future__ import annotations
 
 import json
@@ -50,8 +51,9 @@ async def client(golden_pkg_path, tmp_path, monkeypatch):
 
     seed_from_package(golden_pkg_path, src, force=True)
 
-    settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-                        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"})
+    settings = Settings(
+        dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}
+    )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
     app = build_app(sc)
@@ -74,8 +76,7 @@ class TestLogin:
         # ...and it is idempotent
         assert await sc.auth.ensure_admin() is None
 
-        r = await c.post("/api/v1/auth/login",
-                         json={"username": "root", "password": "root-password"})
+        r = await c.post("/api/v1/auth/login", json={"username": "root", "password": "root-password"})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["principal"]["id"] == "root"
@@ -135,15 +136,21 @@ class TestAccountAdministration:
         await sc.auth.ensure_admin()
         h = {"X-Ontogeny-Principal": json.dumps(ADMIN)}
 
-        created = await c.post("/api/v1/admin/users", headers=h, json={
-            "username": "li", "password": "li-password", "display": "李工",
-            "roles": ["operator", "quality"], "site": "plant-north",
-        })
+        created = await c.post(
+            "/api/v1/admin/users",
+            headers=h,
+            json={
+                "username": "li",
+                "password": "li-password",
+                "display": "李工",
+                "roles": ["operator", "quality"],
+                "site": "plant-north",
+            },
+        )
         assert created.status_code == 200, created.text
         assert created.json()["roles"] == ["operator", "quality"]
 
-        patched = await c.patch("/api/v1/admin/users/li", headers=h,
-                                json={"roles": ["operator"], "site": "south"})
+        patched = await c.patch("/api/v1/admin/users/li", headers=h, json={"roles": ["operator"], "site": "south"})
         assert patched.status_code == 200
         assert patched.json()["roles"] == ["operator"]
         assert patched.json()["site"] == "south"
@@ -164,8 +171,7 @@ class TestAccountAdministration:
         c, sc, _ = client
         await sc.auth.ensure_admin()
         h = {"X-Ontogeny-Principal": json.dumps(ADMIN)}
-        r = await c.post("/api/v1/admin/users", headers=h,
-                         json={"username": "weak", "password": "123"})
+        r = await c.post("/api/v1/admin/users", headers=h, json={"username": "weak", "password": "123"})
         assert r.status_code == 400
 
 
@@ -206,25 +212,29 @@ class TestRolesAndPermissions:
         async def may_release() -> bool:
             """The dry-run endpoint: rules + policy, no writes and no data
             dependency, so this isolates the authorization question."""
-            r = await c.post("/api/v1/actions/release-production-order/validate",
-                             headers={"X-Ontogeny-Principal": json.dumps(operator)},
-                             json={"parameters": {}, "target_id": "PO-1002"})
+            r = await c.post(
+                "/api/v1/actions/release-production-order/validate",
+                headers={"X-Ontogeny-Principal": json.dumps(operator)},
+                json={"parameters": {}, "target_id": "PO-1002"},
+            )
             assert r.status_code == 200, r.text
             return bool(r.json()["policy"]["allow"])
 
         assert await may_release() is False, "no permit yet -> Cedar denies"
 
         # grant the role the action through the role matrix
-        saved = await c.put("/api/v1/admin/roles/line_lead", headers=h,
-                            json={"name": "line_lead", "actions": ["release-production-order"]})
+        saved = await c.put(
+            "/api/v1/admin/roles/line_lead",
+            headers=h,
+            json={"name": "line_lead", "actions": ["release-production-order"]},
+        )
         assert saved.status_code == 200, saved.text
         assert (pkg / "policies" / "role-line-lead.cedar").is_file()
 
         assert await may_release() is True, "the grant is enforced by the engine"
 
         # and revoking it is just as real
-        await c.put("/api/v1/admin/roles/line_lead", headers=h,
-                    json={"name": "line_lead", "actions": []})
+        await c.put("/api/v1/admin/roles/line_lead", headers=h, json={"name": "line_lead", "actions": []})
         assert await may_release() is False
 
     async def test_deleting_a_role_reassigns_its_holders(self, client):
@@ -233,10 +243,14 @@ class TestRolesAndPermissions:
         h = {"X-Ontogeny-Principal": json.dumps(ADMIN)}
         await sc.auth.create_user(username="m1", password="m1-password", roles=["temp_role"])
 
-        await c.put("/api/v1/admin/roles/temp_role", headers=h,
-                    json={"name": "temp_role", "actions": ["release-production-order"]})
-        r = await c.request("DELETE", "/api/v1/admin/roles/temp_role", headers=h,
-                            json={"name": "temp_role", "reassign_to": "operator"})
+        await c.put(
+            "/api/v1/admin/roles/temp_role",
+            headers=h,
+            json={"name": "temp_role", "actions": ["release-production-order"]},
+        )
+        r = await c.request(
+            "DELETE", "/api/v1/admin/roles/temp_role", headers=h, json={"name": "temp_role", "reassign_to": "operator"}
+        )
         assert r.status_code == 200, r.text
         assert r.json()["reassigned"] == ["m1"]
         users = (await c.get("/api/v1/admin/users", headers=h)).json()["users"]
@@ -250,15 +264,21 @@ class TestRolesAndPermissions:
         body = {"name": "qa", "actions": ["record-inspection", "release-production-order"]}
         await c.put("/api/v1/admin/roles/qa", headers=h, json=body)
         first = (pkg / "policies" / "role-qa.cedar").read_text(encoding="utf-8")
-        await c.put("/api/v1/admin/roles/qa", headers=h,
-                    json={"name": "qa", "actions": ["release-production-order", "record-inspection"]})
+        await c.put(
+            "/api/v1/admin/roles/qa",
+            headers=h,
+            json={"name": "qa", "actions": ["release-production-order", "record-inspection"]},
+        )
         assert (pkg / "policies" / "role-qa.cedar").read_text(encoding="utf-8") == first
 
     async def test_site_scoped_grant_compiles_to_a_condition(self, client):
         c, sc, pkg = client
         await sc.auth.ensure_admin()
         h = {"X-Ontogeny-Principal": json.dumps(ADMIN)}
-        await c.put("/api/v1/admin/roles/site_lead", headers=h,
-                    json={"name": "site_lead", "actions": ["release-production-order"], "site": "plant-north"})
+        await c.put(
+            "/api/v1/admin/roles/site_lead",
+            headers=h,
+            json={"name": "site_lead", "actions": ["release-production-order"], "site": "plant-north"},
+        )
         text = (pkg / "policies" / "role-site-lead.cedar").read_text(encoding="utf-8")
         assert 'principal.site == "plant-north"' in text

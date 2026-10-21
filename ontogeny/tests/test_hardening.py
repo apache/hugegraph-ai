@@ -18,15 +18,14 @@
 """Platform hardening details: honest linting of unimplemented engine kinds,
 the single-process deployment contract, and extension module ownership.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-
 from ontogeny.api_factory import multiprocess_suspected
 from ontogeny.config import Settings
 from ontogeny.ext_host import ExtensionHost
-
 
 # ------------------------------------------------------------------ B6
 
@@ -96,15 +95,15 @@ def _host(tmp_path, modules: dict[str, str], names: list[str]):
         d = root / name
         d.mkdir(parents=True, exist_ok=True)
         module = modules[name]
-        (d / "extension.yaml").write_text(
-            GOOD.format(name=name, module=module), encoding="utf-8")
+        (d / "extension.yaml").write_text(GOOD.format(name=name, module=module), encoding="utf-8")
         pkgdir = d / module
         pkgdir.mkdir(exist_ok=True)
         (pkgdir / "__init__.py").write_text(
-            f"def register(sc, host):\n    host.provide('capability:{name}')\n",
-            encoding="utf-8")
-    sc = SimpleNamespace(settings=Settings(extensions_dir=str(root)),
-                         agent_engines={}, llm=None, graph_store_factory=None)
+            f"def register(sc, host):\n    host.provide('capability:{name}')\n", encoding="utf-8"
+        )
+    sc = SimpleNamespace(
+        settings=Settings(extensions_dir=str(root)), agent_engines={}, llm=None, graph_store_factory=None
+    )
     host = ExtensionHost(sc)
     host.discover()
     return host
@@ -112,9 +111,7 @@ def _host(tmp_path, modules: dict[str, str], names: list[str]):
 
 class TestModuleOwnership:
     async def test_duplicate_module_name_is_refused_loudly(self, tmp_path):
-        host = _host(tmp_path,
-                     modules={"ext-a": "pkg_shared", "ext-b": "pkg_shared"},
-                     names=["ext-a", "ext-b"])
+        host = _host(tmp_path, modules={"ext-a": "pkg_shared", "ext-b": "pkg_shared"}, names=["ext-a", "ext-b"])
         host.load()
         by_name = {r.name: r for r in host.records}
         assert by_name["ext-a"].status == "loaded"

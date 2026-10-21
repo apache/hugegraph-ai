@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """mini-expr: parsing, precedence, semantics, determinism, static analysis."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -27,13 +28,18 @@ from ontogeny.errors import ExpressionError
 
 
 def ctx(**kw) -> ExprContext:
-    base = dict(
-        target={"status": "OPEN", "priority": "HIGH", "site": "north", "n": 10,
-                "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
-                "closed_at": None},
-        parameters={"resolution": "fixed", "downtime_minutes": 42},
-        principal={"id": "u1", "Role": {"maintenance_supervisor"}, "site": "north"},
-    )
+    base = {
+        "target": {
+            "status": "OPEN",
+            "priority": "HIGH",
+            "site": "north",
+            "n": 10,
+            "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+            "closed_at": None,
+        },
+        "parameters": {"resolution": "fixed", "downtime_minutes": 42},
+        "principal": {"id": "u1", "Role": {"maintenance_supervisor"}, "site": "north"},
+    }
     base.update(kw)
     return ExprContext(**base)
 
@@ -81,20 +87,24 @@ class TestDatetime:
     def test_subtraction_milliseconds(self):
         v = evaluate(
             "target.closed_at - target.created_at",
-            ctx(target={
-                "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
-                "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.timezone.utc),
-            }),
+            ctx(
+                target={
+                    "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+                    "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.timezone.utc),
+                }
+            ),
         )
         assert v == 30 * 60 * 1000
 
     def test_minutes_derived_pattern(self):
         v = evaluate(
             "(closed_at - created_at) / 60000",
-            ExprContext(target={
-                "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
-                "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.timezone.utc),
-            }),
+            ExprContext(
+                target={
+                    "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+                    "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.timezone.utc),
+                }
+            ),
         )
         assert v == 30
 
@@ -139,7 +149,7 @@ class TestAnalysis:
         assert ("parameters", "resolution") in paths
 
     def test_analyze_parse_error_raises(self):
-        from ontogeny.errors import ExpressionError as EE
+        from ontogeny.errors import ExpressionError
 
-        with pytest.raises(EE):
+        with pytest.raises(ExpressionError):
             analyze("(((")

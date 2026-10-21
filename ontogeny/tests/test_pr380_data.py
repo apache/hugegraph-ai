@@ -17,9 +17,8 @@
 """PR #380 data/robustness-pack regression tests: projection backfill
 pagination, builder store sidecars, demo env respect, admin lockout
 self-heal, bounded reads, sandbox stdout isolation."""
-from __future__ import annotations
 
-import json
+from __future__ import annotations
 
 import pytest
 
@@ -37,10 +36,17 @@ class TestProjectionKeysetBackfill:
         for i in range(21):
             async with sc.sessionmaker() as s:
                 await sc.repo.action_insert(
-                    s, "work-center",
-                    {"work_center_id": f"WC-X{i:02d}", "name": f"Extra {i}",
-                     "process": "assembly", "site": "plant-north",
-                     "capacity_per_shift": 10, "shifts_per_day": 1, "status": "ACTIVE"},
+                    s,
+                    "work-center",
+                    {
+                        "work_center_id": f"WC-X{i:02d}",
+                        "name": f"Extra {i}",
+                        "process": "assembly",
+                        "site": "plant-north",
+                        "capacity_per_shift": 10,
+                        "shifts_per_day": 1,
+                        "status": "ACTIVE",
+                    },
                     dt.datetime.now(dt.timezone.utc),
                 )
                 await s.commit()
@@ -61,7 +67,6 @@ class TestProjectionKeysetBackfill:
         worker.client = FakeClient()
         worker._link_pairs = ProjectionWorker._link_pairs.__get__(worker)
         # 强制小批量：monkeypatch 掉常量
-        import ontogeny.projection.worker as w
 
         original_query = sc.repo.query
 
@@ -84,7 +89,8 @@ class TestBuilderStoreSidecars:
     async def test_inline_store_spec_materializes_store_yaml(self, client):
         c, sc = client
         obj = {
-            "apiVersion": "ontogeny/v1", "kind": "ObjectType",
+            "apiVersion": "ontogeny/v1",
+            "kind": "ObjectType",
             "metadata": {"name": "widget", "display": "Widget"},
             "spec": {
                 "primaryKey": ["widget_id"],
@@ -96,8 +102,7 @@ class TestBuilderStoreSidecars:
                     "store": "widget-src",
                     "mode": "materialized",
                     "source": {"table": "widgets"},
-                    "store_spec": {"kind": "sqlite",
-                                   "connection": "sqlite:///widgets.db"},
+                    "store_spec": {"kind": "sqlite", "connection": "sqlite:///widgets.db"},
                 },
             },
         }
@@ -117,18 +122,13 @@ class TestDemoEnvRespect:
         monkeypatch.setenv("ONTOGENY_DB_DSN", "sqlite+aiosqlite:////data/operator.db")
         paths = prepare_demo(tmp_path / "demo", package="domains/product-manufacturing")
         env = paths.as_env()
-        # as_env itself only carries defaults; the respect happens in cli via
-        # setdefault -- assert the contract here and simulate the cli line
-        for k, v in env.items():
-            os_setdefault = {k: v}
         import os
 
         assert os.environ["ONTOGENY_DB_DSN"].endswith("/operator.db")
         # the exact cli behaviour under test:
-        for k, v in env.items():
-            os.environ.setdefault(k, v)
-        assert os.environ["ONTOGENY_DB_DSN"].endswith("/operator.db"), \
-            "operator-preset env must survive a --demo boot"
+        for key, val in env.items():
+            os.environ.setdefault(key, val)
+        assert os.environ["ONTOGENY_DB_DSN"].endswith("/operator.db"), "operator-preset env must survive a --demo boot"
 
 
 class TestAdminLockout:
@@ -143,8 +143,7 @@ class TestAdminLockout:
 
     async def test_second_admin_can_be_demoted(self, client):
         c, sc = client
-        await sc.auth.create_user(username="admin2", password="password123",
-                                  roles=["admin"], is_admin=True)
+        await sc.auth.create_user(username="admin2", password="password123", roles=["admin"], is_admin=True)
         out = await sc.auth.update_user("admin2", {"is_admin": False})
         assert out["is_admin"] is False
 
@@ -170,10 +169,15 @@ class TestBoundedReads:
 
     async def test_traverse_depth_rejected_over_bound(self, client):
         c, _ = client
-        r = await c.post("/api/v1/graph/traverse", json={
-            "start_type": "production-order", "start_ids": ["PO-1001"],
-            "path": [], "max_depth": 10,
-        })
+        r = await c.post(
+            "/api/v1/graph/traverse",
+            json={
+                "start_type": "production-order",
+                "start_ids": ["PO-1001"],
+                "path": [],
+                "max_depth": 10,
+            },
+        )
         assert r.status_code == 422
 
     async def test_readonly_tool_limit_clamped(self, client):
@@ -190,9 +194,7 @@ class TestSandboxStdoutIsolation:
         pkg = tmp_path / "pkg"
         shutil.copytree(golden_pkg_path, pkg)
         (pkg / "functions" / "chatty.py").write_text(
-            "def say(what):\n"
-            "    print('user-side noise:', what)\n"
-            "    return {'said': what}\n",
+            "def say(what):\n" "    print('user-side noise:', what)\n" "    return {'said': what}\n",
             encoding="utf-8",
         )
         import yaml as _yaml
@@ -204,7 +206,8 @@ class TestSandboxStdoutIsolation:
         doc["spec"]["capabilities"] = []
         doc["spec"].pop("returns", None)
         (pkg / "functions" / "chatty.yaml").write_text(
-            _yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            _yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
 
         from ontogeny.config import Settings
         from ontogeny.core import load_package
@@ -212,7 +215,7 @@ class TestSandboxStdoutIsolation:
         from ontogeny.functions.sandbox import FunctionSandbox
         from ontogeny.registry.store import RegistryService
 
-        settings = Settings(env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"})
+        Settings(env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"})
         engine = make_engine("sqlite+aiosqlite:///:memory:")
         await init_schema(engine)
         maker = make_sessionmaker(engine)

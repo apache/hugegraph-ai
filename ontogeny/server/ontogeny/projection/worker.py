@@ -23,6 +23,7 @@ interface. Concrete stores live in ``extensions/`` (``graph-hugegraph``
 ships with the repo) and are injected via ``sc.graph_store_factory``; with no
 graph extension loaded the platform degrades to SQL-only by design.
 """
+
 from __future__ import annotations
 
 import logging
@@ -83,8 +84,9 @@ class GraphStore(Protocol):
 
     async def upsert_vertices(self, label: str, pk_prop: str, items: list[dict[str, Any]]) -> None: ...
 
-    async def upsert_edges(self, link_name: str, src_label: str, dst_label: str,
-                           pairs: list[tuple[str, str]]) -> None: ...
+    async def upsert_edges(
+        self, link_name: str, src_label: str, dst_label: str, pairs: list[tuple[str, str]]
+    ) -> None: ...
 
     async def delete_vertex(self, label: str, vertex_id: str) -> None: ...
 
@@ -116,9 +118,9 @@ class ProjectionWorker:
         item[pk] = row.get(pk)
         await self.client.upsert_vertices(object_type, pk, [item])
 
-    async def _link_pairs(self, repo, session, link_name: str,
-                          *, src_id: str | None = None,
-                          dst_id: str | None = None) -> list[tuple[str, str]]:
+    async def _link_pairs(
+        self, repo, session, link_name: str, *, src_id: str | None = None, dst_id: str | None = None
+    ) -> list[tuple[str, str]]:
         """Edges of a projected link, from whichever store backs its join.
 
         Both join kinds must reach the graph: a join-table link is read from its
@@ -154,7 +156,10 @@ class ProjectionWorker:
                 pairs += await self._link_pairs(repo, session, link_name, dst_id=obj_id)
             if pairs:
                 await self.client.upsert_edges(
-                    link_name, lnk.spec.source, lnk.spec.target, pairs,
+                    link_name,
+                    lnk.spec.source,
+                    lnk.spec.target,
+                    pairs,
                 )
 
     async def handle_event(self, repo, session, event: OutboxRow) -> bool:
@@ -168,7 +173,7 @@ class ProjectionWorker:
             await self.project_object(repo, session, object_type, str(event.object_id))
             await self._reproject_links(repo, session, object_type, str(event.object_id))
             return True
-        except Exception as exc:  # noqa: BLE001 -- worker must never crash the pipeline
+        except Exception as exc:
             log.warning("projection failed for %s/%s: %s", object_type, event.object_id, exc)
             return False
 
@@ -185,7 +190,11 @@ class ProjectionWorker:
             while True:
                 filt = {"field": pk, "op": "gt", "value": last} if last is not None else None
                 rows, _total = await repo.query(
-                    session, object_type, filt=filt, sort=[[pk, "asc"]], limit=batch,
+                    session,
+                    object_type,
+                    filt=filt,
+                    sort=[[pk, "asc"]],
+                    limit=batch,
                 )
                 if not rows:
                     break

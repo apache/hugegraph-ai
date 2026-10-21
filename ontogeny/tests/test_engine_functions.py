@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Query service (assembly/derived/masking/traverse) + function sandbox."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -56,8 +57,9 @@ async def env(golden_pkg_path, tmp_path):
         compiled = await RegistryService().publish(s, pkg)
         await s.commit()
     repo = ObjectRepository(compiled)
-    sync = SyncEngine(compiled, settings, repo,
-                      lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection)))
+    sync = SyncEngine(
+        compiled, settings, repo, lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection))
+    )
     async with maker() as s:
         await repo.ensure(s)
         for t in compiled.objects:
@@ -65,8 +67,7 @@ async def env(golden_pkg_path, tmp_path):
         await s.commit()
     query = QueryService(compiled, repo, PolicyEngine(compiled))
     sandbox = FunctionSandbox(compiled, repo, timeout_s=15)
-    yield {"maker": maker, "compiled": compiled, "repo": repo, "query": query,
-           "sandbox": sandbox, "pkg": pkg}
+    yield {"maker": maker, "compiled": compiled, "repo": repo, "query": query, "sandbox": sandbox, "pkg": pkg}
     await engine.dispose()
 
 
@@ -79,8 +80,7 @@ async def join_env(tmp_path):
     root = tmp_path / "join-pkg"
     root.mkdir()
     (root / "ontology.yaml").write_text(
-        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: join-table-demo}\n"
-        "spec: {imports: []}\n",
+        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: join-table-demo}\n" "spec: {imports: []}\n",
         encoding="utf-8",
     )
     (root / "stores").mkdir()
@@ -147,8 +147,9 @@ async def join_env(tmp_path):
         compiled = await RegistryService().publish(s, pkg)
         await s.commit()
     repo = ObjectRepository(compiled)
-    sync = SyncEngine(compiled, settings, repo,
-                      lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection)))
+    sync = SyncEngine(
+        compiled, settings, repo, lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection))
+    )
     async with maker() as s:
         await repo.ensure(s)
         await sync.sync(s, "container")
@@ -163,13 +164,13 @@ class TestQuery:
     async def test_filter_and_masking(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            out = await q.query(s, "material", SUPER,
-                                filt={"field": "material_id", "op": "eq", "value": "M-101"})
+            out = await q.query(s, "material", SUPER, filt={"field": "material_id", "op": "eq", "value": "M-101"})
             assert out["total"] == 1
             assert out["objects"][0]["unit_cost"] == "__masked__"  # marking hidden for SUPER
 
-            out2 = await q.query(s, "material", {"id": "claim", "markings": ["internal"]},
-                                 filt={"material_id": "M-102"})
+            out2 = await q.query(
+                s, "material", {"id": "claim", "markings": ["internal"]}, filt={"material_id": "M-102"}
+            )
             assert out2["total"] == 1
             assert out2["objects"][0]["unit_cost"] == 8.5
 
@@ -183,13 +184,13 @@ class TestQuery:
     async def test_link_expansion_fk(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            out = await q.query(s, "work-center", SUPER,
-                                filt={"work_center_id": "WC-01"}, links=["operation-work-center"])
+            out = await q.query(
+                s, "work-center", SUPER, filt={"work_center_id": "WC-01"}, links=["operation-work-center"]
+            )
             linked = out["links"]["operation-work-center"]["WC-01"]
             assert {o["operation_id"] for o in linked} == {"OP-2001", "OP-2002", "OP-2301"}
 
-            inspections = await q.links(s, "production-order", "PO-1003",
-                                        "production-order-inspections", SUPER)
+            inspections = await q.links(s, "production-order", "PO-1003", "production-order-inspections", SUPER)
             assert [i["inspection_id"] for i in inspections] == ["QI-3001"]
 
     async def test_link_expansion_over_a_join_table(self, join_env):
@@ -200,8 +201,7 @@ class TestQuery:
         q, repo = join_env["query"], join_env["repo"]
         async with join_env["maker"]() as s:
             # ontology-owned link membership (join table is engine-managed)
-            await repo.link_add(s, "container-items", "C-1", "I-2",
-                                dt.datetime.now(dt.timezone.utc))
+            await repo.link_add(s, "container-items", "C-1", "I-2", dt.datetime.now(dt.timezone.utc))
             await s.commit()
             members = await repo.link_members(s, "container-items", src_id="C-1")
         assert members == [("C-1", "I-2")]
@@ -215,17 +215,22 @@ class TestQuery:
         async with env["maker"]() as s:
             n = await q.aggregate(s, "production-order", SUPER, "count", None)
             assert n == 4.0
-            n_planned = await q.aggregate(s, "production-order", SUPER, "count", None,
-                                          filt={"status": "PLANNED"})
+            n_planned = await q.aggregate(s, "production-order", SUPER, "count", None, filt={"status": "PLANNED"})
             assert n_planned == 1.0  # PO-1002; the rest are RELEASED/COMPLETED
 
     async def test_traverse_three_hops(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            out = await q.traverse(s, "material", ["M-103"], SUPER, [
-                {"link": "bom-material", "direction": "out"},
-                {"link": "bom-product", "direction": "in"},
-            ])
+            out = await q.traverse(
+                s,
+                "material",
+                ["M-103"],
+                SUPER,
+                [
+                    {"link": "bom-material", "direction": "out"},
+                    {"link": "bom-product", "direction": "in"},
+                ],
+            )
         assert [s_["type"] for s_ in out["steps"]] == ["material", "bom", "product"]
         assert out["final_ids"] == ["P-200"]
 
@@ -237,7 +242,7 @@ class TestSandbox:
             value = await env["sandbox"].run(s, fn, {"work_center_id": "WC-01", "qty": 10})
         assert value["work_center_id"] == "WC-01"
         assert value["daily_capacity"] == 800  # 400 per shift x 2 shifts
-        assert value["open_orders"] == 3       # PO-1001..PO-1003 still open
+        assert value["open_orders"] == 3  # PO-1001..PO-1003 still open
         assert value["ok"] is True
 
     async def test_capability_denied(self, env, tmp_path):
@@ -254,10 +259,12 @@ class TestSandbox:
         bad = tmp_path / "bad.py"
         bad.write_text("import time\ndef spin(x):\n    time.sleep(60)\n    return 1\n", encoding="utf-8")
         fr = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function",
+            apiVersion="ontogeny/v1",
+            kind="Function",
             metadata=ResourceMeta(name="spin"),
             spec=FunctionSpec(
-                runtime="python", entry=f"{bad}:spin",
+                runtime="python",
+                entry=f"{bad}:spin",
                 parameters={"x": ParamDef(type="integer")},
                 capabilities=[Capability(**{"read-objects": ["production-order"]})],
             ),
@@ -279,14 +286,13 @@ class TestSandbox:
 
         def fn(caps):
             return FunctionResource(
-                apiVersion="ontogeny/v1", kind="Function",
+                apiVersion="ontogeny/v1",
+                kind="Function",
                 metadata=ResourceMeta(name="f"),
-                spec=FunctionSpec(runtime="python", entry="x.py:main",
-                                  parameters={}, capabilities=caps),
+                spec=FunctionSpec(runtime="python", entry="x.py:main", parameters={}, capabilities=caps),
             )
 
-        sandbox = FunctionSandbox(env["compiled"], env["repo"],
-                                  timeout_s=10.0, llm_call_timeout_s=60.0)
+        sandbox = FunctionSandbox(env["compiled"], env["repo"], timeout_s=10.0, llm_call_timeout_s=60.0)
         # no llm capability: the original tight budget, unchanged
         assert sandbox._budget(fn([])) == 10.0
         # a declared call budget buys one call timeout per permitted call
@@ -322,7 +328,8 @@ class TestFunctionSourceEndpoint:
 
         c, sc = client
         sc.compiled.functions["ghost"] = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function",
+            apiVersion="ontogeny/v1",
+            kind="Function",
             metadata=ResourceMeta(name="ghost"),
             spec=FunctionSpec(runtime="python", entry="nobody_wrote_this.py:main"),
         )

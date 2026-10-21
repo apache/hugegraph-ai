@@ -22,17 +22,32 @@ This package adds *identity* (who is calling) and an *administrative surface*
 over the same policy plane (which role may do what) — it deliberately adds no
 second authorization system: see ``roles.py``.
 """
+
 from .models import SessionRow, UserRow
 from .passwords import hash_password, verify_password
 from .roles import (
-    Grant, compile_role_policy, effective_matrix, managed_policy_name,
-    parse_grants, role_catalogue, slug_conflicts,
+    Grant,
+    compile_role_policy,
+    effective_matrix,
+    managed_policy_name,
+    parse_grants,
+    role_catalogue,
+    slug_conflicts,
 )
 from .service import SESSION_TTL, AuthService
 
 __all__ = [
-    "AuthService", "SESSION_TTL",
-    "UserRow", "SessionRow", "hash_password", "verify_password",
-    "Grant", "parse_grants", "compile_role_policy", "effective_matrix",
-    "role_catalogue", "managed_policy_name", "slug_conflicts",
+    "AuthService",
+    "SESSION_TTL",
+    "UserRow",
+    "SessionRow",
+    "hash_password",
+    "verify_password",
+    "Grant",
+    "parse_grants",
+    "compile_role_policy",
+    "effective_matrix",
+    "role_catalogue",
+    "managed_policy_name",
+    "slug_conflicts",
 ]

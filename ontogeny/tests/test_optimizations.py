@@ -25,6 +25,7 @@
 - C13  the search tools teach their own filter DSL in the description
 - C14  /admin/metrics counters from the platform's own tables
 """
+
 from __future__ import annotations
 
 import json
@@ -62,8 +63,8 @@ def _settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"})
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+    )
 
 
 async def _make(golden_pkg_path, tmp_path):
@@ -108,45 +109,53 @@ class TestPluginScopedListTools:
                         assert "search_material" in full_names  # whole catalog by default
 
                         scoped = httpx.AsyncClient(
-                            transport=transport, base_url="http://test",
-                            headers={"X-ONTOGENY-Plugin": "planning-copilot"})
-                        async with streamable_http_client("http://test/mcp",
-                                                          http_client=scoped) as streams2:
+                            transport=transport,
+                            base_url="http://test",
+                            headers={"X-ONTOGENY-Plugin": "planning-copilot"},
+                        )
+                        async with streamable_http_client("http://test/mcp", http_client=scoped) as streams2:
                             async with ClientSession(streams2[0], streams2[1]) as sess2:
                                 await sess2.initialize()
                                 narrow = await sess2.list_tools()
                                 names = {t.name for t in narrow.tools}
                                 # the plugin's effective tools + session tools
-                                assert names == {"describe_ontology", "search_work_center",
-                                                 "agent_open_session", "agent_get_session",
-                                                 "agent_list_sessions", "agent_finish_session"}
+                                assert names == {
+                                    "describe_ontology",
+                                    "search_work_center",
+                                    "agent_open_session",
+                                    "agent_get_session",
+                                    "agent_list_sessions",
+                                    "agent_finish_session",
+                                }
                                 # a VIEW filter: the tool still EXISTS and the
                                 # broker still enforces the plugin's real
                                 # catalog (narrowed per the plugin, not the
                                 # header-less anonymous exploration path)
                                 res = await sess2.call_tool(
-                                    "search_material", {"limit": 1, "plugin": "planning-copilot"})
+                                    "search_material", {"limit": 1, "plugin": "planning-copilot"}
+                                )
                                 assert res.is_error is False
                                 assert res.structured_content["outcome"] == "AGENT_TOOL_NOT_ALLOWED"
 
     async def test_unknown_plugin_in_header_is_an_error(self, golden_pkg_path, tmp_path):
-        from mcp.shared.exceptions import MCPError
-
         from mcp.client.session import ClientSession
         from mcp.client.streamable_http import streamable_http_client
+        from mcp.shared.exceptions import MCPError
 
         sc = await _make(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(
-                    transport=transport, base_url="http://test",
-                    headers={"X-ONTOGENY-Plugin": "no-such-plugin"}) as hc:
-                async with streamable_http_client("http://test/mcp", http_client=hc) as streams:
-                    async with ClientSession(streams[0], streams[1]) as sess:
-                        await sess.initialize()
-                        with pytest.raises(MCPError):
-                            await sess.list_tools()
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport, base_url="http://test", headers={"X-ONTOGENY-Plugin": "no-such-plugin"}
+            ) as hc,
+            streamable_http_client("http://test/mcp", http_client=hc) as streams,
+        ):
+            async with ClientSession(streams[0], streams[1]) as sess:
+                await sess.initialize()
+                with pytest.raises(MCPError):
+                    await sess.list_tools()
 
 
 # ----------------------------------------------------------------- C11 + C12
@@ -176,9 +185,10 @@ class TestEngineContextAndProtocol:
         llm = _RecordingLLM([json.dumps({"final": "done"})])
         engine = BuiltinLlmEngine(sc, llm)
         # a fake transcript far over the 60k budget: keep the newest steps
-        big = [{"thought": "t" * 500, "tool": "describe_ontology",
-                "args": {}, "outcome": "ok", "result": {"x": "y" * 500}}
-               for _ in range(200)]
+        big = [
+            {"thought": "t" * 500, "tool": "describe_ontology", "args": {}, "outcome": "ok", "result": {"x": "y" * 500}}
+            for _ in range(200)
+        ]
         bounded = engine._bounded(big)
         assert len(bounded) < len(big)
         assert bounded[0].get("_elided", "").startswith("1") or "omitted" in bounded[0].get("_elided", "")
@@ -201,13 +211,22 @@ class TestEngineContextAndProtocol:
         llm = _RecordingLLM(
             supports_tools=True,
             replies=[
-                {"content": "checking the active set first",
-                 "tool_calls": [{"function": {"name": "search_work_center",
-                                              "arguments": json.dumps(
-                                                  {"filter": {"field": "status", "op": "eq",
-                                                              "value": "ACTIVE"}, "limit": 5})}}]},
+                {
+                    "content": "checking the active set first",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "search_work_center",
+                                "arguments": json.dumps(
+                                    {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 5}
+                                ),
+                            }
+                        }
+                    ],
+                },
                 {"content": json.dumps({"final": "two active centres"})},
-            ])
+            ],
+        )
         engine = BuiltinLlmEngine(sc, llm)
         sid = (await sc.agents.open_session("planning-copilot", "native"))["id"]
         result = await engine.drive(sid)
@@ -223,8 +242,7 @@ class TestEngineContextAndProtocol:
     async def test_native_final_answer_without_tool_call(self, sc):
         from ontogeny_ext_agent_llm import BuiltinLlmEngine
 
-        llm = _RecordingLLM(supports_tools=True,
-                            replies=[{"content": "nothing to do"}])
+        llm = _RecordingLLM(supports_tools=True, replies=[{"content": "nothing to do"}])
         engine = BuiltinLlmEngine(sc, llm)
         sid = (await sc.agents.open_session("planning-copilot", "native-final"))["id"]
         result = await engine.drive(sid)
@@ -253,13 +271,20 @@ class TestMetricsEndpoint:
         sc = await _make(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                     headers={"X-Ontogeny-Principal": json.dumps({"id": "ci-admin", "is_admin": True})}) as c:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-Ontogeny-Principal": json.dumps({"id": "ci-admin", "is_admin": True})},
+        ) as c:
             # generate some traffic (query telemetry rides the POST search path)
-            await c.post("/api/v1/objects/work-center/query", json={"limit": 3},
-                         headers={"X-Ontogeny-Principal": json.dumps({"id": "u", "Role": ["auditor"]})})
-            sid = (await c.post("/api/v1/agent/sessions",
-                                json={"plugin": "planning-copilot", "task": "metrics"})).json()["id"]
+            await c.post(
+                "/api/v1/objects/work-center/query",
+                json={"limit": 3},
+                headers={"X-Ontogeny-Principal": json.dumps({"id": "u", "Role": ["auditor"]})},
+            )
+            sid = (
+                await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "metrics"})
+            ).json()["id"]
             await c.post(f"/api/v1/agent/sessions/{sid}/tools/describe_ontology", json={})
 
             r = await c.get("/api/v1/admin/metrics")

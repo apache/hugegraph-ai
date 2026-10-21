@@ -17,6 +17,7 @@
 
 """Ollama adapter: parsing, JSON extraction, proposer wiring, assistant
 endpoint; plus opt-in live integration (see TestLiveOllama)."""
+
 from __future__ import annotations
 
 import json
@@ -25,11 +26,11 @@ import os
 import httpx
 import pytest
 import pytest_asyncio
+from ontogeny_ext_ollama import OllamaChat
 
 from ontogeny.config import Settings
-from ontogeny.llm import LLMError, extract_json
-from ontogeny_ext_ollama import OllamaChat
 from ontogeny.evolve.proposer import DecidingProposer
+from ontogeny.llm import LLMError, extract_json
 
 # Every test in this module runs against MockTransport; the unit suite must be
 # hermetic (no LAN endpoint, no model, no tokens). The LIVE tests at the bottom
@@ -48,10 +49,20 @@ def _ollama_transport(payload: dict) -> httpx.MockTransport:
 
 class TestOllamaChat:
     async def test_chat_parses_content_and_thinking(self):
-        client = OllamaChat(OLLAMA_URL, MODEL, http=httpx.AsyncClient(transport=_ollama_transport({
-            "model": MODEL, "message": {"role": "assistant", "content": "hello", "thinking": "hmm"},
-            "done": True, "eval_count": 3,
-        })))
+        client = OllamaChat(
+            OLLAMA_URL,
+            MODEL,
+            http=httpx.AsyncClient(
+                transport=_ollama_transport(
+                    {
+                        "model": MODEL,
+                        "message": {"role": "assistant", "content": "hello", "thinking": "hmm"},
+                        "done": True,
+                        "eval_count": 3,
+                    }
+                )
+            ),
+        )
         out = await client.chat([{"role": "user", "content": "hi"}])
         assert out["content"] == "hello" and out["thinking"] == "hmm" and out["eval_count"] == 3
 
@@ -64,9 +75,19 @@ class TestOllamaChat:
             await client.chat([{"role": "user", "content": "x"}])
 
     async def test_chat_json_tolerates_fences(self):
-        client = OllamaChat(OLLAMA_URL, MODEL, http=httpx.AsyncClient(transport=_ollama_transport({
-            "message": {"content": 'Sure!\n```json\n{"mutations": [{"mutation": "enum-widen"}], "rationale": "r"}\n```\nDone.'},
-        })))
+        client = OllamaChat(
+            OLLAMA_URL,
+            MODEL,
+            http=httpx.AsyncClient(
+                transport=_ollama_transport(
+                    {
+                        "message": {
+                            "content": 'Sure!\n```json\n{"mutations": [{"mutation": "enum-widen"}], "rationale": "r"}\n```\nDone.'
+                        },
+                    }
+                )
+            ),
+        )
         out = await client.chat_json([{"role": "user", "content": "p"}])
         assert out["value"]["mutations"][0]["mutation"] == "enum-widen"
 
@@ -76,7 +97,7 @@ class TestExtractJson:
         assert extract_json('{"a": 1}') == {"a": 1}
 
     def test_fenced(self):
-        assert extract_json('```json\n[1, 2]\n```') == [1, 2]
+        assert extract_json("```json\n[1, 2]\n```") == [1, 2]
 
     def test_prose_wrapped(self):
         assert extract_json('answer: {"a": {"b": 2}} thanks') == {"a": {"b": 2}}
@@ -88,29 +109,60 @@ class TestExtractJson:
 
 class TestDecidingProposerOverOllama:
     async def test_valid_output_accepted(self, golden_pkg_path):
-        client = OllamaChat(OLLAMA_URL, MODEL, http=httpx.AsyncClient(transport=_ollama_transport({
-            "message": {"content": json.dumps({
-                "act": True, "analysis": "n/a",
-                "mutations": [{"mutation": "add-optional-property", "object": "production-order",
-                               "prop": "workgroup", "type": "string"}],
-                "rationale": "filter evidence",
-            })},
-        })))
+        client = OllamaChat(
+            OLLAMA_URL,
+            MODEL,
+            http=httpx.AsyncClient(
+                transport=_ollama_transport(
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "act": True,
+                                    "analysis": "n/a",
+                                    "mutations": [
+                                        {
+                                            "mutation": "add-optional-property",
+                                            "object": "production-order",
+                                            "prop": "workgroup",
+                                            "type": "string",
+                                        }
+                                    ],
+                                    "rationale": "filter evidence",
+                                }
+                            )
+                        },
+                    }
+                )
+            ),
+        )
         proposer = DecidingProposer(client)
+        from ontogeny.core import load_package
         from ontogeny.registry import compile_package
 
-        from ontogeny.core import load_package
         pkg = load_package(golden_pkg_path)
         compiled = compile_package(pkg)
-        out = await proposer.propose({"kind": "add-optional-property", "object": "production-order",
-                                      "prop": "workgroup"}, compiled)
+        out = await proposer.propose(
+            {"kind": "add-optional-property", "object": "production-order", "prop": "workgroup"}, compiled
+        )
         assert out and out["origin"] == "llm" and out["mutations"][0]["prop"] == "workgroup"
 
     async def test_out_of_catalog_falls_back_or_declines(self, golden_pkg_path):
-        client = OllamaChat(OLLAMA_URL, MODEL, http=httpx.AsyncClient(transport=_ollama_transport({
-            "message": {"content": json.dumps({"act": True,
-                                               "mutations": [{"mutation": "policy-loosen"}], "rationale": "x"})},
-        })))
+        client = OllamaChat(
+            OLLAMA_URL,
+            MODEL,
+            http=httpx.AsyncClient(
+                transport=_ollama_transport(
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"act": True, "mutations": [{"mutation": "policy-loosen"}], "rationale": "x"}
+                            )
+                        },
+                    }
+                )
+            ),
+        )
         proposer = DecidingProposer(client)
         from ontogeny.core import load_package
         from ontogeny.registry import compile_package
@@ -127,28 +179,48 @@ class TestAssistantEndpoint:
         from ontogeny.api import build_app
         from ontogeny.service import ServiceContext
 
-        ollama = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={
-            "message": {"role": "assistant",
-                        "content": 'Use the ontology.\n```json\n{"mutations": [{"mutation": "add-optional-property", "object": "production-order", "prop": "wg", "type": "string"}], "rationale": "gap"}\n```'},
-        })))
-        settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'a.db'}",
-                            env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"},
-                            llm_base_url="http://ollama.test", llm_model=MODEL)
+        ollama = httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(
+                    200,
+                    json={
+                        "message": {
+                            "role": "assistant",
+                            "content": 'Use the ontology.\n```json\n{"mutations": [{"mutation": "add-optional-property", "object": "production-order", "prop": "wg", "type": "string"}], "rationale": "gap"}\n```',
+                        },
+                    },
+                )
+            )
+        )
+        settings = Settings(
+            dev_auth=True,
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'a.db'}",
+            env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"},
+            llm_base_url="http://ollama.test",
+            llm_model=MODEL,
+        )
         sc = ServiceContext(settings, str(golden_pkg_path), llm_http=ollama)
         await sc.initialize()
         transport = httpx.ASGITransport(app=build_app(sc))
         import json as J
-        async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                     headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})}) as c:
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})},
+        ) as c:
             yield c, ollama
         await ollama.aclose()
 
     async def test_chat_grounding_and_proposals(self, client):
         c, _ = client
-        r = await c.post("/api/v1/assistant/chat", json={
-            "messages": [{"role": "user", "content": "Which properties does the production-order object have?"}],
-            "propose": True,
-        })
+        r = await c.post(
+            "/api/v1/assistant/chat",
+            json={
+                "messages": [{"role": "user", "content": "Which properties does the production-order object have?"}],
+                "propose": True,
+            },
+        )
         assert r.status_code == 200
         body = r.json()
         assert "content" in body
@@ -163,13 +235,19 @@ class TestAssistantEndpoint:
         from ontogeny.api import build_app
         from ontogeny.service import ServiceContext
 
-        sc = ServiceContext(Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'b.db'}",
-                                     env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"}),
-                            str(golden_pkg_path))
+        sc = ServiceContext(
+            Settings(
+                dev_auth=True,
+                db_dsn=f"sqlite+aiosqlite:///{tmp_path/'b.db'}",
+                env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"},
+            ),
+            str(golden_pkg_path),
+        )
         await sc.initialize()
         transport = httpx.ASGITransport(app=build_app(sc))
-        async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                     headers={"X-Ontogeny-Principal": json.dumps({"id": "ci"})}) as c:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", headers={"X-Ontogeny-Principal": json.dumps({"id": "ci"})}
+        ) as c:
             r = await c.post("/api/v1/assistant/chat", json={"messages": []})
         assert r.status_code == 503
 
@@ -203,8 +281,9 @@ class TestLiveOllama:
         if not await _ollama_reachable(self.URL):
             pytest.skip("ollama endpoint unreachable")
         client = OllamaChat(self.URL, MODEL)
-        out = await client.chat([{"role": "user", "content": "Reply with the single word: pong"}],
-                                options={"num_predict": 64})
+        out = await client.chat(
+            [{"role": "user", "content": "Reply with the single word: pong"}], options={"num_predict": 64}
+        )
         assert out["content"].strip()
 
     async def test_live_deciding_proposer(self, golden_pkg_path):

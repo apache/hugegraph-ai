@@ -21,6 +21,7 @@ isolation, audit) is exercised exactly as production would.
 
 The stub LLM is a queue of decisions -- deterministic, no network, no model.
 """
+
 from __future__ import annotations
 
 import json
@@ -29,8 +30,8 @@ import shutil
 import httpx
 import pytest
 import pytest_asyncio
-
 from ontogeny_ext_agent_llm import BuiltinLlmEngine
+
 from ontogeny.api import build_app
 from ontogeny.config import Settings
 from ontogeny.demo import seed_from_package
@@ -75,8 +76,7 @@ def _sc_settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
 
 
@@ -115,13 +115,23 @@ async def _session(sc, task: str) -> int:
 
 class TestBuiltinLlmEngine:
     async def test_happy_path_reaches_final_and_records_steps(self, sc):
-        llm = StubLLM([
-            json.dumps({"thought": "Check which work centres are ACTIVE before planning.",
+        llm = StubLLM(
+            [
+                json.dumps(
+                    {
+                        "thought": "Check which work centres are ACTIVE before planning.",
                         "tool": "search_work_center",
-                        "args": {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 5}}),
-            json.dumps({"thought": "WC-01 is ACTIVE with the largest capacity; I can conclude.",
-                        "final": "Two ACTIVE work centres; WC-01 (CNC Machining Cell) is the release target."}),
-        ])
+                        "args": {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 5},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "thought": "WC-01 is ACTIVE with the largest capacity; I can conclude.",
+                        "final": "Two ACTIVE work centres; WC-01 (CNC Machining Cell) is the release target.",
+                    }
+                ),
+            ]
+        )
         engine = _wire(sc, llm)
         sid = await _session(sc, "Find an ACTIVE work centre")
 
@@ -145,12 +155,14 @@ class TestBuiltinLlmEngine:
         The next instruction drives the SAME session (run #2, steps tagged),
         and even an explicit human finish can be re-opened by driving again.
         Only the budget threshold terminates a session for real."""
-        llm = StubLLM([
-            json.dumps({"final": "round one done"}),
-            json.dumps({"thought": "look around", "tool": "describe_ontology", "args": {}}),
-            json.dumps({"final": "round two done"}),
-            json.dumps({"final": "round three done"}),
-        ])
+        llm = StubLLM(
+            [
+                json.dumps({"final": "round one done"}),
+                json.dumps({"thought": "look around", "tool": "describe_ontology", "args": {}}),
+                json.dumps({"final": "round two done"}),
+                json.dumps({"final": "round three done"}),
+            ]
+        )
         engine = _wire(sc, llm)
         sid = await _session(sc, "multi-round")
 
@@ -182,10 +194,12 @@ class TestBuiltinLlmEngine:
 
     async def test_missing_thought_is_tolerated(self, sc):
         """A driver that omits the reasoning text must not break the loop."""
-        llm = StubLLM([
-            json.dumps({"tool": "describe_ontology", "args": {}}),
-            json.dumps({"final": "done."}),
-        ])
+        llm = StubLLM(
+            [
+                json.dumps({"tool": "describe_ontology", "args": {}}),
+                json.dumps({"final": "done."}),
+            ]
+        )
         engine = _wire(sc, llm)
         sid = await _session(sc, "look at the ontology")
 
@@ -195,12 +209,15 @@ class TestBuiltinLlmEngine:
         assert sess["steps"][0]["thought"] == ""
 
     async def test_write_blocks_then_resumes_after_approval(self, sc):
-        llm = StubLLM([
-            json.dumps({"tool": "act_release_production_order",
-                        "args": {"parameters": {}, "target_id": "PO-1002"}}),
-            # after resume: confirm and finish
-            json.dumps({"final": "The release was approved and executed."}),
-        ])
+        llm = StubLLM(
+            [
+                json.dumps(
+                    {"tool": "act_release_production_order", "args": {"parameters": {}, "target_id": "PO-1002"}}
+                ),
+                # after resume: confirm and finish
+                json.dumps({"final": "The release was approved and executed."}),
+            ]
+        )
         engine = _wire(sc, llm)
         sid = await _session(sc, "release PO-1002")
         planner = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
@@ -211,8 +228,7 @@ class TestBuiltinLlmEngine:
         assert sess["status"] == "blocked_on_approval"
         # nothing executed yet
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002",
-                                    {"id": "auditor", "Role": ["auditor"]})
+            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
         assert po["status"] == "PLANNED"
 
         approval_id = first.result["approval_id"]
@@ -240,11 +256,13 @@ class TestBuiltinLlmEngine:
         assert sess["budget"]["steps_used"] == 6
 
     async def test_hallucinated_tool_feeds_back_then_gives_up(self, sc):
-        llm = StubLLM([
-            json.dumps({"tool": "delete_database", "args": {}}),
-            json.dumps({"tool": "drop_all_tables", "args": {}}),
-            json.dumps({"tool": "rm_rf", "args": {}}),
-        ])
+        llm = StubLLM(
+            [
+                json.dumps({"tool": "delete_database", "args": {}}),
+                json.dumps({"tool": "drop_all_tables", "args": {}}),
+                json.dumps({"tool": "rm_rf", "args": {}}),
+            ]
+        )
         engine = _wire(sc, llm)
         sid = await _session(sc, "chaos")
 
@@ -282,17 +300,16 @@ class TestBuiltinLlmEngine:
     async def test_running_session_is_isolated_from_external_calls(self, sc):
         """Paradigm §2: while an engine owns a session, external tool calls get
         a structured refusal instead of interleaving with the loop."""
-        llm = StubLLM([json.dumps({"tool": "describe_ontology", "args": {}}),
-                       json.dumps({"final": "done"})])
+        llm = StubLLM([json.dumps({"tool": "describe_ontology", "args": {}}), json.dumps({"final": "done"})])
         _wire(sc, llm)
         sid = await _session(sc, "x")
 
         # the engine owns the session mid-run...
         await sc.agents.set_status(sid, "running")
         out = await sc.agents.call_tool(sid, "describe_ontology", {})
-        assert out["outcome"] == "AGENT_SESSION_RUNNING"   # external caller
+        assert out["outcome"] == "AGENT_SESSION_RUNNING"  # external caller
         out = await sc.agents.call_tool(sid, "describe_ontology", {}, engine=True)
-        assert out["outcome"] == "ok"                       # the driving engine
+        assert out["outcome"] == "ok"  # the driving engine
         await sc.agents.set_status(sid, "open")
         out = await sc.agents.call_tool(sid, "describe_ontology", {})
         assert out["outcome"] == "ok"
@@ -339,11 +356,9 @@ class TestRunEndpoint:
         pulled = plug.model_copy(deep=True)
         pulled.spec.engine.kind = "external-pull"
         original = sc.compiled
-        sc.compiled = dc_replace(original,
-                                 agent_plugins={"planning-copilot": pulled})
+        sc.compiled = dc_replace(original, agent_plugins={"planning-copilot": pulled})
         try:
-            r = await c.post("/api/v1/agent/sessions",
-                             json={"plugin": "planning-copilot", "task": "x"})
+            r = await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
             sid = r.json()["id"]
             r = await c.post(f"/api/v1/agent/sessions/{sid}/run")
             assert r.status_code == 500
@@ -359,15 +374,23 @@ class TestUnlimitedBudget:
         """A session opened with steps=0 is UNLIMITED: the engine must keep
         driving past the number of steps that would exhaust a capped session
         (the gate used to fire at steps_used >= 0 -- instantly)."""
-        llm = StubLLM([
-            json.dumps({"thought": f"step {i}", "tool": "search_work_center",
-                        "args": {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 1}})
-            for i in range(8)
-        ] + [json.dumps({"thought": "done", "final": "ok"})])
+        llm = StubLLM(
+            [
+                json.dumps(
+                    {
+                        "thought": f"step {i}",
+                        "tool": "search_work_center",
+                        "args": {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 1},
+                    }
+                )
+                for i in range(8)
+            ]
+            + [json.dumps({"thought": "done", "final": "ok"})]
+        )
         engine = _wire(sc, llm)
-        s = await sc.agents.open_session("planning-copilot", "unlimited drive",
-                                         budget={"steps": 0, "wall_ms": 0,
-                                                 "writes_per_session": 0})
+        s = await sc.agents.open_session(
+            "planning-copilot", "unlimited drive", budget={"steps": 0, "wall_ms": 0, "writes_per_session": 0}
+        )
         result = await engine.drive(s["id"])
         assert result.status == "finished", result.result
         sess = await sc.agents.get_session(s["id"])

@@ -27,6 +27,7 @@ so their coverage lives where the capability lives (join-table links: the
 worker rig in test_projection_hugegraph; llm/http capabilities: the inline
 package below).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -106,9 +107,9 @@ class TestPackage:
         for fn in pkg.functions():
             for cap in fn.spec.capabilities:
                 declared |= set(cap.model_dump(exclude_none=True).keys())
-        assert declared and declared <= set(CAPABILITY_KINDS), (
-            f"unknown capability kinds declared: {sorted(declared - set(CAPABILITY_KINDS))}"
-        )
+        assert declared and declared <= set(
+            CAPABILITY_KINDS
+        ), f"unknown capability kinds declared: {sorted(declared - set(CAPABILITY_KINDS))}"
         assert "read-objects" in declared
 
     def test_the_whole_capability_vocabulary_stays_demonstrated(self, tmp_path):
@@ -129,16 +130,23 @@ class TestPackage:
         for fn in pkg.functions():
             for cap in fn.spec.capabilities:
                 declared |= set(cap.model_dump(exclude_none=True).keys())
-        assert declared == set(CAPABILITY_KINDS) - {"read-objects"}, (
-            f"capability kinds never demoed: {sorted(set(CAPABILITY_KINDS) - declared)}"
-        )
+        assert declared == set(CAPABILITY_KINDS) - {
+            "read-objects"
+        }, f"capability kinds never demoed: {sorted(set(CAPABILITY_KINDS) - declared)}"
 
     def test_ships_its_own_seed(self, golden_pkg_path):
         seed = golden_pkg_path / "seed" / "01_source.sql"
         assert seed.is_file()
         text = seed.read_text(encoding="utf-8")
-        for table in ("products", "materials", "boms", "work_centers",
-                      "production_orders", "operations", "quality_inspections"):
+        for table in (
+            "products",
+            "materials",
+            "boms",
+            "work_centers",
+            "production_orders",
+            "operations",
+            "quality_inspections",
+        ):
             assert f"CREATE TABLE {table}" in text
 
     def test_marked_properties_stay_out_of_the_projection(self, golden_pkg_path):
@@ -201,9 +209,16 @@ class TestSyncCoverage:
 
 class TestPlanToRelease:
     async def test_create_and_release_production_order(self, sc):
-        rev = await execute(sc, "create-production-order", PLANNER, {
-            "product_id": "P-100", "qty": 10, "priority": "NORMAL",
-        })
+        rev = await execute(
+            sc,
+            "create-production-order",
+            PLANNER,
+            {
+                "product_id": "P-100",
+                "qty": 10,
+                "priority": "NORMAL",
+            },
+        )
         pid = rev.object_id
         assert pid.startswith("PO-")
 
@@ -223,8 +238,7 @@ class TestPlanToRelease:
         from ontogeny.errors import PolicyDeniedError
 
         with pytest.raises(PolicyDeniedError):
-            await execute(sc, "create-production-order", OPERATOR,
-                          {"product_id": "P-100", "qty": 1})
+            await execute(sc, "create-production-order", OPERATOR, {"product_id": "P-100", "qty": 1})
 
     async def test_release_requires_planner_role(self, sc):
         """The Cedar `when` clause gates planners to PLANNED orders; operators
@@ -237,8 +251,7 @@ class TestPlanToRelease:
 
 class TestShopFloor:
     async def test_complete_operation_moves_and_stamps(self, sc):
-        await execute(sc, "complete-operation", OPERATOR,
-                      {"note": "Plate cutting finished"}, "OP-2001")
+        await execute(sc, "complete-operation", OPERATOR, {"note": "Plate cutting finished"}, "OP-2001")
         op = await get(sc, "operation", "OP-2001")
         assert op["status"] == "COMPLETED" and op["completed_at"] is not None
 
@@ -256,10 +269,18 @@ class TestShopFloor:
 
 class TestQuality:
     async def test_record_pass_inspection(self, sc):
-        rev = await execute(sc, "record-inspection", INSPECTOR, {
-            "order_id": "PO-1003", "inspected_qty": 40, "defect_qty": 1,
-            "result": "PASS", "inspector": "qa-eng-02",
-        })
+        rev = await execute(
+            sc,
+            "record-inspection",
+            INSPECTOR,
+            {
+                "order_id": "PO-1003",
+                "inspected_qty": 40,
+                "defect_qty": 1,
+                "result": "PASS",
+                "inspector": "qa-eng-02",
+            },
+        )
         qi_id = rev.object_id
         assert qi_id.startswith("QI-")
         qi = await get(sc, "quality-inspection", qi_id)
@@ -270,19 +291,34 @@ class TestQuality:
         from ontogeny.errors import RuleRejectedError
 
         with pytest.raises(RuleRejectedError):
-            await execute(sc, "record-inspection", INSPECTOR, {
-                "order_id": "PO-1003", "inspected_qty": 40, "defect_qty": 41,
-                "result": "FAIL", "inspector": "qa-eng-02",
-            })
+            await execute(
+                sc,
+                "record-inspection",
+                INSPECTOR,
+                {
+                    "order_id": "PO-1003",
+                    "inspected_qty": 40,
+                    "defect_qty": 41,
+                    "result": "FAIL",
+                    "inspector": "qa-eng-02",
+                },
+            )
 
     async def test_only_quality_may_record(self, sc):
         from ontogeny.errors import PolicyDeniedError
 
         with pytest.raises(PolicyDeniedError):
-            await execute(sc, "record-inspection", OPERATOR, {
-                "order_id": "PO-1003", "inspected_qty": 1, "defect_qty": 0,
-                "result": "PASS",
-            })
+            await execute(
+                sc,
+                "record-inspection",
+                OPERATOR,
+                {
+                    "order_id": "PO-1003",
+                    "inspected_qty": 1,
+                    "defect_qty": 0,
+                    "result": "PASS",
+                },
+            )
 
 
 class TestFunctions:
@@ -313,7 +349,7 @@ class TestFunctions:
         async with sc.sessionmaker() as s:
             out = await sc.sandbox.run(s, fn, {"work_center_id": "WC-01", "qty": 10})
         assert out["daily_capacity"] == 800  # 400 per shift x 2 shifts
-        assert out["committed_qty"] == 170   # open orders: 20 + 50 + 100
+        assert out["committed_qty"] == 170  # open orders: 20 + 50 + 100
         assert out["ok"] is True
 
     async def test_function_capability_is_scoped(self, sc):
@@ -350,9 +386,15 @@ class TestMaskingAndAudit:
 
             from ontogeny.action.models import RevisionRow
 
-            rows = (await s.execute(
-                select(RevisionRow).where(RevisionRow.object_id == "PO-1002").order_by(RevisionRow.id)
-            )).scalars().all()
+            rows = (
+                (
+                    await s.execute(
+                        select(RevisionRow).where(RevisionRow.object_id == "PO-1002").order_by(RevisionRow.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         assert [r.outcome for r in rows] == ["executed", "rejected_rule"]
 
 
@@ -363,20 +405,36 @@ class TestEvolutionOnDomainPackage:
         from ontogeny.evolve import Promoter, ProposalRow, apply_mutations
 
         pkg = load_package(sc.package_root)
-        mutated = apply_mutations(pkg, [{
-            "mutation": "add-optional-property", "object": "production-order",
-            "prop": "shift-pattern", "type": "string",
-        }])
+        mutated = apply_mutations(
+            pkg,
+            [
+                {
+                    "mutation": "add-optional-property",
+                    "object": "production-order",
+                    "prop": "shift-pattern",
+                    "type": "string",
+                }
+            ],
+        )
         rep = v(mutated)
         assert rep.ok, [f"{i.code}:{i.message}" for i in rep.issues if i.severity == "error"]
         async with sc.sessionmaker() as s:
-            proposal = ProposalRow(gap_kind="add-optional-property", rationale="t",
-                                   diff=[{"mutation": "add-optional-property",
-                                          "object": "production-order", "prop": "shift-pattern",
-                                          "type": "string"}])
+            proposal = ProposalRow(
+                gap_kind="add-optional-property",
+                rationale="t",
+                diff=[
+                    {
+                        "mutation": "add-optional-property",
+                        "object": "production-order",
+                        "prop": "shift-pattern",
+                        "type": "string",
+                    }
+                ],
+            )
             s.add(proposal)
             await s.flush()
             result = await Promoter(sc.settings, sc.registry).promote(
-                s, proposal, sc.package_root, eval_report={"passed": True})
+                s, proposal, sc.package_root, eval_report={"passed": True}
+            )
             await s.commit()
         assert result["status"] == "promoted"

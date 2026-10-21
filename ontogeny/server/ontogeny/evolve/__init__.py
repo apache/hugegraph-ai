@@ -18,10 +18,15 @@
 """ontogeny.evolve -- the RSI loop: observe (telemetry) -> diagnose -> propose ->
 evaluate (deterministic) -> promote (tiered, budgeted, constitutional)."""
 
-from .models import BudgetRow, EvolveSignalRow, ProposalRow  # noqa: F401
+from .models import BudgetRow, EvolveSignalRow, ProposalRow
 from .promoter import CONSTITUTION_MUTATIONS, Promoter, apply_mutations, write_package
 
 __all__ = [
-    "EvolveSignalRow", "ProposalRow", "BudgetRow",
-    "Promoter", "apply_mutations", "write_package", "CONSTITUTION_MUTATIONS",
+    "EvolveSignalRow",
+    "ProposalRow",
+    "BudgetRow",
+    "Promoter",
+    "apply_mutations",
+    "write_package",
+    "CONSTITUTION_MUTATIONS",
 ]

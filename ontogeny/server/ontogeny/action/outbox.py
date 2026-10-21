@@ -22,12 +22,14 @@ Each consumer advances its own cursor; failures never block other consumers.
 Poison messages advance the cursor too (with failure count) so one bad event
 cannot stall the pipeline; they surface via metrics/logs for manual replay.
 """
+
 from __future__ import annotations
 
 import asyncio
 import datetime as _dt
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import httpx
 from sqlalchemy import select
@@ -107,23 +109,31 @@ class OutboxDispatcher:
             log.warning("webhook to %r blocked by allowlist", url)
             return True  # treated as delivered-with-prejudice; audited in logs
         client = await self._client()
-        resp = await client.post(url, json={
-            "object_type": event.object_type, "object_id": event.object_id,
-            "revision_id": event.revision_id, "payload": payload,
-        })
+        resp = await client.post(
+            url,
+            json={
+                "object_type": event.object_type,
+                "object_id": event.object_id,
+                "revision_id": event.revision_id,
+                "payload": payload,
+            },
+        )
         if 200 <= resp.status_code < 300:
             return True
         if resp.status_code >= 500:
             # the endpoint is broken, not the request: retry it (a connection
             # error raises and is retried the same way)
-            log.warning("webhook %s to %r answered %s; will retry",
-                        event.id, url, resp.status_code)
+            log.warning("webhook %s to %r answered %s; will retry", event.id, url, resp.status_code)
             return False
         # 4xx: the request itself is wrong. Retrying cannot fix it, so consume
         # the event and say so — the alternative is a poison row blocking this
         # consumer forever.
-        log.warning("webhook %s to %r rejected with %s (consumed; fix the endpoint "
-                    "and replay)", event.id, url, resp.status_code)
+        log.warning(
+            "webhook %s to %r rejected with %s (consumed; fix the endpoint " "and replay)",
+            event.id,
+            url,
+            resp.status_code,
+        )
         return True
 
     async def _deliver_projection(self, event: OutboxRow) -> bool:
@@ -135,10 +145,14 @@ class OutboxDispatcher:
         # identifiers only: the payload carries full property values, and SSE
         # consumers that need them re-read through the query path (masking
         # included) instead of receiving an unmasked broadcast.
-        self.sse.publish({
-            "id": event.id, "object_type": event.object_type, "object_id": event.object_id,
-            "op": event.op,
-        })
+        self.sse.publish(
+            {
+                "id": event.id,
+                "object_type": event.object_type,
+                "object_id": event.object_id,
+                "op": event.op,
+            }
+        )
         return True
 
     async def _deliver_derivation(self, event: OutboxRow) -> bool:
@@ -158,18 +172,24 @@ class OutboxDispatcher:
         stats: dict[str, int] = {}
         async with self.session_factory() as session:
             for name, deliver in consumers.items():
-                cursor = (await session.execute(
-                    select(OutboxConsumerRow).where(OutboxConsumerRow.consumer == name)
-                )).scalar_one_or_none()
+                cursor = (
+                    await session.execute(select(OutboxConsumerRow).where(OutboxConsumerRow.consumer == name))
+                ).scalar_one_or_none()
                 last_id = cursor.last_id if cursor else 0
-                rows = (await session.execute(
-                    select(OutboxRow).where(OutboxRow.id > last_id).order_by(OutboxRow.id).limit(limit)
-                )).scalars().all()
+                rows = (
+                    (
+                        await session.execute(
+                            select(OutboxRow).where(OutboxRow.id > last_id).order_by(OutboxRow.id).limit(limit)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 delivered = 0
                 for row in rows:
                     try:
                         ok = await deliver(row)
-                    except Exception as exc:  # noqa: BLE001 -- never block the pipeline
+                    except Exception as exc:
                         log.warning("outbox consumer %s failed on #%s: %s", name, row.id, exc)
                         ok = False
                     if not ok:
@@ -203,7 +223,7 @@ class OutboxDispatcher:
         if self.derivation_drain is not None:
             try:
                 await self.derivation_drain()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("derivation drain failed: %s", exc)
         return stats
 
@@ -211,6 +231,6 @@ class OutboxDispatcher:
         while True:
             try:
                 await self.dispatch_pending()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("outbox tick failed: %s", exc)
             await asyncio.sleep(interval)

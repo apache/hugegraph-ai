@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Read/model surfaces: meta, objects, actions, functions, graph."""
+
 from __future__ import annotations
 
 import os
@@ -25,8 +26,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..errors import OOError
 from ..service import ServiceContext
 from .deps import get_principal, get_sc, require_admin
-from .schemas import (ActionBody, AggregateBody, ExploreBody, FunctionBody,
-                      FunctionSourceBody, FunctionTestBody, QueryBody, TraverseBody)
+from .schemas import (
+    ActionBody,
+    AggregateBody,
+    ExploreBody,
+    FunctionBody,
+    FunctionSourceBody,
+    FunctionTestBody,
+    QueryBody,
+    TraverseBody,
+)
 
 
 def register(r: APIRouter, sc: ServiceContext) -> None:
@@ -63,12 +72,12 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         if sc.engine is not None:
             from sqlalchemy import text
 
-            for name, info in summary["objects"].items():
+            for _name, info in summary["objects"].items():
                 try:
                     async with sc.sessionmaker() as s:
                         row = await s.execute(text(f'SELECT COUNT(*) FROM "{info["table"]}"'))
                         info["rows"] = int(row.scalar_one())
-                except Exception:  # noqa: BLE001 -- table may not exist yet (never synced)
+                except Exception:
                     info["rows"] = None
         return summary
 
@@ -80,19 +89,34 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
     # ---- objects ----------------------------------------------------------
 
     @r.post("/objects/{object_type}/query")
-    async def query_objects(object_type: str, body: QueryBody,
-                            sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def query_objects(
+        object_type: str,
+        body: QueryBody,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         import time
 
         started = time.perf_counter()
         try:
             async with sc.sessionmaker() as s:
                 out = await sc.query.query(
-                    s, object_type, principal, filt=body.filter, sort=body.sort,
-                    limit=body.limit, offset=body.offset, links=body.links,
+                    s,
+                    object_type,
+                    principal,
+                    filt=body.filter,
+                    sort=body.sort,
+                    limit=body.limit,
+                    offset=body.offset,
+                    links=body.links,
                 )
                 await sc.telemetry.record_query(
-                    s, object_type, principal, body.filter, out["latency_ms"], out["total"],
+                    s,
+                    object_type,
+                    principal,
+                    body.filter,
+                    out["latency_ms"],
+                    out["total"],
                 )
                 await s.commit()
             return out
@@ -100,54 +124,80 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
             # failed queries are fitness signal too (unmapped fields, bad shapes)
             async with sc.sessionmaker() as s:
                 await sc.telemetry.record_query(
-                    s, object_type, principal, body.filter,
-                    (time.perf_counter() - started) * 1000, 0, error=True,
+                    s,
+                    object_type,
+                    principal,
+                    body.filter,
+                    (time.perf_counter() - started) * 1000,
+                    0,
+                    error=True,
                 )
                 await s.commit()
             raise
 
     @r.get("/objects/{object_type}/{object_id}")
-    async def get_object(object_type: str, object_id: str,
-                         sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def get_object(
+        object_type: str, object_id: str, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         async with sc.sessionmaker() as s:
             return await sc.query.get(s, object_type, object_id, principal)
 
     @r.get("/objects/{object_type}/{object_id}/links/{link_name}")
-    async def get_links(object_type: str, object_id: str, link_name: str,
-                        sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def get_links(
+        object_type: str,
+        object_id: str,
+        link_name: str,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         async with sc.sessionmaker() as s:
             return await sc.query.links(s, object_type, object_id, link_name, principal)
 
     @r.post("/objects/{object_type}/aggregate")
-    async def aggregate(object_type: str, body: AggregateBody,
-                        sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def aggregate(
+        object_type: str,
+        body: AggregateBody,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         async with sc.sessionmaker() as s:
             return {"value": await sc.query.aggregate(s, object_type, principal, body.fn, body.field, filt=body.filter)}
 
     @r.get("/objects/{object_type}/{object_id}/history")
-    async def history(object_type: str, object_id: str,
-                      sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def history(
+        object_type: str, object_id: str, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         async with sc.sessionmaker() as s:
             rows = await sc.repo.history(s, object_type, object_id)
         # Historical versions are reads like any other: the masking the query
         # path applies used to be skipped here, so a marked property's value
         # leaked verbatim through its own version trail.
         versions = [sc.policy.mask(object_type, row, principal) for row in rows]
-        return {"versions": [
-            {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in row.items()} for row in versions
-        ]}
+        return {
+            "versions": [
+                {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in row.items()} for row in versions
+            ]
+        }
 
     # ---- actions ----------------------------------------------------------
 
     @r.post("/actions/{action_name}/validate")
-    async def validate_action(action_name: str, body: ActionBody,
-                              sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def validate_action(
+        action_name: str,
+        body: ActionBody,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         async with sc.sessionmaker() as s:
             return await sc.runtime.validate(s, action_name, principal, body.parameters, body.target_id)
 
     @r.post("/actions/{action_name}/execute")
-    async def execute_action(action_name: str, body: ActionBody,
-                             sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def execute_action(
+        action_name: str,
+        body: ActionBody,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         import time
 
         started = time.perf_counter()
@@ -156,35 +206,53 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         async with sc.sessionmaker() as s:
             try:
                 rev = await sc.runtime.execute(
-                    s, action_name, principal, body.parameters, body.target_id,
-                    expected_revision=body.expected_revision, idempotency_key=body.idempotency_key,
+                    s,
+                    action_name,
+                    principal,
+                    body.parameters,
+                    body.target_id,
+                    expected_revision=body.expected_revision,
+                    idempotency_key=body.idempotency_key,
                 )
                 await s.commit()
                 await sc.telemetry.record_action(
-                    s, action_name, rev.outcome, duration_ms=(time.perf_counter() - started) * 1000,
+                    s,
+                    action_name,
+                    rev.outcome,
+                    duration_ms=(time.perf_counter() - started) * 1000,
                 )
                 await s.commit()
-                return {"revision_id": rev.id, "outcome": rev.outcome, "object_id": rev.object_id,
-                        "after": rev.after, "message": rev.message}
+                return {
+                    "revision_id": rev.id,
+                    "outcome": rev.outcome,
+                    "object_id": rev.object_id,
+                    "after": rev.after,
+                    "message": rev.message,
+                }
             except RuleRejectedError:
                 # the runtime already committed the rejection revision; record the
                 # outcome for the evolution loop and surface the error. The two
                 # rejection classes are different findings downstream (the
                 # rule-reject detector counts `rejected_rule` specifically), and
                 # both were collapsed into "rejected" here, which starved it.
-                await sc.telemetry.record_action(s, action_name, "rejected_rule", duration_ms=(time.perf_counter() - started) * 1000)
+                await sc.telemetry.record_action(
+                    s, action_name, "rejected_rule", duration_ms=(time.perf_counter() - started) * 1000
+                )
                 await s.commit()
                 raise
             except PolicyDeniedError:
-                await sc.telemetry.record_action(s, action_name, "denied_policy", duration_ms=(time.perf_counter() - started) * 1000)
+                await sc.telemetry.record_action(
+                    s, action_name, "denied_policy", duration_ms=(time.perf_counter() - started) * 1000
+                )
                 await s.commit()
                 raise
 
     # ---- functions --------------------------------------------------------
 
     @r.post("/functions/{name}/invoke")
-    async def invoke_function(name: str, body: FunctionBody,
-                              sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)):
+    async def invoke_function(
+        name: str, body: FunctionBody, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         fn = sc.compiled.functions.get(name)
         if fn is None:
             raise HTTPException(404, f"unknown function {name!r}")
@@ -229,22 +297,29 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
             "capabilities": [c.model_dump(exclude_none=True) for c in fn.spec.capabilities],
         }
         if fn.spec.runtime == "declarative":
-            return {**common, "path": None, "exists": True, "source": None,
-                    "steps": [s.model_dump(exclude_none=True) for s in fn.spec.steps],
-                    "returns_step": fn.spec.returns_step}
+            return {
+                **common,
+                "path": None,
+                "exists": True,
+                "source": None,
+                "steps": [s.model_dump(exclude_none=True) for s in fn.spec.steps],
+                "returns_step": fn.spec.returns_step,
+            }
         path = function_source_path(sc.compiled, fn)
         exists = path.is_file()
         source = path.read_text(encoding="utf-8") if exists else None
         # who changed it, when, and from which version — the same audit trail the
         # Audit page reads, filtered to this function's source edits
         revisions = await sc.function_source_revisions(name, limit=10)
-        return {**common, "path": str(path), "exists": exists, "source": source,
-                "revisions": revisions}
+        return {**common, "path": str(path), "exists": exists, "source": source, "revisions": revisions}
 
     @r.put("/functions/{name}/source")
-    async def function_source_save(body: FunctionSourceBody, name: str,
-                                   principal: dict = Depends(require_admin),
-                                   sc: ServiceContext = Depends(get_sc)):
+    async def function_source_save(
+        body: FunctionSourceBody,
+        name: str,
+        principal: dict = Depends(require_admin),
+        sc: ServiceContext = Depends(get_sc),
+    ):
         """Write a function's code from the console, check it, publish it.
 
         Administrator-only, and deliberately so: this is the one endpoint that
@@ -259,13 +334,18 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         through, and it is what makes the change real.
         """
         return await sc.save_function_source(
-            name, body.source, principal=principal,
+            name,
+            body.source,
+            principal=principal,
         )
 
     @r.post("/functions/{name}/test")
-    async def function_source_test(body: FunctionTestBody, name: str,
-                                   principal: dict = Depends(require_admin),
-                                   sc: ServiceContext = Depends(get_sc)):
+    async def function_source_test(
+        body: FunctionTestBody,
+        name: str,
+        principal: dict = Depends(require_admin),
+        sc: ServiceContext = Depends(get_sc),
+    ):
         """Run the editor's code once — no file write, no publish, no revision.
 
         Administrator-only for the same reason the save endpoint is: this
@@ -286,22 +366,28 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
     # ---- graph ------------------------------------------------------------
 
     @r.post("/graph/traverse")
-    async def traverse(body: TraverseBody, sc: ServiceContext = Depends(get_sc),
-                       principal: dict = Depends(get_principal)):
+    async def traverse(
+        body: TraverseBody, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         async with sc.sessionmaker() as s:
             return await sc.query.traverse(
-                s, body.start_type, body.start_ids, principal, body.path, max_depth=body.max_depth,
+                s,
+                body.start_type,
+                body.start_ids,
+                principal,
+                body.path,
+                max_depth=body.max_depth,
             )
 
     @r.post("/graph/explore")
-    async def graph_explore(body: ExploreBody, sc: ServiceContext = Depends(get_sc),
-                            principal: dict = Depends(get_principal)):
+    async def graph_explore(
+        body: ExploreBody, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         """One node plus N neighbours, depth-first expansion. Omit start to pick
         a uniformly random live node (pass `seed` for a reproducible pick)."""
         start = (body.start_type, body.start_id) if body.start_type and body.start_id else None
         async with sc.sessionmaker() as s:
-            return await sc.query.explore(s, start, principal,
-                                          n=body.n, max_depth=body.max_depth, seed=body.seed)
+            return await sc.query.explore(s, start, principal, n=body.n, max_depth=body.max_depth, seed=body.seed)
 
     @r.post("/graph/algorithm")
     async def algorithm(body: dict, sc: ServiceContext = Depends(get_sc)):

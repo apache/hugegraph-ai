@@ -18,14 +18,15 @@
 """Kinetic layer end-to-end: rules, policy, effects, audit, idempotency,
 optimistic locking, outbox webhook delivery -- exercised against the
 product-manufacturing domain (release a production order as the planner)."""
+
 from __future__ import annotations
 
 import datetime as dt
 import sqlite3
 
+import httpx
 import pytest
 import pytest_asyncio
-import httpx
 
 from ontogeny.action import ActionRuntime, OutboxDispatcher, SseBroker
 from ontogeny.config import Settings
@@ -62,8 +63,9 @@ async def env(golden_pkg_path, tmp_path):
         compiled = await RegistryService().publish(s, pkg)
         await s.commit()
     repo = ObjectRepository(compiled)
-    sync = SyncEngine(compiled, settings, repo,
-                      lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection)))
+    sync = SyncEngine(
+        compiled, settings, repo, lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection))
+    )
     async with maker() as s:
         await repo.ensure(s)
         for object_type in compiled.objects:
@@ -71,8 +73,14 @@ async def env(golden_pkg_path, tmp_path):
         await s.commit()
     policy = PolicyEngine(compiled)
     runtime = ActionRuntime(compiled, repo, policy, settings)
-    yield {"maker": maker, "compiled": compiled, "repo": repo, "policy": policy,
-           "runtime": runtime, "settings": settings}
+    yield {
+        "maker": maker,
+        "compiled": compiled,
+        "repo": repo,
+        "policy": policy,
+        "runtime": runtime,
+        "settings": settings,
+    }
     await engine.dispose()
 
 
@@ -84,8 +92,7 @@ async def link_env(tmp_path):
     root = tmp_path / "link-pkg"
     root.mkdir()
     (root / "ontology.yaml").write_text(
-        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: link-join-demo}\n"
-        "spec: {imports: []}\n",
+        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: link-join-demo}\n" "spec: {imports: []}\n",
         encoding="utf-8",
     )
     (root / "stores").mkdir()
@@ -177,8 +184,9 @@ async def link_env(tmp_path):
         compiled = await RegistryService().publish(s, pkg)
         await s.commit()
     repo = ObjectRepository(compiled)
-    sync = SyncEngine(compiled, settings, repo,
-                      lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection)))
+    sync = SyncEngine(
+        compiled, settings, repo, lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection))
+    )
     async with maker() as s:
         await repo.ensure(s)
         await sync.sync(s, "container")
@@ -186,8 +194,7 @@ async def link_env(tmp_path):
         await s.commit()
     policy = PolicyEngine(compiled)
     runtime = ActionRuntime(compiled, repo, policy, settings)
-    yield {"maker": maker, "compiled": compiled, "repo": repo,
-           "runtime": runtime, "settings": settings}
+    yield {"maker": maker, "compiled": compiled, "repo": repo, "runtime": runtime, "settings": settings}
     await engine.dispose()
 
 
@@ -197,10 +204,9 @@ async def _release_high_priority_order(env) -> str:
     lands in the outbox."""
     async with env["maker"]() as s:
         created = await env["runtime"].execute(
-            s, "create-production-order", PLANNER,
-            {"product_id": "P-100", "qty": 1, "priority": "HIGH"})
-        await env["runtime"].execute(s, "release-production-order", PLANNER, {},
-                                     created.object_id)
+            s, "create-production-order", PLANNER, {"product_id": "P-100", "qty": 1, "priority": "HIGH"}
+        )
+        await env["runtime"].execute(s, "release-production-order", PLANNER, {}, created.object_id)
         await s.commit()
     return created.object_id
 
@@ -247,21 +253,17 @@ class TestPolicyEngine:
         """
         compiled = env["compiled"]
         compiled.cedar_texts["role-visitor"] = (
-            'permit(principal in Role::"visitor", '
-            'action == Action::"release-production-order", resource);'
+            'permit(principal in Role::"visitor", ' 'action == Action::"release-production-order", resource);'
         )
         pol = PolicyEngine(compiled)
         # the action still names its own policy set, and that set still applies
-        assert pol.decide(PLANNER, "release-production-order",
-                          {"status": "PLANNED"}).allow
+        assert pol.decide(PLANNER, "release-production-order", {"status": "PLANNED"}).allow
         # ...but a permit from an unrelated set is now consulted too
         assert pol.decide(OUTSIDER, "release-production-order", None).allow
         # and the action's own set is still reported first when it permits
-        assert "production" in pol.decide(
-            PLANNER, "release-production-order", {"status": "PLANNED"}).reason
+        assert "production" in pol.decide(PLANNER, "release-production-order", {"status": "PLANNED"}).reason
         # a principal the extra permit does not name is still denied
-        assert not pol.decide({"id": "nobody", "Role": ["other"]},
-                              "release-production-order", None).allow
+        assert not pol.decide({"id": "nobody", "Role": ["other"]}, "release-production-order", None).allow
 
     def test_masking_honors_claims(self, env):
         pol = env["policy"]
@@ -315,20 +317,17 @@ class TestExecute:
     async def test_idempotency_replay(self, env):
         rt = env["runtime"]
         async with env["maker"]() as s:
-            rev1 = await rt.execute(s, "release-production-order", PLANNER, {}, "PO-1002",
-                                    idempotency_key="op-123")
+            rev1 = await rt.execute(s, "release-production-order", PLANNER, {}, "PO-1002", idempotency_key="op-123")
             await s.commit()
         async with env["maker"]() as s:
-            rev2 = await rt.execute(s, "release-production-order", PLANNER, {}, "PO-1002",
-                                    idempotency_key="op-123")
+            rev2 = await rt.execute(s, "release-production-order", PLANNER, {}, "PO-1002", idempotency_key="op-123")
         assert rev2.id == rev1.id
 
     async def test_optimistic_locking(self, env):
         rt = env["runtime"]
         async with env["maker"]() as s:
             with pytest.raises(ConflictError):
-                await rt.execute(s, "release-production-order", PLANNER, {}, "PO-1002",
-                                 expected_revision=42)
+                await rt.execute(s, "release-production-order", PLANNER, {}, "PO-1002", expected_revision=42)
             await s.commit()
 
     async def test_parameter_validation(self, env):
@@ -337,15 +336,21 @@ class TestExecute:
             with pytest.raises(TypeMismatchError):
                 await rt.execute(s, "receive-material", PLANNER, {}, "M-101")
             with pytest.raises(TypeMismatchError):
-                await rt.execute(s, "receive-material", PLANNER,
-                                 {"counted_qty": 5, "bogus": 1}, "M-101")
+                await rt.execute(s, "receive-material", PLANNER, {"counted_qty": 5, "bogus": 1}, "M-101")
 
     async def test_create_production_order_generates_id(self, env):
         rt, repo = env["runtime"], env["repo"]
         async with env["maker"]() as s:
-            rev = await rt.execute(s, "create-production-order", PLANNER, {
-                "product_id": "P-100", "qty": 5, "priority": "HIGH",
-            })
+            rev = await rt.execute(
+                s,
+                "create-production-order",
+                PLANNER,
+                {
+                    "product_id": "P-100",
+                    "qty": 5,
+                    "priority": "HIGH",
+                },
+            )
             await s.commit()
         assert rev.outcome == "executed"
         assert rev.object_id.startswith("PO-")
@@ -371,8 +376,9 @@ class TestExecute:
 
 class TestOutbox:
     async def test_webhook_delivered_via_allowlist(self, env):
-        from ontogeny.action.models import OutboxRow
         from sqlalchemy import select
+
+        from ontogeny.action.models import OutboxRow
 
         await _release_high_priority_order(env)
 
@@ -397,28 +403,26 @@ class TestOutbox:
         """An empty allowlist means DENY ALL, and "blocked" must mean the request
         was never sent — not merely that it failed. The event is consumed (so a
         bad deployment cannot wedge the pipeline) and logged for replay."""
-        from ontogeny.config import Settings as S
+        from ontogeny.config import Settings
 
         await _release_high_priority_order(env)
 
         sent: list[httpx.Request] = []
-        http = httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda r: sent.append(r) or httpx.Response(200)))
-        settings = S(env=env["settings"].env, webhook_allowlist=())
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: sent.append(r) or httpx.Response(200)))
+        settings = Settings(env=env["settings"].env, webhook_allowlist=())
         dispatcher = OutboxDispatcher(env["maker"], settings, http_client=http)
         await dispatcher.dispatch_pending()
         assert sent == [], "nothing may leave the platform without an allowlist entry"
 
     async def test_webhook_blocked_for_an_unlisted_host(self, env):
         """Being on the allowlist is per host: a second host is still denied."""
-        from ontogeny.config import Settings as S
+        from ontogeny.config import Settings
 
         await _release_high_priority_order(env)
 
         sent: list[httpx.Request] = []
-        http = httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda r: sent.append(r) or httpx.Response(200)))
-        settings = S(env=env["settings"].env, webhook_allowlist=("allowed.test",))
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: sent.append(r) or httpx.Response(200)))
+        settings = Settings(env=env["settings"].env, webhook_allowlist=("allowed.test",))
         dispatcher = OutboxDispatcher(env["maker"], settings, http_client=http)
         await dispatcher.dispatch_pending()
         assert not [r for r in sent if r.url.host == "wms.example.test"]
@@ -518,9 +522,9 @@ class TestDeliveryRetry:
         from ontogeny.action.models import OutboxConsumerRow
 
         async with env["maker"]() as s:
-            c = (await s.execute(
-                select(OutboxConsumerRow).where(OutboxConsumerRow.consumer == consumer)
-            )).scalar_one_or_none()
+            c = (
+                await s.execute(select(OutboxConsumerRow).where(OutboxConsumerRow.consumer == consumer))
+            ).scalar_one_or_none()
         return c.last_id if c else 0
 
     async def test_a_connection_error_does_not_advance_the_cursor(self, env):
@@ -543,8 +547,7 @@ class TestDeliveryRetry:
         assert await self._cursor(env) < hook_id, "a 5xx is transient: keep it pending"
 
         sent: list[httpx.Request] = []
-        up = httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda r: sent.append(r) or httpx.Response(200)))
+        up = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: sent.append(r) or httpx.Response(200)))
         d2 = OutboxDispatcher(env["maker"], env["settings"], http_client=up)
         await d2.dispatch_pending()
         assert any(r.url.host == "wms.example.test" for r in sent), "the retry delivers"
@@ -572,7 +575,6 @@ class TestDeliveryRetry:
         async def failing_hook(event: OutboxRow) -> bool:
             return False
 
-        dispatcher = OutboxDispatcher(env["maker"], env["settings"],
-                                      projection_hook=failing_hook)
+        dispatcher = OutboxDispatcher(env["maker"], env["settings"], projection_hook=failing_hook)
         assert (await dispatcher.dispatch_pending())["projection"] == 0
         assert await self._cursor(env, "projection") == before

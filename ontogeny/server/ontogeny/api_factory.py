@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """ASGI entrypoint for ``uvicorn ontogeny.api_factory --factory``."""
+
 from __future__ import annotations
 
 import os
@@ -37,9 +38,11 @@ def multiprocess_suspected() -> str | None:
     except ValueError:
         return None
     if workers > 1:
-        return (f"WEB_CONCURRENCY={workers}: ontogeny is a single-process kernel "
-                "(registry + outbox + workers in-process); run exactly one "
-                "worker per database, or split the database by domain")
+        return (
+            f"WEB_CONCURRENCY={workers}: ontogeny is a single-process kernel "
+            "(registry + outbox + workers in-process); run exactly one "
+            "worker per database, or split the database by domain"
+        )
     return None
 
 
@@ -66,9 +69,11 @@ def create_app_factory():
         # uvicorn's own logger is configured to INFO by default (the "ontogeny"
         # logger is not), so the deployment contract is actually visible
         log = logging.getLogger("uvicorn.error")
-        log.info("ontogeny single-process kernel up (registry + outbox + "
-                 "derivation + evolve + projection workers all in-process; "
-                 "do NOT scale with uvicorn workers)")
+        log.info(
+            "ontogeny single-process kernel up (registry + outbox + "
+            "derivation + evolve + projection workers all in-process; "
+            "do NOT scale with uvicorn workers)"
+        )
         suspicion = multiprocess_suspected()
         if suspicion:
             log.error("MULTIPROCESS DEPLOYMENT SUSPECTED: %s", suspicion)
@@ -80,13 +85,12 @@ def create_app_factory():
 
             log = logging.getLogger("ontogeny.demo")
             total = 0
-            for object_type in (sc.compiled.objects if sc.compiled else {}):
+            for object_type in sc.compiled.objects if sc.compiled else {}:
                 async with sc.sessionmaker() as s:
                     summary = await sc.sync_engine.sync(s, object_type)
                     await s.commit()
                 total += int(summary.get("inserted", 0))
-            log.info("demo data synced: %d rows across %d object types", total,
-                     len(sc.compiled.objects))
+            log.info("demo data synced: %d rows across %d object types", total, len(sc.compiled.objects))
         # direction F: the observe+diagnose beats on the domain's cadence.
         # Promotion is NEVER automatic from here -- the ladder keeps its gates.
         import asyncio
@@ -103,12 +107,11 @@ def create_app_factory():
                     async with sc.sessionmaker() as s:
                         evo = getattr(sc.compiled, "evolution", None)
                         obs = getattr(getattr(evo, "spec", None), "observability", None) if evo else None
-                        await sc.telemetry.aggregate_signals(
-                            s, thresholds=getattr(obs, "thresholds", None) or None)
+                        await sc.telemetry.aggregate_signals(s, thresholds=getattr(obs, "thresholds", None) or None)
                         await s.commit()
                     await run_diagnose(sc)
                     log.info("evolve cycle ok")
-                except Exception as exc:  # noqa: BLE001 -- a failed beat must not kill the loop
+                except Exception as exc:
                     log.warning("evolve cycle failed: %s", exc)
 
         evo = getattr(sc.compiled, "evolution", None)

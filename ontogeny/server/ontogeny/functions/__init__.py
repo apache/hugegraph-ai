@@ -24,6 +24,7 @@ agent's ``call_<fn>`` tool, the derivation worker, the demo runner — goes thro
 ``FunctionRuntime``, so a new runtime is added here rather than at six call
 sites, and the two kinds cannot drift in how they are budgeted or reported.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -59,9 +60,15 @@ class FunctionRuntime:
             raise NotImplementedError("a declarative function has no code to test-run")
         return await self.sandbox.run_source(session, fn, source, params)
 
-    async def map_rows(self, session, fn, rows: list[dict[str, Any]],
-                       params: dict[str, Any] | None = None, *,
-                       object_param: str = "obj") -> list[Any]:
+    async def map_rows(
+        self,
+        session,
+        fn,
+        rows: list[dict[str, Any]],
+        params: dict[str, Any] | None = None,
+        *,
+        object_param: str = "obj",
+    ) -> list[Any]:
         """Batch mode for the derivation worker.
 
         A declarative function gets the same treatment as a code one: evaluated
@@ -73,11 +80,9 @@ class FunctionRuntime:
         if self.is_declarative(fn):
             out: list[Any] = []
             for row in rows:
-                out.append(await self.declarative.run(
-                    session, fn, {**(params or {}), object_param: row}))
+                out.append(await self.declarative.run(session, fn, {**(params or {}), object_param: row}))
             return out
-        return await self.sandbox.map_rows(session, fn, rows, params,
-                                           object_param=object_param)
+        return await self.sandbox.map_rows(session, fn, rows, params, object_param=object_param)
 
     async def aclose(self) -> None:
         await self.declarative.aclose()

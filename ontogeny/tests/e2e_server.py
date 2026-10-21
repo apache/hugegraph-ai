@@ -23,6 +23,7 @@ data) with a throwaway data directory, so promotions never touch the repo.
 
 Run: PYTHONPATH=server .venv/bin/python tests/e2e_server.py
 """
+
 from __future__ import annotations
 
 import os
@@ -62,7 +63,9 @@ def main() -> None:
 
     port = _free_port()
     print(f"READY {port}", flush=True)
-    uvicorn.run("ontogeny.api_factory:create_app_factory", factory=True, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(
+        "ontogeny.api_factory:create_app_factory", factory=True, host="127.0.0.1", port=port, log_level="warning"
+    )
 
 
 if __name__ == "__main__":

@@ -255,8 +255,12 @@ class BuiltinLlmEngine:
                     return EngineResult("blocked_on_approval", {"approval_id": out.get("approval_id")})
                 if outcome == "AGENT_SESSION_CLOSED":
                     return EngineResult("finished", {"error": out.get("error")})
-                if outcome in ("AGENT_SESSION_EXPIRED", "AGENT_SESSION_BUDGET_EXCEEDED",
-                               "AGENT_SESSION_RUNNING", "NOT_FOUND"):
+                if outcome in (
+                    "AGENT_SESSION_EXPIRED",
+                    "AGENT_SESSION_BUDGET_EXCEEDED",
+                    "AGENT_SESSION_RUNNING",
+                    "NOT_FOUND",
+                ):
                     # terminal for this drive: retrying can never succeed (an
                     # unbounded drive over an expired session burned the LLM
                     # budget one call per turn, forever)

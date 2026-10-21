@@ -267,6 +267,44 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                     if prop not in tgt.spec.properties:
                         rep.error("LINK-KEY", res_id, f"{side_name} key {prop!r} not a property of {obj_name}")
 
+    # ---- objects: snake-case column collision would make two properties
+    # share one column (rows keyed by column, masking by property)
+    def _check_col_collisions(pkg_: OntologyPackage, rep_: ValidationReport) -> None:
+        import re as _re3
+
+        def _col(n: str) -> str:
+            return _re3.sub(r"[^a-z0-9]+", "_", n.strip().lower()).strip("_")
+
+        for obj_ in pkg_.objects():
+            seen: dict[str, str] = {}
+            for pname in obj_.spec.properties:
+                c = _col(pname)
+                if c in seen:
+                    rep_.error(
+                        "DUP-COLUMN",
+                        f"ObjectType/{obj_.metadata.name}",
+                        f"properties {seen[c]!r} and {pname!r} both map to column {c!r}; " "rename one of them",
+                    )
+                else:
+                    seen[c] = pname
+
+    _check_col_collisions(pkg, rep)
+
+    # ---- policies: resource-scoped statements are unsupported, fail closed -
+    for pol in pkg.policies():
+        text = pkg.sidecar_text("PolicySet", pol.metadata.name, pol.spec.source)
+        import re as _re2
+
+        for m2 in _re2.finditer(r"(?:permit|forbid)\s*\([^)]*,\s*([^,)]+)\s*\)", text, _re2.S):
+            res = m2.group(1).strip()
+            if res not in ("resource", "*"):
+                rep.error(
+                    "POLICY-RESOURCE",
+                    f"PolicySet/{pol.metadata.name}",
+                    f"resource-scoped statement ({res!r}) is not supported by this engine; "
+                    "rewrite the condition as a `when` clause or remove the resource argument",
+                )
+
     # ---- policies: unparseable forbid must not ride silently --------------
     import re as _re
 

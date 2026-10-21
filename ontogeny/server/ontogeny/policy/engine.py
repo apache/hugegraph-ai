@@ -186,8 +186,7 @@ class PolicyEngine:
                 continue
             # unscoped permit(principal, ...) must not grant the anonymous
             # visitor: require SOME principal identity beyond the fallback
-            if (principal.get("via") == "anonymous"
-                    and rule.role is None and not roles):
+            if principal.get("via") == "anonymous" and rule.role is None and not roles:
                 continue
             if rule.when is None:
                 matched = (True, f"permit by {policy_name} (unconditional)")

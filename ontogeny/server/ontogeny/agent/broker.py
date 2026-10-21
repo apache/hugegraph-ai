@@ -33,7 +33,7 @@ from typing import Any
 from sqlalchemy import delete, or_, select, update
 
 from ..action.models import OutboxRow  # noqa: F401  (re-exported for API layer typing)
-from ..errors import NotFoundError, OOError, PolicyDeniedError, StoreError
+from ..errors import ConflictError, NotFoundError, OOError, PolicyDeniedError, StoreError
 from ..registry.compiled import CompiledOntology
 from .catalog import ToolDef, build_catalog, catalog_hash, effective_tools
 from .models import AgentApprovalRow, AgentSessionRow, AgentStepRow, args_digest
@@ -218,16 +218,37 @@ class AgentBroker:
             rows = (await session.execute(stmt)).scalars().all()
         return [self._session_view(r) for r in rows]
 
-    async def delete_session(self, session_id: int) -> dict[str, Any]:
+    async def delete_session(self, session_id: int, principal: dict | None = None) -> dict[str, Any]:
         """Delete one agent session and every observation belonging to it.
 
         The session row is the governance record's root: steps and approvals
-        are meaningless without it, so the delete is deliberately transitive.
+        are meaningless without it, so the delete is deliberately transitive
+        -- and therefore guarded twice: a session that carries approval
+        decisions is an audit trail and is not deletable through this API at
+        all, and a session without governance records may only be removed by
+        its own driver or an administrator (any authenticated driver used to
+        be able to delete any session).
         """
         async with self.sc.sessionmaker() as session:
             row = await session.get(AgentSessionRow, session_id)
             if row is None:
                 raise NotFoundError(f"agent session {session_id} not found")
+            if principal is not None and not principal.get("is_admin"):
+                driver_id = (row.driver or {}).get("id") if isinstance(row.driver, dict) else None
+                if driver_id is not None and driver_id != principal.get("id"):
+                    raise PolicyDeniedError(
+                        f"agent session {session_id} belongs to driver {driver_id!r}",
+                        details={"session_id": session_id, "driver": driver_id},
+                    )
+            approvals = (await session.execute(
+                select(AgentApprovalRow.id).where(AgentApprovalRow.session_id == session_id)
+            )).scalars().all()
+            if approvals:
+                raise ConflictError(
+                    f"agent session {session_id} carries {len(approvals)} approval record(s); "
+                    "the governance trail is not deletable",
+                    details={"session_id": session_id, "approvals": len(approvals)},
+                )
             await session.execute(delete(AgentStepRow).where(AgentStepRow.session_id == session_id))
             await session.execute(delete(AgentApprovalRow).where(AgentApprovalRow.session_id == session_id))
             await session.delete(row)

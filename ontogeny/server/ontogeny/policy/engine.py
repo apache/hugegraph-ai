@@ -26,8 +26,8 @@ Parses the ``permit(...) when { ... }`` statements used by PolicySet files:
 
 Evaluation is deterministic and default-deny. Conditions are translated to the
 platform mini-expr (``&&``->``and``) so there is exactly ONE expression
-semantics in the system. If the ``cedarpy`` binding is installed it is
-preferred; this pure-Python driver is the portable fallback and CI reference.
+semantics in the system. ``forbid`` statements follow Cedar precedence: a
+matching forbid overrides any permit.
 """
 from __future__ import annotations
 
@@ -39,6 +39,14 @@ from ..core import expr as _expr
 
 _PERMIT_RE = re.compile(
     r"permit\s*\(\s*(?P<principal>[^,]+?)\s*,\s*action\s*==\s*Action::\"(?P<action>[^\"]+)\"\s*,\s*(?P<resource>[^)]*?)s*\)\s*(?:when\s*\{(?P<when>.*?)\}\s*)?;",
+    re.DOTALL,
+)
+
+#: Cedar forbid statements. Semantics per Cedar: a matching forbid OVERRIDES
+#: any permit (denies even when a permit matches), so ignoring them -- which
+#: this engine used to do silently -- turned authored denies into no-ops.
+_FORBID_RE = re.compile(
+    r"forbid\s*\(\s*(?P<principal>[^,]+?)\s*,\s*action\s*==\s*Action::\"(?P<action>[^\"]+)\"\s*,\s*(?P<resource>[^)]*?)s*\)\s*(?:when\s*\{(?P<when>.*?)\}\s*)?;",
     re.DOTALL,
 )
 
@@ -79,14 +87,32 @@ def parse_policy_set(text: str) -> list[PermitRule]:
     return rules
 
 
+def parse_forbids(text: str) -> list[PermitRule]:
+    """Forbid statements, parsed with the same shape as permits."""
+    rules: list[PermitRule] = []
+    for m in _FORBID_RE.finditer(text):
+        principal = m.group("principal").strip()
+        role: str | None = None
+        rm = re.fullmatch(r'principal in (?:Role|Group)::"([^"]+)"', principal)
+        if rm:
+            role = rm.group(1)
+        elif principal != "principal":
+            continue
+        when = m.group("when")
+        rules.append(PermitRule(role=role, action=m.group("action"), when=translate_when(when.strip()) if when else None))
+    return rules
+
+
 class PolicyEngine:
     """Decides principal x action x resource against the package's policy sets."""
 
     def __init__(self, compiled) -> None:
         self.compiled = compiled
         self._sets: dict[str, list[PermitRule]] = {}
+        self._forbids: dict[str, list[PermitRule]] = {}
         for name, text in compiled.cedar_texts.items():
             self._sets[name] = parse_policy_set(text)
+            self._forbids[name] = parse_forbids(text)
         if "default" not in self._sets:
             self._sets["default"] = []  # absent default = default-deny
 
@@ -121,21 +147,48 @@ class PolicyEngine:
             if rule.action == action_name
         ]
 
+    def _forbidden_by(self, principal: dict, action_name: str, resource: dict | None) -> str | None:
+        """The policy-set name whose forbid matches, if any (Cedar precedence:
+        forbid overrides permit)."""
+        roles = set(principal.get("Role") or principal.get("roles") or [])
+        for name, rules in self._forbids.items():
+            for rule in rules:
+                if rule.action != action_name:
+                    continue
+                if rule.role is not None and rule.role not in roles:
+                    continue
+                if rule.when is None:
+                    return name
+                try:
+                    if bool(_expr.evaluate(rule.when, _expr.ExprContext(
+                        target=resource or {}, parameters={}, principal=principal,
+                    ))):
+                        return name
+                except ExpressionError:
+                    continue
+        return None
+
     def decide(self, principal: dict, action_name: str, resource: dict | None) -> PolicyDecision:
         roles = set(principal.get("Role") or principal.get("roles") or [])
         for policy_name, rule in self.rules_for(action_name):
             if rule.role is not None and rule.role not in roles:
                 continue
             if rule.when is None:
-                return PolicyDecision(True, rule, f"permit by {policy_name} (unconditional)")
-            try:
-                ok = bool(_expr.evaluate(rule.when, _expr.ExprContext(
-                    target=resource or {}, parameters={}, principal=principal,
-                )))
-            except ExpressionError:
-                continue  # malformed condition -> fail closed for this rule
-            if ok:
-                return PolicyDecision(True, rule, f"permit by {policy_name} (when-clause)")
+                matched = (True, f"permit by {policy_name} (unconditional)")
+            else:
+                try:
+                    ok = bool(_expr.evaluate(rule.when, _expr.ExprContext(
+                        target=resource or {}, parameters={}, principal=principal,
+                    )))
+                except ExpressionError:
+                    continue  # malformed condition -> fail closed for this rule
+                matched = (ok, f"permit by {policy_name} (when-clause)")
+            if matched[0]:
+                forbidden = self._forbidden_by(principal, action_name, resource)
+                if forbidden is not None:
+                    return PolicyDecision(False, rule,
+                                           f"forbidden by {forbidden} (forbid overrides permit)")
+                return PolicyDecision(True, rule, matched[1])
         return PolicyDecision(False, None, "default deny")
 
     def authorize(self, principal: dict, action_name: str, resources: list[dict]) -> list[PolicyDecision]:

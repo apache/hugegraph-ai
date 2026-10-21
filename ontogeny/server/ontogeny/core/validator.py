@@ -186,9 +186,25 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         for pname, pdef in obj.spec.properties.items():
             if pdef.derived_kind() == "expr":
                 try:
-                    _expr.analyze(pdef.derived)
+                    refs = _expr.analyze(pdef.derived)
                 except ExpressionError as exc:
                     rep.error("EXPR-PARSE", res_id, f"derived expr of {pname}: {exc.message}")
+                    refs = set()
+                # a derived value computed FROM a marked property leaks that
+                # property unless the derived one declares its own marking
+                # (masks apply to declared markings on every read surface)
+                for _root, rfield in refs:
+                    if _root != "target" or rfield == pname:
+                        continue
+                    rdef = obj.spec.properties.get(rfield)
+                    if rdef is not None and rdef.marking and not pdef.marking:
+                        rep.error(
+                            "DERIVED-MARKING", res_id,
+                            f"derived property {pname!r} reads marked property "
+                            f"{rfield!r} (marking {rdef.marking!r}) but declares no "
+                            "marking; declare an equal-or-stricter marking or drop "
+                            "the reference",
+                        )
             elif pdef.derived_kind() == "function":
                 entry = pdef.derived_entry()
                 if not entry or entry.count(":") != 1:
@@ -242,6 +258,21 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 for prop in mapping:
                     if prop not in tgt.spec.properties:
                         rep.error("LINK-KEY", res_id, f"{side_name} key {prop!r} not a property of {obj_name}")
+
+    # ---- policies: unparseable forbid must not ride silently --------------
+    import re as _re
+
+    from ..policy.engine import parse_forbids
+
+    for pol in pkg.policies():
+        text = pkg.sidecar_text("PolicySet", pol.metadata.name, pol.spec.source)
+        authored = len(_re.findall(r"\bforbid\s*\(", text))
+        if authored and authored != len(parse_forbids(text)):
+            rep.error(
+                "POLICY-FORBID", f"PolicySet/{pol.metadata.name}",
+                "contains a forbid() statement this engine cannot parse; refusing to "
+                "publish (an unparsed forbid would silently grant instead of deny)",
+            )
 
     # ---- actions ----------------------------------------------------------
     for act in pkg.actions():

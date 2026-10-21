@@ -83,7 +83,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
     async def agent_session_delete(session_id: int, sc: ServiceContext = Depends(get_sc),
                                    principal: dict = Depends(get_principal)):
         _require_driver(principal, sc)
-        return await sc.agents.delete_session(session_id)
+        return await sc.agents.delete_session(session_id, principal=principal)
 
     @r.post("/agent/sessions/{session_id}/run")
     async def agent_session_run(session_id: int, background: BackgroundTasks,

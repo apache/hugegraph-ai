@@ -6,13 +6,13 @@
 
 `ontogeny` — Greek *onto-* (being, the root of *ontology*) + *genesis* (birth, development): in biology the word names the **full-life-cycle development of an individual organism**. The name is the thesis: an ontology here is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use. It is a **self-improving operational ontology platform**: it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto [Apache HugeGraph](https://github.com/apache/hugegraph) for deep-graph queries.
 
-The design pairs a **semantic layer** (what the business is) with a **kinetic layer** (what it can do), and stays fully open: **the DSL is the single source of truth** — object tables and the graph schema are compiled artifacts that can be deleted and rebuilt at any time.
+The design pairs a **semantic layer** (what the business is) with a **kinetic layer** (what it can do). **The DSL is the single source of truth** — object tables and the graph schema are compiled artifacts that can be deleted and rebuilt at any time.
 
 The whole system on one board — this is the console's Overview dashboard, and the map for everything below:
 
 ![Overall architecture board](./docs/en/img/arch-board.png)
 
-*Top: the eight first-class DSL citizens (Action = the only write gate, EvalSuite = the selection box). Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
+*Top: the DSL resources (Action = the only write gate, EvalSuite = the selection box). Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
 
 ## Key Features
 
@@ -94,28 +94,6 @@ Governance you can point at: every execution and every refusal lands in an immut
 | [`domains`](./domains) | Domain packages (YAML + seed data + agent plugins); [product-manufacturing](./domains/product-manufacturing) is the showcase **and** the test-suite golden package: 7 objects, 6 links, 8 actions, 3 functions, policies, a projection, an eval suite and a demo story |
 
 One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single governance channel. The full contract lives at `GET /openapi.json`.
-
-## Documentation
-
-Docs live under [`docs/`](./docs) in two languages — [中文](./docs/zh/README.md) and [English](./docs/en/README.md) — each with screenshots captured from the matching UI language. Two parts:
-
-**Part I · Architecture**
-
-- [Overall architecture](./docs/en/architecture/01-overall-architecture.md) — the four-band view, third-party components & degradation
-- [Ontology model & DSL](./docs/en/architecture/02-ontology-model-and-dsl.md) — the 11 resource kinds, mini-expr, validators
-- [Data & derivation](./docs/en/architecture/03-data-and-derivation.md) — ownership, sync engine, outbox, projection backfill
-- [Kinetic layer](./docs/en/architecture/04-actions-and-functions.md) — function ecosystem, functional actions & effect plans
-- [Agent governance](./docs/en/architecture/05-agent-governance.md) — sessions, engines, the MCP channel, the three doors
-- [RSI self-evolution](./docs/en/architecture/06-rsi-self-evolution.md) — signals, selection ladder, T0–T3 promotion
-- [Boundaries & quality](./docs/en/architecture/07-boundaries-and-quality.md) — non-goals, limits, test map
-
-**Part II · Usage**
-
-- [Quick start](./docs/en/usage/08-quickstart.md) — one command, first login
-- [UI tour](./docs/en/usage/09-ui-tour.md) — six high-frequency pages
-- [Function editor](./docs/en/usage/10-function-editor.md) — sandboxed Python in the console
-- [Manufacturing case](./docs/en/usage/11-manufacturing-case.md) — a full operational loop
-- [Reference](./docs/en/usage/12-reference.md) — CLI, env vars, API endpoints, routes, error codes
 
 ## HugeGraph Ecosystem
 

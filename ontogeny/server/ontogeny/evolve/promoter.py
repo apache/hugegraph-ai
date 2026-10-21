@@ -155,8 +155,7 @@ class Promoter:
                 return {"status": "rejected", "reason": "eval suite not green"}
             if not eval_report.get("suites"):
                 proposal.status = "rejected"
-                return {"status": "rejected",
-                        "reason": "eval report has no suite results; nothing was verified"}
+                return {"status": "rejected", "reason": "eval report has no suite results; nothing was verified"}
             namespace = pkg.manifest.metadata.name
             cap = self._t0_cap(evo)
             used = await self._budget_check_and_use(session, namespace, cap)

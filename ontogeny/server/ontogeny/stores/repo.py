@@ -203,8 +203,7 @@ class ObjectRepository:
         principal: dict | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         t = self._table(object_type)
-        where = _and(self._current_where(object_type, at),
-                     self.build_filter(object_type, filt, principal))
+        where = _and(self._current_where(object_type, at), self.build_filter(object_type, filt, principal))
         total = (await session.execute(select(func.count()).select_from(t).where(where))).scalar_one()
         stmt = select(t).where(where)
         if isinstance(sort, str):

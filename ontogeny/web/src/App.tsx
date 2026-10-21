@@ -31,7 +31,9 @@ limitations under the License.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { lazy, Suspense } from 'react'
+import { cloneElement, lazy, Suspense } from 'react'
+import { useParams } from 'react-router-dom'
+import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
@@ -114,10 +116,10 @@ export function Router() {
               from wherever the type is shown. Old links land on Knowledge. */}
           <Route path="/data" element={<Navigate to="/knowledge" replace />} />
           <Route path="/objects" element={<Navigate to="/knowledge" replace />} />
-          <Route path="/objects/:type" element={<ObjectsBrowser />} />
-          <Route path="/objects/:type/:id" element={<ObjectDetail />} />
-          <Route path="/actions/:name" element={<ActionRunner />} />
-          <Route path="/functions/:name" element={<FunctionTester />} />
+          <Route path="/objects/:type" element={<KeyedRoute param="type"><ObjectsBrowser /></KeyedRoute>} />
+          <Route path="/objects/:type/:id" element={<KeyedRoute param="id"><ObjectDetail /></KeyedRoute>} />
+          <Route path="/actions/:name" element={<KeyedRoute param="name"><ActionRunner /></KeyedRoute>} />
+          <Route path="/functions/:name" element={<KeyedRoute param="name"><FunctionTester /></KeyedRoute>} />
           <Route path="/graph" element={<GraphExplorer />} />
           {/* the agent conversation is a floating dock now (bottom-right, ⌘J from
               any page); only run management is still a route. Old /agent links
@@ -143,6 +145,15 @@ export function Router() {
       </Suspense>
     </AppShell>
   )
+}
+
+// parameterized routes remount on param change: React reuses the component
+// across /actions/A -> /actions/B, so B used to start with (and could even
+// execute with) A's inputs and idempotency state
+function KeyedRoute({ param, children }: { param: string; children: ReactElement }) {
+  const params = useParams()
+  const key = params[param] ?? ''
+  return cloneElement(children, { key })
 }
 
 export default function App() {

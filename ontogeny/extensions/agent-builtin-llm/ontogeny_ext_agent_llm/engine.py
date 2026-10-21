@@ -45,6 +45,7 @@ budget threshold fires (budget_exhausted) or a human finishes it explicitly
 The LLM only ever chooses tools; facts come exclusively from tool results.
 No memory, no RAG, no multi-agent — by design (agent-paradigm.md §0).
 """
+
 from __future__ import annotations
 
 import json
@@ -93,8 +94,9 @@ class ToolExecutor(Protocol):
 
     kind: str
 
-    async def call_tool(self, session_id: int, tool: str, args: dict[str, Any],
-                        *, thought: str = "") -> dict[str, Any]: ...
+    async def call_tool(
+        self, session_id: int, tool: str, args: dict[str, Any], *, thought: str = ""
+    ) -> dict[str, Any]: ...
 
 
 class McpExecutor:
@@ -105,10 +107,8 @@ class McpExecutor:
     def __init__(self, client) -> None:
         self.client = client
 
-    async def call_tool(self, session_id: int, tool: str, args: dict[str, Any],
-                        *, thought: str = "") -> dict[str, Any]:
-        out = await self.client.call_tool(tool, {**args, "session_id": session_id,
-                                                 "thought": thought})
+    async def call_tool(self, session_id: int, tool: str, args: dict[str, Any], *, thought: str = "") -> dict[str, Any]:
+        out = await self.client.call_tool(tool, {**args, "session_id": session_id, "thought": thought})
         return out
 
 
@@ -120,21 +120,18 @@ class BrokerExecutor:
     def __init__(self, broker) -> None:
         self.broker = broker
 
-    async def call_tool(self, session_id: int, tool: str, args: dict[str, Any],
-                        *, thought: str = "") -> dict[str, Any]:
-        return await self.broker.call_tool(session_id, tool, args,
-                                           engine=True, thought=thought)
+    async def call_tool(self, session_id: int, tool: str, args: dict[str, Any], *, thought: str = "") -> dict[str, Any]:
+        return await self.broker.call_tool(session_id, tool, args, engine=True, thought=thought)
 
 
 @dataclass
 class EngineResult:
-    status: str                 # the RUN's outcome: finished | blocked_on_approval | budget_exhausted
+    status: str  # the RUN's outcome: finished | blocked_on_approval | budget_exhausted
     result: dict[str, Any]
 
 
 class BuiltinLlmEngine:
-    def __init__(self, sc, llm: ChatClient | None,
-                 *, executor: ToolExecutor | None = None) -> None:
+    def __init__(self, sc, llm: ChatClient | None, *, executor: ToolExecutor | None = None) -> None:
         """``sc`` is the ServiceContext (broker for session bookkeeping, and
         the MCP surface when the extra is installed). Tests may pin an
         ``executor``; without one the engine prefers MCP and falls back."""
@@ -154,9 +151,11 @@ class BuiltinLlmEngine:
 
             client = await stack.enter_async_context(in_process_mcp_session(self.sc))
             return McpExecutor(client)
-        except Exception:  # noqa: BLE001 -- missing extra: degrade, don't die
-            log.warning("builtin-llm: mcp extra not available, engine falls back "
-                        "to in-process broker calls (install 'ontogeny[mcp]')")
+        except Exception:
+            log.warning(
+                "builtin-llm: mcp extra not available, engine falls back "
+                "to in-process broker calls (install 'ontogeny[mcp]')"
+            )
             return BrokerExecutor(self.broker)
 
     async def drive(self, session_id: int, *, resume: bool = False) -> EngineResult:
@@ -168,9 +167,14 @@ class BuiltinLlmEngine:
         session = await self.broker.get_session(session_id)
         task = session.get("task") or "Complete the task."
         tools: dict[str, Any] = {
-            name: {"name": t["name"], "kind": t["kind"], "target": t.get("target"),
-                   "description": t["description"], "writes": t["writes"],
-                   "input_schema": t.get("input_schema") or {}}
+            name: {
+                "name": t["name"],
+                "kind": t["kind"],
+                "target": t.get("target"),
+                "description": t["description"],
+                "writes": t["writes"],
+                "input_schema": t.get("input_schema") or {},
+            }
             for name, t in (session.get("tools") or {}).items()
         }
         from contextlib import AsyncExitStack
@@ -180,8 +184,9 @@ class BuiltinLlmEngine:
             self.last_transport = executor.kind
             return await self._drive_loop(session_id, task, tools, executor)
 
-    async def _drive_loop(self, session_id: int, task: str, tools: dict[str, Any],
-                          executor: ToolExecutor) -> EngineResult:
+    async def _drive_loop(
+        self, session_id: int, task: str, tools: dict[str, Any], executor: ToolExecutor
+    ) -> EngineResult:
         await self.broker.set_status(session_id, "running")
 
         repairs = 0
@@ -193,8 +198,7 @@ class BuiltinLlmEngine:
                 # steps == 0 means UNLIMITED (a session opened with explicit
                 # "no budget"): the gate fires only when a positive cap exists
                 if budget["steps"] and budget["steps_used"] >= budget["steps"]:
-                    await self.broker.set_status(session_id, "budget_exhausted",
-                                                 {"error": "step budget exhausted"})
+                    await self.broker.set_status(session_id, "budget_exhausted", {"error": "step budget exhausted"})
                     return EngineResult("budget_exhausted", {"error": "step budget exhausted"})
 
                 transcript = self._transcript(fresh.get("steps") or [])
@@ -205,8 +209,7 @@ class BuiltinLlmEngine:
                     # an LLM failure ends the run, not the session: keep the
                     # session open with the error recorded, so the operator can
                     # re-drive it (or end it by hand) instead of losing it
-                    await self.broker.set_status(
-                        session_id, "open", {"error": f"llm: {exc.message}"})
+                    await self.broker.set_status(session_id, "open", {"error": f"llm: {exc.message}"})
                     return EngineResult("finished", {"error": f"llm: {exc.message}"})
 
                 # the model's own reasoning for this turn; shown to the human in
@@ -220,8 +223,8 @@ class BuiltinLlmEngine:
                     # for the next instruction. Only the budget threshold or an
                     # explicit human finish terminates a session.
                     await self.broker.set_status(
-                        session_id, "open",
-                        {"final": final, **({"thought": thought} if thought else {})})
+                        session_id, "open", {"final": final, **({"thought": thought} if thought else {})}
+                    )
                     return EngineResult("finished", {"final": final})
 
                 tool = str(decision.get("tool") or "")
@@ -234,35 +237,33 @@ class BuiltinLlmEngine:
                     if repairs > _MAX_REPAIRS:
                         # give up on the RUN, keep the session drivable: the
                         # error is recorded and a human can re-steer or finish
-                        await self.broker.set_status(
-                            session_id, "open", {"error": f"engine gave up: {outcome}"})
+                        await self.broker.set_status(session_id, "open", {"error": f"engine gave up: {outcome}"})
                         return EngineResult("finished", {"error": f"engine gave up: {outcome}"})
                     continue  # the failed call is in the transcript; model self-corrects
                 if outcome == "AGENT_BUDGET_EXCEEDED":
-                    await self.broker.set_status(session_id, "budget_exhausted",
-                                                 {"error": out.get("error")})
+                    await self.broker.set_status(session_id, "budget_exhausted", {"error": out.get("error")})
                     return EngineResult("budget_exhausted", {"error": out.get("error")})
                 if outcome == "pending_approval":
                     await self.broker.set_status(
-                        session_id, "blocked_on_approval",
-                        {"blocked_on": out.get("approval_id"),
-                         "message": "write is awaiting human approval; approve, then run again"})
-                    return EngineResult("blocked_on_approval",
-                                        {"approval_id": out.get("approval_id")})
+                        session_id,
+                        "blocked_on_approval",
+                        {
+                            "blocked_on": out.get("approval_id"),
+                            "message": "write is awaiting human approval; approve, then run again",
+                        },
+                    )
+                    return EngineResult("blocked_on_approval", {"approval_id": out.get("approval_id")})
                 if outcome == "AGENT_SESSION_CLOSED":
                     return EngineResult("finished", {"error": out.get("error")})
                 # ok / POLICY_DENIED / RULE_REJECTED / executed …: keep looping
-        except Exception as exc:  # noqa: BLE001 -- crash ⇒ release the session
+        except Exception as exc:
             # back to `open` with the crash recorded, never a stuck `running`
-            await self.broker.set_status(
-                session_id, "open",
-                {"error": f"engine crashed: {type(exc).__name__}: {exc}"})
+            await self.broker.set_status(session_id, "open", {"error": f"engine crashed: {type(exc).__name__}: {exc}"})
             return EngineResult("finished", {"error": f"engine crashed: {exc}"})
 
     # ------------------------------------------------------------------ parts
 
-    async def _decide(self, messages: list[dict[str, str]],
-                      tools: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _decide(self, messages: list[dict[str, str]], tools: dict[str, Any] | None = None) -> dict[str, Any]:
         assert self.llm is not None
         if tools and getattr(self.llm, "supports_tool_calls", False):
             return await self._decide_via_tool_calls(messages, tools)
@@ -272,23 +273,25 @@ class BuiltinLlmEngine:
         except LLMError:
             decision = None
         if not isinstance(decision, dict) or ("final" not in decision and "tool" not in decision):
-            raise LLMError("model did not return a tool/final JSON decision")
+            raise LLMError("model did not return a tool/final JSON decision") from None
         return decision
 
-    async def _decide_via_tool_calls(self, messages: list[dict[str, str]],
-                                     tools: dict[str, Any]) -> dict[str, Any]:
+    async def _decide_via_tool_calls(self, messages: list[dict[str, str]], tools: dict[str, Any]) -> dict[str, Any]:
         """Native function-calling, when the provider adapter advertises it
         (``ChatClient.supports_tool_calls = True``). The JSON protocol stays
         the default and the fallback -- it works on any model, and the two
         produce the same decision dict."""
-        schemas = [{
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": t["description"],
-                "parameters": t["input_schema"] or {"type": "object", "properties": {}},
-            },
-        } for name, t in tools.items()]
+        schemas = [
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": t["description"],
+                    "parameters": t["input_schema"] or {"type": "object", "properties": {}},
+                },
+            }
+            for name, t in tools.items()
+        ]
         out = await self.llm.chat(messages, tools=schemas)
         calls = out.get("tool_calls") or []
         if calls:
@@ -299,9 +302,12 @@ class BuiltinLlmEngine:
                 try:
                     args = json.loads(args) if args.strip() else {}
                 except (TypeError, ValueError) as exc:
-                    raise LLMError(f"model returned unparsable tool arguments: {exc}")
-            return {"thought": str(out.get("content") or "")[:4000],
-                    "tool": str(call.get("name") or ""), "args": args or {}}
+                    raise LLMError(f"model returned unparsable tool arguments: {exc}") from exc
+            return {
+                "thought": str(out.get("content") or "")[:4000],
+                "tool": str(call.get("name") or ""),
+                "args": args or {},
+            }
         content = str(out.get("content") or "")
         try:
             decision = extract_json(content)
@@ -313,28 +319,32 @@ class BuiltinLlmEngine:
             return {"thought": "", "final": content}
         raise LLMError("model returned neither a tool call nor a final answer")
 
-    def _prompt(self, task: str, tools: dict[str, Any],
-                transcript: list[dict[str, Any]]) -> list[dict[str, str]]:
+    def _prompt(self, task: str, tools: dict[str, Any], transcript: list[dict[str, Any]]) -> list[dict[str, str]]:
         catalog = {
-            name: {"description": t["description"], "input_schema": t["input_schema"]}
-            for name, t in tools.items()
+            name: {"description": t["description"], "input_schema": t["input_schema"]} for name, t in tools.items()
         }
         return [
             {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps({
-                "task": task,
-                "tools": catalog,
-                "transcript": self._bounded(transcript),
-            }, ensure_ascii=False)},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "task": task,
+                        "tools": catalog,
+                        "transcript": self._bounded(transcript),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
         ]
 
     @staticmethod
-    def _bounded(transcript: list[dict[str, Any]],
-                 limit: int = _MAX_TRANSCRIPT_CHARS) -> list[dict[str, Any]]:
+    def _bounded(transcript: list[dict[str, Any]], limit: int = _MAX_TRANSCRIPT_CHARS) -> list[dict[str, Any]]:
         """Keep the prompt inside a total character budget: long sessions
         slide a window over their own middle (the earliest steps are the
         most redundant -- the model already acted on them), with an explicit
         marker so the elision is visible, never silent."""
+
         def _size(steps: list[dict[str, Any]]) -> int:
             return len(json.dumps(steps, ensure_ascii=False, default=str))
 
@@ -345,19 +355,20 @@ class BuiltinLlmEngine:
         while kept and _size(kept) > limit:
             kept.pop(0)
             dropped += 1
-        return [{"_elided": f"{dropped} earlier step(s) omitted to fit the "
-                            "context window"}] + kept
+        return [{"_elided": f"{dropped} earlier step(s) omitted to fit the " "context window"}, *kept]
 
     def _transcript(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for s in steps:
-            out.append({
-                "thought": s.get("thought") or None,
-                "tool": s.get("tool"),
-                "args": _truncated_json(s.get("args")),
-                "outcome": s.get("outcome"),
-                "result": _truncated_json(s.get("detail")),
-            })
+            out.append(
+                {
+                    "thought": s.get("thought") or None,
+                    "tool": s.get("tool"),
+                    "args": _truncated_json(s.get("args")),
+                    "outcome": s.get("outcome"),
+                    "result": _truncated_json(s.get("detail")),
+                }
+            )
         return out
 
 

@@ -22,6 +22,7 @@ The service-level tests run the real ServiceContext (real repo, real files on
 disk) and mock only the HTTP boundary, so the assertions cover the whole path
 from object rows to graph payloads.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,12 +33,12 @@ from urllib.parse import unquote
 import httpx
 import pytest
 import pytest_asyncio
+from ontogeny_ext_hugegraph import HugeGraphClient
 
 from ontogeny.action.models import OutboxRow
 from ontogeny.config import Settings
 from ontogeny.demo import seed_from_package
 from ontogeny.projection import ProjectionWorker, compile_projection
-from ontogeny_ext_hugegraph import HugeGraphClient
 from ontogeny.registry import compile_package
 from ontogeny.service import ServiceContext
 
@@ -72,11 +73,24 @@ class TestDialectV17:
     async def rig(self, compiled):
         routes = [
             ("GET", "/graphspaces", httpx.Response(200, json={"graphSpaces": []})),
-            ("GET", "/schema/vertexlabels", httpx.Response(200, json={"vertexlabels": [
-                {"name": "product", "id": 1}, {"name": "bom", "id": 2}, {"name": "material", "id": 3},
-                {"name": "work-center", "id": 4}, {"name": "production-order", "id": 5},
-                {"name": "operation", "id": 6}, {"name": "quality-inspection", "id": 7},
-            ]})),
+            (
+                "GET",
+                "/schema/vertexlabels",
+                httpx.Response(
+                    200,
+                    json={
+                        "vertexlabels": [
+                            {"name": "product", "id": 1},
+                            {"name": "bom", "id": 2},
+                            {"name": "material", "id": 3},
+                            {"name": "work-center", "id": 4},
+                            {"name": "production-order", "id": 5},
+                            {"name": "operation", "id": 6},
+                            {"name": "quality-inspection", "id": 7},
+                        ]
+                    },
+                ),
+            ),
         ]
         handler, calls = _recorder(routes)
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -116,31 +130,38 @@ class TestDialectV17:
         # a TEXT-prop index alongside the numeric ones, for contrast
         schema["indexes"].append({"label": "product", "property": "name"})
         await rig["client"].ensure_schema(schema)
-        raw = [json.loads(r.read()) for r in rig["calls"]
-               if r.method == "POST" and r.url.path.endswith("/schema/indexlabels")]
+        raw = [
+            json.loads(r.read())
+            for r in rig["calls"]
+            if r.method == "POST" and r.url.path.endswith("/schema/indexlabels")
+        ]
         by_name = {i["name"]: i["index_type"] for i in raw}
         assert by_name["production-order_by_status"] == "RANGE"  # numeric -> RANGE
-        assert by_name["product_by_name"] == "SECONDARY"         # text -> SECONDARY
+        assert by_name["product_by_name"] == "SECONDARY"  # text -> SECONDARY
 
     async def test_exists_reads_the_graphspace_listing(self):
         """Load-vs-build turns on this answer, so it must be exact: a listed
         name means present, an unlisted one means absent, and an answer we
         cannot interpret means UNKNOWN (None) — never "absent", because that
         would offer to overwrite a graph we simply failed to see."""
-        handler, _ = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})),
-        ])
+        handler, _ = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         assert await client.exists() is True
         await http.aclose()
 
     async def test_exists_is_false_for_an_unlisted_graph(self):
-        handler, _ = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
-        ])
+        handler, _ = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         assert await client.exists() is False
@@ -161,12 +182,14 @@ class TestDialectV17:
         """HugeGraph never creates a graph on first write (schema to an absent
         graph is a 500 from GraphManager), so a build has to ask. The name goes
         in the PATH: POSTing the collection with a body is a 405 on this API."""
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
-            ("GET", "/graphspaces/DEFAULT/graphs/hugegraph", httpx.Response(200, json={"backend": "hstore"})),
-            ("POST", f"/graphspaces/DEFAULT/graphs/{GRAPH}", httpx.Response(201, json={})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
+                ("GET", "/graphspaces/DEFAULT/graphs/hugegraph", httpx.Response(200, json={"backend": "hstore"})),
+                ("POST", f"/graphspaces/DEFAULT/graphs/{GRAPH}", httpx.Response(201, json={})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         assert await client.ensure_graph() is True
@@ -188,17 +211,18 @@ class TestDialectV17:
 
     async def test_created_graphs_get_their_own_data_directory(self):
         """RocksDB graphs need distinct paths or only the first one ever opens."""
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
-            ("GET", "/graphspaces/DEFAULT/graphs/hugegraph", httpx.Response(200, json={"backend": "rocksdb"})),
-            ("POST", f"/graphspaces/DEFAULT/graphs/{GRAPH}", httpx.Response(201, json={})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
+                ("GET", "/graphspaces/DEFAULT/graphs/hugegraph", httpx.Response(200, json={"backend": "rocksdb"})),
+                ("POST", f"/graphspaces/DEFAULT/graphs/{GRAPH}", httpx.Response(201, json={})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        client = HugeGraphClient("http://hg.test", GRAPH, http=http,
-                                 data_dir="/data/hg")
+        client = HugeGraphClient("http://hg.test", GRAPH, http=http, data_dir="/data/hg")
         assert await client.ensure_graph() is True
-        body = json.loads([r for r in calls if r.method == "POST"][0].read())
+        body = json.loads(next(r for r in calls if r.method == "POST").read())
         assert body["rocksdb.data_path"] == f"/data/hg/{GRAPH}/data"
         assert body["rocksdb.wal_path"] == f"/data/hg/{GRAPH}/wal"
         await http.aclose()
@@ -224,10 +248,12 @@ class TestDialectV17:
         await http.aclose()
 
     async def test_ensure_graph_is_a_no_op_when_it_already_exists(self):
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         assert await client.ensure_graph() is False
@@ -238,10 +264,12 @@ class TestDialectV17:
         """The first build's first step: clearing something that is not there
         must not be the thing that blocks creating it (1.7 answers 500 to
         /clear on an absent graph)."""
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(200, json={"graphs": ["hugegraph"]})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         await client.clear()  # must not raise
@@ -249,10 +277,12 @@ class TestDialectV17:
         await http.aclose()
 
     async def test_schema_conflict_is_tolerated(self, compiled):
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("POST", "/schema/", httpx.Response(400, json={"message": "The property key 'x' has existed"})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                ("POST", "/schema/", httpx.Response(400, json={"message": "The property key 'x' has existed"})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         prj = compiled.projections["production-graph"]
@@ -262,26 +292,28 @@ class TestDialectV17:
 
     async def test_vertex_upsert_is_batch_override_with_pk_in_properties(self, rig):
         await rig["client"].upsert_vertices(
-            "work-center", "work_center_id",
-            [{"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"}])
+            "work-center",
+            "work_center_id",
+            [{"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"}],
+        )
         req = rig["calls"][-1]
         assert req.method == "PUT" and req.url.path.endswith("/graph/vertices/batch")
         body = json.loads(req.read())
         # PRIMARY_KEY ids derive from the properties, so the key travels inside them
         assert body["vertices"] == [
-            {"label": "work-center",
-             "properties": {"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"}}
+            {
+                "label": "work-center",
+                "properties": {"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"},
+            }
         ]
-        assert body["update_strategies"] == {
-            "work_center_id": "OVERRIDE", "name": "OVERRIDE", "status": "OVERRIDE"}
+        assert body["update_strategies"] == {"work_center_id": "OVERRIDE", "name": "OVERRIDE", "status": "OVERRIDE"}
 
     async def test_rows_without_primary_key_are_skipped(self, rig):
         await rig["client"].upsert_vertices("work-center", "work_center_id", [{"name": "no key"}])
         assert not [r for r in rig["calls"] if "vertices/batch" in r.url.path]
 
     async def test_edge_upsert_builds_composite_ids_and_camelcase_labels(self, rig):
-        await rig["client"].upsert_edges("bom-product", "product", "bom",
-                                         [("P-100", "B-1001")])
+        await rig["client"].upsert_edges("bom-product", "product", "bom", [("P-100", "B-1001")])
         req = rig["calls"][-1]
         assert req.method == "PUT" and req.url.path.endswith("/graph/edges/batch")
         body = json.loads(req.read())
@@ -298,12 +330,17 @@ class TestDialectV17:
 
     async def test_counts_reads_the_async_gremlin_job(self, rig):
         async def run():
-            handler, calls = _recorder([
-                ("GET", "/graphspaces", httpx.Response(200, json={})),
-                ("POST", "/jobs/gremlin", httpx.Response(201, json={"task_id": 7})),
-                ("GET", "/tasks/7", httpx.Response(200, json={
-                    "task_status": "success", "task_result": '[{"work-center": 2}]'})),
-            ])
+            handler, calls = _recorder(
+                [
+                    ("GET", "/graphspaces", httpx.Response(200, json={})),
+                    ("POST", "/jobs/gremlin", httpx.Response(201, json={"task_id": 7})),
+                    (
+                        "GET",
+                        "/tasks/7",
+                        httpx.Response(200, json={"task_status": "success", "task_result": '[{"work-center": 2}]'}),
+                    ),
+                ]
+            )
             http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
             client = HugeGraphClient("http://hg.test", GRAPH, http=http)
             out = await client.gremlin("g.V().group().by(label).by(count())")
@@ -321,9 +358,11 @@ class TestDialectV17:
 class TestDialectV15Legacy:
     @pytest_asyncio.fixture()
     async def rig(self, compiled):
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(404, json={})),  # 1.5 has no graphspaces
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(404, json={})),  # 1.5 has no graphspaces
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg15.test", GRAPH, http=http)
         yield {"client": client, "calls": calls, "prj": compiled.projections["production-graph"]}
@@ -334,8 +373,9 @@ class TestDialectV15Legacy:
 
     async def test_legacy_paths_and_payloads(self, rig, compiled):
         await rig["client"].ensure_schema(compile_projection(compiled, rig["prj"]))
-        await rig["client"].upsert_vertices("work-center", "work_center_id",
-                                            [{"work_center_id": "WC-01", "name": "CNC Machining Cell"}])
+        await rig["client"].upsert_vertices(
+            "work-center", "work_center_id", [{"work_center_id": "WC-01", "name": "CNC Machining Cell"}]
+        )
         await rig["client"].delete_vertex("work-center", "WC-01")
         paths = [r.url.path for r in rig["calls"]]
         assert any(p.startswith("/apis/schema/") for p in paths)
@@ -400,17 +440,18 @@ spec:
 
 @pytest.fixture()
 def compiled_with_join_link(compiled):
-    import yaml
     from dataclasses import replace as dc_replace
+
+    import yaml
 
     from ontogeny.core.models import LinkTypeResource
 
     link = LinkTypeResource.model_validate(yaml.safe_load(_JOIN_LINK_YAML))
     prj = compiled.projections["production-graph"].model_copy(deep=True)
     prj.spec.include.links.append(link.metadata.name)
-    compiled = dc_replace(compiled,
-                          links={**compiled.links, link.metadata.name: link},
-                          projections={"production-graph": prj})
+    compiled = dc_replace(
+        compiled, links={**compiled.links, link.metadata.name: link}, projections={"production-graph": prj}
+    )
     return compiled, prj
 
 
@@ -418,14 +459,29 @@ class TestWorkerEdges:
     @pytest_asyncio.fixture()
     async def rig(self, compiled_with_join_link):
         compiled, prj = compiled_with_join_link
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-            ("GET", "/schema/vertexlabels", httpx.Response(200, json={"vertexlabels": [
-                {"name": "product", "id": 1}, {"name": "bom", "id": 2}, {"name": "material", "id": 3},
-                {"name": "work-center", "id": 4}, {"name": "production-order", "id": 5},
-                {"name": "operation", "id": 6}, {"name": "quality-inspection", "id": 7},
-            ]})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+                (
+                    "GET",
+                    "/schema/vertexlabels",
+                    httpx.Response(
+                        200,
+                        json={
+                            "vertexlabels": [
+                                {"name": "product", "id": 1},
+                                {"name": "bom", "id": 2},
+                                {"name": "material", "id": 3},
+                                {"name": "work-center", "id": 4},
+                                {"name": "production-order", "id": 5},
+                                {"name": "operation", "id": 6},
+                                {"name": "quality-inspection", "id": 7},
+                            ]
+                        },
+                    ),
+                ),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", prj.spec.graph, http=http)
         worker = ProjectionWorker(compiled, prj, client)
@@ -437,25 +493,23 @@ class TestWorkerEdges:
 
     async def test_link_pairs_covers_both_join_kinds(self, rig):
         repo = rig["repo"]
-        assert await rig["worker"]._link_pairs(repo, None, "bom-product") == \
-            [("P-100", "B-1001"), ("P-100", "B-1002")]
-        assert await rig["worker"]._link_pairs(repo, None, "product-material-usage") == \
-            [("P-100", "M-101")]
+        assert await rig["worker"]._link_pairs(repo, None, "bom-product") == [("P-100", "B-1001"), ("P-100", "B-1002")]
+        assert await rig["worker"]._link_pairs(repo, None, "product-material-usage") == [("P-100", "M-101")]
         # single-sided lookups go through the right FK direction
-        assert await rig["worker"]._link_pairs(repo, None, "bom-product", src_id="P-100") == \
-            [("P-100", "B-1001")]
-        assert await rig["worker"]._link_pairs(repo, None, "bom-product", dst_id="B-1001") == \
-            [("P-100", "B-1001")]
+        assert await rig["worker"]._link_pairs(repo, None, "bom-product", src_id="P-100") == [("P-100", "B-1001")]
+        assert await rig["worker"]._link_pairs(repo, None, "bom-product", dst_id="B-1001") == [("P-100", "B-1001")]
 
     async def test_handle_event_projects_edges_for_both_sides(self, rig, monkeypatch):
         async def fake_project_object(repo, session, object_type, obj_id):
             return None
 
         monkeypatch.setattr(rig["worker"], "project_object", fake_project_object)
-        await rig["worker"].handle_event(rig["repo"], None, OutboxRow(
-            object_type="product", object_id="P-100", op="upsert", payload={}))
-        await rig["worker"].handle_event(rig["repo"], None, OutboxRow(
-            object_type="bom", object_id="B-1001", op="upsert", payload={}))
+        await rig["worker"].handle_event(
+            rig["repo"], None, OutboxRow(object_type="product", object_id="P-100", op="upsert", payload={})
+        )
+        await rig["worker"].handle_event(
+            rig["repo"], None, OutboxRow(object_type="bom", object_id="B-1001", op="upsert", payload={})
+        )
 
         batches = self._edge_batches(rig["calls"])
         # product is the FK *source* (bom-product), bom the target: both emit the pair
@@ -463,8 +517,9 @@ class TestWorkerEdges:
         assert any(b["edges"][0]["inV"] == "2:B-1001" for b in batches)
 
     async def test_unprojected_type_is_consumed_silently(self, rig):
-        ok = await rig["worker"].handle_event(rig["repo"], None, OutboxRow(
-            object_type="supplier", object_id="S-1", op="upsert", payload={}))
+        ok = await rig["worker"].handle_event(
+            rig["repo"], None, OutboxRow(object_type="supplier", object_id="S-1", op="upsert", payload={})
+        )
         assert ok is True and not rig["calls"]
 
 
@@ -493,24 +548,46 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
             # the domain's own graph (named after the domain) is already there
             return httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})
         if path.endswith("/schema/vertexlabels") and method == "GET":
-            return httpx.Response(200, json={"vertexlabels": [
-                {"name": "product", "id": 1}, {"name": "bom", "id": 2}, {"name": "material", "id": 3},
-                {"name": "work-center", "id": 4}, {"name": "production-order", "id": 5},
-                {"name": "operation", "id": 6}, {"name": "quality-inspection", "id": 7},
-            ]})
+            return httpx.Response(
+                200,
+                json={
+                    "vertexlabels": [
+                        {"name": "product", "id": 1},
+                        {"name": "bom", "id": 2},
+                        {"name": "material", "id": 3},
+                        {"name": "work-center", "id": 4},
+                        {"name": "production-order", "id": 5},
+                        {"name": "operation", "id": 6},
+                        {"name": "quality-inspection", "id": 7},
+                    ]
+                },
+            )
         if path.endswith("/schema/edgelabels") and method == "GET":
-            return httpx.Response(200, json={"edgelabels": [
-                {"name": "bom-product", "source_label": "product", "target_label": "bom"},
-                {"name": "bom-material", "source_label": "material", "target_label": "bom"},
-                {"name": "production-order-product", "source_label": "product",
-                 "target_label": "production-order"},
-                {"name": "production-order-operations", "source_label": "production-order",
-                 "target_label": "operation"},
-                {"name": "production-order-inspections", "source_label": "production-order",
-                 "target_label": "quality-inspection"},
-                {"name": "operation-work-center", "source_label": "work-center",
-                 "target_label": "operation"},
-            ]})
+            return httpx.Response(
+                200,
+                json={
+                    "edgelabels": [
+                        {"name": "bom-product", "source_label": "product", "target_label": "bom"},
+                        {"name": "bom-material", "source_label": "material", "target_label": "bom"},
+                        {
+                            "name": "production-order-product",
+                            "source_label": "product",
+                            "target_label": "production-order",
+                        },
+                        {
+                            "name": "production-order-operations",
+                            "source_label": "production-order",
+                            "target_label": "operation",
+                        },
+                        {
+                            "name": "production-order-inspections",
+                            "source_label": "production-order",
+                            "target_label": "quality-inspection",
+                        },
+                        {"name": "operation-work-center", "source_label": "work-center", "target_label": "operation"},
+                    ]
+                },
+            )
         if "jobs/gremlin" in path:
             gremlin_jobs["n"] += 1
             return httpx.Response(201, json={"task_id": 11})
@@ -521,26 +598,41 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
                 result = '[{"bom-product": 1, "production-order-product": 2}]'
             return httpx.Response(200, json={"task_status": "success", "task_result": result})
         if path.endswith("/graph/vertices") and method == "GET":
-            return httpx.Response(200, json={"vertices": [
-                {"id": "4:WC-01", "label": "work-center",
-                 "properties": {"work_center_id": "WC-01"}},
-                {"id": "4:WC-02", "label": "work-center",
-                 "properties": {"work_center_id": "WC-02"}},
-            ]})
+            return httpx.Response(
+                200,
+                json={
+                    "vertices": [
+                        {"id": "4:WC-01", "label": "work-center", "properties": {"work_center_id": "WC-01"}},
+                        {"id": "4:WC-02", "label": "work-center", "properties": {"work_center_id": "WC-02"}},
+                    ]
+                },
+            )
         if path.endswith("/graph/edges") and method == "GET":
-            return httpx.Response(200, json={"edges": [
-                {"id": "S1:P-100>2>5>>S2:PO-1001", "label": "production-order-product",
-                 "outV": "1:P-100", "inV": "5:PO-1001",
-                 "outVLabel": "product", "inVLabel": "production-order"},
-            ]})
+            return httpx.Response(
+                200,
+                json={
+                    "edges": [
+                        {
+                            "id": "S1:P-100>2>5>>S2:PO-1001",
+                            "label": "production-order-product",
+                            "outV": "1:P-100",
+                            "inV": "5:PO-1001",
+                            "outVLabel": "product",
+                            "inVLabel": "production-order",
+                        },
+                    ]
+                },
+            )
         return httpx.Response(200, json={})
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     settings = Settings(
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook",
-             "HUGEGRAPH_URL": "http://hg.test"},
+        env={
+            "ERP_DSN": f"sqlite+aiosqlite:///{src}",
+            "WMS_WEBHOOK": "https://wms.example.test/hook",
+            "HUGEGRAPH_URL": "http://hg.test",
+        },
     )
     sc = ServiceContext(settings, str(pkg_root), projection_http=http)
     sc._test_graph_calls = graph_calls  # so a test can assert on what reached the graph
@@ -548,6 +640,7 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
     assert sc.projection_client is not None, "projection endpoint should resolve from env"
     yield sc
     await http.aclose()
+
 
 @pytest.fixture()
 def principal():
@@ -572,16 +665,18 @@ class TestLoadVersusBuild:
         result = await sc.scaffold_projection(name="auto-graph")
 
         assert result["action"] == "loaded"
-        assert result["graph"] == GRAPH             # the domain's own name
+        assert result["graph"] == GRAPH  # the domain's own name
         # a projection was declared and is now live
         assert sc.compiled.projections and sc.projection_worker is not None
         # ...and nothing was written into the graph: no wipe, no backfill.
         # (Label/count reads go over gremlin jobs, so they are reads, not writes.)
         calls = sc._test_graph_calls  # type: ignore[attr-defined]
         destructive = [r for r in calls if r.method == "DELETE"]
-        backfilled = [r for r in calls
-                      if r.method in ("POST", "PUT")
-                      and ("/graph/vertices" in r.url.path or "/graph/edges" in r.url.path)]
+        backfilled = [
+            r
+            for r in calls
+            if r.method in ("POST", "PUT") and ("/graph/vertices" in r.url.path or "/graph/edges" in r.url.path)
+        ]
         assert not destructive, "loading an existing graph must not clear it"
         assert not backfilled, "loading an existing graph must not re-backfill it"
 
@@ -607,8 +702,14 @@ class TestServicePreview:
         assert summary["graph_name"] == GRAPH and summary["graph_exists"] is True
         assert summary["dialect"] == "1.7"
         assert {v["name"] for v in summary["labels"]["vertices"]} == {
-            "product", "bom", "material", "work-center",
-            "production-order", "operation", "quality-inspection"}
+            "product",
+            "bom",
+            "material",
+            "work-center",
+            "production-order",
+            "operation",
+            "quality-inspection",
+        }
         assert summary["counts"]["vertices"] == {"product": 2, "work-center": 2}
 
     async def test_graph_rows_are_reassembled_through_the_engine(self, sc_with_graph, principal):
@@ -628,8 +729,7 @@ class TestServicePreview:
         out = await sc_with_graph.projection_edges("production-order-product", principal, limit=5)
         assert len(out["rows"]) == 1
         edge = out["rows"][0]
-        assert edge["source"] == {"type": "product", "id": "P-100",
-                                  "display": "CNC Milling Machine"}
+        assert edge["source"] == {"type": "product", "id": "P-100", "display": "CNC Milling Machine"}
         assert edge["target"]["type"] == "production-order" and edge["target"]["id"] == "PO-1001"
 
     async def test_data_preview_lists_every_type_with_counts(self, sc_with_graph, principal):
@@ -651,12 +751,13 @@ class TestAuthMode:
     async def test_credentials_travel_on_every_request(self, compiled):
         import base64
 
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        client = HugeGraphClient("http://hg.test", GRAPH, http=http,
-                                 user="admin", password="s3cret")
+        client = HugeGraphClient("http://hg.test", GRAPH, http=http, user="admin", password="s3cret")
         await client.dialect()
         expected = "Basic " + base64.b64encode(b"admin:s3cret").decode()
         assert calls and all(r.headers.get("authorization") == expected for r in calls)
@@ -664,9 +765,11 @@ class TestAuthMode:
         await http.aclose()
 
     async def test_no_credentials_sends_no_header(self):
-        handler, calls = _recorder([
-            ("GET", "/graphspaces", httpx.Response(200, json={})),
-        ])
+        handler, calls = _recorder(
+            [
+                ("GET", "/graphspaces", httpx.Response(200, json={})),
+            ]
+        )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
         await client.dialect()
@@ -695,6 +798,7 @@ class TestAuthMode:
     async def test_a_401_makes_existence_UNKNOWN_not_absent(self):
         """A probe we were not allowed to make must never be reported as "the
         graph is gone" — that answer is what offers a destructive build."""
+
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path.endswith("/graphspaces"):
                 return httpx.Response(200, json={})

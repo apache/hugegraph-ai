@@ -21,13 +21,14 @@ The registry compiles a validated package into this structure keyed by
 content hash. Query/action/policy paths NEVER touch YAML after publish --
 they read this snapshot (zero IO, safe to cache process-wide).
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import re
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..core.loader import OntologyPackage
 from ..core.models import (
@@ -42,8 +43,8 @@ from ..core.models import (
     ProjectionResource,
     StoreResource,
 )
-from ..core.validator import effective_owner
 from ..core.types import PropertyType
+from ..core.validator import effective_owner
 
 
 def snake(name: str) -> str:
@@ -110,14 +111,12 @@ class CompiledOntology:
         act = self.actions.get(action_name)
         if act is None:
             from ..errors import NotFoundError
+
             raise NotFoundError(f"unknown action {action_name!r}")
         return act.spec.target
 
     def links_of(self, object_type: str) -> list[LinkTypeResource]:
-        return [
-            lnk for lnk in self.links.values()
-            if object_type in (lnk.spec.source, lnk.spec.target)
-        ]
+        return [lnk for lnk in self.links.values() if object_type in (lnk.spec.source, lnk.spec.target)]
 
     def to_meta(self) -> dict:
         """Snapshot export for /meta/ontology, SDK and MCP consumers.
@@ -163,9 +162,7 @@ class CompiledOntology:
                         for p, d in r.spec.properties.items()
                     },
                     "links": [lnk.metadata.name for lnk in self.links_of(name)],
-                    "actions": [
-                        a.metadata.name for a in self.actions.values() if a.spec.target == name
-                    ],
+                    "actions": [a.metadata.name for a in self.actions.values() if a.spec.target == name],
                 }
                 for name, r in self.objects.items()
             },
@@ -186,10 +183,7 @@ class CompiledOntology:
                 name: {
                     "display": r.metadata.display,
                     "target": r.spec.target,
-                    "parameters": {
-                        p: {"type": d.type, "required": d.required}
-                        for p, d in r.spec.parameters.items()
-                    },
+                    "parameters": {p: {"type": d.type, "required": d.required} for p, d in r.spec.parameters.items()},
                 }
                 for name, r in self.actions.items()
             },
@@ -197,10 +191,7 @@ class CompiledOntology:
                 name: {
                     "runtime": r.spec.runtime,
                     "entry": r.spec.entry,
-                    "parameters": {
-                        p: {"type": d.type, "required": d.required}
-                        for p, d in r.spec.parameters.items()
-                    },
+                    "parameters": {p: {"type": d.type, "required": d.required} for p, d in r.spec.parameters.items()},
                     # the content version IS the external contract: a caller
                     # pins it and is told when the logic moves. There is no
                     # publish switch -- it never gated anything, and a flag that
@@ -208,25 +199,31 @@ class CompiledOntology:
                     "version": self.function_versions.get(name),
                     # full capability values (not just key names): the dashboard
                     # constellation links a function to the object types it reads
-                    "capabilities": [
-                        c.model_dump(exclude_none=True) for c in r.spec.capabilities
-                    ],
+                    "capabilities": [c.model_dump(exclude_none=True) for c in r.spec.capabilities],
                 }
                 for name, r in self.functions.items()
             },
             "projections": {
-                name: {"engine": r.spec.engine, "graph": r.spec.graph,
-                       "objects": list(r.spec.include.objects), "links": list(r.spec.include.links)}
+                name: {
+                    "engine": r.spec.engine,
+                    "graph": r.spec.graph,
+                    "objects": list(r.spec.include.objects),
+                    "links": list(r.spec.include.links),
+                }
                 for name, r in self.projections.items()
             },
             # the role vocabulary the Cedar policies actually reference: an
             # agent plugin principal may only use these (AGENT-ROLE-UNKNOWN
             # otherwise), so client tooling needs the list to pick from
-            "roles": sorted({r for text in self.cedar_texts.values()
-                             for r in re.findall(r'Role::"([A-Za-z0-9_-]+)"', text)}),
+            "roles": sorted(
+                {r for text in self.cedar_texts.values() for r in re.findall(r'Role::"([A-Za-z0-9_-]+)"', text)}
+            ),
             "policies": {
-                name: {"display": r.metadata.display, "source": r.spec.source,
-                       "rules": self.cedar_texts.get(name, "").count("permit(")}
+                name: {
+                    "display": r.metadata.display,
+                    "source": r.spec.source,
+                    "rules": self.cedar_texts.get(name, "").count("permit("),
+                }
                 for name, r in self.policies.items()
             },
             "agentPlugins": {
@@ -236,10 +233,12 @@ class CompiledOntology:
                     "engine": {"kind": r.spec.engine.kind, "endpoint": r.spec.engine.endpoint},
                     "principal": r.spec.principal.as_principal(),
                     "tools": {"allow": list(r.spec.tools.allow), "deny": list(r.spec.tools.deny)},
-                    "approval": {"writes": r.spec.approval.writes,
-                                 "auto_actions": list(r.spec.approval.auto_actions)},
-                    "budget": {"steps": r.spec.budget.steps, "wall_ms": r.spec.budget.wall_ms,
-                               "writes_per_session": r.spec.budget.writes_per_session},
+                    "approval": {"writes": r.spec.approval.writes, "auto_actions": list(r.spec.approval.auto_actions)},
+                    "budget": {
+                        "steps": r.spec.budget.steps,
+                        "wall_ms": r.spec.budget.wall_ms,
+                        "writes_per_session": r.spec.budget.writes_per_session,
+                    },
                 }
                 for name, r in self.agent_plugins.items()
             },
@@ -247,10 +246,7 @@ class CompiledOntology:
 
 
 def _read_cedar(pkg: OntologyPackage) -> dict[str, str]:
-    return {
-        p.metadata.name: pkg.sidecar_text("PolicySet", p.metadata.name, p.spec.source)
-        for p in pkg.policies()
-    }
+    return {p.metadata.name: pkg.sidecar_text("PolicySet", p.metadata.name, p.spec.source) for p in pkg.policies()}
 
 
 def _content_hash(pkg: OntologyPackage) -> str:
@@ -280,7 +276,8 @@ def _function_versions(pkg: OntologyPackage) -> dict[str, str]:
         if fn.spec.runtime == "declarative":
             body = json.dumps(
                 fn.spec.model_dump(mode="json", exclude_none=True),
-                sort_keys=True, ensure_ascii=False,
+                sort_keys=True,
+                ensure_ascii=False,
             )
             versions[fn.metadata.name] = hashlib.sha256(body.encode()).hexdigest()[:12]
             continue

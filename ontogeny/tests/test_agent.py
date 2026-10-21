@@ -18,6 +18,7 @@
 """Agent plugin surface (M1): DSL validation, catalog intersection, session
 lifecycle, governed tool execution through the real ServiceContext.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -30,7 +31,6 @@ from ontogeny.core import validate
 from ontogeny.core.loader import load_package as load_pkg
 from ontogeny.demo import seed_from_package
 from ontogeny.service import ServiceContext
-
 
 # ------------------------------------------------------------------ DSL
 
@@ -60,7 +60,8 @@ spec:
     site: plant-north
   transport: { kind: http }
   tools:
-    allow: [describe_ontology, search_production_order, search_material, search_work_center, act_release_production_order]
+    allow: [describe_ontology, search_production_order, search_material, search_work_center,
+        act_release_production_order]
     deny: []
   approval: { writes: confirm }
   budget: { steps: 25, wall_ms: 60000, writes_per_session: 2 }
@@ -95,7 +96,7 @@ class TestPluginDSL:
         assert any(i.code == "AGENT-TOOL-CONFLICT" for i in rep.issues)
 
     def test_auto_without_actions_rejected(self, golden_pkg_path, tmp_path):
-        bad = VALID.replace('approval: { writes: confirm }', 'approval: { writes: auto }')
+        bad = VALID.replace("approval: { writes: confirm }", "approval: { writes: auto }")
         pkg = _pkg_with_plugin(tmp_path, golden_pkg_path, bad)
         rep = validate(pkg)
         assert any(i.code == "AGENT-APPROVAL" for i in rep.issues)
@@ -130,9 +131,13 @@ class TestCatalog:
         compiled = self._compiled(golden_pkg_path, tmp_path)
         plug = next(iter(compiled.agent_plugins.values()))
         tools = effective_tools(compiled, plug)
-        assert set(tools) == {"describe_ontology", "search_production_order",
-                              "search_material", "search_work_center",
-                              "act_release_production_order"}
+        assert set(tools) == {
+            "describe_ontology",
+            "search_production_order",
+            "search_material",
+            "search_work_center",
+            "act_release_production_order",
+        }
         # nothing outside the compiled vocabulary can appear
         assert set(tools) <= set(build_catalog(compiled))
 
@@ -168,8 +173,7 @@ async def sc(golden_pkg_path, tmp_path):
     settings = Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
     ctx = ServiceContext(settings, str(root))
     await ctx.initialize()
@@ -218,17 +222,20 @@ class TestBroker:
     async def test_write_without_approval_is_pending(self, sc):
         await sc.sync("production-order")
         session = await sc.agents.open_session("planning-copilot", "")
-        out = await sc.agents.call_tool(session["id"], "act_release_production_order", {
-            "parameters": {},
-            "target_id": "PO-1002",
-            "rationale": "PO-1002 is PLANNED and due soon; release it to the shop floor",
-        })
+        out = await sc.agents.call_tool(
+            session["id"],
+            "act_release_production_order",
+            {
+                "parameters": {},
+                "target_id": "PO-1002",
+                "rationale": "PO-1002 is PLANNED and due soon; release it to the shop floor",
+            },
+        )
         assert out["outcome"] == "pending_approval"
         assert out["approval_id"]
         # nothing executed: the production order is still PLANNED
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002",
-                                    {"id": "auditor", "Role": ["auditor"]})
+            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
         assert po["status"] == "PLANNED"
 
     async def test_finished_session_refuses_calls(self, sc):
@@ -243,10 +250,8 @@ class TestDirectionSessionControls:
     multiple drives per session with per-run tagged traces."""
 
     async def test_budget_override_zero_is_unlimited(self, sc):
-        limited = await sc.agents.open_session(
-            "planning-copilot", "limited", budget={"steps": 1})
-        unlimited = await sc.agents.open_session(
-            "planning-copilot", "unlimited", budget={"steps": 0})
+        limited = await sc.agents.open_session("planning-copilot", "limited", budget={"steps": 1})
+        unlimited = await sc.agents.open_session("planning-copilot", "unlimited", budget={"steps": 0})
 
         async def step_probe(sess_id):
             out = await sc.agents.call_tool(sess_id, "search_material", {"limit": 1})
@@ -263,8 +268,7 @@ class TestDirectionSessionControls:
         import datetime as _dt
 
         past = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=1)
-        sess = await sc.agents.open_session("planning-copilot", "expired",
-                                            expires_at=past)
+        sess = await sc.agents.open_session("planning-copilot", "expired", expires_at=past)
         out = await sc.agents.call_tool(sess["id"], "describe_ontology", {})
         assert out["outcome"] == "AGENT_SESSION_EXPIRED"
         from ontogeny.errors import OOError

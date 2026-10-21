@@ -28,12 +28,12 @@ port, no CORS): static assets under /assets and an SPA fallback for
 client-side routes. The fallback deliberately excludes /api and /mcp so the
 governed surfaces can never be shadowed by the UI.
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from ..errors import OOError
@@ -77,16 +77,20 @@ def build_app(sc: ServiceContext) -> FastAPI:
             token = ""
             header = request.headers.get("authorization", "")
             if header.startswith("Bearer "):
-                token = header[len("Bearer "):].strip()
+                token = header[len("Bearer ") :].strip()
             principal = await auth.resolve(token) if (auth is not None and token) else None
             if principal is not None:
                 principal.setdefault("via", "bearer")
                 set_mcp_driver(principal)
             elif not sc.settings.dev_auth:
-                return JSONResponse(status_code=401, content={
-                    "code": "MCP_DRIVER_UNAUTHENTICATED",
-                    "message": "the MCP surface requires an authenticated driver: send "
-                               "Authorization: Bearer <token from /api/v1/auth/login>"})
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "code": "MCP_DRIVER_UNAUTHENTICATED",
+                        "message": "the MCP surface requires an authenticated driver: send "
+                        "Authorization: Bearer <token from /api/v1/auth/login>",
+                    },
+                )
         return await call_next(request)
 
     r = APIRouter(prefix="/api/v1")
@@ -135,12 +139,16 @@ def build_app(sc: ServiceContext) -> FastAPI:
         async def _spa(full_path: str):
             # never shadow the governed surfaces
             if full_path.startswith(("api/", "mcp")) or full_path in ("api", "mcp"):
-                return JSONResponse(status_code=404, content={"code": "NOT_FOUND", "message": f"no route for /{full_path}"})
+                return JSONResponse(
+                    status_code=404, content={"code": "NOT_FOUND", "message": f"no route for /{full_path}"}
+                )
             # the legacy in-app docs page is retired; docs live in the repo's
             # docs/ markdown tree now -- never serve it, even from a stale
             # UI dir, and never let /docs/* fall through to the SPA shell
             if full_path == "docs.html" or full_path.startswith("docs/"):
-                return JSONResponse(status_code=404, content={"code": "NOT_FOUND", "message": f"no route for /{full_path}"})
+                return JSONResponse(
+                    status_code=404, content={"code": "NOT_FOUND", "message": f"no route for /{full_path}"}
+                )
             candidate = (ui_dir / full_path).resolve()
             if full_path and ui_dir.resolve() in candidate.parents and candidate.is_file():
                 if candidate.suffix.lower() in (".html", ".htm"):

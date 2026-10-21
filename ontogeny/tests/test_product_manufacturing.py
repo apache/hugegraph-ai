@@ -30,6 +30,7 @@ If any of these break (a renamed seed column, a capability that no longer
 covers a query, a policy that stopped permitting), the import showcase would
 be shipping a broken domain -- which is exactly what this catches.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,15 +69,22 @@ async def pm(tmp_path):
     con.commit()
     con.close()
 
-    settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'ontogeny.db'}",
-                        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"})
+    settings = Settings(
+        dev_auth=True,
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'ontogeny.db'}",
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"},
+    )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
     import json as J
-    async with httpx.AsyncClient(transport=transport, base_url="http://t",
-                                 headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})}) as c:
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://t",
+        headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})},
+    ) as c:
         # bring the seeded source rows into the ontology's own tables
         for obj_type in sc.compiled.objects:
             r = await c.post(f"/api/v1/admin/sync/{obj_type}")
@@ -95,8 +103,7 @@ class TestPackageContract:
     async def test_every_object_type_has_data(self, pm):
         c, sc = pm
         for obj_type in sc.compiled.objects:
-            r = await c.post(f"/api/v1/objects/{obj_type}/query",
-                             json={"filter": None}, headers=_hdr(PLANNER))
+            r = await c.post(f"/api/v1/objects/{obj_type}/query", json={"filter": None}, headers=_hdr(PLANNER))
             assert r.status_code == 200, r.text
             body = r.json()
             assert body["total"] > 0, f"object type {obj_type} has no seeded rows"
@@ -110,11 +117,9 @@ class TestPackageContract:
             "capacity-check": {"work_center_id": "WC-01", "qty": 40},
             "order-yield": {"order_id": "PO-1003"},
         }
-        assert set(cases) == set(_sc.compiled.functions), \
-            "a function was added to the package without a contract case"
+        assert set(cases) == set(_sc.compiled.functions), "a function was added to the package without a contract case"
         for name, params in cases.items():
-            r = await c.post(f"/api/v1/functions/{name}/invoke",
-                             json={"parameters": params}, headers=_hdr(PLANNER))
+            r = await c.post(f"/api/v1/functions/{name}/invoke", json={"parameters": params}, headers=_hdr(PLANNER))
             assert r.status_code == 200, r.text
             assert r.json()["value"], f"function {name} returned nothing"
 
@@ -122,18 +127,20 @@ class TestPackageContract:
         c, _sc = pm
         # M-104 stock is 9, P-100 needs 4 per unit with 1% scrap: 20 units
         # require ceil(4*20*1.01)=81 -> a shortage must be reported
-        r = await c.post("/api/v1/functions/material-availability/invoke",
-                         json={"parameters": {"product_id": "P-100", "qty": 20}},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/functions/material-availability/invoke",
+            json={"parameters": {"product_id": "P-100", "qty": 20}},
+            headers=_hdr(PLANNER),
+        )
         value = r.json()["value"]
         assert value["ready"] is False
         shortage = {s["material_id"]: s for s in value["shortage"]}
         assert shortage["M-104"]["gap"] == 81 - 9
 
         # PO-1003 is fully inspected (100/2 defects) and fully routed
-        r = await c.post("/api/v1/functions/order-yield/invoke",
-                         json={"parameters": {"order_id": "PO-1003"}},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/functions/order-yield/invoke", json={"parameters": {"order_id": "PO-1003"}}, headers=_hdr(PLANNER)
+        )
         value = r.json()["value"]
         assert value["routing_complete"] is True
         assert value["pass_rate"] == 0.98
@@ -144,22 +151,21 @@ class TestPackageContract:
         c, _sc = pm
         cases = {
             "introduce-product": (PLANNER, {"name": "Hydraulic Power Unit"}),
-            "register-work-center": (PLANNER, {"name": "Paint Booth",
-                                               "capacity_per_shift": 120}),
-            "add-bom-line": (PLANNER, {"product_id": "P-300", "material_id": "M-102",
-                                       "qty_per_unit": 0.5}),
+            "register-work-center": (PLANNER, {"name": "Paint Booth", "capacity_per_shift": 120}),
+            "add-bom-line": (PLANNER, {"product_id": "P-300", "material_id": "M-102", "qty_per_unit": 0.5}),
             "receive-material": (PLANNER, {"counted_qty": 60}),
             "create-production-order": (PLANNER, {"product_id": "P-200", "qty": 5}),
             "release-production-order": (PLANNER, {}),
             "complete-operation": (OPERATOR, {}),
-            "record-inspection": (QUALITY, {"order_id": "PO-1002", "inspected_qty": 5,
-                                            "defect_qty": 0, "result": "PASS"}),
+            "record-inspection": (
+                QUALITY,
+                {"order_id": "PO-1002", "inspected_qty": 5, "defect_qty": 0, "result": "PASS"},
+            ),
             "assign-operation": (PLANNER, {"work_center_id": "WC-02"}),
             "cancel-production-order": (PLANNER, {"reason": "demand withdrawn"}),
             "retract-inspection": (QUALITY, {"reason": "recorded in error"}),
         }
-        assert set(cases) == set(_sc.compiled.actions), \
-            "an action was added to the package without a contract case"
+        assert set(cases) == set(_sc.compiled.actions), "an action was added to the package without a contract case"
         target_ids = {
             "receive-material": ("material", "M-101"),
             "release-production-order": ("production-order", "PO-1002"),
@@ -172,8 +178,7 @@ class TestPackageContract:
             body: dict = {"parameters": params}
             if name in target_ids:
                 body["target_id"] = target_ids[name][1]
-            r = await c.post(f"/api/v1/actions/{name}/validate",
-                             json=body, headers=_hdr(principal))
+            r = await c.post(f"/api/v1/actions/{name}/validate", json=body, headers=_hdr(principal))
             assert r.status_code == 200, f"{name}: {r.text}"
             assert r.json()["policy"]["allow"] is True, f"{name} denied: {r.json()}"
 
@@ -182,29 +187,42 @@ class TestPackageContract:
         (create-object, conditional modify, modify, linked create) really run."""
         c, _sc = pm
 
-        r = await c.post("/api/v1/actions/create-production-order/execute",
-                         json={"parameters": {"product_id": "P-200", "qty": 12,
-                                              "priority": "HIGH"}},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/create-production-order/execute",
+            json={"parameters": {"product_id": "P-200", "qty": 12, "priority": "HIGH"}},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200, r.text
         order_id = r.json()["object_id"]
         assert r.json()["after"]["status"] == "PLANNED"
 
-        r = await c.post("/api/v1/actions/release-production-order/execute",
-                         json={"parameters": {}, "target_id": order_id},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": order_id},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200 and r.json()["after"]["status"] == "RELEASED"
 
-        r = await c.post("/api/v1/actions/complete-operation/execute",
-                         json={"parameters": {}, "target_id": "OP-2101"},
-                         headers=_hdr(OPERATOR))
+        r = await c.post(
+            "/api/v1/actions/complete-operation/execute",
+            json={"parameters": {}, "target_id": "OP-2101"},
+            headers=_hdr(OPERATOR),
+        )
         assert r.status_code == 200 and r.json()["after"]["status"] == "COMPLETED"
 
-        r = await c.post("/api/v1/actions/record-inspection/execute",
-                         json={"parameters": {"order_id": order_id, "inspected_qty": 12,
-                                              "defect_qty": 1, "result": "PASS",
-                                              "inspector": "qa-eng-01"}},
-                         headers=_hdr(QUALITY))
+        r = await c.post(
+            "/api/v1/actions/record-inspection/execute",
+            json={
+                "parameters": {
+                    "order_id": order_id,
+                    "inspected_qty": 12,
+                    "defect_qty": 1,
+                    "result": "PASS",
+                    "inspector": "qa-eng-01",
+                }
+            },
+            headers=_hdr(QUALITY),
+        )
         assert r.status_code == 200, r.text
         assert r.json()["after"]["defect_qty"] == 1
 
@@ -212,20 +230,26 @@ class TestPackageContract:
         """A broken rule would make the showcase permissive: prove the guard."""
         c, _sc = pm
         # validate is a dry-run: a failing rule is REPORTED, not raised
-        r = await c.post("/api/v1/actions/create-production-order/validate",
-                         json={"parameters": {"product_id": "P-200", "qty": 0}},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/create-production-order/validate",
+            json={"parameters": {"product_id": "P-200", "qty": 0}},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200
         assert any(not rule["ok"] for rule in r.json()["rules"])
-        r = await c.post("/api/v1/actions/release-production-order/validate",
-                         json={"parameters": {}, "target_id": "PO-1001"},  # RELEASED
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/release-production-order/validate",
+            json={"parameters": {}, "target_id": "PO-1001"},  # RELEASED
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200
         assert any(not rule["ok"] for rule in r.json()["rules"])
         # ... and execute refuses the same input outright
-        r = await c.post("/api/v1/actions/create-production-order/execute",
-                         json={"parameters": {"product_id": "P-200", "qty": 0}},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/create-production-order/execute",
+            json={"parameters": {"product_id": "P-200", "qty": 0}},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 422
 
 
@@ -237,5 +261,12 @@ def test_demo_actions_cover_all_seven_effect_kinds():
 
     pkg = load_package("domains/product-manufacturing")
     kinds = {eff.kind for action in pkg.actions() for eff in action.spec.effects}
-    assert kinds >= {"modify-target", "modify-linked", "create-object", "archive-object",
-                     "set-link", "webhook", "emit-event"}
+    assert kinds >= {
+        "modify-target",
+        "modify-linked",
+        "create-object",
+        "archive-object",
+        "set-link",
+        "webhook",
+        "emit-event",
+    }

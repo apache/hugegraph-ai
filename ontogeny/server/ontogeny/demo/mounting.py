@@ -21,6 +21,7 @@ Used by both the builder's HTTP endpoint and the demo orchestrator, so the two
 can never drift: the demo mounts data through exactly the same code the
 interactive builder does.
 """
+
 from __future__ import annotations
 
 import csv as _csv
@@ -41,12 +42,12 @@ class MountError(OOError):
 @dataclass
 class MountRequest:
     object_type: str
-    source_kind: str                      # csv | sqlite | postgres
+    source_kind: str  # csv | sqlite | postgres
     store_name: str = ""
-    filename: str | None = None           # csv
-    content: str | None = None            # csv
-    dsn: str | None = None                # sql
-    table: str | None = None              # sql
+    filename: str | None = None  # csv
+    content: str | None = None  # csv
+    dsn: str | None = None  # sql
+    table: str | None = None  # sql
     mapping: dict[str, str] = field(default_factory=dict)
 
 
@@ -93,11 +94,16 @@ async def mount_source(sc, req: MountRequest) -> dict[str, Any]:
     stores_dir = pkg_dir / "stores"
     stores_dir.mkdir(parents=True, exist_ok=True)
     (stores_dir / f"{store_name}.yaml").write_text(
-        yaml.safe_dump({
-            "apiVersion": "ontogeny/v1", "kind": "Store",
-            "metadata": {"name": store_name},
-            "spec": {"type": req.source_kind, "connection": connection, "access": access},
-        }, allow_unicode=True, sort_keys=False),
+        yaml.safe_dump(
+            {
+                "apiVersion": "ontogeny/v1",
+                "kind": "Store",
+                "metadata": {"name": store_name},
+                "spec": {"type": req.source_kind, "connection": connection, "access": access},
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
 
@@ -111,10 +117,7 @@ async def mount_source(sc, req: MountRequest) -> dict[str, Any]:
         header = next(_csv.reader(req.content.splitlines()))
         mapping = {col: col for col in header if col in props and not props[col].derived}
 
-    missing_required = [
-        name for name, d in props.items()
-        if d.required and not d.derived and name not in mapping
-    ]
+    missing_required = [name for name, d in props.items() if d.required and not d.derived and name not in mapping]
     if missing_required:
         raise MountError(
             f"source does not provide required properties: {', '.join(missing_required)}",
@@ -133,23 +136,29 @@ async def mount_source(sc, req: MountRequest) -> dict[str, Any]:
         "mapping": mapping,
         "sync": {"strategy": "snapshot"},
     }
-    obj_path.write_text(
-        yaml.safe_dump(obj_doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    obj_path.write_text(yaml.safe_dump(obj_doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
     # ---- publish + sync ------------------------------------------------------
     await sc.publish(str(pkg_dir), created_by=f"mount:{store_name}")
     async with sc.sessionmaker() as session:
         summary = await sc.sync(req.object_type)
         await session.commit()
-        from ..stores.sync import QuarantineRow
-
         from sqlalchemy import select
 
-        qrows = (await session.execute(
-            select(QuarantineRow)
-            .where(QuarantineRow.object_type == req.object_type)
-            .order_by(QuarantineRow.id.desc()).limit(20)
-        )).scalars().all()
+        from ..stores.sync import QuarantineRow
+
+        qrows = (
+            (
+                await session.execute(
+                    select(QuarantineRow)
+                    .where(QuarantineRow.object_type == req.object_type)
+                    .order_by(QuarantineRow.id.desc())
+                    .limit(20)
+                )
+            )
+            .scalars()
+            .all()
+        )
     return {
         "published": True,
         "store": store_name,

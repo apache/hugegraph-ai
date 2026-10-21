@@ -21,6 +21,7 @@ Both live in ``ontogeny.action.models`` because they are written by the action
 runtime AND by the sync engine (sync-driven changes are outbox events too, so
 projections stay consistent regardless of who wrote the object).
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -56,7 +57,9 @@ class RevisionRow(Base):
     after: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     rules_hit: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
     policy_decision: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    outcome: Mapped[str] = mapped_column(String(32), default="executed")  # executed | rejected_rule | denied_policy | pending_approval | approved
+    outcome: Mapped[str] = mapped_column(
+        String(32), default="executed"
+    )  # executed | rejected_rule | denied_policy | pending_approval | approved
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(200), index=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
@@ -66,7 +69,9 @@ class RevisionRow(Base):
     # and a concurrent same-key replay produced two executed revisions.
     __table_args__ = (
         Index(
-            "uq_revision_idem", "idempotency_key", unique=True,
+            "uq_revision_idem",
+            "idempotency_key",
+            unique=True,
             sqlite_where=idempotency_key.is_not(None),
             postgresql_where=idempotency_key.is_not(None),
         ),

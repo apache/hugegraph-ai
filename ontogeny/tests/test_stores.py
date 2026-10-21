@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Data plane: DDL, versioned repository, sync engine semantics."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -155,7 +156,9 @@ async def env(golden_pkg_path, tmp_path):
         await repo.ensure(s)
         await s.commit()
     sync = SyncEngine(
-        compiled, settings, repo,
+        compiled,
+        settings,
+        repo,
         lambda store: make_source(store, settings.resolve_env_ref(store.spec.connection)),
     )
     yield {"maker": maker, "compiled": compiled, "repo": repo, "sync": sync, "src": str(src), "settings": settings}
@@ -214,8 +217,8 @@ class TestSync:
             await env["sync"].sync(s, "production-order")
             await s.commit()
             row = await env["repo"].get(s, "production-order", "PO-1")
-        assert row["released_at"] is None        # ontology-owned: sync never overwrites
-        assert row["product_id"] == "P-100"      # source-owned still intact
+        assert row["released_at"] is None  # ontology-owned: sync never overwrites
+        assert row["product_id"] == "P-100"  # source-owned still intact
 
     async def test_source_owned_updates_do_flow(self, env):
         async with env["maker"]() as s:

@@ -21,6 +21,7 @@ The builder's contract with the golden example's guard: tests operate on a
 tmp copy, and partial saves must never rewrite untouched YAML (effects and
 derived configs would be stripped by the lossy meta round-trip).
 """
+
 from __future__ import annotations
 
 import json
@@ -37,8 +38,11 @@ from ontogeny.service import ServiceContext
 INSPECTION_POINT = {
     "apiVersion": "ontogeny/v1",
     "kind": "ObjectType",
-    "metadata": {"name": "inspection-point", "display": "Inspection point",
-                 "description": "A quality inspection checkpoint"},
+    "metadata": {
+        "name": "inspection-point",
+        "display": "Inspection point",
+        "description": "A quality inspection checkpoint",
+    },
     "spec": {
         "primaryKey": ["point_id"],
         "properties": {
@@ -86,17 +90,26 @@ async def client(golden_pkg_path, tmp_path):
 
     seed_from_package(golden_pkg_path, src, force=True)
 
-    settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-                        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-                             "WMS_WEBHOOK": "https://wms.example.test/hook",
-                             "SCENARIO_DSN": f"sqlite+aiosqlite:///{tmp_path/'scenario.db'}"})
+    settings = Settings(
+        dev_auth=True,
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        env={
+            "ERP_DSN": f"sqlite+aiosqlite:///{src}",
+            "WMS_WEBHOOK": "https://wms.example.test/hook",
+            "SCENARIO_DSN": f"sqlite+aiosqlite:///{tmp_path/'scenario.db'}",
+        },
+    )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
     import json as J
-    async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                 headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})}) as c:
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Ontogeny-Principal": J.dumps({"id": "ci-admin", "is_admin": True})},
+    ) as c:
         yield c, sc, pkg_root
 
 
@@ -104,8 +117,7 @@ def _save(c, resources, deletes=None, layout=None):
     body: dict = {"resources": resources, "deletes": deletes or []}
     if layout is not None:
         body["layout"] = layout  # absent key = "leave the stored layout alone"
-    return c.post("/api/v1/admin/builder/save",
-                  json=body)
+    return c.post("/api/v1/admin/builder/save", json=body)
 
 
 class TestBuilderSave:
@@ -141,8 +153,9 @@ class TestBuilderSave:
 
         # live snapshot AND a cold restart both resolve the rule text
         assert "record-inspection" in sc.compiled.cedar_texts["inspection-policy"]
-        from ontogeny.registry.compiled import compile_package
         from ontogeny.core import load_package
+        from ontogeny.registry.compiled import compile_package
+
         recompiled = compile_package(load_package(pkg))
         assert "record-inspection" in recompiled.cedar_texts["inspection-policy"]
 
@@ -212,25 +225,34 @@ class TestBuilderSave:
                     "point_id": {"type": "string", "required": True},
                 },
                 "rules": [],
-                "effects": [{"kind": "create-object",
-                             "properties": {"task_id": "parameters.task_id",
-                                            "point_id": "parameters.point_id",
-                                            "status": "OPEN"}}],
+                "effects": [
+                    {
+                        "kind": "create-object",
+                        "properties": {
+                            "task_id": "parameters.task_id",
+                            "point_id": "parameters.point_id",
+                            "status": "OPEN",
+                        },
+                    }
+                ],
             },
         }
         policy = {
             "apiVersion": "ontogeny/v1",
             "kind": "PolicySet",
             "metadata": {"name": "inspection-policy"},
-            "spec": {"language": "cedar",
-                     "source": 'permit(principal, action == Action::"create-inspection-task", resource);'},
+            "spec": {
+                "language": "cedar",
+                "source": 'permit(principal, action == Action::"create-inspection-task", resource);',
+            },
         }
         create_action["spec"]["policy"] = "inspection-policy"
         r = await _save(c, [SCENARIO_STORE, task_obj, create_action, policy])
         assert r.status_code == 200, r.text
 
-        execr = await c.post("/api/v1/actions/create-inspection-task/execute",
-                             json={"parameters": {"task_id": "T-1", "point_id": "P-1"}})
+        execr = await c.post(
+            "/api/v1/actions/create-inspection-task/execute", json={"parameters": {"task_id": "T-1", "point_id": "P-1"}}
+        )
         assert execr.status_code == 200, execr.text
         assert execr.json()["after"]["status"] == "OPEN"
 
@@ -258,7 +280,13 @@ class TestBuilderResources:
         assert body["content_hash"] == sc.compiled.content_hash
         # every editable kind is represented
         assert {k.split("/")[0] for k in by_key} == {
-            "ObjectType", "LinkType", "Projection", "Action", "Function", "PolicySet"}
+            "ObjectType",
+            "LinkType",
+            "Projection",
+            "Action",
+            "Function",
+            "PolicySet",
+        }
 
         # a function keeps its capability VALUES, not just the capability name
         fn = by_key["Function/capacity-check"]
@@ -270,8 +298,7 @@ class TestBuilderResources:
         # a projection keeps the endpoint, per-object property lists and indexes
         prj = by_key["Projection/production-graph"]
         assert prj["spec"]["endpoint"] == "${HUGEGRAPH_URL}"
-        assert prj["spec"]["include"]["objects"]["production-order"]["properties"] == [
-            "qty", "status", "priority"]
+        assert prj["spec"]["include"]["objects"]["production-order"]["properties"] == ["qty", "status", "priority"]
         assert prj["spec"]["indexes"] == [
             {"object": "production-order", "property": "status"},
             {"object": "operation", "property": "status"},
@@ -286,16 +313,20 @@ class TestBuilderResources:
     async def test_round_trip_edit_does_not_strip_untouched_spec_fields(self, client):
         """Load → change one label → save → reload: nothing else moves."""
         c, sc, pkg = client
-        before = {f"{x['kind']}/{x['metadata']['name']}": x
-                  for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]}
+        before = {
+            f"{x['kind']}/{x['metadata']['name']}": x
+            for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]
+        }
 
         edited = json.loads(json.dumps(before["Function/capacity-check"]))
         edited["metadata"]["display"] = "Capacity check (edited)"
         r = await _save(c, [edited])
         assert r.status_code == 200, r.text
 
-        after = {f"{x['kind']}/{x['metadata']['name']}": x
-                 for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]}
+        after = {
+            f"{x['kind']}/{x['metadata']['name']}": x
+            for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]
+        }
         assert after["Function/capacity-check"]["metadata"]["display"] == "Capacity check (edited)"
         # the fields the editor never touched survive the round-trip
         assert after["Function/capacity-check"]["spec"] == before["Function/capacity-check"]["spec"]

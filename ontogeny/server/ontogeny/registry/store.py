@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Registry persistence: resource rows, lineage edges, publish/load flows."""
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -105,12 +106,13 @@ def _prune_unknown(cls, definition: dict) -> dict:
     `extra="forbid"` at publish time, so a typo in a YAML file is still an
     error. Only already-accepted history is read leniently.
     """
+
     def _accepted_keys(model) -> set[str]:
         # a stored definition uses the serialized (alias) spelling: accept both
         # the field name and its alias, so an aliased field added later is not
         # silently pruned (and silently reset to its default) on restart
         out = set(model.model_fields)
-        for name, fi in model.model_fields.items():
+        for _name, fi in model.model_fields.items():
             if fi.alias:
                 out.add(fi.alias)
         return out
@@ -143,9 +145,12 @@ class RegistryService:
         report = validate(pkg)
         if not report.ok and not force:
             errs = "; ".join(f"{i.code}@{i.resource}: {i.message}" for i in report.issues if i.severity == "error")
-            raise DSLValidationError(f"package rejected by validator: {errs}", details={"issues": [
-                {"code": i.code, "resource": i.resource, "message": i.message} for i in report.issues
-            ]})
+            raise DSLValidationError(
+                f"package rejected by validator: {errs}",
+                details={
+                    "issues": [{"code": i.code, "resource": i.resource, "message": i.message} for i in report.issues]
+                },
+            )
 
         compiled = compile_package(pkg)
         pkg_name = pkg.manifest.metadata.name
@@ -159,9 +164,7 @@ class RegistryService:
         # mounted stores, then mounting them again hits this path.)
         existing = {
             (r.kind, r.api_name): r
-            for r in (await session.execute(
-                select(ResourceRow).where(ResourceRow.pkg == pkg_name)
-            )).scalars()
+            for r in (await session.execute(select(ResourceRow).where(ResourceRow.pkg == pkg_name))).scalars()
         }
 
         seen_keys: set[tuple[str, str]] = set()
@@ -172,11 +175,18 @@ class RegistryService:
             sidecar = _read_sidecar(pkg, res)
             row = existing.get(key)
             if row is None:
-                session.add(ResourceRow(
-                    pkg=pkg_name, kind=res.kind, api_name=res.metadata.name,
-                    content_hash=compiled.content_hash, definition=payload,
-                    source_text=sidecar, created_by=created_by, created_at=now,
-                ))
+                session.add(
+                    ResourceRow(
+                        pkg=pkg_name,
+                        kind=res.kind,
+                        api_name=res.metadata.name,
+                        content_hash=compiled.content_hash,
+                        definition=payload,
+                        source_text=sidecar,
+                        created_by=created_by,
+                        created_at=now,
+                    )
+                )
             else:
                 row.deleted_at = None  # revive a soft-deleted resource
                 row.definition = payload
@@ -224,9 +234,15 @@ class RegistryService:
 
     async def load_latest(self, session) -> CompiledOntology | None:
         """Rebuild the snapshot from persisted rows (restart without git)."""
-        rows = (await session.execute(
-            select(ResourceRow).where(ResourceRow.deleted_at.is_(None)).order_by(ResourceRow.id)
-        )).scalars().all()
+        rows = (
+            (
+                await session.execute(
+                    select(ResourceRow).where(ResourceRow.deleted_at.is_(None)).order_by(ResourceRow.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         if not rows:
             return None
         resources: list[AnyResource] = []
@@ -246,7 +262,10 @@ class RegistryService:
         if manifest is None:
             return None
         pkg = OntologyPackage(
-            root=_FakeRoot(), manifest=manifest, resources=resources, source_texts=source_texts,
+            root=_FakeRoot(),
+            manifest=manifest,
+            resources=resources,
+            source_texts=source_texts,
         )
         compiled = compile_package(pkg)
         self._cache[compiled.content_hash] = compiled

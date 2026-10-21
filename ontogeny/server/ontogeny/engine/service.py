@@ -19,6 +19,7 @@
 expansion, aggregation and multi-hop graph traversal (SQL-recursive default;
 the HugeGraph projection is an accelerator behind the same API).
 """
+
 from __future__ import annotations
 
 import time
@@ -78,8 +79,15 @@ class QueryService:
     # ----------------------------------------------------------------- query
 
     async def query(
-        self, session, object_type: str, principal: dict, *,
-        filt: Any = None, sort: list | None = None, limit: int = 100, offset: int = 0,
+        self,
+        session,
+        object_type: str,
+        principal: dict,
+        *,
+        filt: Any = None,
+        sort: list | None = None,
+        limit: int = 100,
+        offset: int = 0,
         links: list[str] | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
@@ -87,11 +95,17 @@ class QueryService:
         # pydantic, so clamp here too
         limit = max(1, min(int(limit or 100), 1000))
         rows, total = await self.repo.query(
-            session, object_type, filt=filt, sort=sort, limit=limit, offset=offset,
+            session,
+            object_type,
+            filt=filt,
+            sort=sort,
+            limit=limit,
+            offset=offset,
         )
         objects = [self.assemble(object_type, r, principal) for r in rows]
         result: dict[str, Any] = {
-            "objects": objects, "total": total,
+            "objects": objects,
+            "total": total,
             "latency_ms": round((time.perf_counter() - started) * 1000, 2),
         }
         if links:
@@ -104,7 +118,9 @@ class QueryService:
                 other = lnk.spec.target if lnk.spec.source == object_type else lnk.spec.source
                 bucket: dict[str, list[dict]] = {}
                 for obj in objects:
-                    ids = await self._linked_ids(session, link_name, str(obj[pk]), from_source=lnk.spec.source == object_type)
+                    ids = await self._linked_ids(
+                        session, link_name, str(obj[pk]), from_source=lnk.spec.source == object_type
+                    )
                     bucket[str(obj[pk])] = await self._assemble_many(session, other, ids, principal)
                 expanded[link_name] = bucket
             result["links"] = expanded
@@ -117,7 +133,14 @@ class QueryService:
         return self.assemble(object_type, row, principal)
 
     async def aggregate(
-        self, session, object_type: str, principal: dict, fn: str, field: str | None, *, filt: Any = None,
+        self,
+        session,
+        object_type: str,
+        principal: dict,
+        fn: str,
+        field: str | None,
+        *,
+        filt: Any = None,
     ) -> float:
         if fn not in ("count", "sum", "avg", "min", "max"):
             raise StoreError(f"unknown aggregate {fn!r}")
@@ -147,12 +170,20 @@ class QueryService:
         if isinstance(join, ForeignKeyJoin):
             return await self.repo.fk_linked_ids(session, link_name, obj_id, from_source=from_source)
         members = await self.repo.link_members(
-            session, link_name, src_id=obj_id if from_source else None, dst_id=obj_id if not from_source else None,
+            session,
+            link_name,
+            src_id=obj_id if from_source else None,
+            dst_id=obj_id if not from_source else None,
         )
         return [dst if from_source else src for src, dst in members]
 
     async def links(
-        self, session, object_type: str, obj_id: str, link_name: str, principal: dict,
+        self,
+        session,
+        object_type: str,
+        obj_id: str,
+        link_name: str,
+        principal: dict,
     ) -> list[dict]:
         lnk = self.compiled.links.get(link_name)
         if lnk is None:
@@ -168,8 +199,14 @@ class QueryService:
     # ------------------------------------------------------------ explore
 
     async def explore(
-        self, session, start: tuple[str, str] | None, principal: dict,
-        *, n: int = 12, max_depth: int = 3, seed: int | None = None,
+        self,
+        session,
+        start: tuple[str, str] | None,
+        principal: dict,
+        *,
+        n: int = 12,
+        max_depth: int = 3,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         """Neighbourhood exploration: one start node plus N nodes around it.
 
@@ -248,14 +285,20 @@ class QueryService:
                     other = lnk.spec.target if from_source else lnk.spec.source
                     for nid in await self._linked_ids(session, lnk.metadata.name, frame["id"], from_source=from_source):
                         okey = (other, nid)
-                        edge_key = tuple(sorted((frame["id"], nid))) + (lnk.metadata.name,)
+                        edge_key = (*tuple(sorted((frame["id"], nid))), lnk.metadata.name)
                         if edge_key not in seen_edge:
                             seen_edge.add(edge_key)
-                            edges.append({
-                                "link": lnk.metadata.name,
-                                "source": {"type": frame["type"], "id": frame["id"]} if from_source else {"type": other, "id": nid},
-                                "target": {"type": other, "id": nid} if from_source else {"type": frame["type"], "id": frame["id"]},
-                            })
+                            edges.append(
+                                {
+                                    "link": lnk.metadata.name,
+                                    "source": {"type": frame["type"], "id": frame["id"]}
+                                    if from_source
+                                    else {"type": other, "id": nid},
+                                    "target": {"type": other, "id": nid}
+                                    if from_source
+                                    else {"type": frame["type"], "id": frame["id"]},
+                                }
+                            )
                         if okey not in nodes:
                             found.append(okey)
                 rng.shuffle(found)  # branch ORDER is randomized; the walk is still DFS
@@ -270,8 +313,9 @@ class QueryService:
                 if okey in on_path or okey in nodes:
                     continue
                 if await add_node(other_type, nid) is not None:
-                    frames.append({"type": other_type, "id": nid, "depth": frame["depth"] + 1,
-                                   "neighbours": None, "cursor": 0})
+                    frames.append(
+                        {"type": other_type, "id": nid, "depth": frame["depth"] + 1, "neighbours": None, "cursor": 0}
+                    )
                     on_path.add(okey)
                     advanced = True
                     break  # descend immediately: that is what makes it depth-first
@@ -282,9 +326,11 @@ class QueryService:
 
         # add_node may have raced past n; trim edges to retained nodes
         kept = set(nodes)
-        edges = [e for e in edges
-                 if (e["source"]["type"], e["source"]["id"]) in kept
-                 and (e["target"]["type"], e["target"]["id"]) in kept]
+        edges = [
+            e
+            for e in edges
+            if (e["source"]["type"], e["source"]["id"]) in kept and (e["target"]["type"], e["target"]["id"]) in kept
+        ]
 
         order = [(start_type, start_id)] + [k for k in nodes if k != (start_type, start_id)]
         return {
@@ -297,8 +343,14 @@ class QueryService:
         }
 
     async def traverse(
-        self, session, start_type: str, start_ids: list[str], principal: dict,
-        path: list[dict], *, max_depth: int = 3,
+        self,
+        session,
+        start_type: str,
+        start_ids: list[str],
+        principal: dict,
+        path: list[dict],
+        *,
+        max_depth: int = 3,
     ) -> dict[str, Any]:
         """Multi-hop traversal. path = [{"link": name, "direction": "out"|"in"}, ...]
         Executed via SQL/link tables (the projection accelerates the same API).
@@ -308,10 +360,13 @@ class QueryService:
             raise StoreError(f"traversal depth {len(path)} exceeds max_depth {max_depth}")
         current_type = start_type
         current_ids = list(dict.fromkeys(str(i) for i in start_ids))
-        steps: list[dict[str, Any]] = [{
-            "type": current_type, "ids": current_ids,
-            "objects": await self._assemble_many(session, current_type, current_ids, principal),
-        }]
+        steps: list[dict[str, Any]] = [
+            {
+                "type": current_type,
+                "ids": current_ids,
+                "objects": await self._assemble_many(session, current_type, current_ids, principal),
+            }
+        ]
         edges: list[dict[str, Any]] = []
         for hop in path:
             link_name = hop.get("link")
@@ -332,24 +387,34 @@ class QueryService:
             for oid in current_ids:
                 targets = await self._linked_ids(session, str(link_name), oid, from_source=from_source)
                 for tid in targets:
-                    edges.append({
-                        "link": str(link_name),
-                        "source": {"type": current_type, "id": oid},
-                        "target": {"type": lnk.spec.target if from_source else lnk.spec.source, "id": tid},
-                    })
+                    edges.append(
+                        {
+                            "link": str(link_name),
+                            "source": {"type": current_type, "id": oid},
+                            "target": {"type": lnk.spec.target if from_source else lnk.spec.source, "id": tid},
+                        }
+                    )
                 nxt.extend(targets)
             current_type = lnk.spec.target if from_source else lnk.spec.source
             current_ids = list(dict.fromkeys(nxt))
-            steps.append({
-                "type": current_type, "ids": current_ids,
-                "objects": await self._assemble_many(session, current_type, current_ids, principal),
-            })
+            steps.append(
+                {
+                    "type": current_type,
+                    "ids": current_ids,
+                    "objects": await self._assemble_many(session, current_type, current_ids, principal),
+                }
+            )
         # keep only edges whose both ends are assembled (targets may fall off
         # the returned step objects when filtering removes readability)
-        returned = {(st["type"], str(o[pk])) for st, pk in
-                    ((st, self.compiled.objects[st["type"]].spec.primaryKey[0]) for st in steps)
-                    for o in st["objects"]}
-        edges = [e for e in edges
-                 if (e["source"]["type"], e["source"]["id"]) in returned
-                 and (e["target"]["type"], e["target"]["id"]) in returned]
+        returned = {
+            (st["type"], str(o[pk]))
+            for st, pk in ((st, self.compiled.objects[st["type"]].spec.primaryKey[0]) for st in steps)
+            for o in st["objects"]
+        }
+        edges = [
+            e
+            for e in edges
+            if (e["source"]["type"], e["source"]["id"]) in returned
+            and (e["target"]["type"], e["target"]["id"]) in returned
+        ]
         return {"steps": steps, "edges": edges, "final_ids": current_ids}

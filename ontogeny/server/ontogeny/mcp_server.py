@@ -42,6 +42,7 @@ run the whole lifecycle; approval DECISIONS stay with the human console.
 Requires the optional ``mcp`` extra (mcp>=2.2); absent, the surface simply
 does not mount and the builtin engine falls back to in-process calls.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,9 +50,10 @@ import inspect
 import json
 import logging
 import os
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
-from typing import Any, AsyncIterator, Iterable
+from typing import Any
 
 from .errors import OOError
 from .service import ServiceContext
@@ -85,8 +87,7 @@ def current_mcp_driver() -> dict[str, Any] | None:
 #: is unchanged (broker + frozen catalog).
 PLUGIN_SCOPE_HEADER = "x-ontogeny-plugin"
 
-_SESSION_TOOLS = {"agent_open_session", "agent_get_session",
-                  "agent_list_sessions", "agent_finish_session"}
+_SESSION_TOOLS = {"agent_open_session", "agent_get_session", "agent_list_sessions", "agent_finish_session"}
 
 
 class PluginScopeMiddleware:
@@ -110,7 +111,7 @@ class PluginScopeMiddleware:
         if getter is not None:
             try:
                 plugin = getter.get(PLUGIN_SCOPE_HEADER)
-            except Exception:  # noqa: BLE001 -- transport-specific header obj
+            except Exception:
                 plugin = None
         if not plugin:
             return result
@@ -179,9 +180,14 @@ class McpToolClient:
 
     async def list_tools(self) -> list[dict[str, Any]]:
         res = await self.session.list_tools()
-        return [{"name": t.name, "description": t.description or "",
-                 "input_schema": getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
-                 or {}} for t in res.tools]
+        return [
+            {
+                "name": t.name,
+                "description": t.description or "",
+                "input_schema": getattr(t, "input_schema", None) or getattr(t, "inputSchema", {}) or {},
+            }
+            for t in res.tools
+        ]
 
     async def call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         from mcp.shared.exceptions import MCPError
@@ -287,27 +293,22 @@ class McpSurface:
             """Open an agent session for a declared AgentPlugin; returns the
             session view incl. the tools you may call and the id to pass as
             session_id on every tool call."""
-            return await sc.agents.open_session(plugin, task or "",
-                                                driver=current_mcp_driver())
+            return await sc.agents.open_session(plugin, task or "", driver=current_mcp_driver())
 
         async def agent_get_session(session_id: int) -> dict[str, Any]:
             """Session view: status, budget usage, effective tools, full step
             trail (thought + outcome per step) -- the driver's transcript."""
             return await sc.agents.get_session(session_id)
 
-        async def agent_list_sessions(plugin: str | None = None,
-                                      limit: int = 50) -> dict[str, Any]:
+        async def agent_list_sessions(plugin: str | None = None, limit: int = 50) -> dict[str, Any]:
             """List agent sessions, newest first (optionally per plugin)."""
-            return {"sessions": await sc.agents.list_sessions(plugin=plugin,
-                                                              limit=min(int(limit), 200))}
+            return {"sessions": await sc.agents.list_sessions(plugin=plugin, limit=min(int(limit), 200))}
 
-        async def agent_finish_session(session_id: int,
-                                       result: dict | None = None) -> dict[str, Any]:
+        async def agent_finish_session(session_id: int, result: dict | None = None) -> dict[str, Any]:
             """Finish a session with a final result (the human-facing act)."""
             return await sc.agents.finish_session(session_id, result)
 
-        for fn in (agent_open_session, agent_get_session,
-                   agent_list_sessions, agent_finish_session):
+        for fn in (agent_open_session, agent_get_session, agent_list_sessions, agent_finish_session):
             server.add_tool(fn, structured_output=True)
 
     # --------------------------------------------------------------- serving
@@ -324,23 +325,24 @@ class McpSurface:
             return False
         if self._mounted:
             return True
-        kwargs: dict[str, Any] = dict(
-            streamable_http_path=MCP_HTTP_PATH,
+        kwargs: dict[str, Any] = {
+            "streamable_http_path": MCP_HTTP_PATH,
             # POST + JSON responses, one request per call: survives proxies
             # and test ASGI transports, and matches the stateless call shape
             # (every call carries plugin/session_id anyway)
-            json_response=True,
-            stateless_http=True,
-        )
+            "json_response": True,
+            "stateless_http": True,
+        }
         # the SDK auto-enables DNS-rebinding protection for localhost hosts;
         # ontogeny's REST surface does no Host policing, so the MCP surface
         # matches it by default and ONTOGENY_MCP_ALLOWED_HOSTS opts INTO a list
         from mcp.server.transport_security import TransportSecuritySettings
+
         hosts = [h.strip() for h in os.environ.get(_ALLOWED_HOSTS_ENV, "").split(",") if h.strip()]
         kwargs["transport_security"] = (
             TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts)
-            if hosts else
-            TransportSecuritySettings(enable_dns_rebinding_protection=False)
+            if hosts
+            else TransportSecuritySettings(enable_dns_rebinding_protection=False)
         )
         starlette = self.server.streamable_http_app(**kwargs)
         existing = {getattr(route, "path", None) for route in app.router.routes}
@@ -354,8 +356,7 @@ class McpSurface:
     async def run(self, app: Any) -> AsyncIterator[Any]:
         """Serve: build (if needed), graft, run the HTTP session manager."""
         if self.sdk is None:
-            log.info("MCP surface disabled: the optional extra is not installed "
-                     "(pip install 'ontogeny[mcp]')")
+            log.info("MCP surface disabled: the optional extra is not installed " "(pip install 'ontogeny[mcp]')")
             yield None
             return
         if self.server is None:
@@ -383,8 +384,7 @@ async def mount_mcp(app: Any, sc: ServiceContext) -> AsyncIterator[Any]:
 
 
 @asynccontextmanager
-async def in_process_mcp_session(sc: ServiceContext, *,
-                                 engine_mode: bool = True) -> AsyncIterator[McpToolClient]:
+async def in_process_mcp_session(sc: ServiceContext, *, engine_mode: bool = True) -> AsyncIterator[McpToolClient]:
     """The builtin engine's transport: a real MCP client session over
     in-memory streams against a private server.
 
@@ -404,23 +404,22 @@ async def in_process_mcp_session(sc: ServiceContext, *,
     surface = McpSurface(sc, engine_mode=engine_mode)
     surface.build()
     if surface.server is None:
-        raise OOError("engine MCP session requires the optional dependency: "
-                      "pip install 'ontogeny[mcp]' (and a compiled ontology)",
-                      details={"missing": "mcp"})
+        raise OOError(
+            "engine MCP session requires the optional dependency: "
+            "pip install 'ontogeny[mcp]' (and a compiled ontology)",
+            details={"missing": "mcp"},
+        )
     low = surface.server._lowlevel_server
     async with create_client_server_memory_streams() as (client_side, server_side):
-        server_task = asyncio.create_task(
-            low.run(server_side[0], server_side[1], low.create_initialization_options()))
+        server_task = asyncio.create_task(low.run(server_side[0], server_side[1], low.create_initialization_options()))
         try:
             async with ClientSession(client_side[0], client_side[1]) as sess:
                 await sess.initialize()
                 yield McpToolClient(sess)
         finally:
             server_task.cancel()
-            try:
+            with suppress(BaseException):
                 await server_task
-            except BaseException:  # noqa: BLE001 -- cancelled server task
-                pass
 
 
 # ------------------------------------------------------------ tool generation
@@ -428,8 +427,10 @@ async def in_process_mcp_session(sc: ServiceContext, *,
 #: catalog input_schema type -> signature annotation. Anything object/array
 #: shaped maps to Any: the schema stays permissive, the broker validates.
 _SCHEMA_ANN: dict[str, Any] = {
-    "integer": int | None, "string": str | None,
-    "number": float | None, "boolean": bool | None,
+    "integer": int | None,
+    "string": str | None,
+    "number": float | None,
+    "boolean": bool | None,
 }
 
 
@@ -443,11 +444,11 @@ def _catalog_tool_fn(sc: ServiceContext, name: str, tdef, engine_mode: bool):
     """
     props: dict[str, Any] = (tdef.input_schema or {}).get("properties") or {}
 
-    async def tool(plugin: str | None = None, session_id: int | None = None,
-                   thought: str | None = None, **kwargs: Any) -> dict[str, Any]:
+    async def tool(
+        plugin: str | None = None, session_id: int | None = None, thought: str | None = None, **kwargs: Any
+    ) -> dict[str, Any]:
         if session_id is not None:
-            return await sc.agents.call_tool(int(session_id), name, kwargs,
-                                             engine=engine_mode, thought=thought or "")
+            return await sc.agents.call_tool(int(session_id), name, kwargs, engine=engine_mode, thought=thought or "")
         return await _readonly_call(sc, name, tdef, plugin, kwargs)
 
     # the SDK refuses parameters starting with '_', so the reserved transport
@@ -456,8 +457,7 @@ def _catalog_tool_fn(sc: ServiceContext, name: str, tdef, engine_mode: bool):
     # would simply be shadowed, which the fixed vocabulary makes impossible
     reserved = {"plugin": str | None, "session_id": int | None, "thought": str | None}
     parameters = [
-        inspect.Parameter(pname, inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                          default=None, annotation=ann)
+        inspect.Parameter(pname, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=None, annotation=ann)
         for pname, ann in reserved.items()
     ]
     annotations: dict[str, Any] = dict(reserved)
@@ -468,19 +468,22 @@ def _catalog_tool_fn(sc: ServiceContext, name: str, tdef, engine_mode: bool):
         # caller's JSON passes validation exactly as the REST path accepts it
         annotation = _SCHEMA_ANN.get(pschema.get("type"), Any)
         default = pschema.get("default") if "default" in pschema else None
-        parameters.append(inspect.Parameter(pname, inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                                            default=default, annotation=annotation))
+        parameters.append(
+            inspect.Parameter(pname, inspect.Parameter.POSITIONAL_OR_KEYWORD, default=default, annotation=annotation)
+        )
         annotations[pname] = annotation
     tool.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        parameters, return_annotation=dict[str, Any])
+        parameters, return_annotation=dict[str, Any]
+    )
     tool.__annotations__ = {**annotations, "return": dict[str, Any]}
     tool.__doc__ = tdef.description
     tool.__name__ = name
     return tool
 
 
-async def _readonly_call(sc: ServiceContext, name: str, tdef, plugin_name: str | None,
-                         args: dict[str, Any]) -> dict[str, Any]:
+async def _readonly_call(
+    sc: ServiceContext, name: str, tdef, plugin_name: str | None, args: dict[str, Any]
+) -> dict[str, Any]:
     """Session-less calls: reads only, dispatched by the BROKER's read_only_tool
     -- the same dispatcher the session path uses, so telemetry, argument
     strictness and error envelopes cannot drift between the two surfaces.

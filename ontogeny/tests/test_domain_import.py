@@ -21,6 +21,7 @@ The zip is untrusted input: these tests pin the safety contract (traversal,
 invalid package, duplicate name -> clean refusal with no residue) and the
 happy path against the real product-manufacturing package.
 """
+
 from __future__ import annotations
 
 import io
@@ -35,8 +36,7 @@ import pytest_asyncio
 
 from ontogeny.api import build_app
 from ontogeny.config import Settings
-from ontogeny.service import DomainError
-from ontogeny.service import ServiceContext
+from ontogeny.service import DomainError, ServiceContext
 
 REPO = Path(__file__).resolve().parent.parent
 DOMAIN = REPO / "domains" / "product-manufacturing"
@@ -54,8 +54,7 @@ def zip_domain(with_root_folder: bool = True) -> bytes:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for f in sorted(DOMAIN.rglob("*")):
             if f.is_file() and "__pycache__" not in f.parts:
-                arc = (f"{DOMAIN.name}/{f.relative_to(DOMAIN)}" if with_root_folder
-                       else str(f.relative_to(DOMAIN)))
+                arc = f"{DOMAIN.name}/{f.relative_to(DOMAIN)}" if with_root_folder else str(f.relative_to(DOMAIN))
                 zf.write(f, arc)
     return buf.getvalue()
 
@@ -94,8 +93,7 @@ class TestImportService:
         sc, _c, root = rig
         out = await sc.import_domain(zip_domain(), activate=True)
         assert out["active"] is True and out.get("content_hash")
-        assert set(sc.compiled.functions) == {
-            "material-availability", "capacity-check", "order-yield"}
+        assert set(sc.compiled.functions) == {"material-availability", "capacity-check", "order-yield"}
         assert sc.compiled.package_name == "product-manufacturing"
 
     async def test_zip_without_root_folder_works_too(self, rig):
@@ -125,8 +123,10 @@ class TestImportService:
         evil_target = root.parent / "escaped.txt"
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("ontology.yaml", "apiVersion: ontogeny/v1\nkind: Ontology\n"
-                                        "metadata: {name: evil}\nspec: {imports: []}\n")
+            zf.writestr(
+                "ontology.yaml",
+                "apiVersion: ontogeny/v1\nkind: Ontology\n" "metadata: {name: evil}\nspec: {imports: []}\n",
+            )
             zf.writestr("../escaped.txt", "pwn")
         with pytest.raises(DomainError, match="unsafe archive member"):
             await sc.import_domain(buf.getvalue())
@@ -138,13 +138,15 @@ class TestImportService:
         sc, _c, root = rig
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("bad/ontology.yaml",
-                        "apiVersion: ontogeny/v1\nkind: Ontology\n"
-                        "metadata: {name: bad-domain}\nspec: {imports: []}\n")
+            zf.writestr(
+                "bad/ontology.yaml",
+                "apiVersion: ontogeny/v1\nkind: Ontology\n" "metadata: {name: bad-domain}\nspec: {imports: []}\n",
+            )
             # an action pointing at a type that does not exist -> validator error
-            zf.writestr("bad/actions/x.yaml",
-                        "apiVersion: ontogeny/v1\nkind: Action\nmetadata: {name: x}\n"
-                        "spec: {target: ghost, effects: []}\n")
+            zf.writestr(
+                "bad/actions/x.yaml",
+                "apiVersion: ontogeny/v1\nkind: Action\nmetadata: {name: x}\n" "spec: {target: ghost, effects: []}\n",
+            )
         with pytest.raises(DomainError, match="rejected by validator") as excinfo:
             await sc.import_domain(buf.getvalue())
         assert excinfo.value.details["issues"]
@@ -167,22 +169,20 @@ class TestImportRoute:
 
     async def test_http_import_round_trip(self, rig):
         sc, c, root = rig
-        r = await c.post("/api/v1/admin/domains/import?activate=false",
-                         content=zip_domain(), headers=_hdr(ADMIN))
+        r = await c.post("/api/v1/admin/domains/import?activate=false", content=zip_domain(), headers=_hdr(ADMIN))
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["name"] == "product-manufacturing" and body["objects"] == 7
         # activating through the regular switch endpoint works on the import
-        r = await c.post("/api/v1/admin/domains/activate",
-                         json={"name": "product-manufacturing"}, headers=_hdr(ADMIN))
+        r = await c.post("/api/v1/admin/domains/activate", json={"name": "product-manufacturing"}, headers=_hdr(ADMIN))
         assert r.status_code == 200 and r.json()["activated"] is True
         assert sc.compiled.package_name == "product-manufacturing"
 
     async def test_http_rejects_wrong_content_type(self, rig):
         _sc, c, _root = rig
-        r = await c.post("/api/v1/admin/domains/import",
-                         content=b"{}", headers={**_hdr(ADMIN),
-                                                 "content-type": "application/json"})
+        r = await c.post(
+            "/api/v1/admin/domains/import", content=b"{}", headers={**_hdr(ADMIN), "content-type": "application/json"}
+        )
         assert r.status_code == 415
 
     async def test_http_reports_validator_issues(self, rig):
@@ -190,8 +190,7 @@ class TestImportRoute:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("ontology.yaml", "not: a package")
-        r = await c.post("/api/v1/admin/domains/import",
-                         content=buf.getvalue(), headers=_hdr(ADMIN))
+        r = await c.post("/api/v1/admin/domains/import", content=buf.getvalue(), headers=_hdr(ADMIN))
         assert r.status_code == 400
         assert "ontology.yaml" in r.json()["message"] or "rejected" in r.json()["message"]
 

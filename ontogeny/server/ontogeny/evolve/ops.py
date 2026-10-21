@@ -20,6 +20,7 @@
 These used to live in ``ontogeny.api.app`` -- which forced the scheduled worker
 (``api_factory``) to import FROM the web layer, an inverted dependency. They
 are platform operations that happen to be exposed by HTTP, not HTTP logic."""
+
 from __future__ import annotations
 
 import re
@@ -87,12 +88,18 @@ async def run_diagnose(sc: ServiceContext) -> dict:
         # handled -- re-diagnosing would file the same mutation again on
         # every click. A *rejected* proposal may be re-attempted: the world
         # may have changed (or the last attempt was wrong).
-        active_signal_ids = set((await s.execute(
-            select(ProposalRow.signal_id).where(
-                ProposalRow.signal_id.is_not(None),
-                ProposalRow.status != "rejected",
+        active_signal_ids = set(
+            (
+                await s.execute(
+                    select(ProposalRow.signal_id).where(
+                        ProposalRow.signal_id.is_not(None),
+                        ProposalRow.status != "rejected",
+                    )
+                )
             )
-        )).scalars().all())
+            .scalars()
+            .all()
+        )
         proposals = []
         decisions = []
         import inspect as _inspect
@@ -100,22 +107,36 @@ async def run_diagnose(sc: ServiceContext) -> dict:
         # direction E: the human 'no' is memory -- recent rejections ride
         # into the proposer's prompt so the same idea is not re-filed
         # verbatim without addressing why it was refused
-        rejected_rows = (await s.execute(
-            select(ProposalRow).where(ProposalRow.status == "rejected")
-            .order_by(ProposalRow.id.desc()).limit(5)
-        )).scalars().all()
-        memory = [{"gap_kind": r.gap_kind, "rationale": r.rationale,
-                   "rejected_reason": r.rejected_reason, "diff": r.diff}
-                  for r in rejected_rows]
+        rejected_rows = (
+            (
+                await s.execute(
+                    select(ProposalRow).where(ProposalRow.status == "rejected").order_by(ProposalRow.id.desc()).limit(5)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        memory = [
+            {"gap_kind": r.gap_kind, "rationale": r.rationale, "rejected_reason": r.rejected_reason, "diff": r.diff}
+            for r in rejected_rows
+        ]
 
         for gap in gaps:
             sid = gap.get("signal_id")
             if sid in active_signal_ids:
-                decisions.append({"signal_id": sid, "kind": gap.get("kind"), "outcome": "skipped",
-                                  "analysis": None, "rationale": None})
+                decisions.append(
+                    {
+                        "signal_id": sid,
+                        "kind": gap.get("kind"),
+                        "outcome": "skipped",
+                        "analysis": None,
+                        "rationale": None,
+                    }
+                )
                 continue
-            outcome = (await sc.proposer.propose_full(gap, sc.compiled, memory=memory)) \
-                if _is_deciding(sc.proposer) else None
+            outcome = (
+                (await sc.proposer.propose_full(gap, sc.compiled, memory=memory)) if _is_deciding(sc.proposer) else None
+            )
             if outcome is None:
                 # heuristic-only proposer: wrap its answer in the same shape
                 result = sc.proposer.propose(gap)
@@ -126,41 +147,77 @@ async def run_diagnose(sc: ServiceContext) -> dict:
                 # no proposal: either an informational signal (rules alone
                 # cannot act on it) or the model declining to mutate -- the
                 # model's analysis is kept either way (direction A)
-                decisions.append({"signal_id": sid, "kind": gap.get("kind"),
-                                  "outcome": "informational" if gap.get("informational") else "declined",
-                                  "analysis": outcome.analysis, "rationale": None})
+                decisions.append(
+                    {
+                        "signal_id": sid,
+                        "kind": gap.get("kind"),
+                        "outcome": "informational" if gap.get("informational") else "declined",
+                        "analysis": outcome.analysis,
+                        "rationale": None,
+                    }
+                )
                 continue
-            row = ProposalRow(gap_kind=gap["kind"], diff=proposal["mutations"],
-                              rationale=proposal["rationale"], origin=proposal.get("origin", "heuristic"),
-                              signal_id=sid, llm_analysis=outcome.analysis)
+            row = ProposalRow(
+                gap_kind=gap["kind"],
+                diff=proposal["mutations"],
+                rationale=proposal["rationale"],
+                origin=proposal.get("origin", "heuristic"),
+                signal_id=sid,
+                llm_analysis=outcome.analysis,
+            )
             s.add(row)
             proposals.append(row)
-            decisions.append({"signal_id": sid, "kind": gap.get("kind"),
-                              "outcome": proposal.get("origin", "heuristic"),
-                              "analysis": outcome.analysis,
-                              "rationale": proposal.get("rationale")})
+            decisions.append(
+                {
+                    "signal_id": sid,
+                    "kind": gap.get("kind"),
+                    "outcome": proposal.get("origin", "heuristic"),
+                    "analysis": outcome.analysis,
+                    "rationale": proposal.get("rationale"),
+                }
+            )
             # the model declined the obvious mutation but offered a better,
             # rule-validated one: file it as a SECOND candidate on the same
             # signal -- eval ranks them, promote supersedes the loser
             alt = outcome.alternative
             if alt is not None:
-                alt_row = ProposalRow(gap_kind=gap["kind"], diff=alt["mutations"],
-                                      rationale=alt["rationale"], origin="llm",
-                                      signal_id=sid, llm_analysis=outcome.analysis)
+                alt_row = ProposalRow(
+                    gap_kind=gap["kind"],
+                    diff=alt["mutations"],
+                    rationale=alt["rationale"],
+                    origin="llm",
+                    signal_id=sid,
+                    llm_analysis=outcome.analysis,
+                )
                 s.add(alt_row)
                 proposals.append(alt_row)
-                decisions.append({"signal_id": sid, "kind": gap.get("kind"),
-                                  "outcome": "llm_alternative",
-                                  "analysis": outcome.analysis,
-                                  "rationale": alt["rationale"]})
+                decisions.append(
+                    {
+                        "signal_id": sid,
+                        "kind": gap.get("kind"),
+                        "outcome": "llm_alternative",
+                        "analysis": outcome.analysis,
+                        "rationale": alt["rationale"],
+                    }
+                )
         await s.commit()
         await s.flush()
         analysis_by_id = {p.id: p.llm_analysis for p in proposals}
     # who decided this round: the model or the fallback (honest provenance
     # for the console; informational declines are part of the answer)
     stats = getattr(sc.proposer, "stats", None) or {}
-    return {"proposals": [{"id": p.id, "gap_kind": p.gap_kind, "diff": p.diff,
-                           "rationale": p.rationale, "origin": p.origin,
-                           "analysis": analysis_by_id.get(p.id)} for p in proposals],
-            "decided_by": stats,
-            "decisions": decisions}
+    return {
+        "proposals": [
+            {
+                "id": p.id,
+                "gap_kind": p.gap_kind,
+                "diff": p.diff,
+                "rationale": p.rationale,
+                "origin": p.origin,
+                "analysis": analysis_by_id.get(p.id),
+            }
+            for p in proposals
+        ],
+        "decided_by": stats,
+        "decisions": decisions,
+    }

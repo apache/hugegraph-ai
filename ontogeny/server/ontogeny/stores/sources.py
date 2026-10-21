@@ -24,11 +24,13 @@ The Store SPI is deliberately tiny: introspection + batched pull. Writes back
 to source systems happen through the outbox (webhook/writeback adapters),
 never through these readers.
 """
+
 from __future__ import annotations
 
 import csv
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -67,14 +69,17 @@ class SqlSource:
     async def columns(self, ref: SourceRef) -> set[str]:
         eng = await self._eng()
         async with eng.connect() as conn:
-            result = await conn.execute(text(
-                f"SELECT * FROM {qualified_name(ref, self.dsn)} LIMIT 0"
-            ))
+            result = await conn.execute(text(f"SELECT * FROM {qualified_name(ref, self.dsn)} LIMIT 0"))
             return set(result.keys())
 
     async def fetch(
-        self, ref: SourceRef, *, columns: list[str] | None = None,
-        watermark_col: str | None = None, after: Any = None, batch: int = 500,
+        self,
+        ref: SourceRef,
+        *,
+        columns: list[str] | None = None,
+        watermark_col: str | None = None,
+        after: Any = None,
+        batch: int = 500,
     ) -> AsyncIterator[dict[str, Any]]:
         eng = await self._eng()
         table = qualified_name(ref, self.dsn)
@@ -88,7 +93,7 @@ class SqlSource:
                 # watermark.
                 cursor = after
                 while True:
-                    sql = f'SELECT * FROM {table}'
+                    sql = f"SELECT * FROM {table}"
                     params: dict[str, Any] = {}
                     if cursor is not None:
                         sql += f' WHERE "{watermark_col}" > :wm'
@@ -121,8 +126,7 @@ class SqlSource:
                 offset = 0
                 while True:
                     sql = "SELECT " + ", ".join(f'"{c}"' for c in sel_cols) + f" FROM {table}"
-                    sql += " ORDER BY rowid" if is_sqlite else \
-                        " ORDER BY " + ", ".join(f'"{c}"' for c in sel_cols)
+                    sql += " ORDER BY rowid" if is_sqlite else " ORDER BY " + ", ".join(f'"{c}"' for c in sel_cols)
                     sql += " LIMIT :lim OFFSET :off"
                     rows = (await conn.execute(text(sql), {"lim": batch, "off": offset})).mappings().all()
                     if not rows:

@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Golden package: load + validate + lint, plus injected-fault detection."""
+
 from __future__ import annotations
 
 import copy

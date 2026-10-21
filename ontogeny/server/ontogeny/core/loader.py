@@ -22,6 +22,7 @@ actions/ functions/ projections/ evals/ policies/ + evolution.yaml.
 Non-YAML sidecars (.py, .cedar) are carried as file references, not parsed
 here. Loading is pure: no IO beyond reading the package directory.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -141,15 +142,11 @@ def _parse_file(path: Path, expected_kind: str | None = None) -> AnyResource:
         )
     cls = RESOURCE_BY_KIND.get(str(kind))
     if cls is None:
-        raise DSLValidationError(
-            f"{path.name}: unknown kind {kind!r}", details={"file": str(path), "kind": str(kind)}
-        )
+        raise DSLValidationError(f"{path.name}: unknown kind {kind!r}", details={"file": str(path), "kind": str(kind)})
     try:
         return cls.model_validate(raw)
     except Exception as exc:
-        raise DSLValidationError(
-            f"{path.name}: invalid {kind} resource: {exc}", details={"file": str(path)}
-        ) from exc
+        raise DSLValidationError(f"{path.name}: invalid {kind} resource: {exc}", details={"file": str(path)}) from exc
 
 
 def load_package(root: str | Path) -> OntologyPackage:

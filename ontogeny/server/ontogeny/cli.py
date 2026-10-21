@@ -17,6 +17,7 @@
 
 """ontogeny -- the operator's door. Everything it does goes through
 ServiceContext (same governance as HTTP/MCP) or ontogeny.core (pure validation)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -49,7 +50,7 @@ def validate(path: str) -> None:
         pkg = load_package(path)
     except DSLValidationError as exc:
         typer.secho(f"FAIL load: {exc.message}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
     rep = validate(pkg)
     for i in rep.issues:
         color = typer.colors.RED if i.severity == "error" else typer.colors.YELLOW
@@ -72,7 +73,7 @@ def lint(path: str) -> None:
 
 
 @app.command()
-def migrate(db: str = None, apply: bool = False) -> None:
+def migrate(db: str | None = None, apply: bool = False) -> None:
     """Diff the DSL (compiled snapshot) against the live object tables.
 
     Additive changes are applied automatically by ``ensure_tables`` on every
@@ -107,9 +108,7 @@ def migrate(db: str = None, apply: bool = False) -> None:
             return len(plan.safe)
 
     n = asyncio.run(run())
-    typer.secho(f"migration: {n} safe step(s){' applied' if apply else ' pending'}",
-                fg=typer.colors.GREEN)
-
+    typer.secho(f"migration: {n} safe step(s){' applied' if apply else ' pending'}", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -155,7 +154,7 @@ def diff(a: str, b: str) -> None:
 
 
 @app.command()
-def publish(path: str = None, db: str = None) -> None:
+def publish(path: str | None = None, db: str | None = None) -> None:
     """Validate + publish a package into the registry."""
     path = path or os.environ.get("ONTOGENY_PACKAGE_ROOT")
     if not path:
@@ -176,7 +175,7 @@ def publish(path: str = None, db: str = None) -> None:
 
 
 @app.command()
-def sync(object_type: str, db: str = None) -> None:
+def sync(object_type: str, db: str | None = None) -> None:
     from .service import ServiceContext
 
     settings = load_settings(db_dsn=db) if db else load_settings()
@@ -224,12 +223,18 @@ def _ensure_ui(build: bool, ui_dir: str | None) -> Path | None:
 
 @app.command()
 def serve(
-    db: str = None,
+    db: str | None = None,
     host: str = "127.0.0.1",
     port: int = 8000,
-    demo: bool = typer.Option(False, "--demo", help="self-contained demo: seed source data, copy the example package, serve the UI"),
-    data_dir: str = typer.Option(".ontogeny-demo", "--data-dir", help="demo state directory (metadata + source db + package copy)"),
-    package: str = typer.Option(None, "--package", help="ontology package to install into the demo (default: domains/product-manufacturing)"),
+    demo: bool = typer.Option(
+        False, "--demo", help="self-contained demo: seed source data, copy the example package, serve the UI"
+    ),
+    data_dir: str = typer.Option(
+        ".ontogeny-demo", "--data-dir", help="demo state directory (metadata + source db + package copy)"
+    ),
+    package: str = typer.Option(
+        None, "--package", help="ontology package to install into the demo (default: domains/product-manufacturing)"
+    ),
     reseed: bool = typer.Option(False, "--reseed", help="rebuild the demo source db and package copy from scratch"),
     build_ui: bool = typer.Option(True, "--build-ui/--no-build-ui", help="build web/dist when missing"),
     ui_dir: str = typer.Option(None, "--ui-dir", help="serve an already-built SPA from this directory"),
@@ -251,8 +256,7 @@ def serve(
             pkg_arg = Path.cwd() / pkg_arg
         direct = pkg_arg.resolve().parent.name == "domains"
 
-        paths = prepare_demo(data_dir, package=package or DEFAULT_PACKAGE,
-                             reseed=reseed, direct=direct)
+        paths = prepare_demo(data_dir, package=package or DEFAULT_PACKAGE, reseed=reseed, direct=direct)
         # operator-provided env wins: --demo used to clobber ONTOGENY_DB_DSN
         # (and friends), so edits/promotions landed outside the /data volume
         # and vanished on container recreation
@@ -260,14 +264,15 @@ def serve(
             os.environ.setdefault(k, v)
         typer.secho(f"demo data dir: {paths.root.resolve()}", fg=typer.colors.CYAN)
         if direct:
-            typer.secho(f"  serving the domain IN PLACE: {paths.package_root}\n"
-                        "  saves (model + layout) write into domains/; --reseed keeps model edits",
-                        fg=typer.colors.CYAN)
+            typer.secho(
+                f"  serving the domain IN PLACE: {paths.package_root}\n"
+                "  saves (model + layout) write into domains/; --reseed keeps model edits",
+                fg=typer.colors.CYAN,
+            )
         else:
             typer.secho("  (metadata + seeded source db + package copy; `--reseed` rebuilds)", fg=typer.colors.CYAN)
         if paths.fresh:
-            typer.secho("  fresh demo -> syncing source objects on boot",
-                        fg=typer.colors.CYAN)
+            typer.secho("  fresh demo -> syncing source objects on boot", fg=typer.colors.CYAN)
             os.environ["ONTOGENY_DEMO_POPULATE"] = "1"
 
     if db:
@@ -294,7 +299,7 @@ def serve(
 
 
 @evolve_app.command("signals")
-def evolve_signals(db: str = None) -> None:
+def evolve_signals(db: str | None = None) -> None:
     from .service import ServiceContext
 
     settings = load_settings(db_dsn=db) if db else load_settings()
@@ -313,7 +318,7 @@ def evolve_signals(db: str = None) -> None:
 
 
 @evolve_app.command("promote")
-def evolve_promote(proposal_id: int, db: str = None) -> None:
+def evolve_promote(proposal_id: int, db: str | None = None) -> None:
     from .service import ServiceContext
 
     settings = load_settings(db_dsn=db) if db else load_settings()
@@ -333,7 +338,7 @@ def evolve_promote(proposal_id: int, db: str = None) -> None:
 
 
 @projection_app.command("rebuild")
-def projection_rebuild(db: str = None) -> None:
+def projection_rebuild(db: str | None = None) -> None:
     from .service import ServiceContext
 
     settings = load_settings(db_dsn=db) if db else load_settings()

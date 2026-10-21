@@ -16,8 +16,8 @@
 # limitations under the License.
 
 """Team-convention lint (dsl-spec §12). Advisory: can be waived per-resource."""
-from __future__ import annotations
 
+from __future__ import annotations
 
 from .loader import OntologyPackage
 from .validator import ValidationReport
@@ -64,8 +64,11 @@ def _derived_depth(pkg: OntologyPackage) -> dict[str, int]:
     out: dict[str, int] = {}
     for name, obj in objects.items():
         out[name] = max(
-            (1 + prop_depth(name, pname, frozenset())
-             for pname, pdef in obj.spec.properties.items() if pdef.derived_kind() == "expr"),
+            (
+                1 + prop_depth(name, pname, frozenset())
+                for pname, pdef in obj.spec.properties.items()
+                if pdef.derived_kind() == "expr"
+            ),
             default=0,
         )
     return out
@@ -89,7 +92,8 @@ def lint(pkg: OntologyPackage) -> ValidationReport:
         has_webhook = any(getattr(e, "kind", None) == "webhook" for e in act.spec.effects)
         if has_webhook and act.spec.audit.fields is None:
             rep.warn(
-                "OO-005", f"Action/{act.metadata.name}",
+                "OO-005",
+                f"Action/{act.metadata.name}",
                 "webhook effect present but audit.fields not narrowed explicitly",
             )
     return rep

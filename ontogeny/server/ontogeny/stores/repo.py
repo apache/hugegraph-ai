@@ -19,14 +19,16 @@
 tables. Sync path respects property ownership; action path is used exclusively
 by ActionRuntime (ownership already validated at publish time).
 """
+
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from sqlalchemy import and_, func, select, update
-from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.sql.elements import ColumnElement
 
 from ..errors import ConflictError, NotFoundError, StoreError
 from .ddl import ensure_tables, object_table
@@ -58,9 +60,7 @@ class ObjectRepository:
         (expression deriveds are computed at read; function deriveds are
         materialized by the derivation worker)."""
         obj = self.compiled.objects[object_type]
-        return [
-            self.compiled.col(p) for p, d in obj.spec.properties.items() if d.derived is None
-        ]
+        return [self.compiled.col(p) for p, d in obj.spec.properties.items() if d.derived is None]
 
     def _pk_cols(self, object_type: str) -> list[str]:
         return [self.compiled.col(p) for p in self.compiled.objects[object_type].spec.primaryKey]
@@ -89,8 +89,13 @@ class ObjectRepository:
         return and_(t.c._valid_from <= at, (t.c._valid_to.is_(None)) | (t.c._valid_to > at))
 
     async def get(
-        self, session, object_type: str, obj_id: str | Sequence[str],
-        *, at: _dt.datetime | None = None, for_update: bool = False,
+        self,
+        session,
+        object_type: str,
+        obj_id: str | Sequence[str],
+        *,
+        at: _dt.datetime | None = None,
+        for_update: bool = False,
     ) -> dict[str, Any] | None:
         t = self._table(object_type)
         pk_cols = self._pk_cols(object_type)
@@ -98,7 +103,7 @@ class ObjectRepository:
         if len(ids) != len(pk_cols):
             raise StoreError(f"expected {len(pk_cols)} key value(s), got {len(ids)}")
         pk_columns = self._pk(object_type, t)
-        where = _and(self._current_where(object_type, at), *[c == v for c, v in zip(pk_columns, ids)])
+        where = _and(self._current_where(object_type, at), *[c == v for c, v in zip(pk_columns, ids, strict=False)])
         stmt = select(t).where(where).limit(1)
         if for_update:
             stmt = stmt.with_for_update()
@@ -106,7 +111,12 @@ class ObjectRepository:
         return self.row_to_props(object_type, row) if row else None
 
     async def get_many(
-        self, session, object_type: str, ids: Iterable[str], *, at: _dt.datetime | None = None,
+        self,
+        session,
+        object_type: str,
+        ids: Iterable[str],
+        *,
+        at: _dt.datetime | None = None,
     ) -> list[dict[str, Any]]:
         t = self._table(object_type)
         pk = self._pk(object_type, t)[0]
@@ -172,9 +182,15 @@ class ObjectRepository:
         return one(filt)
 
     async def query(
-        self, session, object_type: str,
-        *, filt: Any = None, sort: list | None = None, limit: int | None = 100,
-        offset: int = 0, at: _dt.datetime | None = None,
+        self,
+        session,
+        object_type: str,
+        *,
+        filt: Any = None,
+        sort: list | None = None,
+        limit: int | None = 100,
+        offset: int = 0,
+        at: _dt.datetime | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         t = self._table(object_type)
         where = _and(self._current_where(object_type, at), self.build_filter(object_type, filt))
@@ -196,7 +212,13 @@ class ObjectRepository:
         return [self.row_to_props(object_type, r) for r in rows], int(total)
 
     async def aggregate(
-        self, session, object_type: str, fn: str, field: str | None, *, filt: Any = None,
+        self,
+        session,
+        object_type: str,
+        fn: str,
+        field: str | None,
+        *,
+        filt: Any = None,
     ) -> float:
         t = self._table(object_type)
         where = _and(self._current_where(object_type, None), self.build_filter(object_type, filt))
@@ -210,7 +232,11 @@ class ObjectRepository:
     # ------------------------------------------------------------- sync writes
 
     async def sync_upsert(
-        self, session, object_type: str, props: dict[str, Any], ts: _dt.datetime,
+        self,
+        session,
+        object_type: str,
+        props: dict[str, Any],
+        ts: _dt.datetime,
     ) -> str:
         """Ownership-aware upsert used by the sync engine.
 
@@ -234,14 +260,13 @@ class ObjectRepository:
         changes = {
             c: props[c]
             for c in self._prop_cols(object_type)
-            if c in props and props[c] != current.get(c)
+            if c in props
+            and props[c] != current.get(c)
             and self.compiled.owner(object_type, self._un_col(object_type, c)) == "source"
         }
         if not changes:
             # touch _synced_at only (no new version)
-            await session.execute(
-                update(t).where(where).values(_synced_at=ts)
-            )
+            await session.execute(update(t).where(where).values(_synced_at=ts))
             return "noop"
 
         await session.execute(update(t).where(where).values(_valid_to=ts))
@@ -257,10 +282,7 @@ class ObjectRepository:
         version transition (they are recomputed by the derivation worker, but a
         new version starting as NULL would blank them until the next drain)."""
         obj = self.compiled.objects[object_type]
-        return [
-            self.compiled.col(p) for p, d in obj.spec.properties.items()
-            if d.derived_kind() == "function"
-        ]
+        return [self.compiled.col(p) for p, d in obj.spec.properties.items() if d.derived_kind() == "function"]
 
     def _un_col(self, object_type: str, col_name: str) -> str:
         for prop in self.compiled.objects[object_type].spec.properties:
@@ -284,7 +306,7 @@ class ObjectRepository:
         # duplicate business key does NOT violate any table constraint: without
         # this guard it produced two alive rows and `get` silently picked one
         # (newId() used to collide across executions exactly this way).
-        where = _and(t.c._valid_to.is_(None), *[getattr(t.c, c) == v for c, v in zip(pk_cols, pk_vals)])
+        where = _and(t.c._valid_to.is_(None), *[getattr(t.c, c) == v for c, v in zip(pk_cols, pk_vals, strict=False)])
         if (await session.execute(select(func.count()).select_from(t).where(where))).scalar_one():
             raise ConflictError(
                 f"{object_type}/{pk_vals} already exists",
@@ -296,8 +318,14 @@ class ObjectRepository:
         return await self.get(session, object_type, pk_vals)
 
     async def action_update(
-        self, session, object_type: str, obj_id: str, changes: dict[str, Any],
-        ts: _dt.datetime, *, expected_revision: int | None = None,
+        self,
+        session,
+        object_type: str,
+        obj_id: str,
+        changes: dict[str, Any],
+        ts: _dt.datetime,
+        *,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         t = self._table(object_type)
         pk = self._pk(object_type, t)[0]
@@ -322,9 +350,7 @@ class ObjectRepository:
     async def archive(self, session, object_type: str, obj_id: str, ts: _dt.datetime) -> None:
         t = self._table(object_type)
         pk = self._pk(object_type, t)[0]
-        await session.execute(
-            update(t).where(_and(t.c._valid_to.is_(None), pk == obj_id)).values(_valid_to=ts)
-        )
+        await session.execute(update(t).where(_and(t.c._valid_to.is_(None), pk == obj_id)).values(_valid_to=ts))
 
     # ------------------------------------------------------------------ links
 
@@ -332,31 +358,47 @@ class ObjectRepository:
         from .ddl import link_table
 
         t = link_table(self.compiled, link_name)
-        existing = (await session.execute(
-            select(t).where(and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)))
-        )).mappings().first()
+        existing = (
+            (
+                await session.execute(
+                    select(t).where(and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)))
+                )
+            )
+            .mappings()
+            .first()
+        )
         if existing:
             return
         await session.execute(t.insert().values(src_id=src_id, dst_id=dst_id, _valid_from=ts, _valid_to=None))
 
     async def link_remove(self, session, link_name: str, src_id: str, dst_id: str, ts: _dt.datetime) -> None:
-        from .ddl import link_table
         from sqlalchemy import update as sa_update
 
+        from .ddl import link_table
+
         t = link_table(self.compiled, link_name)
-        await session.execute(sa_update(t).where(
-            and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None))
-        ).values(_valid_to=ts))
+        await session.execute(
+            sa_update(t)
+            .where(and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)))
+            .values(_valid_to=ts)
+        )
 
     async def link_members(
-        self, session, link_name: str, *, src_id: str | None = None, dst_id: str | None = None,
+        self,
+        session,
+        link_name: str,
+        *,
+        src_id: str | None = None,
+        dst_id: str | None = None,
         at: _dt.datetime | None = None,
     ) -> list[tuple[str, str]]:
         from .ddl import link_table
 
         t = link_table(self.compiled, link_name)
-        where = t.c._valid_to.is_(None) if at is None else and_(
-            t.c._valid_from <= at, (t.c._valid_to.is_(None)) | (t.c._valid_to > at)
+        where = (
+            t.c._valid_to.is_(None)
+            if at is None
+            else and_(t.c._valid_from <= at, (t.c._valid_to.is_(None)) | (t.c._valid_to > at))
         )
         if src_id is not None:
             where = _and(where, t.c.src_id == src_id)
@@ -366,8 +408,9 @@ class ObjectRepository:
         return [(r[0], r[1]) for r in rows]
 
     # -------------------------------------------------- derived materialization
-    async def set_derived_value(self, session, object_type: str, obj_id: str,
-                                prop: str, value: Any, ts: _dt.datetime) -> None:
+    async def set_derived_value(
+        self, session, object_type: str, obj_id: str, prop: str, value: Any, ts: _dt.datetime
+    ) -> None:
         """Engine-internal materialization of a function-derived property.
 
         Deliberately NOT a version bump or an audit revision: the value is
@@ -377,13 +420,17 @@ class ObjectRepository:
         t = self._table(object_type)
         pk = self._pk(object_type, t)[0]
         col = getattr(t.c, self.compiled.col(prop))
-        await session.execute(
-            update(t).where(_and(t.c._valid_to.is_(None), pk == obj_id)).values({col.name: value})
-        )
+        await session.execute(update(t).where(_and(t.c._valid_to.is_(None), pk == obj_id)).values({col.name: value}))
 
     # FK links are read from the object tables themselves
     async def fk_linked_ids(
-        self, session, link_name: str, obj_id: str, *, from_source: bool, at: _dt.datetime | None = None,
+        self,
+        session,
+        link_name: str,
+        obj_id: str,
+        *,
+        from_source: bool,
+        at: _dt.datetime | None = None,
     ) -> list[str]:
         from ..core.models import ForeignKeyJoin
 
@@ -392,7 +439,7 @@ class ObjectRepository:
         if not isinstance(join, ForeignKeyJoin):
             raise StoreError(f"link {link_name} is not foreign-key backed")
         # keys format: {"<target-side obj>.<prop>": "<source-side obj>.<prop>"}
-        (tgt_side, src_side), = join.keys.items()
+        ((tgt_side, src_side),) = join.keys.items()
         tgt_obj, tgt_prop = tgt_side.split(".", 1)
         src_obj, src_prop = src_side.split(".", 1)
 
@@ -410,8 +457,7 @@ class ObjectRepository:
         value = row.get(self.compiled.col(tgt_prop))
         return [str(value)] if value is not None else []
 
-    async def fk_link_pairs(self, session, link_name: str,
-                            *, at: _dt.datetime | None = None) -> list[tuple[str, str]]:
+    async def fk_link_pairs(self, session, link_name: str, *, at: _dt.datetime | None = None) -> list[tuple[str, str]]:
         """Every ``(source_id, target_id)`` pair of a foreign-key link.
 
         The FK column lives on the *target-side* table and holds the source-side
@@ -425,7 +471,7 @@ class ObjectRepository:
         join = lnk.spec.join
         if not isinstance(join, ForeignKeyJoin):
             raise StoreError(f"link {link_name} is not foreign-key backed")
-        (tgt_side, _src_side), = join.keys.items()
+        ((tgt_side, _src_side),) = join.keys.items()
         tgt_obj, tgt_prop = tgt_side.split(".", 1)
 
         t = self._table(tgt_obj)

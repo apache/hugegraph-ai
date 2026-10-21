@@ -27,6 +27,7 @@ The package is COPIED, never mutated in place: the example tree stays the
 golden reference for tests, and demo-mode promotions write into the copy
 (revert = delete the directory).
 """
+
 from __future__ import annotations
 
 import shutil
@@ -45,12 +46,45 @@ EQUIPMENT = [
     ("E-002", "Press-Beta", "south", "POINT(121.5 31.1)", "RUNNING", "2019-06-15"),
 ]
 WORK_ORDERS = [
-    ("WO-1001", "E-001", "主轴异响", "BREAKDOWN", "HIGH", "north", "OPEN", None,
-     "2026-09-17T08:00:00+00:00", None, "2026-09-17T08:00:00+00:00"),
-    ("WO-1002", "E-002", "液压油渗漏", "BREAKDOWN", "LOW", "south", "OPEN", None,
-     "2026-09-17T09:30:00+00:00", None, "2026-09-17T09:30:00+00:00"),
-    ("WO-1003", "E-001", "季度点检", "INSPECTION", "LOW", "north", "CLOSED", "已完成点检",
-     "2026-09-10T08:00:00+00:00", "2026-09-10T10:30:00+00:00", "2026-09-10T10:30:00+00:00"),
+    (
+        "WO-1001",
+        "E-001",
+        "主轴异响",
+        "BREAKDOWN",
+        "HIGH",
+        "north",
+        "OPEN",
+        None,
+        "2026-09-17T08:00:00+00:00",
+        None,
+        "2026-09-17T08:00:00+00:00",
+    ),
+    (
+        "WO-1002",
+        "E-002",
+        "液压油渗漏",
+        "BREAKDOWN",
+        "LOW",
+        "south",
+        "OPEN",
+        None,
+        "2026-09-17T09:30:00+00:00",
+        None,
+        "2026-09-17T09:30:00+00:00",
+    ),
+    (
+        "WO-1003",
+        "E-001",
+        "季度点检",
+        "INSPECTION",
+        "LOW",
+        "north",
+        "CLOSED",
+        "已完成点检",
+        "2026-09-10T08:00:00+00:00",
+        "2026-09-10T10:30:00+00:00",
+        "2026-09-10T10:30:00+00:00",
+    ),
 ]
 PARTS = [("P-001", "主轴轴承", "1280.00", "6"), ("P-002", "液压密封圈", "45.50", "40")]
 WORK_ORDER_PARTS = [("WO-1003", "P-001")]
@@ -165,9 +199,7 @@ def copy_package(src: Path, dest: Path, *, force: bool = False) -> Path:
         doc["spec"]["connection"] = "${ERP_DSN}"
         doc["spec"]["access"] = "read-write"  # close-work-order writes back
         doc["metadata"]["description"] = "演示用本地 SQLite 源库（由 ontogeny serve --demo 生成）"
-        store_file.write_text(
-            yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8"
-        )
+        store_file.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return dest
 
 

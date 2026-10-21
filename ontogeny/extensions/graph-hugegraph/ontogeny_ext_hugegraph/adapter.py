@@ -32,13 +32,14 @@ Two REST dialects are supported, selected by ``api`` (``auto`` probes once):
 ``1.5``  the historical ``/apis/...?graph=`` shape, kept for the compose
          profile that pins ``hugegraph/hugegraph:1.5.0``.
 """
+
 from __future__ import annotations
 
-import json
-
 import datetime as _dt
+import json
 import logging
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -61,11 +62,20 @@ _SCHEMA_EXISTS_MARKERS = ("has existed", "already exist", "existed")
 
 
 class HugeGraphClient:
-    def __init__(self, endpoint: str, graph: str, *, graphspace: str = "DEFAULT",
-                 api: str = "auto", http: httpx.AsyncClient | None = None,
-                 timeout: float = 15.0, batch_size: int = 500,
-                 user: str | None = None, password: str | None = None,
-                 data_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        graph: str,
+        *,
+        graphspace: str = "DEFAULT",
+        api: str = "auto",
+        http: httpx.AsyncClient | None = None,
+        timeout: float = 15.0,
+        batch_size: int = 500,
+        user: str | None = None,
+        password: str | None = None,
+        data_dir: str | None = None,
+    ) -> None:
         self.base = endpoint.rstrip("/")
         self.graph = graph
         self.graphspace = graphspace or "DEFAULT"
@@ -113,12 +123,18 @@ class HugeGraphClient:
 
     # ------------------------------------------------------------- transport
 
-    async def _request(self, method: str, path: str, *, json_body: Any = None,
-                       params: dict | None = None, ok: Iterable[int] = (200, 201, 202, 204),
-                       tolerate_schema_exists: bool = False) -> httpx.Response:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Any = None,
+        params: dict | None = None,
+        ok: Iterable[int] = (200, 201, 202, 204),
+        tolerate_schema_exists: bool = False,
+    ) -> httpx.Response:
         c = await self.client()
-        resp = await c.request(method, f"{self.base}{path}", json=json_body, params=params,
-                               headers=self._auth())
+        resp = await c.request(method, f"{self.base}{path}", json=json_body, params=params, headers=self._auth())
         if resp.status_code in set(ok):
             return resp
         if tolerate_schema_exists and resp.status_code == 400:
@@ -187,7 +203,7 @@ class HugeGraphClient:
             return None  # type: ignore[return-value]
         try:
             names = resp.json().get("graphs")
-        except Exception:  # noqa: BLE001 -- an unparseable answer is not "absent"
+        except Exception:
             return None  # type: ignore[return-value]
         if not isinstance(names, list):
             return None  # type: ignore[return-value]
@@ -249,11 +265,11 @@ class HugeGraphClient:
                 f"creation requires the server to run in auth mode; on a "
                 f"non-auth deployment add the graph to the server's graphs.yaml "
                 f"instead, then build again. Server said: {exc}",
-                details={"graph": self.graph, "graphspace": self.graphspace,
-                         "create_path": path, "body": body},
+                details={"graph": self.graph, "graphspace": self.graphspace, "create_path": path, "body": body},
             ) from exc
-        log.info("hugegraph graph %r created in graphspace %r (backend=%s)",
-                 self.graph, self.graphspace, body["backend"])
+        log.info(
+            "hugegraph graph %r created in graphspace %r (backend=%s)", self.graph, self.graphspace, body["backend"]
+        )
         return True
 
     async def _default_backend(self) -> str:
@@ -294,7 +310,8 @@ class HugeGraphClient:
         if await self.exists() is False:
             return
         await self._request(
-            "DELETE", self._g("/clear"),
+            "DELETE",
+            self._g("/clear"),
             params={"confirm_message": "I'm sure to delete all data"},
         )
 
@@ -308,7 +325,8 @@ class HugeGraphClient:
         dtypes = {p["name"]: p["data_type"] for p in schema["propertykeys"]}
         for pk in schema["propertykeys"]:
             await self._request(
-                "POST", self._g("/schema/propertykeys"),
+                "POST",
+                self._g("/schema/propertykeys"),
                 json_body={"name": pk["name"], "data_type": pk["data_type"]},
                 tolerate_schema_exists=True,
             )
@@ -316,7 +334,8 @@ class HugeGraphClient:
             props = list(vl["properties"])
             keys = list(vl.get("primary_keys") or [props[0]])
             await self._request(
-                "POST", self._g("/schema/vertexlabels"),
+                "POST",
+                self._g("/schema/vertexlabels"),
                 json_body={
                     "name": vl["label"],
                     "id_strategy": "PRIMARY_KEY",
@@ -333,7 +352,8 @@ class HugeGraphClient:
             # carries no properties, so there is nothing to sort on and SINGLE
             # is both legal and the intended dedup semantic.
             await self._request(
-                "POST", self._g("/schema/edgelabels"),
+                "POST",
+                self._g("/schema/edgelabels"),
                 json_body={
                     "name": el["name"],
                     "source_label": el["source_label"],
@@ -348,7 +368,8 @@ class HugeGraphClient:
         for ix in schema["indexes"]:
             dtypes.setdefault(ix["property"], "TEXT")
             await self._request(
-                "POST", self._g("/schema/indexlabels"),
+                "POST",
+                self._g("/schema/indexlabels"),
                 json_body={
                     "name": f"{ix['label']}_by_{ix['property']}",
                     "base_type": "VERTEX_LABEL",
@@ -364,17 +385,26 @@ class HugeGraphClient:
         """Historical 1.5 payloads (kept as-is: the compose profile pins 1.5.0)."""
         g = {"graph": self.graph}
         for pk in schema["propertykeys"]:
-            await self._request("POST", "/apis/schema/propertykeys",
-                                json_body={"name": pk["name"], "data_type": pk["data_type"]}, params=g)
+            await self._request(
+                "POST",
+                "/apis/schema/propertykeys",
+                json_body={"name": pk["name"], "data_type": pk["data_type"]},
+                params=g,
+            )
         for vl in schema["vertexlabels"]:
             await self._request("POST", "/apis/schema/vertexlabels", json_body=vl, params=g)
         for el in schema["edgelabels"]:
             await self._request("POST", "/apis/schema/edgelabels", json_body=el, params=g)
         for ix in schema["indexes"]:
             await self._request(
-                "POST", "/apis/graph/indexes/secondary",
-                json_body={"name": f"{ix['label']}_by_{ix['property']}", "base_value_type": "VERTEX",
-                           "index_label": ix["property"], "label": ix["label"]},
+                "POST",
+                "/apis/graph/indexes/secondary",
+                json_body={
+                    "name": f"{ix['label']}_by_{ix['property']}",
+                    "base_value_type": "VERTEX",
+                    "index_label": ix["property"],
+                    "label": ix["label"],
+                },
                 params=g,
             )
 
@@ -416,21 +446,22 @@ class HugeGraphClient:
             return
         strategies = {p: "OVERRIDE" for p in sorted(props)} or dict(_NOOP_STRATEGY)
         for chunk in _chunks(body, self.batch_size):
-            await self._request("PUT", self._g("/graph/vertices/batch"),
-                                json_body={"vertices": chunk, "update_strategies": strategies})
+            await self._request(
+                "PUT", self._g("/graph/vertices/batch"), json_body={"vertices": chunk, "update_strategies": strategies}
+            )
 
     async def _upsert_vertices_v15(self, label: str, pk_prop: str, items: list[dict[str, Any]]) -> None:
         body = [
-            {"label": label, "id": str(item.get(pk_prop)), "properties": {
-                k: _plain(v) for k, v in item.items() if v is not None and k != pk_prop
-            }}
+            {
+                "label": label,
+                "id": str(item.get(pk_prop)),
+                "properties": {k: _plain(v) for k, v in item.items() if v is not None and k != pk_prop},
+            }
             for item in items
         ]
-        await self._request("POST", "/apis/graph/vertices/batch-upsert", json_body=body,
-                            params={"graph": self.graph})
+        await self._request("POST", "/apis/graph/vertices/batch-upsert", json_body=body, params={"graph": self.graph})
 
-    async def upsert_edges(self, link_name: str, src_label: str, dst_label: str,
-                           pairs: list[tuple[str, str]]) -> None:
+    async def upsert_edges(self, link_name: str, src_label: str, dst_label: str, pairs: list[tuple[str, str]]) -> None:
         if not pairs:
             return
         if await self.dialect() == "1.7":
@@ -438,34 +469,42 @@ class HugeGraphClient:
         else:
             await self._upsert_edges_v15(link_name, src_label, dst_label, pairs)
 
-    async def _upsert_edges_v17(self, link_name: str, src_label: str, dst_label: str,
-                                pairs: list[tuple[str, str]]) -> None:
+    async def _upsert_edges_v17(
+        self, link_name: str, src_label: str, dst_label: str, pairs: list[tuple[str, str]]
+    ) -> None:
         src_lid, dst_lid = await self._label_id(src_label), await self._label_id(dst_label)
         if src_lid is None or dst_lid is None:
             log.warning("skipping %s: unknown endpoint label %r/%r", link_name, src_label, dst_label)
             return
         body = [
-            {"label": link_name, "outV": f"{src_lid}:{s}", "inV": f"{dst_lid}:{d}",
-             "outVLabel": src_label, "inVLabel": dst_label, "properties": {}}
+            {
+                "label": link_name,
+                "outV": f"{src_lid}:{s}",
+                "inV": f"{dst_lid}:{d}",
+                "outVLabel": src_label,
+                "inVLabel": dst_label,
+                "properties": {},
+            }
             for s, d in pairs
         ]
         props = self._edge_props.get(link_name) or []
         strategies = {p: "OVERRIDE" for p in props} or dict(_NOOP_STRATEGY)
         for chunk in _chunks(body, self.batch_size):
-            await self._request("PUT", self._g("/graph/edges/batch"),
-                                json_body={"edges": chunk, "update_strategies": strategies})
+            await self._request(
+                "PUT", self._g("/graph/edges/batch"), json_body={"edges": chunk, "update_strategies": strategies}
+            )
 
-    async def _upsert_edges_v15(self, link_name: str, src_label: str, dst_label: str,
-                                pairs: list[tuple[str, str]]) -> None:
+    async def _upsert_edges_v15(
+        self, link_name: str, src_label: str, dst_label: str, pairs: list[tuple[str, str]]
+    ) -> None:
         body = [
-            {"label": link_name, "outV": s, "outV_label": src_label, "inV": d, "inV_label": dst_label}
-            for s, d in pairs
+            {"label": link_name, "outV": s, "outV_label": src_label, "inV": d, "inV_label": dst_label} for s, d in pairs
         ]
-        await self._request("POST", "/apis/graph/edges/batch-upsert", json_body=body,
-                            params={"graph": self.graph})
+        await self._request("POST", "/apis/graph/edges/batch-upsert", json_body=body, params={"graph": self.graph})
 
-    async def query_vertices(self, label: str, *, properties: dict[str, Any] | None = None,
-                             limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    async def query_vertices(
+        self, label: str, *, properties: dict[str, Any] | None = None, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
         """Vertices of one label, optionally exact-match filtered on properties.
 
         HugeGraph's vertex list API supports equality filters only; the caller
@@ -474,14 +513,11 @@ class HugeGraphClient:
         """
         params: dict[str, Any] = {"label": label, "limit": limit, "offset": offset}
         if properties:
-            params["properties"] = json.dumps(
-                {k: _plain(v) for k, v in properties.items()}, separators=(",", ":")
-            )
+            params["properties"] = json.dumps({k: _plain(v) for k, v in properties.items()}, separators=(",", ":"))
         if await self.dialect() == "1.7":
             resp = await self._request("GET", self._g("/graph/vertices"), params=params)
         else:
-            resp = await self._request("GET", "/apis/graph/vertices",
-                                       params={**params, "graph": self.graph})
+            resp = await self._request("GET", "/apis/graph/vertices", params={**params, "graph": self.graph})
         return resp.json().get("vertices", [])
 
     async def get_vertex(self, label: str, key: Any) -> dict[str, Any] | None:
@@ -493,8 +529,9 @@ class HugeGraphClient:
             quoted = quote(f'"{full}"', safe="")
             resp = await self._request("GET", self._g(f"/graph/vertices/{quoted}"), ok=(200, 404))
             return resp.json() if resp.status_code == 200 else None
-        resp = await self._request("GET", f"/apis/graph/vertices/{quote(str(key), safe='')}",
-                                   params={"graph": self.graph}, ok=(200, 404))
+        resp = await self._request(
+            "GET", f"/apis/graph/vertices/{quote(str(key), safe='')}", params={"graph": self.graph}, ok=(200, 404)
+        )
         return resp.json() if resp.status_code == 200 else None
 
     async def delete_vertex(self, label: str, vertex_id: str) -> None:
@@ -505,11 +542,11 @@ class HugeGraphClient:
             # 1.7 only parses a string id when it is double-quoted in the path;
             # a missing vertex is the desired end state, so 404 counts as success.
             quoted = quote(f'"{full}"', safe="")
-            await self._request("DELETE", self._g(f"/graph/vertices/{quoted}"),
-                                ok=(200, 204, 404))
+            await self._request("DELETE", self._g(f"/graph/vertices/{quoted}"), ok=(200, 204, 404))
         else:
-            await self._request("DELETE", "/apis/graph/vertices",
-                                params={"graph": self.graph, "label": label, "id": vertex_id})
+            await self._request(
+                "DELETE", "/apis/graph/vertices", params={"graph": self.graph, "label": label, "id": vertex_id}
+            )
 
     # --------------------------------------------------------------- preview
 
@@ -519,11 +556,13 @@ class HugeGraphClient:
         v = await self._request("GET", self._g("/schema/vertexlabels"))
         e = await self._request("GET", self._g("/schema/edgelabels"))
         return {
-            "vertices": [{"name": x["name"], "primary_keys": x.get("primary_keys", [])}
-                         for x in v.json().get("vertexlabels", [])],
-            "edges": [{"name": x["name"], "source_label": x.get("source_label"),
-                       "target_label": x.get("target_label")}
-                      for x in e.json().get("edgelabels", [])],
+            "vertices": [
+                {"name": x["name"], "primary_keys": x.get("primary_keys", [])} for x in v.json().get("vertexlabels", [])
+            ],
+            "edges": [
+                {"name": x["name"], "source_label": x.get("source_label"), "target_label": x.get("target_label")}
+                for x in e.json().get("edgelabels", [])
+            ],
         }
 
     async def gremlin(self, query: str, *, timeout: float = 30.0, interval: float = 0.4) -> Any:
@@ -537,8 +576,7 @@ class HugeGraphClient:
         import asyncio
 
         await self.dialect()
-        resp = await self._request("POST", self._g("/jobs/gremlin"),
-                                   json_body={"gremlin": query}, ok=(200, 201, 202))
+        resp = await self._request("POST", self._g("/jobs/gremlin"), json_body={"gremlin": query}, ok=(200, 201, 202))
         task_id = resp.json().get("task_id")
         if task_id is None:
             raise StoreError(f"hugegraph gremlin job returned no task id: {resp.text[:200]}")
@@ -562,21 +600,19 @@ class HugeGraphClient:
 
     async def sample_vertices(self, label: str, limit: int = 20) -> list[dict[str, Any]]:
         await self.dialect()
-        resp = await self._request("GET", self._g("/graph/vertices"),
-                                   params={"label": label, "limit": limit})
+        resp = await self._request("GET", self._g("/graph/vertices"), params={"label": label, "limit": limit})
         return resp.json().get("vertices", [])
 
     async def sample_edges(self, label: str, limit: int = 20) -> list[dict[str, Any]]:
         await self.dialect()
-        resp = await self._request("GET", self._g("/graph/edges"),
-                                   params={"label": label, "limit": limit})
+        resp = await self._request("GET", self._g("/graph/edges"), params={"label": label, "limit": limit})
         return resp.json().get("edges", [])
 
 
 def _chunks(seq: list[Any], size: int):
     step = max(1, size)
     for i in range(0, len(seq), step):
-        yield seq[i:i + step]
+        yield seq[i : i + step]
 
 
 def _as_counts(raw: Any) -> dict[str, int]:

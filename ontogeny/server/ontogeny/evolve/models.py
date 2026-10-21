@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Evolution-loop persistence: signals, proposals, budgets."""
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -35,7 +36,9 @@ class EvolveSignalRow(Base):
     __tablename__ = "ontogeny_evolve_signal"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    kind: Mapped[str] = mapped_column(String(64), index=True)  # empty_query_rate | unmapped_filter_field | quarantine_rate | action_rule_reject | agent_tool_error
+    kind: Mapped[str] = mapped_column(
+        String(64), index=True
+    )  # empty_query_rate | unmapped_filter_field | quarantine_rate | action_rule_reject | agent_tool_error
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 

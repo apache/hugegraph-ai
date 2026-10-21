@@ -31,6 +31,7 @@ for write tools the definitive check still happens inside the Action runtime
 ("policy at the last meter"), so catalog filtering is an UX/safety prefilter,
 never the only gate.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,16 +46,19 @@ from ..registry.compiled import CompiledOntology
 @dataclass(frozen=True)
 class ToolDef:
     name: str
-    kind: str            # meta | search | call | traverse | act
-    target: str | None   # object type / action / function name
+    kind: str  # meta | search | call | traverse | act
+    target: str | None  # object type / action / function name
     description: str
-    writes: bool         # act_* only
+    writes: bool  # act_* only
     input_schema: dict[str, Any]
 
     def to_meta(self) -> dict[str, Any]:
         return {
-            "name": self.name, "kind": self.kind, "target": self.target,
-            "description": self.description, "writes": self.writes,
+            "name": self.name,
+            "kind": self.kind,
+            "target": self.target,
+            "description": self.description,
+            "writes": self.writes,
             "input_schema": self.input_schema,
         }
 
@@ -63,6 +67,7 @@ def _snake(name: str) -> str:
     """Same normalization as CompiledOntology.snake (kebab -> snake), so the
     validator's tool_vocabulary and this catalog can never disagree."""
     import re
+
     return re.sub(r"[^a-z0-9_]+", "_", name.strip().lower()).strip("_")
 
 
@@ -77,33 +82,45 @@ def build_catalog(compiled: CompiledOntology) -> dict[str, ToolDef]:
     """Every tool the ontology compiles, regardless of plugin."""
     tools: dict[str, ToolDef] = {
         "describe_ontology": ToolDef(
-            "describe_ontology", "meta", None,
+            "describe_ontology",
+            "meta",
+            None,
             "Ontology snapshot: object types, actions, functions, projections.",
-            False, {"type": "object", "properties": {}, "additionalProperties": False},
+            False,
+            {"type": "object", "properties": {}, "additionalProperties": False},
         ),
         "traverse_graph": ToolDef(
-            "traverse_graph", "traverse", None,
+            "traverse_graph",
+            "traverse",
+            None,
             "Multi-hop traversal over links (path: [{link, direction}, ...]).",
-            False, {
+            False,
+            {
                 "type": "object",
                 "properties": {
                     "start_type": {"type": "string"},
                     "start_ids": {"type": "array", "items": {"type": "string"}},
-                    "path": {"type": "array", "items": {
-                        "type": "object",
-                        "properties": {"link": {"type": "string"}, "direction": {"enum": ["out", "in"]}},
-                        "required": ["link", "direction"],
-                    }},
+                    "path": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"link": {"type": "string"}, "direction": {"enum": ["out", "in"]}},
+                            "required": ["link", "direction"],
+                        },
+                    },
                 },
                 "required": ["start_type", "start_ids", "path"],
             },
         ),
     }
-    for name, obj in compiled.objects.items():
+    for name, _obj in compiled.objects.items():
         tools[f"search_{_snake(name)}"] = ToolDef(
-            f"search_{_snake(name)}", "search", name,
+            f"search_{_snake(name)}",
+            "search",
+            name,
             f"Search {name} objects ({_FILTER_DSL_DOC}).",
-            False, {
+            False,
+            {
                 "type": "object",
                 "properties": {
                     "filter": {"type": "object", "description": _FILTER_DSL_DOC},
@@ -118,12 +135,14 @@ def build_catalog(compiled: CompiledOntology) -> dict[str, ToolDef]:
         }
         required = sorted(p for p, d in fn.spec.parameters.items() if d.required)
         tools[f"call_{_snake(name)}"] = ToolDef(
-            f"call_{_snake(name)}", "call", name,
+            f"call_{_snake(name)}",
+            "call",
+            name,
             f"Invoke the {name} function (sandboxed, capability-scoped).",
-            False, {
+            False,
+            {
                 "type": "object",
-                "properties": {"parameters": {"type": "object", "properties": params,
-                                              "required": required}},
+                "properties": {"parameters": {"type": "object", "properties": params, "required": required}},
                 "required": ["parameters"],
             },
         )
@@ -134,9 +153,12 @@ def build_catalog(compiled: CompiledOntology) -> dict[str, ToolDef]:
         }
         required = sorted(p for p, d in act.spec.parameters.items() if d.required)
         tools[f"act_{_snake(name)}"] = ToolDef(
-            f"act_{_snake(name)}", "act", name,
+            f"act_{_snake(name)}",
+            "act",
+            name,
             f"Execute the {name} action (goes through rules, policy, audit).",
-            True, {
+            True,
+            {
                 "type": "object",
                 "properties": {
                     "parameters": {"type": "object", "properties": params, "required": required},
@@ -150,8 +172,7 @@ def build_catalog(compiled: CompiledOntology) -> dict[str, ToolDef]:
 
 
 def catalog_hash(tools: dict[str, ToolDef]) -> str:
-    payload = json.dumps({n: t.to_meta() for n, t in sorted(tools.items())},
-                         sort_keys=True, ensure_ascii=False)
+    payload = json.dumps({n: t.to_meta() for n, t in sorted(tools.items())}, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 

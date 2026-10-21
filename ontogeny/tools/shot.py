@@ -34,6 +34,7 @@
     python3 tools/shot.py --base http://127.0.0.1:8000 --out /tmp/shots \
         --routes /:/graph:/agent --width 1600 --height 1000
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,10 +64,20 @@ class Chrome:
         import websockets
 
         self.proc = subprocess.Popen(
-            [CHROME, "--headless=new", f"--remote-debugging-port={self.port}",
-             f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
-             "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            [
+                CHROME,
+                "--headless=new",
+                f"--remote-debugging-port={self.port}",
+                f"--user-data-dir={self.profile}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-gpu",
+                "--hide-scrollbars",
+                "--force-device-scale-factor=1",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         for _ in range(80):
             try:
@@ -75,7 +86,7 @@ class Chrome:
                     if r.status_code == 200:
                         targets = (await c.get(f"http://127.0.0.1:{self.port}/json/list")).json()
                         page = next(t for t in targets if t.get("type") == "page")
-                        self.ws = await websockets.connect(page["webSocketDebuggerUrl"], max_size=2 ** 26)
+                        self.ws = await websockets.connect(page["webSocketDebuggerUrl"], max_size=2**26)
                         return
             except Exception:
                 pass
@@ -102,8 +113,9 @@ class Chrome:
         return r.get("result", {}).get("value")
 
     async def set_viewport(self, width, height):
-        await self.send("Emulation.setDeviceMetricsOverride", width=width, height=height,
-                        deviceScaleFactor=1, mobile=False)
+        await self.send(
+            "Emulation.setDeviceMetricsOverride", width=width, height=height, deviceScaleFactor=1, mobile=False
+        )
         await asyncio.sleep(0.3)
 
     async def shot(self, path: Path):

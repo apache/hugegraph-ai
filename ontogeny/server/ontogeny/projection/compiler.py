@@ -21,13 +21,19 @@ Derived, final-consistent, rebuildable: the graph is an index, never a source
 of truth. Only whitelisted properties enter; marked properties are rejected by
 validate() before we ever get here.
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 _TYPE_MAP = {
-    "string": "TEXT", "enum": "TEXT", "integer": "INT", "decimal": "DOUBLE",
-    "boolean": "BOOLEAN", "date": "DATE", "timestamp": "DATE",
+    "string": "TEXT",
+    "enum": "TEXT",
+    "integer": "INT",
+    "decimal": "DOUBLE",
+    "boolean": "BOOLEAN",
+    "date": "DATE",
+    "timestamp": "DATE",
 }
 
 
@@ -49,12 +55,14 @@ def compile_projection(compiled, projection) -> dict[str, Any]:
             need(prop, pdef.ptype().kind)
             props.append(prop)
         need(pk, obj.spec.properties[pk].ptype().kind)
-        vertexlabels.append({
-            "label": object_type,
-            "primary_keys": [pk],
-            "properties": sorted(set(props)),
-            "id_strategy": "PRIMARY_KEY",
-        })
+        vertexlabels.append(
+            {
+                "label": object_type,
+                "primary_keys": [pk],
+                "properties": sorted(set(props)),
+                "id_strategy": "PRIMARY_KEY",
+            }
+        )
 
     edgelabels: list[dict[str, Any]] = []
     for link_name in include.links:
@@ -63,18 +71,17 @@ def compile_projection(compiled, projection) -> dict[str, Any]:
         # sort key to tell parallel edges apart -- HugeGraph rejects MULTIPLE
         # with "must contain sortKeys", leaving SINGLE as the only legal (and
         # the wanted) frequency: repeated join rows for one pair collapse.
-        edgelabels.append({
-            "name": link_name,
-            "source_label": lnk.spec.source,
-            "target_label": lnk.spec.target,
-            "frequency": "SINGLE",
-            "properties": [],
-        })
+        edgelabels.append(
+            {
+                "name": link_name,
+                "source_label": lnk.spec.source,
+                "target_label": lnk.spec.target,
+                "frequency": "SINGLE",
+                "properties": [],
+            }
+        )
 
-    indexes = [
-        {"label": ix.object, "property": ix.property}
-        for ix in projection.spec.indexes
-    ]
+    indexes = [{"label": ix.object, "property": ix.property} for ix in projection.spec.indexes]
     return {
         "graph": projection.spec.graph,
         "propertykeys": [{"name": n, "data_type": t} for n, t in sorted(propertykeys.items())],

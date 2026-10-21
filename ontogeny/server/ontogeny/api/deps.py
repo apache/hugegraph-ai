@@ -17,6 +17,7 @@
 
 """Shared FastAPI dependencies and identity resolution (cookie > bearer > dev
 header). Extracted from app.py so every route module shares ONE definition."""
+
 from __future__ import annotations
 
 import json
@@ -50,6 +51,7 @@ def session_cookie_max_age() -> float:
     """Cookie lifetime, kept in step with the server-side session TTL so the
     browser drops a cookie the server would refuse anyway."""
     from ..auth import SESSION_TTL
+
     return SESSION_TTL.total_seconds()
 
 
@@ -87,7 +89,7 @@ async def get_principal(request: Request) -> dict:
     if sc is not None and getattr(sc, "auth", None) is not None:
         authz = request.headers.get("Authorization", "")
         if authz.startswith("Bearer "):
-            principal = await sc.auth.resolve(authz[len("Bearer "):].strip())
+            principal = await sc.auth.resolve(authz[len("Bearer ") :].strip())
             if principal is not None:
                 principal["via"] = "bearer"
                 return principal
@@ -103,8 +105,7 @@ async def get_principal(request: Request) -> dict:
                     return p
             except json.JSONDecodeError:
                 pass
-    return {"id": "anonymous", "Role": [], "authenticated": False, "is_admin": False,
-            "via": "anonymous"}
+    return {"id": "anonymous", "Role": [], "authenticated": False, "is_admin": False, "via": "anonymous"}
 
 
 async def require_admin(principal: dict = Depends(get_principal)) -> dict:
@@ -115,6 +116,7 @@ async def require_admin(principal: dict = Depends(get_principal)) -> dict:
     grant. Business authorization stays in Cedar, untouched by this."""
     if not principal.get("is_admin"):
         from fastapi import HTTPException
+
         raise HTTPException(status_code=403, detail="administrator account required")
     return principal
 
@@ -126,7 +128,8 @@ async def require_authenticated(principal: dict = Depends(get_principal)) -> dic
     audit trails, agent session listings, event streams or the LLM."""
     if principal.get("via") == "anonymous":
         from fastapi import HTTPException
+
         raise HTTPException(
-            status_code=401,
-            detail="authentication required (sign in, or send the bearer token from /auth/login)")
+            status_code=401, detail="authentication required (sign in, or send the bearer token from /auth/login)"
+        )
     return principal

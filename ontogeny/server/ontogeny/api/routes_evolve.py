@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """The RSI loop's console surface (admin-gated at the router)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,10 +24,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
+from ..core.loader import load_package
 from ..evolve.models import EvolveSignalRow, ProposalRow
 from ..evolve.ops import _evolve_impact, run_diagnose
 from ..evolve.promoter import apply_mutations
-from ..core.loader import load_package
 from ..service import ServiceContext
 from .deps import get_sc
 from .schemas import GraduationBody, RejectBody
@@ -35,13 +36,14 @@ from .schemas import GraduationBody, RejectBody
 def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
     # ---- evolve (RSI loop) -------------------------------------------------
 
-
     @evolve_r.get("/signals")
     async def signals(limit: int = 100, sc: ServiceContext = Depends(get_sc)):
         async with sc.sessionmaker() as s:
-            rows = (await s.execute(
-                select(EvolveSignalRow).order_by(EvolveSignalRow.id.desc()).limit(limit)
-            )).scalars().all()
+            rows = (
+                (await s.execute(select(EvolveSignalRow).order_by(EvolveSignalRow.id.desc()).limit(limit)))
+                .scalars()
+                .all()
+            )
         return {"signals": [{"id": x.id, "kind": x.kind, "evidence": x.evidence} for x in rows]}
 
     @evolve_r.delete("/signals/{signal_id}")
@@ -61,8 +63,7 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
         async with sc.sessionmaker() as s:
             evo = getattr(sc.compiled, "evolution", None)
             obs = getattr(getattr(evo, "spec", None), "observability", None) if evo else None
-            created = await sc.telemetry.aggregate_signals(
-                s, thresholds=getattr(obs, "thresholds", None) or None)
+            created = await sc.telemetry.aggregate_signals(s, thresholds=getattr(obs, "thresholds", None) or None)
             await s.commit()
         diagnosed = await run_diagnose(sc)
         return {"signals_created": created, **diagnosed}
@@ -76,7 +77,8 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
             evo = getattr(sc.compiled, "evolution", None)
             thresholds = getattr(getattr(evo, "spec", None), "observability", None) if evo else None
             created = await sc.telemetry.aggregate_signals(
-                s, thresholds=getattr(thresholds, "thresholds", None) or None)
+                s, thresholds=getattr(thresholds, "thresholds", None) or None
+            )
             await s.commit()
         return {"created": created}
 
@@ -92,10 +94,21 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
             if status:
                 stmt = stmt.where(ProposalRow.status == status)
             rows = (await s.execute(stmt)).scalars().all()
-        return {"proposals": [{"id": p.id, "status": p.status, "tier": p.tier, "gap_kind": p.gap_kind,
-                               "origin": p.origin, "llm_analysis": p.llm_analysis,
-                               "superseded_by": p.superseded_by,
-                               "impact": _evolve_impact(sc.compiled, p.diff)} for p in rows]}
+        return {
+            "proposals": [
+                {
+                    "id": p.id,
+                    "status": p.status,
+                    "tier": p.tier,
+                    "gap_kind": p.gap_kind,
+                    "origin": p.origin,
+                    "llm_analysis": p.llm_analysis,
+                    "superseded_by": p.superseded_by,
+                    "impact": _evolve_impact(sc.compiled, p.diff),
+                }
+                for p in rows
+            ]
+        }
 
     @evolve_r.get("/proposals/{proposal_id}")
     async def get_proposal(proposal_id: int, sc: ServiceContext = Depends(get_sc)):
@@ -103,11 +116,20 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
             p = (await s.execute(select(ProposalRow).where(ProposalRow.id == proposal_id))).scalar_one_or_none()
         if p is None:
             raise HTTPException(404, "proposal not found")
-        return {"id": p.id, "status": p.status, "tier": p.tier, "origin": p.origin, "diff": p.diff,
-                "rationale": p.rationale, "eval_report": p.eval_report,
-                "llm_analysis": p.llm_analysis, "rejected_reason": p.rejected_reason,
-                "superseded_by": p.superseded_by, "signal_id": p.signal_id,
-                "impact": _evolve_impact(sc.compiled, p.diff)}
+        return {
+            "id": p.id,
+            "status": p.status,
+            "tier": p.tier,
+            "origin": p.origin,
+            "diff": p.diff,
+            "rationale": p.rationale,
+            "eval_report": p.eval_report,
+            "llm_analysis": p.llm_analysis,
+            "rejected_reason": p.rejected_reason,
+            "superseded_by": p.superseded_by,
+            "signal_id": p.signal_id,
+            "impact": _evolve_impact(sc.compiled, p.diff),
+        }
 
     @evolve_r.delete("/proposals/{proposal_id}")
     async def delete_proposal(proposal_id: int, sc: ServiceContext = Depends(get_sc)):
@@ -120,8 +142,7 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
         return {"deleted": proposal_id}
 
     @evolve_r.post("/proposals/{proposal_id}/reject")
-    async def reject_proposal(proposal_id: int, body: RejectBody,
-                              sc: ServiceContext = Depends(get_sc)):
+    async def reject_proposal(proposal_id: int, body: RejectBody, sc: ServiceContext = Depends(get_sc)):
         """The human 'no' is a first-class outcome AND the loop's memory: the
         reason is fed back into the proposer's prompt on later rounds, so the
         same rejected mutation is not re-filed verbatim (direction E)."""
@@ -133,9 +154,6 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
             row.rejected_reason = (body.reason or "").strip() or None
             await s.commit()
         return {"id": proposal_id, "status": "rejected"}
-
-
-
 
     @evolve_r.get("/graduation")
     async def graduation_status(sc: ServiceContext = Depends(get_sc)):
@@ -153,11 +171,18 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
                 if kind in t0:
                     continue  # already trusted at T0: nothing to graduate
                 streak = await graduation_streak(s, kind)
-                classes.append({"mutation": kind, "streak": streak,
-                                "threshold": GRADUATION_STREAK,
-                                "eligible": streak >= GRADUATION_STREAK})
-        return {"classes": classes,
-                "rule": getattr(getattr(getattr(evo, "spec", None), "graduation", None), "rule", None)}
+                classes.append(
+                    {
+                        "mutation": kind,
+                        "streak": streak,
+                        "threshold": GRADUATION_STREAK,
+                        "eligible": streak >= GRADUATION_STREAK,
+                    }
+                )
+        return {
+            "classes": classes,
+            "rule": getattr(getattr(getattr(evo, "spec", None), "graduation", None), "rule", None),
+        }
 
     @evolve_r.post("/graduation/request")
     async def graduation_request(body: GraduationBody, sc: ServiceContext = Depends(get_sc)):
@@ -178,12 +203,16 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
             streak = await graduation_streak(s, body.mutation)
             if streak < GRADUATION_STREAK:
                 raise HTTPException(429, f"streak {streak}/{GRADUATION_STREAK} not enough to graduate")
-            row = ProposalRow(gap_kind="graduation-request",
-                              diff=[{"mutation": "tier-change", "mutation_class": body.mutation,
-                                     "to": "t0-auto-merge"}],
-                              rationale=(f"mutation class {body.mutation!r} has {streak} consecutive "
-                                         f"clean promotions; request to graduate to T0 (human decision)"),
-                              origin="human", status="awaiting_human")
+            row = ProposalRow(
+                gap_kind="graduation-request",
+                diff=[{"mutation": "tier-change", "mutation_class": body.mutation, "to": "t0-auto-merge"}],
+                rationale=(
+                    f"mutation class {body.mutation!r} has {streak} consecutive "
+                    f"clean promotions; request to graduate to T0 (human decision)"
+                ),
+                origin="human",
+                status="awaiting_human",
+            )
             s.add(row)
             await s.commit()
             await s.flush()
@@ -205,7 +234,7 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
             if sc.package_root is not None:
                 try:
                     candidate = apply_mutations(load_package(Path(sc.package_root)), p.diff)
-                except Exception as exc:  # noqa: BLE001 -- unappliable diff is a report, not a crash
+                except Exception as exc:
                     candidate_error = f"{type(exc).__name__}: {exc}"
             reports = {}
             passed = True
@@ -221,8 +250,12 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
                     **report,
                 }
                 passed = passed and report["passed"]
-            p.eval_report = {"passed": passed, "candidate_evaluated": candidate is not None,
-                             "candidate_error": candidate_error, "suites": reports}
+            p.eval_report = {
+                "passed": passed,
+                "candidate_evaluated": candidate is not None,
+                "candidate_error": candidate_error,
+                "suites": reports,
+            }
             p.status = "evaluated"
             await s.commit()
         return {"passed": passed, "candidate_evaluated": candidate is not None}

@@ -29,6 +29,7 @@ Three tables, deliberately narrow:
   a human principal; the approval row is what the broker exchanges for a real
   Action execution, so approval is on the execution path, not a rubber stamp.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -50,7 +51,7 @@ class AgentSessionRow(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     plugin: Mapped[str] = mapped_column(String(100), index=True)
-    principal: Mapped[str] = mapped_column(String(200))            # frozen plugin principal id
+    principal: Mapped[str] = mapped_column(String(200))  # frozen plugin principal id
     task: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open|finished|expired
     # frozen limits (from the plugin at session start)
@@ -88,7 +89,7 @@ class AgentStepRow(Base):
     session_id: Mapped[int] = mapped_column(Integer, index=True)
     seq: Mapped[int] = mapped_column(Integer)
     tool: Mapped[str] = mapped_column(String(200))
-    args_digest: Mapped[str] = mapped_column(Text, default="")     # truncated JSON
+    args_digest: Mapped[str] = mapped_column(Text, default="")  # truncated JSON
     # Why the agent chose this call: the driving engine's own reasoning text for
     # the step. Kept out of `detail` so the observation surface RSI reads stays
     # exactly the tool result.
@@ -113,11 +114,11 @@ class AgentApprovalRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(Integer, index=True)
     plugin: Mapped[str] = mapped_column(String(100))
-    tool: Mapped[str] = mapped_column(String(200))                  # act_<action>
+    tool: Mapped[str] = mapped_column(String(200))  # act_<action>
     action: Mapped[str] = mapped_column(String(200))
     parameters: Mapped[dict] = mapped_column(JSON)
     target_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    rationale: Mapped[str] = mapped_column(Text, default="")        # why the agent wants this
+    rationale: Mapped[str] = mapped_column(Text, default="")  # why the agent wants this
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending|approved|rejected|executed
     requested_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     decided_by: Mapped[str | None] = mapped_column(String(200), nullable=True)

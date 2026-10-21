@@ -30,16 +30,17 @@ Each block pins one fix:
 - B5  the frozen catalog: a plugin edit mid-session changes nothing for a
       running session -- the documented contract, now the actual behaviour.
 """
+
 from __future__ import annotations
 
 import asyncio
 import os
 import shutil
+from dataclasses import replace
 
 import httpx
 import pytest
 import pytest_asyncio
-from dataclasses import replace
 
 from ontogeny.api import build_app
 from ontogeny.config import Settings
@@ -69,8 +70,7 @@ def _settings(tmp_path, src, *, db_dsn: str | None = None, **over) -> Settings:
     over.setdefault("dev_auth", True)  # the platform default is OFF; tests opt in
     return Settings(
         db_dsn=db_dsn or f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
         **over,
     )
 
@@ -116,37 +116,34 @@ class TestDriverAuthentication:
         """dev_auth on (opt-in): an anonymous driver may open and drive, and
         the session honestly records that 'anonymous' asked for it."""
         c, _ = client
-        r = await c.post("/api/v1/agent/sessions",
-                         json={"plugin": "planning-copilot", "task": "x"})
+        r = await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
         assert r.status_code == 200
         sess = r.json()
         assert sess["driver"]["id"] == "anonymous"
         assert sess["driver"]["via"] == "anonymous"
 
-        out = (await c.post("/api/v1/agent/sessions/1/tools/search_work_center",
-                            json={"limit": 2})).json()
+        out = (await c.post("/api/v1/agent/sessions/1/tools/search_work_center", json={"limit": 2})).json()
         assert out["outcome"] == "ok"
         detail = (await c.get("/api/v1/agent/sessions/1")).json()
         assert detail["steps"][0]["driver"] == "anonymous"
 
     async def test_dev_auth_off_refuses_anonymous_and_accepts_bearer(self, golden_pkg_path, tmp_path):
         sc = await _make(golden_pkg_path, tmp_path, dev_auth=False)
-        await sc.auth.create_user(username="op", password="op-password-123",
-                                  roles=["planner"], is_admin=True)
+        await sc.auth.create_user(username="op", password="op-password-123", roles=["planner"], is_admin=True)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-            r = await c.post("/api/v1/agent/sessions",
-                             json={"plugin": "planning-copilot", "task": "x"})
+            r = await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
             assert r.status_code == 401
             assert "authenticated driver" in r.json()["detail"]
 
-            login = await c.post("/api/v1/auth/login",
-                                 json={"username": "op", "password": "op-password-123"})
+            login = await c.post("/api/v1/auth/login", json={"username": "op", "password": "op-password-123"})
             token = login.json()["token"]
-            r = await c.post("/api/v1/agent/sessions",
-                             json={"plugin": "planning-copilot", "task": "x"},
-                             headers={"Authorization": f"Bearer {token}"})
+            r = await c.post(
+                "/api/v1/agent/sessions",
+                json={"plugin": "planning-copilot", "task": "x"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
             assert r.status_code == 200
             assert r.json()["driver"]["id"] == "op"
             # cookie rides along after login and wins by design (the browser
@@ -159,45 +156,56 @@ class TestDriverAuthentication:
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as bare:
                 r = await bare.post("/api/v1/agent/sessions/1/tools/describe_ontology", json={})
                 assert r.status_code == 401
-            r = await c.post("/api/v1/agent/sessions/1/tools/describe_ontology", json={},
-                             headers={"Authorization": f"Bearer {token}"})
+            r = await c.post(
+                "/api/v1/agent/sessions/1/tools/describe_ontology",
+                json={},
+                headers={"Authorization": f"Bearer {token}"},
+            )
             assert r.status_code == 200
 
     async def test_mcp_bearer_gate(self, golden_pkg_path, tmp_path):
         """dev_auth off: /mcp refuses anonymous, serves a valid bearer, and
         the opened session records the token's principal as its driver."""
         sc = await _make(golden_pkg_path, tmp_path, dev_auth=False)
-        await sc.auth.create_user(username="mcpop", password="mcp-password-123",
-                                  roles=["planner"], is_admin=True)
+        await sc.auth.create_user(username="mcpop", password="mcp-password-123", roles=["planner"], is_admin=True)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
-        async with app.router.lifespan_context(app):
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:
-                r = await hc.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                                                "params": {"protocolVersion": "2025-06-18",
-                                                           "capabilities": {},
-                                                           "clientInfo": {"name": "t", "version": "0"}}},
-                                  headers={"Accept": "application/json, text/event-stream"})
-                assert r.status_code == 401
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(transport=transport, base_url="http://test") as hc,
+        ):
+            r = await hc.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "t", "version": "0"},
+                    },
+                },
+                headers={"Accept": "application/json, text/event-stream"},
+            )
+            assert r.status_code == 401
 
-                login = await hc.post("/api/v1/auth/login",
-                                      json={"username": "mcpop", "password": "mcp-password-123"})
-                token = login.json()["token"]
-                from mcp.client.session import ClientSession
-                from mcp.client.streamable_http import streamable_http_client
+            login = await hc.post("/api/v1/auth/login", json={"username": "mcpop", "password": "mcp-password-123"})
+            token = login.json()["token"]
+            from mcp.client.session import ClientSession
+            from mcp.client.streamable_http import streamable_http_client
 
-                async with httpx.AsyncClient(
-                        transport=transport, base_url="http://test",
-                        headers={"Authorization": f"Bearer {token}"}) as authed:
-                    async with streamable_http_client(
-                            "http://test/mcp", http_client=authed) as streams:
-                        async with ClientSession(streams[0], streams[1]) as sess:
-                            await sess.initialize()
-                            opened = await sess.call_tool(
-                                "agent_open_session",
-                                {"plugin": "planning-copilot", "task": "wire"})
-                            assert opened.is_error is False
-                            assert opened.structured_content["driver"]["id"] == "mcpop"
+            async with (
+                httpx.AsyncClient(
+                    transport=transport, base_url="http://test", headers={"Authorization": f"Bearer {token}"}
+                ) as authed,
+                streamable_http_client("http://test/mcp", http_client=authed) as streams,
+                ClientSession(streams[0], streams[1]) as sess,
+            ):
+                await sess.initialize()
+                opened = await sess.call_tool("agent_open_session", {"plugin": "planning-copilot", "task": "wire"})
+                assert opened.is_error is False
+                assert opened.structured_content["driver"]["id"] == "mcpop"
 
     async def test_engine_steps_are_attributed_to_the_engine(self, sc):
         sid = (await sc.agents.open_session("planning-copilot", "x"))["id"]
@@ -215,9 +223,7 @@ class TestAtomicBudgets:
         executed steps and 6 structured refusals -- the check and the
         increment are one statement, so no read-modify-write race."""
         sid = (await sc.agents.open_session("planning-copilot", "concurrent"))["id"]
-        outs = await asyncio.gather(*[
-            sc.agents.call_tool(sid, "describe_ontology", {}) for _ in range(12)
-        ])
+        outs = await asyncio.gather(*[sc.agents.call_tool(sid, "describe_ontology", {}) for _ in range(12)])
         ok = [o for o in outs if o["outcome"] == "ok"]
         refused = [o for o in outs if o["outcome"] == "AGENT_BUDGET_EXCEEDED"]
         assert len(ok) == 6, [o.get("outcome") for o in outs]
@@ -230,11 +236,12 @@ class TestAtomicBudgets:
         """confirm-gated writes: budget.writes = 3, so exactly 3 pending
         approvals may be created by 8 concurrent write attempts."""
         sid = (await sc.agents.open_session("planning-copilot", "writes race"))["id"]
-        outs = await asyncio.gather(*[
-            sc.agents.call_tool(sid, "act_release_production_order",
-                                {"parameters": {}, "target_id": f"PO-100{i}"})
-            for i in range(8)
-        ])
+        outs = await asyncio.gather(
+            *[
+                sc.agents.call_tool(sid, "act_release_production_order", {"parameters": {}, "target_id": f"PO-100{i}"})
+                for i in range(8)
+            ]
+        )
         pending = [o for o in outs if o["outcome"] == "pending_approval"]
         refused = [o for o in outs if o["outcome"] == "AGENT_BUDGET_EXCEEDED"]
         assert len(pending) == 3, [o.get("outcome") for o in outs]
@@ -244,16 +251,18 @@ class TestAtomicBudgets:
 
     async def test_rejection_refunds_exactly_one_slot(self, sc):
         sid = (await sc.agents.open_session("planning-copilot", "refund"))["id"]
-        first = await sc.agents.call_tool(sid, "act_release_production_order",
-                                          {"parameters": {}, "target_id": "PO-1002"})
+        first = await sc.agents.call_tool(
+            sid, "act_release_production_order", {"parameters": {}, "target_id": "PO-1002"}
+        )
         assert first["outcome"] == "pending_approval"
         planner = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
         await sc.agents.decide(first["approval_id"], "rejected", planner)
         sess = await sc.agents.get_session(sid)
         assert sess["budget"]["writes_used"] == 0  # refunded, atomically
 
-    @pytest.mark.skipif(not os.environ.get("ONTOGENY_PG_DSN"),
-                        reason="set ONTOGENY_PG_DSN to run the Postgres concurrency probe")
+    @pytest.mark.skipif(
+        not os.environ.get("ONTOGENY_PG_DSN"), reason="set ONTOGENY_PG_DSN to run the Postgres concurrency probe"
+    )
     async def test_concurrent_step_cap_on_postgres(self, golden_pkg_path, tmp_path):
         """The same atomicity probe on Postgres, where read-modify-write
         races actually lose updates (SQLite serializes writes and hides them).
@@ -261,12 +270,9 @@ class TestAtomicBudgets:
         Run with: ONTOGENY_PG_DSN=postgresql+asyncpg://.../ontogeny_test pytest \
             tests/test_agent_governance.py -k postgres
         """
-        sc = await _make(golden_pkg_path, tmp_path,
-                         db_dsn=os.environ["ONTOGENY_PG_DSN"])
+        sc = await _make(golden_pkg_path, tmp_path, db_dsn=os.environ["ONTOGENY_PG_DSN"])
         sid = (await sc.agents.open_session("planning-copilot", "pg race"))["id"]
-        outs = await asyncio.gather(*[
-            sc.agents.call_tool(sid, "describe_ontology", {}) for _ in range(12)
-        ])
+        outs = await asyncio.gather(*[sc.agents.call_tool(sid, "describe_ontology", {}) for _ in range(12)])
         ok = [o for o in outs if o["outcome"] == "ok"]
         assert len(ok) == 6, [o.get("outcome") for o in outs]
 
@@ -276,8 +282,7 @@ class TestAtomicBudgets:
 
 class TestWallBudget:
     async def test_wall_ms_refuses_after_the_run_clock_expires(self, sc):
-        s = await sc.agents.open_session("planning-copilot", "slow",
-                                         budget={"wall_ms": 50})
+        s = await sc.agents.open_session("planning-copilot", "slow", budget={"wall_ms": 50})
         sid = s["id"]
         await asyncio.sleep(0.2)  # let the 50ms clock run out
         out = await sc.agents.call_tool(sid, "describe_ontology", {})
@@ -288,8 +293,7 @@ class TestWallBudget:
         assert sess["status"] == "budget_exhausted"
 
     async def test_a_fresh_run_gets_a_fresh_clock(self, sc):
-        s = await sc.agents.open_session("planning-copilot", "re-run",
-                                         budget={"wall_ms": 50})
+        s = await sc.agents.open_session("planning-copilot", "re-run", budget={"wall_ms": 50})
         sid = s["id"]
         await asyncio.sleep(0.2)
         out = await sc.agents.call_tool(sid, "describe_ontology", {})
@@ -300,8 +304,7 @@ class TestWallBudget:
         assert out["outcome"] == "ok"
 
     async def test_wall_zero_means_unlimited(self, sc):
-        s = await sc.agents.open_session("planning-copilot", "no wall",
-                                         budget={"wall_ms": 0})
+        s = await sc.agents.open_session("planning-copilot", "no wall", budget={"wall_ms": 0})
         await asyncio.sleep(0.05)
         out = await sc.agents.call_tool(s["id"], "describe_ontology", {})
         assert out["outcome"] == "ok"
@@ -322,9 +325,7 @@ class TestFrozenCatalog:
         narrowed = plug.model_copy(deep=True)
         narrowed.spec.tools.allow = []
         original = sc.compiled
-        sc.compiled = replace(original,
-                              agent_plugins={**original.agent_plugins,
-                                             "planning-copilot": narrowed})
+        sc.compiled = replace(original, agent_plugins={**original.agent_plugins, "planning-copilot": narrowed})
         try:
             out = await sc.agents.call_tool(sid, "search_work_center", {"limit": 2})
             assert out["outcome"] == "ok"  # still in the FROZEN catalog
@@ -334,9 +335,7 @@ class TestFrozenCatalog:
         # 2) WIDENING: grant the plugin a tool it never had
         widened = plug.model_copy(deep=True)
         widened.spec.tools.allow = [*plug.spec.tools.allow, "search_material"]
-        sc.compiled = replace(original,
-                              agent_plugins={**original.agent_plugins,
-                                             "planning-copilot": widened})
+        sc.compiled = replace(original, agent_plugins={**original.agent_plugins, "planning-copilot": widened})
         try:
             out = await sc.agents.call_tool(sid, "search_material", {"limit": 2})
             assert out["outcome"] == "AGENT_TOOL_NOT_ALLOWED"  # not in the freeze
@@ -350,15 +349,15 @@ class TestFrozenCatalog:
         sid = (await sc.agents.open_session("planning-copilot", "survivor"))["id"]
         original = sc.compiled
         sc.compiled = replace(
-            original,
-            agent_plugins={k: v for k, v in original.agent_plugins.items()
-                           if k != "planning-copilot"})
+            original, agent_plugins={k: v for k, v in original.agent_plugins.items() if k != "planning-copilot"}
+        )
         try:
             out = await sc.agents.call_tool(sid, "describe_ontology", {})
             assert out["outcome"] == "ok"
 
-            out = await sc.agents.call_tool(sid, "act_release_production_order",
-                                            {"parameters": {}, "target_id": "PO-1002"})
+            out = await sc.agents.call_tool(
+                sid, "act_release_production_order", {"parameters": {}, "target_id": "PO-1002"}
+            )
             assert out["outcome"] == "pending_approval"  # conservative fallback
         finally:
             sc.compiled = original
@@ -371,9 +370,8 @@ class TestFrozenCatalog:
             from sqlalchemy import update as sa_update
 
             from ontogeny.agent.models import AgentSessionRow
-            await s.execute(sa_update(AgentSessionRow)
-                            .where(AgentSessionRow.id == sid)
-                            .values(tools_json=None))
+
+            await s.execute(sa_update(AgentSessionRow).where(AgentSessionRow.id == sid).values(tools_json=None))
             await s.commit()
         out = await sc.agents.call_tool(sid, "describe_ontology", {})
         assert out["outcome"] == "ok"

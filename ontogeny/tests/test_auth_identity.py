@@ -29,6 +29,7 @@ the contract the Access page's identity tab renders:
 - a simulated identity is decided by the SAME Cedar engine — simulation changes
   who asks, never whether the policy plane answers.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,8 +62,9 @@ async def client(golden_pkg_path, tmp_path, monkeypatch):
 
     seed_from_package(golden_pkg_path, src, force=True)
 
-    settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-                        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"})
+    settings = Settings(
+        dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}
+    )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
     app = build_app(sc)
@@ -135,8 +137,7 @@ class TestBearer:
         async with httpx.AsyncClient(transport=op_transport, base_url="http://test") as op_c:
             op_token = await _login(op_c, "op", "op-password")
 
-        r = await c.get("/api/v1/auth/me",
-                        headers={"Authorization": f"Bearer {op_token}"})
+        r = await c.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {op_token}"})
         body = r.json()
         assert body["principal"]["via"] == "session"
         assert body["principal"]["id"] == "root"
@@ -145,9 +146,10 @@ class TestBearer:
         c, _ = client
         token = await _login(c, "root", "root-password")
         c.cookies.clear()
-        r = await c.get("/api/v1/auth/me",
-                        headers={"Authorization": f"Bearer {token}",
-                                 **_header({"id": "u-planner", "Role": ["visitor"]})})
+        r = await c.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}", **_header({"id": "u-planner", "Role": ["visitor"]})},
+        )
         assert r.json()["principal"]["via"] == "bearer"
 
     async def test_expired_or_garbage_bearer_falls_through(self, client):
@@ -155,13 +157,18 @@ class TestBearer:
         r = await c.get("/api/v1/auth/me", headers={"Authorization": "Bearer not-a-token"})
         assert r.status_code == 401
 
-    async def test_dev_auth_off_rejects_the_header_but_not_the_token(self, client, golden_pkg_path, tmp_path, monkeypatch):
+    async def test_dev_auth_off_rejects_the_header_but_not_the_token(
+        self, client, golden_pkg_path, tmp_path, monkeypatch
+    ):
         monkeypatch.setenv("ONTOGENY_ADMIN_USER", "root")
         monkeypatch.setenv("ONTOGENY_ADMIN_PASSWORD", "root-password")
         pkg_root = tmp_path / "pkg-secure"
         shutil.copytree(golden_pkg_path, pkg_root)
-        settings = Settings(db_dsn=f"sqlite+aiosqlite:///{tmp_path/'secure.db'}", dev_auth=False,
-                            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"})
+        settings = Settings(
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'secure.db'}",
+            dev_auth=False,
+            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"},
+        )
         sc = ServiceContext(settings, str(pkg_root))
         await sc.initialize()
         transport = httpx.ASGITransport(app=build_app(sc))
@@ -193,8 +200,9 @@ class TestSimulationIsDecidedByCedar:
         assert r.json()["policy"]["allow"] is False, "no permit for the role -> Cedar denies"
 
         # grant a role the action through the role matrix, simulate it, pass
-        saved = await c.put("/api/v1/admin/roles/closer", headers=h,
-                            json={"name": "closer", "actions": ["release-production-order"]})
+        saved = await c.put(
+            "/api/v1/admin/roles/closer", headers=h, json={"name": "closer", "actions": ["release-production-order"]}
+        )
         assert saved.status_code == 200, saved.text
         closer = {"id": "u-c", "Role": ["closer"]}
         r = await c.post(validate, headers=_header(closer), json=body)

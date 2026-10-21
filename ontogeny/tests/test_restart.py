@@ -20,6 +20,7 @@ behave identically -- policies keep their rules and functions keep their
 sources. Regression guard: rebuilding the snapshot from DB rows used to lose
 Cedar text, silently turning every policy into default-deny.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -100,9 +101,7 @@ class TestPolicySurvivesRestart:
 
         second = await _restart(settings, package_root)
         try:
-            assert "planner" in second.compiled.cedar_texts["production"], (
-                "policy text must survive a DB-only rebuild"
-            )
+            assert "planner" in second.compiled.cedar_texts["production"], "policy text must survive a DB-only rebuild"
             decision = second.policy.decide(PLANNER, "release-production-order", {"status": "PLANNED"})
             assert decision.allow, f"policy degraded after restart: {decision.reason}"
             # and the explicit default-deny survives too: an operator may not
@@ -120,7 +119,11 @@ class TestPolicySurvivesRestart:
         try:
             async with second.sessionmaker() as s:
                 rev = await second.runtime.execute(
-                    s, "release-production-order", PLANNER, {}, "PO-1002",
+                    s,
+                    "release-production-order",
+                    PLANNER,
+                    {},
+                    "PO-1002",
                 )
                 await s.commit()
             assert rev.outcome == "executed"
@@ -134,7 +137,10 @@ class TestPolicySurvivesRestart:
         try:
             async with second.sessionmaker() as s:
                 rev = await second.runtime.execute(
-                    s, "reopen-work-center", PLANNER, {},
+                    s,
+                    "reopen-work-center",
+                    PLANNER,
+                    {},
                 )
                 await s.commit()
             assert rev.outcome == "executed"

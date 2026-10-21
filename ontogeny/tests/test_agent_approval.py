@@ -30,6 +30,7 @@ The write under test is release-production-order: planners own it, and its
 permit carries a row-level condition (resource.status == "PLANNED"), so the
 same gates a human planner goes through bind agents too.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,8 +75,7 @@ def _sc_settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
 
 
@@ -104,13 +104,19 @@ async def client(golden_pkg_path, tmp_path):
 
 
 async def _pending_approval(c) -> dict:
-    session = (await c.post("/api/v1/agent/sessions",
-                            json={"plugin": "planning-copilot", "task": "release PO-1002"})).json()
-    out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-        "parameters": {},
-        "target_id": "PO-1002",
-        "rationale": "PO-1002 is PLANNED with NORMAL priority and due 2026-10-30",
-    })).json()
+    session = (
+        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "release PO-1002"})
+    ).json()
+    out = (
+        await c.post(
+            "/api/v1/agent/sessions/1/tools/act_release_production_order",
+            json={
+                "parameters": {},
+                "target_id": "PO-1002",
+                "rationale": "PO-1002 is PLANNED with NORMAL priority and due 2026-10-30",
+            },
+        )
+    ).json()
     assert out["outcome"] == "pending_approval", out
     approvals = (await c.get("/api/v1/agent/approvals")).json()["approvals"]
     assert len(approvals) == 1
@@ -122,8 +128,11 @@ class TestApprovalGate:
         c, sc = client
         pending = await _pending_approval(c)
 
-        r = await c.post(f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
-                         json={"decision": "approved"}, headers=_hdr(PLANNER))
+        r = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": "approved"},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "executed" and body["decided_by"] == "u-planner"
@@ -136,21 +145,25 @@ class TestApprovalGate:
         # audit trail carries BOTH actors: execution to the plugin, decision to the human
         async with sc.sessionmaker() as s:
             from sqlalchemy import select
+
             from ontogeny.action.models import RevisionRow
-            revs = (await s.execute(select(RevisionRow).where(
-                RevisionRow.object_id == "PO-1002"))).scalars().all()
+
+            revs = (await s.execute(select(RevisionRow).where(RevisionRow.object_id == "PO-1002"))).scalars().all()
             assert any(r.principal == "agent:planning-copilot" for r in revs)
-            approval = (await s.execute(
-                select(AgentApprovalRow).where(AgentApprovalRow.id == pending["approval_id"])
-            )).scalar_one()
+            approval = (
+                await s.execute(select(AgentApprovalRow).where(AgentApprovalRow.id == pending["approval_id"]))
+            ).scalar_one()
             assert approval.status == "executed" and approval.decided_by == "u-planner"
             assert approval.revision_id is not None
 
     async def test_reject_refuses_and_records(self, client):
         c, sc = client
         pending = await _pending_approval(c)
-        r = await c.post(f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
-                         json={"decision": "rejected"}, headers=_hdr(PLANNER))
+        r = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": "rejected"},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200 and r.json()["status"] == "rejected"
         po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
         assert po["status"] == "PLANNED"
@@ -160,8 +173,11 @@ class TestApprovalGate:
         approvals are not a permission laundering channel."""
         c, _ = client
         pending = await _pending_approval(c)
-        r = await c.post(f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
-                         json={"decision": "approved"}, headers=_hdr(VISITOR))
+        r = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": "approved"},
+            headers=_hdr(VISITOR),
+        )
         assert r.status_code == 403
         # and the approval is consumed as rejected, not left dangling
         approvals = (await c.get("/api/v1/agent/approvals")).json()["approvals"]
@@ -170,11 +186,17 @@ class TestApprovalGate:
     async def test_decision_is_single_shot(self, client):
         c, _ = client
         pending = await _pending_approval(c)
-        r1 = await c.post(f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
-                          json={"decision": "approved"}, headers=_hdr(PLANNER))
+        r1 = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": "approved"},
+            headers=_hdr(PLANNER),
+        )
         assert r1.json()["status"] == "executed"
-        r2 = await c.post(f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
-                          json={"decision": "approved"}, headers=_hdr(PLANNER))
+        r2 = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": "approved"},
+            headers=_hdr(PLANNER),
+        )
         assert r2.status_code == 500  # OOError -> already decided
 
     async def test_writes_budget_gates_pending_intents_and_refunds_rejections(self, client):
@@ -182,51 +204,77 @@ class TestApprovalGate:
         a human rejection refunds the slot (the agent is not deadlocked by a
         decision it does not control)."""
         c, _ = client
-        await c.post("/api/v1/agent/sessions",
-                     json={"plugin": "planning-copilot", "task": "x"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
         ids = []
         for i in range(3):  # budget_writes = 3
-            out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-                "parameters": {}, "target_id": "PO-1002", "rationale": f"try {i}"})).json()
+            out = (
+                await c.post(
+                    "/api/v1/agent/sessions/1/tools/act_release_production_order",
+                    json={"parameters": {}, "target_id": "PO-1002", "rationale": f"try {i}"},
+                )
+            ).json()
             assert out["outcome"] == "pending_approval"
             ids.append(out["approval_id"])
         # 4th intent is refused with a structured budget outcome
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-            "parameters": {}, "target_id": "PO-1002", "rationale": "one too many"})).json()
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_release_production_order",
+                json={"parameters": {}, "target_id": "PO-1002", "rationale": "one too many"},
+            )
+        ).json()
         assert out["outcome"] == "AGENT_BUDGET_EXCEEDED", out
         # rejecting one refunds the slot
-        await c.post(f"/api/v1/agent/approvals/{ids[0]}/decision",
-                     json={"decision": "rejected"}, headers=_hdr(PLANNER))
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-            "parameters": {}, "target_id": "PO-1002", "rationale": "fits again"})).json()
+        await c.post(f"/api/v1/agent/approvals/{ids[0]}/decision", json={"decision": "rejected"}, headers=_hdr(PLANNER))
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_release_production_order",
+                json={"parameters": {}, "target_id": "PO-1002", "rationale": "fits again"},
+            )
+        ).json()
         assert out["outcome"] == "pending_approval", out
 
 
 # ----------------------------------------------------------------- M3: auto
 
 
-AUTO_PLUGIN = PLUGIN.replace(
-    "allow: [describe_ontology, search_production_order, act_release_production_order]",
-    "allow: [describe_ontology, search_production_order, act_release_production_order, act_create_production_order]",
-).replace(
-    "approval: { writes: confirm }",
-    "approval: { writes: auto, auto_actions: [act_release_production_order] }",
-).replace("budget: { steps: 25, wall_ms: 60000, writes_per_session: 3 }",
-          "budget: { steps: 25, wall_ms: 60000, writes_per_session: 1 }")
+AUTO_PLUGIN = (
+    PLUGIN.replace(
+        "allow: [describe_ontology, search_production_order, act_release_production_order]",
+        "allow: [describe_ontology, search_production_order, act_release_production_order, act_create_production_order]",
+    )
+    .replace(
+        "approval: { writes: confirm }",
+        "approval: { writes: auto, auto_actions: [act_release_production_order] }",
+    )
+    .replace(
+        "budget: { steps: 25, wall_ms: 60000, writes_per_session: 3 }",
+        "budget: { steps: 25, wall_ms: 60000, writes_per_session: 1 }",
+    )
+)
 
 # a shop-floor agent holds the operator role, which Cedar grants NO release
 # permit: its auto write must hit the policy gate, not the approval queue
-OPERATOR_PLUGIN = PLUGIN.replace(
-    "name: planning-copilot", "name: floor-agent",
-).replace(
-    'id: "agent:planning-copilot"', 'id: "agent:floor-agent"',
-).replace(
-    "display: Planning copilot", "display: Shop floor agent",
-).replace(
-    "Role: [planner]", "Role: [operator]",
-).replace(
-    "approval: { writes: confirm }",
-    "approval: { writes: auto, auto_actions: [act_release_production_order] }",
+OPERATOR_PLUGIN = (
+    PLUGIN.replace(
+        "name: planning-copilot",
+        "name: floor-agent",
+    )
+    .replace(
+        'id: "agent:planning-copilot"',
+        'id: "agent:floor-agent"',
+    )
+    .replace(
+        "display: Planning copilot",
+        "display: Shop floor agent",
+    )
+    .replace(
+        "Role: [planner]",
+        "Role: [operator]",
+    )
+    .replace(
+        "approval: { writes: confirm }",
+        "approval: { writes: auto, auto_actions: [act_release_production_order] }",
+    )
 )
 
 
@@ -259,8 +307,12 @@ class TestAutoApproval:
         is the revision, no human queue involved."""
         c, _ = auto_client
         await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "auto"})
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-            "parameters": {}, "target_id": "PO-1002"})).json()
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_release_production_order",
+                json={"parameters": {}, "target_id": "PO-1002"},
+            )
+        ).json()
         assert out["outcome"] == "executed", out
         assert out.get("revision_id")
         po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
@@ -274,8 +326,12 @@ class TestAutoApproval:
         that is not in auto_actions must not slip through as auto (fail closed)."""
         c, _ = auto_client
         await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_create_production_order", json={
-            "parameters": {"product_id": "P-100", "qty": 5}})).json()
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_create_production_order",
+                json={"parameters": {"product_id": "P-100", "qty": 5}},
+            )
+        ).json()
         assert out["outcome"] == "POLICY_DENIED", out
         assert "auto_actions" in out.get("error", "")
 
@@ -286,8 +342,12 @@ class TestAutoApproval:
         role model its identity declares."""
         c, _ = auto_client
         await c.post("/api/v1/agent/sessions", json={"plugin": "floor-agent", "task": "x"})
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-            "parameters": {}, "target_id": "PO-1002"})).json()
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_release_production_order",
+                json={"parameters": {}, "target_id": "PO-1002"},
+            )
+        ).json()
         assert out["outcome"] == "POLICY_DENIED", out
         # and the order is untouched
         po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
@@ -298,12 +358,20 @@ class TestAutoApproval:
         budget ceiling with a structured outcome."""
         c, _ = auto_client
         await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_release_production_order", json={
-            "parameters": {}, "target_id": "PO-1002"})).json()
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_release_production_order",
+                json={"parameters": {}, "target_id": "PO-1002"},
+            )
+        ).json()
         assert out["outcome"] == "executed", out
         sess = (await c.get("/api/v1/agent/sessions/1")).json()
         assert sess["budget"]["writes_used"] == 1
         # budget_writes = 1 -> the next write (a fresh create) is over budget
-        out = (await c.post("/api/v1/agent/sessions/1/tools/act_create_production_order", json={
-            "parameters": {"product_id": "P-100", "qty": 5}})).json()
+        out = (
+            await c.post(
+                "/api/v1/agent/sessions/1/tools/act_create_production_order",
+                json={"parameters": {"product_id": "P-100", "qty": 5}},
+            )
+        ).json()
         assert out["outcome"] == "AGENT_BUDGET_EXCEEDED", out

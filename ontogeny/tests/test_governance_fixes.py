@@ -22,6 +22,7 @@ quietly reverted: the admin/evolve router gates, the history/aggregate masking
 bypasses, the T0 promote fail-closed gate, newId() uniqueness, the validator's
 own crash bugs, the linter's dead chain-depth rule, and watermark pagination.
 """
+
 from __future__ import annotations
 
 import copy
@@ -41,12 +42,12 @@ from ontogeny.core.models import JoinTableJoin, SourceRef
 # 1. the admin / evolve / audit / SSE planes are gated
 # ---------------------------------------------------------------------------
 
+
 def _anon(client):
     """A client with NO default identity: the shared fixture carries an admin
     dev-header by default (the gated planes need it); these tests must see
     what a truly anonymous visitor sees."""
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=client[0]._transport.app),
-                             base_url="http://anon")
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=client[0]._transport.app), base_url="http://anon")
 
 
 class TestRouterGates:
@@ -121,8 +122,7 @@ class TestMaskingBypasses:
         c, _ = client
         await c.post("/api/v1/admin/sync/material")
         h = {"X-Ontogeny-Principal": json.dumps({"id": "visitor"})}
-        r = await c.post("/api/v1/objects/material/aggregate",
-                         json={"fn": "avg", "field": "unit_cost"}, headers=h)
+        r = await c.post("/api/v1/objects/material/aggregate", json={"fn": "avg", "field": "unit_cost"}, headers=h)
         assert r.status_code == 403
         assert r.json()["code"] == "POLICY_DENIED"
 
@@ -130,8 +130,7 @@ class TestMaskingBypasses:
         c, _ = client
         await c.post("/api/v1/admin/sync/material")
         h = {"X-Ontogeny-Principal": json.dumps({"id": "buyer", "markings": ["internal"]})}
-        r = await c.post("/api/v1/objects/material/aggregate",
-                         json={"fn": "avg", "field": "unit_cost"}, headers=h)
+        r = await c.post("/api/v1/objects/material/aggregate", json={"fn": "avg", "field": "unit_cost"}, headers=h)
         assert r.status_code == 200 and r.json()["value"] > 0
 
 
@@ -146,8 +145,10 @@ class TestT0FailClosed:
         for t in sc.compiled.objects:  # eval suite queries need materialized tables
             await c.post(f"/api/v1/admin/sync/{t}")
         for _ in range(6):  # the unmapped-filter signal the proposer acts on
-            await c.post("/api/v1/objects/production-order/query",
-                         json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}})
+            await c.post(
+                "/api/v1/objects/production-order/query",
+                json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
+            )
         await c.post("/api/v1/evolve/aggregate")
         pid = (await c.post("/api/v1/evolve/diagnose")).json()["proposals"][0]["id"]
         # promote WITHOUT running /eval first: the gate must refuse, not merge
@@ -168,11 +169,15 @@ class TestNewId:
         c, _ = client
         ids = []
         for _ in range(2):
-            r = await c.post("/api/v1/actions/create-production-order/execute", json={
-                "parameters": {"product_id": "P-101", "qty": 5, "priority": "NORMAL",
-                               "due_date": "2026-12-01"},
-            }, headers={"X-Ontogeny-Principal": json.dumps(
-                {"id": "planner", "Role": ["planner"], "site": "plant-north"})})
+            r = await c.post(
+                "/api/v1/actions/create-production-order/execute",
+                json={
+                    "parameters": {"product_id": "P-101", "qty": 5, "priority": "NORMAL", "due_date": "2026-12-01"},
+                },
+                headers={
+                    "X-Ontogeny-Principal": json.dumps({"id": "planner", "Role": ["planner"], "site": "plant-north"})
+                },
+            )
             assert r.status_code == 200, r.text
             ids.append(r.json()["object_id"])
         assert ids[0] != ids[1], "second create minted the same newId() value"
@@ -181,11 +186,13 @@ class TestNewId:
         from ontogeny.errors import ConflictError
 
         c, sc = client
-        r = await c.post("/api/v1/actions/create-production-order/execute", json={
-            "parameters": {"product_id": "P-101", "qty": 5, "priority": "NORMAL",
-                           "due_date": "2026-12-01"},
-        }, headers={"X-Ontogeny-Principal": json.dumps(
-            {"id": "planner", "Role": ["planner"], "site": "plant-north"})})
+        r = await c.post(
+            "/api/v1/actions/create-production-order/execute",
+            json={
+                "parameters": {"product_id": "P-101", "qty": 5, "priority": "NORMAL", "due_date": "2026-12-01"},
+            },
+            headers={"X-Ontogeny-Principal": json.dumps({"id": "planner", "Role": ["planner"], "site": "plant-north"})},
+        )
         assert r.status_code == 200
         pk = r.json()["object_id"]
         async with sc.sessionmaker() as s:
@@ -197,9 +204,17 @@ class TestNewId:
             with pytest.raises(ConflictError):
                 # same business key, new version key: must NOT become a second
                 # alive row (the old schema happily accepted it)
-                await repo.action_insert(s, "production-order", {
-                    "order_id": pk, "product_id": "P-101", "qty": 1, "status": "PLANNED",
-                }, dt.datetime.now(dt.timezone.utc))
+                await repo.action_insert(
+                    s,
+                    "production-order",
+                    {
+                        "order_id": pk,
+                        "product_id": "P-101",
+                        "qty": 1,
+                        "status": "PLANNED",
+                    },
+                    dt.datetime.now(dt.timezone.utc),
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -211,11 +226,15 @@ class TestValidatorHardening:
     def test_join_keys_unknown_side_is_a_report_not_a_crash(self, golden_pkg):
         pkg = copy.deepcopy(golden_pkg)
         lnk = pkg.find("LinkType", "production-order-inspections")
-        lnk.spec.join = JoinTableJoin(kind="join-table", store="erp",
-                                     relation=SourceRef(table="production_orders"), keys={
-            "sorce": {"order_id": "order_id"},  # typo: used to AttributeError
-            "target": {"order_id": "order_id"},
-        })
+        lnk.spec.join = JoinTableJoin(
+            kind="join-table",
+            store="erp",
+            relation=SourceRef(table="production_orders"),
+            keys={
+                "sorce": {"order_id": "order_id"},  # typo: used to AttributeError
+                "target": {"order_id": "order_id"},
+            },
+        )
         rep = validate(pkg)
         assert any(i.code == "LINK-KEY" and "sorce" in i.message for i in rep.issues)
 
@@ -247,8 +266,7 @@ class TestValidatorHardening:
         act = pkg.find("Action", "release-production-order")
         act.spec.rules = [*act.spec.rules, Rule(expr="principal has site")]
         rep = validate(pkg)
-        assert not any("principal has site" in i.message and i.code == "EXPR-PATH"
-                       for i in rep.issues)
+        assert not any("principal has site" in i.message and i.code == "EXPR-PATH" for i in rep.issues)
 
     def test_effect_when_is_statically_validated(self, golden_pkg):
         pkg = copy.deepcopy(golden_pkg)
@@ -277,13 +295,13 @@ class TestValidatorHardening:
         props["d2"] = PropertyDef(**base, display="d2", derived="target.d1 + 1")
         props["d3"] = PropertyDef(**base, display="d3", derived="target.d2 + 1")
         rep = lint(pkg)
-        assert any(i.code == "OO-004" for i in rep.issues), \
-            "a 3-deep derived chain must trip OO-004"
+        assert any(i.code == "OO-004" for i in rep.issues), "a 3-deep derived chain must trip OO-004"
 
     def test_linter_clean_on_golden(self, golden_pkg):
         rep = lint(golden_pkg)
-        assert not any(i.code == "OO-004" for i in rep.issues), \
-            "the golden package must not false-positive on chain depth"
+        assert not any(
+            i.code == "OO-004" for i in rep.issues
+        ), "the golden package must not false-positive on chain depth"
 
 
 # ---------------------------------------------------------------------------
@@ -296,8 +314,7 @@ class TestWatermarkPagination:
         con = sqlite3.connect(str(path))
         con.execute("CREATE TABLE t (id TEXT PRIMARY KEY, updated_at TEXT)")
         for i in range(n):
-            con.execute("INSERT INTO t VALUES (?, ?)",
-                        (f"R-{i}", f"2026-01-01T00:00:{i:02d}Z"))
+            con.execute("INSERT INTO t VALUES (?, ?)", (f"R-{i}", f"2026-01-01T00:00:{i:02d}Z"))
         con.commit()
         con.close()
 
@@ -307,11 +324,14 @@ class TestWatermarkPagination:
 
         db = tmp_path / "wm.db"
         self._source_db(db)
-        store = StoreResource.model_validate({
-            "apiVersion": "ontogeny/v1", "kind": "Store",
-            "metadata": {"name": "wm"},
-            "spec": {"type": "sqlite", "connection": f"sqlite+aiosqlite:///{db}", "access": "read-only"},
-        })
+        store = StoreResource.model_validate(
+            {
+                "apiVersion": "ontogeny/v1",
+                "kind": "Store",
+                "metadata": {"name": "wm"},
+                "spec": {"type": "sqlite", "connection": f"sqlite+aiosqlite:///{db}", "access": "read-only"},
+            }
+        )
         src = SqlSource(store, f"sqlite+aiosqlite:///{db}")
         ref = SourceRef(table="t")
         seen = []
@@ -319,8 +339,7 @@ class TestWatermarkPagination:
             seen.append(row["id"])
         assert len(seen) == 7, "rows past the first batch were lost behind the cursor"
         # second pass: everything is behind the watermark now
-        again = [r async for r in src.fetch(ref, watermark_col="updated_at",
-                                            after="2026-01-01T00:00:06Z", batch=2)]
+        again = [r async for r in src.fetch(ref, watermark_col="updated_at", after="2026-01-01T00:00:06Z", batch=2)]
         assert again == []
 
     async def test_snapshot_fetch_pages_deterministically(self, tmp_path):
@@ -329,11 +348,14 @@ class TestWatermarkPagination:
 
         db = tmp_path / "snap.db"
         self._source_db(db, n=5)
-        store = StoreResource.model_validate({
-            "apiVersion": "ontogeny/v1", "kind": "Store",
-            "metadata": {"name": "snap"},
-            "spec": {"type": "sqlite", "connection": f"sqlite+aiosqlite:///{db}", "access": "read-only"},
-        })
+        store = StoreResource.model_validate(
+            {
+                "apiVersion": "ontogeny/v1",
+                "kind": "Store",
+                "metadata": {"name": "snap"},
+                "spec": {"type": "sqlite", "connection": f"sqlite+aiosqlite:///{db}", "access": "read-only"},
+            }
+        )
         src = SqlSource(store, f"sqlite+aiosqlite:///{db}")
         ref = SourceRef(table="t")
         seen = [r["id"] async for r in src.fetch(ref, batch=2)]
@@ -357,15 +379,18 @@ class TestSyncFailureAudit:
         con.execute("DROP TABLE IF EXISTS production_orders")
         con.commit()
         con.close()
-        with pytest.raises(Exception):
+        from sqlalchemy.exc import OperationalError
+
+        with pytest.raises(OperationalError):
             await sc.sync("production-order")
         from sqlalchemy import select
 
         from ontogeny.stores.sync import SyncRunRow
 
         async with sc.sessionmaker() as s:
-            rows = (await s.execute(
-                select(SyncRunRow).where(SyncRunRow.object_type == "production-order")
-            )).scalars().all()
-        assert any(r.status == "error" and r.error for r in rows), \
-            "the failed run's audit must survive the rollback"
+            rows = (
+                (await s.execute(select(SyncRunRow).where(SyncRunRow.object_type == "production-order")))
+                .scalars()
+                .all()
+            )
+        assert any(r.status == "error" and r.error for r in rows), "the failed run's audit must survive the rollback"

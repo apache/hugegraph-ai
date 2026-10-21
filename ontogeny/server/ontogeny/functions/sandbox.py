@@ -23,9 +23,11 @@ JSON-RPC to this parent, which enforces the declared capabilities
 limits (CPU / address space / file descriptors) are applied at spawn time on
 POSIX; a wall-clock timeout kills runaway processes.
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as _dt
 import json
 import os
@@ -42,21 +44,20 @@ def _limits() -> None:  # pragma: no cover -- preexec in the child process
         import resource
 
         resource.setrlimit(resource.RLIMIT_CPU, (10, 10))
-        try:
+        # macOS disallows RLIMIT_AS in some configurations
+        with contextlib.suppress(ValueError, OSError):
             resource.setrlimit(resource.RLIMIT_AS, (512 << 20, 512 << 20))
-        except (ValueError, OSError):
-            pass  # macOS disallows RLIMIT_AS in some configurations
         resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
     except Exception:
         pass
 
 
 def _jsonable(value: Any) -> Any:
-    if isinstance(value, (_dt.datetime, _dt.date)):
+    if isinstance(value, _dt.datetime | _dt.date):
         return value.isoformat()
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_jsonable(v) for v in value]
     return value
 
@@ -95,15 +96,23 @@ def sandbox_env(server_dir: str) -> dict[str, str]:
     boundary" is a claim we only get to make if secrets are not handed over
     by default. Operators can widen the list explicitly via
     ``ONTOGENY_SANDBOX_ENV_PASSTHROUGH`` (comma-separated names)."""
-    passthrough = {"PATH", "LANG", "LC_ALL", "LC_CTYPE", "HOME", "TMPDIR",
-                   "SYSTEMROOT", "COMSPEC", "PYTHONIOENCODING", "PYTHONUTF8"}
+    passthrough = {
+        "PATH",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "HOME",
+        "TMPDIR",
+        "SYSTEMROOT",
+        "COMSPEC",
+        "PYTHONIOENCODING",
+        "PYTHONUTF8",
+    }
     for var in os.environ.get("ONTOGENY_SANDBOX_ENV_PASSTHROUGH", "").split(","):
         if var.strip():
             passthrough.add(var.strip())
     env = {k: v for k, v in os.environ.items() if k in passthrough}
-    env["PYTHONPATH"] = os.pathsep.join(
-        p for p in (server_dir, env.get("PYTHONPATH", "")) if p
-    )
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (server_dir, env.get("PYTHONPATH", "")) if p)
     # never drop __pycache__ into the user's ontology package (it is a git
     # working tree: bytecode would show up as untracked noise and would
     # change the package's content hash for anything that digests the tree)
@@ -112,8 +121,9 @@ def sandbox_env(server_dir: str) -> dict[str, str]:
 
 
 class FunctionSandbox:
-    def __init__(self, compiled, repo: ObjectRepository, *, timeout_s: float = 10.0,
-                 llm=None, llm_call_timeout_s: float = 60.0) -> None:
+    def __init__(
+        self, compiled, repo: ObjectRepository, *, timeout_s: float = 10.0, llm=None, llm_call_timeout_s: float = 60.0
+    ) -> None:
         self.compiled = compiled
         self.repo = repo
         self.timeout_s = timeout_s
@@ -177,11 +187,9 @@ class FunctionSandbox:
         return path
 
     async def run(self, session, function_resource, params: dict[str, Any]) -> Any:
-        return await self._spawn(session, function_resource,
-                                 {"type": "invoke", "params": _jsonable(params)})
+        return await self._spawn(session, function_resource, {"type": "invoke", "params": _jsonable(params)})
 
-    async def run_source(self, session, function_resource, source: str,
-                         params: dict[str, Any]) -> Any:
+    async def run_source(self, session, function_resource, source: str, params: dict[str, Any]) -> Any:
         """One invocation of text straight from the editor, persisting nothing.
 
         The console's "Test run" needs an answer for code that may never be
@@ -196,22 +204,36 @@ class FunctionSandbox:
         with tempfile.TemporaryDirectory(prefix="ontogeny-fn-test-") as tmp:
             path = Path(tmp) / "buffer.py"
             path.write_text(source, encoding="utf-8")
-            return await self._spawn(session, function_resource,
-                                     {"type": "invoke", "params": _jsonable(params)},
-                                     path=path)
+            return await self._spawn(
+                session, function_resource, {"type": "invoke", "params": _jsonable(params)}, path=path
+            )
 
-    async def map_rows(self, session, function_resource, rows: list[dict[str, Any]],
-                       params: dict[str, Any] | None = None, *, object_param: str = "obj") -> list[Any]:
+    async def map_rows(
+        self,
+        session,
+        function_resource,
+        rows: list[dict[str, Any]],
+        params: dict[str, Any] | None = None,
+        *,
+        object_param: str = "obj",
+    ) -> list[Any]:
         """Batch mode for the derivation worker: ONE subprocess evaluates the
         function per row (the loop runs inside the child), values returned in
         row order. Same capability enforcement as run()."""
-        return await self._spawn(session, function_resource, {
-            "type": "map", "rows": _jsonable(rows), "params": _jsonable(params or {}),
-            "object_param": object_param,
-        })
+        return await self._spawn(
+            session,
+            function_resource,
+            {
+                "type": "map",
+                "rows": _jsonable(rows),
+                "params": _jsonable(params or {}),
+                "object_param": object_param,
+            },
+        )
 
-    async def _spawn(self, session, function_resource, init_message: dict[str, Any],
-                     *, path: Path | None = None) -> Any:
+    async def _spawn(
+        self, session, function_resource, init_message: dict[str, Any], *, path: Path | None = None
+    ) -> Any:
         entry = function_resource.spec.entry
         path = path or self._entry_path(function_resource)
         _, func = entry.split(":", 1)
@@ -221,7 +243,11 @@ class FunctionSandbox:
         env = sandbox_env(server_dir)
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "ontogeny.functions.child", str(path), func,
+            sys.executable,
+            "-m",
+            "ontogeny.functions.child",
+            str(path),
+            func,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
@@ -245,9 +271,7 @@ class FunctionSandbox:
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    raise SandboxError(
-                        f"protocol stream corrupted by non-JSON output: {line[:200]!r}"
-                    ) from exc
+                    raise SandboxError(f"protocol stream corrupted by non-JSON output: {line[:200]!r}") from exc
                 if msg.get("type") == "rpc":
                     method = msg.get("method")
                     if method == "llm":
@@ -272,10 +296,8 @@ class FunctionSandbox:
         except asyncio.TimeoutError as exc:
             raise SandboxError(f"function {entry!r} exceeded {budget:g}s wall clock") from exc
         finally:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 proc.kill()
-            except ProcessLookupError:
-                pass
             await proc.wait()
 
     async def _handle_llm_rpc(self, msg: dict, cfg: dict | None) -> dict:
@@ -304,7 +326,7 @@ class FunctionSandbox:
                     ([{"role": "system", "content": system}] if system else [])
                     + (messages or [{"role": "user", "content": prompt or ""}])
                 )
-        except Exception as exc:  # noqa: BLE001 -- provider errors become sandbox errors
+        except Exception as exc:
             logging.getLogger("ontogeny.sandbox").warning("llm rpc failed: %s", exc)
             return {"error": f"llm call failed: {exc}"}
         return {"result": {"content": out.get("content"), "thinking": out.get("thinking")}}
@@ -319,7 +341,9 @@ class FunctionSandbox:
         if object_type not in self.compiled.objects:
             return {"error": f"unknown object type {object_type!r}"}
         rows, _total = await self.repo.query(
-            session, object_type, filt=params.get("filter"),
+            session,
+            object_type,
+            filt=params.get("filter"),
             limit=int(params.get("limit") or 100),
         )
         # hand functions the same object shape the API returns: derived

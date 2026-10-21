@@ -20,6 +20,7 @@
 - :mod:`bootstrap`  the one-command installation (``ontogeny serve --demo``)
 - :mod:`mounting`   the shared data-mounting core (builder + demo)
 """
+
 from .bootstrap import (
     DEFAULT_DEMO_DIR,
     DEFAULT_PACKAGE,
@@ -32,6 +33,12 @@ from .bootstrap import (
 )
 
 __all__ = [
-    "DEFAULT_PACKAGE", "DEFAULT_DEMO_DIR", "DemoPaths", "prepare_demo", "reset_demo",
-    "copy_package", "seed_from_package", "seed_source_db",
+    "DEFAULT_PACKAGE",
+    "DEFAULT_DEMO_DIR",
+    "DemoPaths",
+    "prepare_demo",
+    "reset_demo",
+    "copy_package",
+    "seed_from_package",
+    "seed_source_db",
 ]

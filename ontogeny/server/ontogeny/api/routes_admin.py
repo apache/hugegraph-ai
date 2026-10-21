@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Platform administration: roles, assistant, domains, publish, builder."""
+
 from __future__ import annotations
 
 import json
@@ -30,14 +31,20 @@ from ..errors import DSLValidationError, OOError
 from ..llm import extract_json
 from ..service import ServiceContext
 from .deps import get_sc, require_admin, require_authenticated
-from .schemas import (AssistantBody, BuilderSaveBody, DomainActivateBody,
-                      DomainCreateBody, MountBody, ProjectionScaffoldBody,
-                      PublishBody, RoleBody, RoleDeleteBody)
+from .schemas import (
+    AssistantBody,
+    BuilderSaveBody,
+    DomainActivateBody,
+    DomainCreateBody,
+    MountBody,
+    ProjectionScaffoldBody,
+    PublishBody,
+    RoleBody,
+    RoleDeleteBody,
+)
 
 
 def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
-    from fastapi.responses import JSONResponse as _JR
-
     # ---- roles & permissions (compiled INTO the policy plane) -------------
 
     def _role_context(sc: ServiceContext):
@@ -48,13 +55,13 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         c = sc.compiled
         grants = parse_grants(dict(c.cedar_texts)) if c else []
         actions = sorted(c.actions) if c else []
-        declared = sorted({r for text in (c.cedar_texts.values() if c else [])
-                           for r in re.findall(r'Role::"([A-Za-z0-9_-]+)"', text)})
+        declared = sorted(
+            {r for text in (c.cedar_texts.values() if c else []) for r in re.findall(r'Role::"([A-Za-z0-9_-]+)"', text)}
+        )
         return grants, actions, declared
 
     @r.get("/admin/roles")
-    async def admin_roles(principal: dict = Depends(require_admin),
-                          sc: ServiceContext = Depends(get_sc)):
+    async def admin_roles(principal: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)):
         """The role × action matrix, read out of the compiled Cedar."""
         from ..auth import effective_matrix, role_catalogue
 
@@ -70,8 +77,7 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
             # the permit silently keeps granting it. Preset/admin roles are
             # protected because they anchor the deployment.
             role["deletable"] = bool(
-                role["name"] != "admin"
-                and (role["hasManagedPolicy"] or "policy" not in role["sources"])
+                role["name"] != "admin" and (role["hasManagedPolicy"] or "policy" not in role["sources"])
             )
         return {
             "roles": catalogue,
@@ -80,15 +86,21 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
             # a role may also be granted by a hand-written policy, which this
             # surface can show but must never claim to revoke
             "grants": [
-                {"policy": g.policy, "roles": g.roles, "actions": g.actions,
-                 "conditional": g.conditional, "managed": g.managed}
+                {
+                    "policy": g.policy,
+                    "roles": g.roles,
+                    "actions": g.actions,
+                    "conditional": g.conditional,
+                    "managed": g.managed,
+                }
                 for g in grants
             ],
         }
 
     @r.put("/admin/roles/{name}")
-    async def admin_role_save(name: str, body: RoleBody, _: dict = Depends(require_admin),
-                              sc: ServiceContext = Depends(get_sc)):
+    async def admin_role_save(
+        name: str, body: RoleBody, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         """Write a role's grants as its managed Cedar policy set.
 
         Goes through the ordinary builder save: same YAML on disk, same
@@ -98,29 +110,29 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         from ..auth import compile_role_policy, managed_policy_name, slug_conflicts
 
         grants, _actions, declared = _role_context(sc)
-        known = sorted({*declared, *(r["name"] for r in
-                        (await admin_roles(_, sc))["roles"])} - {name})
+        known = sorted({*declared, *(r["name"] for r in (await admin_roles(_, sc))["roles"])} - {name})
         clashes = [pair for pair in slug_conflicts([name, *known]) if name in pair]
         if clashes:
             raise DSLValidationError(
                 f"role name {name!r} would share a policy file with {clashes[0][0]!r}; "
-                "rename one of them (underscores and dashes must not collide)")
+                "rename one of them (underscores and dashes must not collide)"
+            )
 
-        resources = [{
-            "apiVersion": "ontogeny/v1",
-            "kind": "PolicySet",
-            "metadata": {"name": managed_policy_name(body.name),
-                         "display": f"{body.name} 角色授权"},
-            "spec": {"language": "cedar",
-                     "source": compile_role_policy(body.name, body.actions, site=body.site)},
-        }]
+        resources = [
+            {
+                "apiVersion": "ontogeny/v1",
+                "kind": "PolicySet",
+                "metadata": {"name": managed_policy_name(body.name), "display": f"{body.name} 角色授权"},
+                "spec": {"language": "cedar", "source": compile_role_policy(body.name, body.actions, site=body.site)},
+            }
+        ]
         result = await builder_save(sc, resources)
-        return {"saved": managed_policy_name(body.name), "actions": sorted(set(body.actions)),
-                "publish": result}
+        return {"saved": managed_policy_name(body.name), "actions": sorted(set(body.actions)), "publish": result}
 
     @r.delete("/admin/roles/{name}")
-    async def admin_role_delete(name: str, body: RoleDeleteBody, _: dict = Depends(require_admin),
-                                sc: ServiceContext = Depends(get_sc)):
+    async def admin_role_delete(
+        name: str, body: RoleDeleteBody, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         """Drop a role: delete its managed policy set and move its holders on.
 
         The accounts that carried it are reassigned (or cleared) in the same
@@ -143,14 +155,15 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
             if body.reassign_to and body.reassign_to not in roles:
                 roles.append(body.reassign_to)
             await sc.auth.update_user(username, {"roles": roles})
-        result = await builder_save(
-            sc, [], deletes=[f"PolicySet/{managed_policy_name(name)}"])
+        result = await builder_save(sc, [], deletes=[f"PolicySet/{managed_policy_name(name)}"])
         return {"deleted": name, "reassigned": holders, "publish": result}
+
     # ---- assistant (Ollama-backed, ontology-grounded) ----------------------
 
     @r.post("/assistant/chat")
-    async def assistant_chat(body: AssistantBody, sc: ServiceContext = Depends(get_sc),
-                             _: dict = Depends(require_authenticated)):
+    async def assistant_chat(
+        body: AssistantBody, sc: ServiceContext = Depends(get_sc), _: dict = Depends(require_authenticated)
+    ):
         if sc.llm is None or sc.compiled is None:
             raise HTTPException(503, "assistant requires ONTOGENY_LLM_BASE_URL (Ollama) to be configured")
         meta = sc.compiled.to_meta()
@@ -161,14 +174,16 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         )
         messages = [{"role": "system", "content": grounding}, *body.messages]
         if body.propose:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "PROPOSE MODE: end your answer with strict JSON describing ONE mutation: "
-                    '{"mutations": [{"mutation": "add-optional-property"|"enum-widen", "object": "...", '
-                    '"prop": "...", "type"|"value": "..."}], "rationale": "..."}'
-                ),
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "PROPOSE MODE: end your answer with strict JSON describing ONE mutation: "
+                        '{"mutations": [{"mutation": "add-optional-property"|"enum-widen", "object": "...", '
+                        '"prop": "...", "type"|"value": "..."}], "rationale": "..."}'
+                    ),
+                }
+            )
         out = await sc.llm.chat(messages)
         result: dict[str, Any] = {"content": out["content"]}
         if out.get("thinking"):
@@ -231,9 +246,12 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         return dom
 
     @admin_r.post("/domains/import")
-    async def admin_domain_import(request: Request, activate: bool = True,
-                                  principal: dict = Depends(require_admin),
-                                  sc: ServiceContext = Depends(get_sc)):
+    async def admin_domain_import(
+        request: Request,
+        activate: bool = True,
+        principal: dict = Depends(require_admin),
+        sc: ServiceContext = Depends(get_sc),
+    ):
         """Import a domain-package zip: validate, install, (optionally) activate.
 
         Administrator-only, like every domain mutation. The body is the raw zip
@@ -247,8 +265,7 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         if not data:
             raise HTTPException(400, "empty body: expected a domain-package zip")
         ctype = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
-        if ctype not in ("", "application/zip", "application/octet-stream",
-                         "application/x-zip-compressed"):
+        if ctype not in ("", "application/zip", "application/octet-stream", "application/x-zip-compressed"):
             raise HTTPException(415, f"unsupported content type {ctype!r}: send the zip as the body")
         return await sc.import_domain(data, activate=activate)
 
@@ -303,11 +320,14 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         """
         c = sc.compiled
         if c is None:
-            return {"resources": [], "content_hash": None, "layout": sc.read_layout(),
-                    "stores": []}
+            return {"resources": [], "content_hash": None, "layout": sc.read_layout(), "stores": []}
         groups = {
-            "ObjectType": c.objects, "LinkType": c.links, "Action": c.actions,
-            "Function": c.functions, "PolicySet": c.policies, "Projection": c.projections,
+            "ObjectType": c.objects,
+            "LinkType": c.links,
+            "Action": c.actions,
+            "Function": c.functions,
+            "PolicySet": c.policies,
+            "Projection": c.projections,
         }
         out: list[dict[str, Any]] = []
         for kind in _EDITABLE_KINDS:
@@ -316,8 +336,12 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
                 if kind == "PolicySet":
                     payload["spec"]["source"] = c.cedar_texts.get(name, res.spec.source)
                 out.append(payload)
-        return {"resources": out, "content_hash": c.content_hash, "layout": sc.read_layout(),
-                "stores": sorted(c.stores)}
+        return {
+            "resources": out,
+            "content_hash": c.content_hash,
+            "layout": sc.read_layout(),
+            "stores": sorted(c.stores),
+        }
 
     @admin_r.post("/builder/save")
     async def builder_save_route(body: BuilderSaveBody, sc: ServiceContext = Depends(get_sc)):
@@ -327,12 +351,11 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         manager); this shell only preserves the console's legacy 422 shape for
         per-resource validation errors."""
         try:
-            return await builder_save(sc, body.resources, deletes=body.deletes,
-                                      layout=body.layout, story=body.story)
+            return await builder_save(sc, body.resources, deletes=body.deletes, layout=body.layout, story=body.story)
         except DSLValidationError as exc:
             errors = (exc.details or {}).get("errors")
             if errors:
-                return _JR(status_code=422, content={"code": "BUILDER_INVALID", "errors": errors})
+                return JSONResponse(status_code=422, content={"code": "BUILDER_INVALID", "errors": errors})
             raise
 
     @admin_r.post("/builder/mount")
@@ -364,8 +387,9 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         return await sc.projection_rebuild()
 
     @admin_r.post("/projection/scaffold")
-    async def admin_projection_scaffold(body: ProjectionScaffoldBody | None = None,
-                                       sc: ServiceContext = Depends(get_sc)):
+    async def admin_projection_scaffold(
+        body: ProjectionScaffoldBody | None = None, sc: ServiceContext = Depends(get_sc)
+    ):
         """Declare this domain's projection, then load or build its graph.
 
         The console's storage card calls this when HugeGraph is selected but the

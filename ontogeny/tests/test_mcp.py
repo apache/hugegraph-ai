@@ -28,6 +28,7 @@ Sessions are opened INSIDE each test (not an async fixture): the in-memory
 MCP transport carries anyio cancel scopes that must exit in the task that
 entered them, and pytest-asyncio tears fixtures down in another task.
 """
+
 from __future__ import annotations
 
 import json
@@ -64,8 +65,7 @@ def _settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,  # the /mcp bearer gate rejects anonymous when off
         db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-             "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
 
 
@@ -103,20 +103,24 @@ class TestProtocolSurface:
         async with in_process_mcp_session(sc) as mcp:
             names = {t["name"] for t in await mcp.list_tools()}
             assert set(build_catalog(sc.compiled)) <= names
-            assert {"agent_open_session", "agent_get_session",
-                    "agent_list_sessions", "agent_finish_session"} <= names
+            assert {"agent_open_session", "agent_get_session", "agent_list_sessions", "agent_finish_session"} <= names
             # the reserved transport arguments ride on every tool's schema
-            tool = next(t for t in await mcp.list_tools()
-                        if t["name"] == "search_work_center")
+            tool = next(t for t in await mcp.list_tools() if t["name"] == "search_work_center")
             assert {"plugin", "session_id", "thought"} <= set(tool["input_schema"]["properties"])
 
     async def test_governed_call_records_step_thought_and_budget(self, sc):
         async with in_process_mcp_session(sc) as mcp:
             sid = await _open(mcp, task="find active work centres")
-            out = await mcp.call_tool("search_work_center", {
-                "filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 5,
-                "session_id": sid, "plugin": "planning-copilot",
-                "thought": "planning needs the active set"})
+            out = await mcp.call_tool(
+                "search_work_center",
+                {
+                    "filter": {"field": "status", "op": "eq", "value": "ACTIVE"},
+                    "limit": 5,
+                    "session_id": sid,
+                    "plugin": "planning-copilot",
+                    "thought": "planning needs the active set",
+                },
+            )
             assert out["outcome"] == "ok"
             assert out["detail"]["total"] == 2
 
@@ -129,48 +133,42 @@ class TestProtocolSurface:
         """The approval gate (M2) must hold through the MCP transport too."""
         async with in_process_mcp_session(sc) as mcp:
             sid = await _open(mcp, task="release PO-1002")
-            out = await mcp.call_tool("act_release_production_order", {
-                "parameters": {}, "target_id": "PO-1002",
-                "session_id": sid, "plugin": "planning-copilot"})
+            out = await mcp.call_tool(
+                "act_release_production_order",
+                {"parameters": {}, "target_id": "PO-1002", "session_id": sid, "plugin": "planning-copilot"},
+            )
             assert out["outcome"] == "pending_approval"
             approval_id = out["approval_id"]
 
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002",
-                                    {"id": "auditor", "Role": ["auditor"]})
+            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
         assert po["status"] == "PLANNED"  # nothing executed yet
 
         planner = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
         decision = await sc.agents.decide(approval_id, "approved", planner)
         assert decision["status"] == "executed"
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002",
-                                    {"id": "auditor", "Role": ["auditor"]})
+            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
         assert po["status"] == "RELEASED"
 
     async def test_sessionless_write_is_refused(self, sc):
         async with in_process_mcp_session(sc) as mcp:
-            out = await mcp.call_tool("act_release_production_order",
-                                      {"parameters": {}, "target_id": "PO-1002"})
+            out = await mcp.call_tool("act_release_production_order", {"parameters": {}, "target_id": "PO-1002"})
             assert out["outcome"] == "WRITE_REQUIRES_SESSION"
 
     async def test_sessionless_read_narrows_to_the_plugin_catalog(self, sc):
         async with in_process_mcp_session(sc) as mcp:
             # inside the plugin's list: reads fine under the plugin principal
-            out = await mcp.call_tool("search_work_center",
-                                      {"limit": 2, "plugin": "planning-copilot"})
+            out = await mcp.call_tool("search_work_center", {"limit": 2, "plugin": "planning-copilot"})
             assert out["outcome"] == "ok"
             # outside it: refused even though the tool exists (I1)
-            out = await mcp.call_tool("search_material",
-                                      {"limit": 2, "plugin": "planning-copilot"})
+            out = await mcp.call_tool("search_material", {"limit": 2, "plugin": "planning-copilot"})
             assert out["outcome"] == "AGENT_TOOL_NOT_ALLOWED"
 
     async def test_allow_list_enforced_inside_sessions_too(self, sc):
         async with in_process_mcp_session(sc) as mcp:
             sid = await _open(mcp)
-            out = await mcp.call_tool("search_material",
-                                      {"limit": 2, "session_id": sid,
-                                       "plugin": "planning-copilot"})
+            out = await mcp.call_tool("search_material", {"limit": 2, "session_id": sid, "plugin": "planning-copilot"})
             assert out["outcome"] == "AGENT_TOOL_NOT_ALLOWED"
 
     async def test_budget_exhaustion_is_a_structured_outcome(self, sc):
@@ -178,8 +176,7 @@ class TestProtocolSurface:
             sid = await _open(mcp)
             out = {}
             for _ in range(5):  # budget.steps=4: the 5th call must be refused
-                out = await mcp.call_tool("describe_ontology",
-                                          {"session_id": sid, "plugin": "planning-copilot"})
+                out = await mcp.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
             assert out["outcome"] == "AGENT_BUDGET_EXCEEDED"
             sess = await sc.agents.get_session(sid)
             assert sess["budget"]["steps_used"] == 4
@@ -196,12 +193,10 @@ class TestProtocolSurface:
         await sc.agents.set_status(sid, "running")
 
         async with in_process_mcp_session(sc, engine_mode=False) as external:
-            out = await external.call_tool("describe_ontology",
-                                           {"session_id": sid, "plugin": "planning-copilot"})
+            out = await external.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
             assert out["outcome"] == "AGENT_SESSION_RUNNING"
         async with in_process_mcp_session(sc) as engine_client:
-            out = await engine_client.call_tool(
-                "describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
+            out = await engine_client.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
             assert out["outcome"] == "ok"
 
     async def test_session_lifecycle_over_pure_mcp(self, sc):
@@ -214,8 +209,7 @@ class TestProtocolSurface:
             out = await mcp.call_tool("agent_list_sessions", {"plugin": "planning-copilot"})
             assert any(s["id"] == sid for s in out["sessions"])
 
-            out = await mcp.call_tool("agent_finish_session",
-                                      {"session_id": sid, "result": {"final": "done"}})
+            out = await mcp.call_tool("agent_finish_session", {"session_id": sid, "result": {"final": "done"}})
             assert out["status"] == "finished"
             out = await mcp.call_tool("agent_get_session", {"session_id": sid})
             assert out["result"]["final"] == "done"
@@ -235,24 +229,27 @@ class TestWireSurface:
         async with app.router.lifespan_context(app):
             assert any(getattr(r, "path", None) == MCP_HTTP_PATH for r in app.routes)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:
-                async with streamable_http_client(f"http://test{MCP_HTTP_PATH}",
-                                                   http_client=hc) as streams:
+                async with streamable_http_client(f"http://test{MCP_HTTP_PATH}", http_client=hc) as streams:
                     async with ClientSession(streams[0], streams[1]) as sess:
                         await sess.initialize()
                         tools = await sess.list_tools()
                         assert "search_work_center" in {t.name for t in tools.tools}
 
                         opened = await sess.call_tool(
-                            "agent_open_session",
-                            {"plugin": "planning-copilot", "task": "wire"})
+                            "agent_open_session", {"plugin": "planning-copilot", "task": "wire"}
+                        )
                         assert opened.is_error is False
                         sid = opened.structured_content["id"]
 
                         res = await sess.call_tool(
                             "search_work_center",
-                            {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"},
-                             "limit": 5, "session_id": sid,
-                             "plugin": "planning-copilot"})
+                            {
+                                "filter": {"field": "status", "op": "eq", "value": "ACTIVE"},
+                                "limit": 5,
+                                "session_id": sid,
+                                "plugin": "planning-copilot",
+                            },
+                        )
                         assert res.is_error is False
                         assert res.structured_content["outcome"] == "ok"
                         assert res.structured_content["detail"]["total"] == 2
@@ -263,11 +260,20 @@ class TestWireSurface:
         transport = httpx.ASGITransport(app=app)
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:
-                r = await hc.post(MCP_HTTP_PATH, json={
-                    "jsonrpc": "2.0", "id": 1, "method": "initialize",
-                    "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                               "clientInfo": {"name": "t", "version": "0"}}},
-                    headers={"Accept": "application/json, text/event-stream"})
+                r = await hc.post(
+                    MCP_HTTP_PATH,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "t", "version": "0"},
+                        },
+                    },
+                    headers={"Accept": "application/json, text/event-stream"},
+                )
                 # the governed MCP route answers (a 4xx JSON-RPC error at
                 # worst), never the SPA fallback HTML
                 assert r.status_code < 500
@@ -288,15 +294,21 @@ class TestEngineSpeaksMcp:
                 if not self.replies:
                     return {"content": json.dumps({"final": "(exhausted)"})}
                 return {"content": self.replies.pop(0)}
+
         return StubLLM()
 
     async def test_engine_records_mcp_transport(self, sc):
         from ontogeny_ext_agent_llm import BuiltinLlmEngine
 
-        engine = BuiltinLlmEngine(sc, self._stub_llm([
-            json.dumps({"thought": "look", "tool": "describe_ontology", "args": {}}),
-            json.dumps({"final": "done via mcp"}),
-        ]))
+        engine = BuiltinLlmEngine(
+            sc,
+            self._stub_llm(
+                [
+                    json.dumps({"thought": "look", "tool": "describe_ontology", "args": {}}),
+                    json.dumps({"final": "done via mcp"}),
+                ]
+            ),
+        )
         sid = (await sc.agents.open_session("planning-copilot", "x"))["id"]
         result = await engine.drive(sid)
         assert result.status == "finished"
@@ -328,9 +340,7 @@ class TestRefreshOnPromote:
 
         # a promote that drops the object type must drop its tool: refresh()
         # is what _rebuild_services calls on every recompile
-        slim = replace(sc.compiled,
-                       objects={k: v for k, v in sc.compiled.objects.items()
-                                if k != "work-center"})
+        slim = replace(sc.compiled, objects={k: v for k, v in sc.compiled.objects.items() if k != "work-center"})
         assert "work-center" not in slim.objects
 
         surface = McpSurface(type("FakeSc", (), {"compiled": slim})(), engine_mode=True)

@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Auth + account administration routes."""
+
 from __future__ import annotations
 
 import json
@@ -31,8 +32,7 @@ from .schemas import LoginBody, RuntimeConfigBody, UserCreateBody, UserUpdateBod
 
 def register(r: APIRouter, sc: ServiceContext) -> None:
     @r.post("/auth/login")
-    async def auth_login(body: LoginBody, response: Response,
-                         sc: ServiceContext = Depends(get_sc)):
+    async def auth_login(body: LoginBody, response: Response, sc: ServiceContext = Depends(get_sc)):
         """Verify credentials and start a session.
 
         The token goes out as an HttpOnly cookie, so the browser never exposes it
@@ -43,21 +43,23 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         # (401 with the platform's error envelope) -- no bespoke status mapping
         token, principal = await sc.auth.login(body.username, body.password)
         response.set_cookie(
-            SESSION_COOKIE, token, httponly=True, samesite="lax", path="/",
+            SESSION_COOKIE,
+            token,
+            httponly=True,
+            samesite="lax",
+            path="/",
             max_age=int(session_cookie_max_age()),
         )
         return {"token": token, "principal": principal}
 
     @r.post("/auth/logout")
-    async def auth_logout(request: Request, response: Response,
-                          sc: ServiceContext = Depends(get_sc)):
+    async def auth_logout(request: Request, response: Response, sc: ServiceContext = Depends(get_sc)):
         await sc.auth.logout(request.cookies.get(SESSION_COOKIE, ""))
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"ok": True}
 
     @r.get("/auth/me")
-    async def auth_me(principal: dict = Depends(get_principal),
-                      sc: ServiceContext = Depends(get_sc)):
+    async def auth_me(principal: dict = Depends(get_principal), sc: ServiceContext = Depends(get_sc)):
         """Who am I? The shell asks once on boot; 401 means "show the login page".
 
         A dev-header principal passes while dev_auth is on: the simulation has to
@@ -73,43 +75,41 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         return {"principal": principal, "dev_auth": bool(sc.settings.dev_auth)}
 
     @r.get("/auth/sessions")
-    async def auth_sessions(username: str | None = None,
-                            _: dict = Depends(require_admin),
-                            sc: ServiceContext = Depends(get_sc)):
+    async def auth_sessions(
+        username: str | None = None, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         return {"sessions": await sc.auth.list_sessions(username)}
 
     # ---- account administration -------------------------------------------
 
     @r.get("/admin/users")
-    async def admin_users(_: dict = Depends(require_admin),
-                          sc: ServiceContext = Depends(get_sc)):
+    async def admin_users(_: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)):
         return {"users": await sc.auth.list_users()}
 
     @r.post("/admin/users")
-    async def admin_user_create(body: UserCreateBody, _: dict = Depends(require_admin),
-                                sc: ServiceContext = Depends(get_sc)):
+    async def admin_user_create(
+        body: UserCreateBody, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         return await sc.auth.create_user(**body.model_dump())
 
     @r.patch("/admin/users/{username}")
-    async def admin_user_update(username: str, body: UserUpdateBody,
-                                _: dict = Depends(require_admin),
-                                sc: ServiceContext = Depends(get_sc)):
+    async def admin_user_update(
+        username: str, body: UserUpdateBody, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         return await sc.auth.update_user(username, body.model_dump(exclude_unset=True))
 
     @r.delete("/admin/users/{username}")
-    async def admin_user_delete(username: str, _: dict = Depends(require_admin),
-                                sc: ServiceContext = Depends(get_sc)):
+    async def admin_user_delete(username: str, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)):
         return await sc.auth.delete_user(username)
 
     @r.get("/admin/runtime-config")
-    async def admin_runtime_config(_: dict = Depends(require_admin),
-                                   sc: ServiceContext = Depends(get_sc)):
+    async def admin_runtime_config(_: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)):
         return await sc.runtime_config()
 
     @r.put("/admin/runtime-config")
-    async def admin_runtime_config_save(body: RuntimeConfigBody,
-                                        _: dict = Depends(require_admin),
-                                        sc: ServiceContext = Depends(get_sc)):
+    async def admin_runtime_config_save(
+        body: RuntimeConfigBody, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         return await sc.configure_runtime(**body.model_dump(exclude_unset=True))
 
     def _ensure_published(result) -> None:

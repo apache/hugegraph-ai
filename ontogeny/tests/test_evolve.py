@@ -17,11 +17,12 @@
 
 """RSI loop: telemetry -> signals -> gaps -> proposals -> eval (replay) ->
 tiered promotion with budget + constitution enforcement."""
+
 from __future__ import annotations
 
 import json
 import shutil
-from pathlib import Path as _P
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -33,7 +34,7 @@ from ontogeny.core import load_package
 from ontogeny.db import init_schema, make_engine, make_sessionmaker
 from ontogeny.engine import QueryService
 from ontogeny.errors import BudgetExceededError, ConstitutionViolationError
-from ontogeny.evolve import EvolveSignalRow, ProposalRow, Promoter, apply_mutations
+from ontogeny.evolve import EvolveSignalRow, Promoter, ProposalRow, apply_mutations
 from ontogeny.evolve.diagnoser import diagnose, enum_widen_gap
 from ontogeny.evolve.evalrunner import EvalRunner
 from ontogeny.evolve.proposer import DecidingProposer, HeuristicProposer
@@ -45,8 +46,7 @@ from ontogeny.telemetry import TelemetryService
 
 SUPER = {"id": "u-sup", "Role": {"planner"}, "site": "plant-north"}
 
-OBJECT_TYPES = ("product", "material", "bom", "work-center",
-                "production-order", "operation", "quality-inspection")
+OBJECT_TYPES = ("product", "material", "bom", "work-center", "production-order", "operation", "quality-inspection")
 
 
 @pytest_asyncio.fixture()
@@ -62,8 +62,9 @@ async def env(golden_pkg_path, tmp_path):
 
     seed_from_package(golden_pkg_path, src, force=True)
 
-    settings = Settings(dev_auth=True, env={"ERP_DSN": f"sqlite+aiosqlite:///{src}",
-                             "WMS_WEBHOOK": "https://wms.example.test/hook"})
+    settings = Settings(
+        dev_auth=True, env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"}
+    )
     engine = make_engine("sqlite+aiosqlite:///:memory:")
     await init_schema(engine)
     maker = make_sessionmaker(engine)
@@ -73,8 +74,9 @@ async def env(golden_pkg_path, tmp_path):
         compiled = await registry.publish(s, pkg)
         await s.commit()
     repo = ObjectRepository(compiled)
-    sync = SyncEngine(compiled, settings, repo,
-                      lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection)))
+    sync = SyncEngine(
+        compiled, settings, repo, lambda st: make_source(st, settings.resolve_env_ref(st.spec.connection))
+    )
     async with maker() as s:
         await repo.ensure(s)
         for t in OBJECT_TYPES:
@@ -86,9 +88,18 @@ async def env(golden_pkg_path, tmp_path):
     telemetry = TelemetryService(compiled)
     runner = EvalRunner(repo, query)
     promoter = Promoter(settings, registry)
-    yield {"maker": maker, "compiled": compiled, "repo": repo, "runtime": runtime,
-           "query": query, "telemetry": telemetry, "runner": runner, "promoter": promoter,
-           "pkg_root": str(pkg_root), "registry": registry}
+    yield {
+        "maker": maker,
+        "compiled": compiled,
+        "repo": repo,
+        "runtime": runtime,
+        "query": query,
+        "telemetry": telemetry,
+        "runner": runner,
+        "promoter": promoter,
+        "pkg_root": str(pkg_root),
+        "registry": registry,
+    }
     await engine.dispose()
 
 
@@ -97,8 +108,14 @@ class TestTelemetry:
         tel = env["telemetry"]
         async with env["maker"]() as s:
             for _ in range(8):
-                await tel.record_query(s, "production-order", {"id": "x"},
-                                       filt={"field": "shift", "op": "eq", "value": "DAY"}, latency_ms=3.0, n_results=0)
+                await tel.record_query(
+                    s,
+                    "production-order",
+                    {"id": "x"},
+                    filt={"field": "shift", "op": "eq", "value": "DAY"},
+                    latency_ms=3.0,
+                    n_results=0,
+                )
             await tel.record_query(s, "production-order", {"id": "x"}, None, 3.0, 5)
             created = await tel.aggregate_signals(s)
             await s.commit()
@@ -115,9 +132,14 @@ class TestTelemetry:
         tel = env["telemetry"]
         async with env["maker"]() as s:
             for _ in range(6):
-                await tel.record_query(s, "production-order", {"id": "x"},
-                                       filt={"field": "shift", "op": "eq", "value": "DAY"},
-                                       latency_ms=2.0, n_results=3)
+                await tel.record_query(
+                    s,
+                    "production-order",
+                    {"id": "x"},
+                    filt={"field": "shift", "op": "eq", "value": "DAY"},
+                    latency_ms=2.0,
+                    n_results=3,
+                )
             await s.commit()
             first = await tel.aggregate_signals(s)
             await s.commit()
@@ -132,9 +154,14 @@ class TestDiagnoseAndPropose:
         tel = env["telemetry"]
         async with env["maker"]() as s:
             for _ in range(6):
-                await tel.record_query(s, "production-order", {"id": "x"},
-                                       filt={"field": "shift", "op": "eq", "value": "DAY"},
-                                       latency_ms=2.0, n_results=3)
+                await tel.record_query(
+                    s,
+                    "production-order",
+                    {"id": "x"},
+                    filt={"field": "shift", "op": "eq", "value": "DAY"},
+                    latency_ms=2.0,
+                    n_results=3,
+                )
             await tel.aggregate_signals(s)
             await s.commit()
             sigs = (await s.execute(select(EvolveSignalRow))).scalars().all()
@@ -144,8 +171,9 @@ class TestDiagnoseAndPropose:
         assert actionable[0]["prop"] == "shift"
 
         proposal = HeuristicProposer().propose(actionable[0])
-        assert proposal["mutations"] == [{"mutation": "add-optional-property",
-                                          "object": "production-order", "prop": "shift", "type": "string"}]
+        assert proposal["mutations"] == [
+            {"mutation": "add-optional-property", "object": "production-order", "prop": "shift", "type": "string"}
+        ]
 
     def test_enum_widen_gap(self, env):
         gap = enum_widen_gap("production-order", "status", "BLOCKED", env["compiled"])
@@ -161,8 +189,7 @@ class TestEvalRunner:
         planned-orders-exist regression needs >=1 PLANNED row even after the
         seeded one has moved to RELEASED.
         """
-        await rt.execute(session, "create-production-order", SUPER,
-                         {"product_id": "P-100", "qty": 5}, None)
+        await rt.execute(session, "create-production-order", SUPER, {"product_id": "P-100", "qty": 5}, None)
         return await rt.execute(session, "release-production-order", SUPER, {}, "PO-1002")
 
     async def test_replay_matches_history_and_guards_double_release(self, env):
@@ -186,21 +213,29 @@ class TestEvalRunner:
         are not evidence: they must stay out of the replay denominator. Counting
         them made `after_rejected == total` impossible and the suite red
         forever after any retargeting."""
-        from ontogeny.action.models import RevisionRow
         import datetime as _dt
+
+        from ontogeny.action.models import RevisionRow
 
         rt = env["runtime"]
         async with env["maker"]() as s:
             await self._release_planned_order(s, rt)
-            s.add(RevisionRow(action="release-production-order", object_type="production-order",
-                              object_id="GHOST", outcome="executed",
-                              principal="u-sup", params={},
-                              created_at=_dt.datetime.now(_dt.timezone.utc)))
+            s.add(
+                RevisionRow(
+                    action="release-production-order",
+                    object_type="production-order",
+                    object_id="GHOST",
+                    outcome="executed",
+                    principal="u-sup",
+                    params={},
+                    created_at=_dt.datetime.now(_dt.timezone.utc),
+                )
+            )
             await s.commit()
         suite = env["compiled"].eval_suites["production-flow-suite"]
         async with env["maker"]() as s:
             report = await env["runner"].run(s, suite)
-        replay = [c for c in report["cases"] if c["kind"] == "replay"][0]
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
         assert replay["replays"] == 1  # the ghost is excluded, not counted
         assert replay["ok"] is True and report["passed"] is True
 
@@ -218,7 +253,7 @@ class TestEvalRunner:
         suite = env["compiled"].eval_suites["production-flow-suite"]
         async with env["maker"]() as s:
             report = await env["runner"].run(s, suite, candidate_pkg=bad)
-        replay = [c for c in report["cases"] if c["kind"] == "replay"][0]
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
         # rules always pass -> after-state replay also passes -> double-release no longer caught
         assert replay["after_state_rejections"] == 0
         assert replay["ok"] is False and report["passed"] is False
@@ -240,12 +275,16 @@ class TestPromoter:
             assert proposal.status == "awaiting_human"
 
     async def test_t0_promotes_within_budget(self, env):
-        mutations = [{"mutation": "add-optional-property", "object": "production-order",
-                      "prop": "expedite", "type": "string"}]
+        mutations = [
+            {"mutation": "add-optional-property", "object": "production-order", "prop": "expedite", "type": "string"}
+        ]
         async with env["maker"]() as s:
             proposal = await self._proposal(s, mutations)
             result = await env["promoter"].promote(
-                s, proposal, env["pkg_root"], eval_report={"passed": True},
+                s,
+                proposal,
+                env["pkg_root"],
+                eval_report={"passed": True},
             )
             await s.commit()
         assert result["status"] == "promoted" and result["tier"] == "t0-auto-merge"
@@ -256,13 +295,23 @@ class TestPromoter:
         assert "expedite" in compiled.objects["production-order"].spec.properties
 
     async def test_t0_budget_exhaustion(self, env):
-        mutations = [{"mutation": "add-optional-property", "object": "production-order",
-                      "prop": "extra-1", "type": "string"}]
+        mutations = [
+            {"mutation": "add-optional-property", "object": "production-order", "prop": "extra-1", "type": "string"}
+        ]
         async with env["maker"]() as s:
             # drain the weekly budget (cap is 10 in the example policy)
             for i in range(10):
-                p = await self._proposal(s, [{"mutation": "add-optional-property",
-                                              "object": "production-order", "prop": f"x-{i}", "type": "string"}])
+                p = await self._proposal(
+                    s,
+                    [
+                        {
+                            "mutation": "add-optional-property",
+                            "object": "production-order",
+                            "prop": f"x-{i}",
+                            "type": "string",
+                        }
+                    ],
+                )
                 await env["promoter"].promote(s, p, env["pkg_root"], eval_report={"passed": True})
             p11 = await self._proposal(s, mutations)
             with pytest.raises(BudgetExceededError):
@@ -271,22 +320,23 @@ class TestPromoter:
 
     async def test_t0_blocked_when_eval_red(self, env):
         async with env["maker"]() as s:
-            proposal = await self._proposal(s, [{"mutation": "add-optional-property",
-                                                 "object": "production-order", "prop": "y", "type": "string"}])
-            result = await env["promoter"].promote(s, proposal, env["pkg_root"],
-                                                   eval_report={"passed": False})
+            proposal = await self._proposal(
+                s, [{"mutation": "add-optional-property", "object": "production-order", "prop": "y", "type": "string"}]
+            )
+            result = await env["promoter"].promote(s, proposal, env["pkg_root"], eval_report={"passed": False})
             await s.commit()
         assert result["status"] == "rejected"
 
     async def test_t1_creates_validated_branch(self, env):
         # rule-change is a T2 mutation; unknown kind falls to T1 -> both are human gates
         async with env["maker"]() as s:
-            proposal = await self._proposal(s, [{"mutation": "adjust-rule-threshold",
-                                                 "action": "release-production-order"}], gap_kind="rule-drift")
+            proposal = await self._proposal(
+                s, [{"mutation": "adjust-rule-threshold", "action": "release-production-order"}], gap_kind="rule-drift"
+            )
             result = await env["promoter"].promote(s, proposal, env["pkg_root"])
             await s.commit()
         assert result["status"] == "awaiting_human"
-        assert "t1-pr" == result["tier"]
+        assert result["tier"] == "t1-pr"
         branch_pkg = load_package(result["branch"])
         from ontogeny.core import validate as v
 
@@ -294,12 +344,14 @@ class TestPromoter:
 
     async def test_enum_widen_apply(self, env):
         pkg = load_package(env["pkg_root"])
-        mutated = apply_mutations(pkg, [{"mutation": "enum-widen", "object": "production-order",
-                                         "prop": "status", "value": "BLOCKED"}])
+        mutated = apply_mutations(
+            pkg, [{"mutation": "enum-widen", "object": "production-order", "prop": "status", "value": "BLOCKED"}]
+        )
         assert "BLOCKED" in mutated.find("ObjectType", "production-order").spec.properties["status"].type
         # idempotent
-        again = apply_mutations(mutated, [{"mutation": "enum-widen", "object": "production-order",
-                                           "prop": "status", "value": "BLOCKED"}])
+        again = apply_mutations(
+            mutated, [{"mutation": "enum-widen", "object": "production-order", "prop": "status", "value": "BLOCKED"}]
+        )
         assert again.find("ObjectType", "production-order").spec.properties["status"].type.count("BLOCKED") == 1
 
 
@@ -334,17 +386,33 @@ class TestDecidingProposer:
     fall back. This is the 'controlled' in 'LLM-controlled decisions'."""
 
     async def test_llm_decides_type_and_business_metadata(self, env):
-        llm = _FakeLLM(json.dumps({
-            "act": True,
-            "analysis": "orders are filtered by shop-floor shift but the field is not modeled",
-            "mutations": [{"mutation": "add-optional-property", "object": "production-order",
-                           "prop": "shift", "type": "enum[DAY, NIGHT]",
-                           "display": "Shift", "description": "Production shift this order belongs to"}],
-            "rationale": "filter field shift recurs and is semantically a shift enum",
-        }))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "analysis": "orders are filtered by shop-floor shift but the field is not modeled",
+                    "mutations": [
+                        {
+                            "mutation": "add-optional-property",
+                            "object": "production-order",
+                            "prop": "shift",
+                            "type": "enum[DAY, NIGHT]",
+                            "display": "Shift",
+                            "description": "Production shift this order belongs to",
+                        }
+                    ],
+                    "rationale": "filter field shift recurs and is semantically a shift enum",
+                }
+            )
+        )
         prop = DecidingProposer(llm)
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift",
-               "signal_id": 1, "rationale": "filter field 'shift' used 6x"}
+        gap = {
+            "kind": "add-optional-property",
+            "object": "production-order",
+            "prop": "shift",
+            "signal_id": 1,
+            "rationale": "filter field 'shift' used 6x",
+        }
         out = await prop.propose(gap, env["compiled"])
         assert out["origin"] == "llm"
         m = out["mutations"][0]
@@ -358,10 +426,18 @@ class TestDecidingProposer:
     async def test_llm_declines_informational_signal(self, env):
         """empty_query_rate is informational: judgment says no mutation, and
         'no' is a first-class answer, not a failure."""
-        llm = _FakeLLM(json.dumps({"act": False, "analysis": "empty results are a usage problem", "mutations": [], "rationale": ""}))
+        llm = _FakeLLM(
+            json.dumps(
+                {"act": False, "analysis": "empty results are a usage problem", "mutations": [], "rationale": ""}
+            )
+        )
         prop = DecidingProposer(llm)
-        gap = {"kind": "empty_query_rate", "evidence": {"object_type": "production-order", "rate": 0.5},
-               "signal_id": 2, "informational": True}
+        gap = {
+            "kind": "empty_query_rate",
+            "evidence": {"object_type": "production-order", "rate": 0.5},
+            "signal_id": 2,
+            "informational": True,
+        }
         assert await prop.propose(gap, env["compiled"]) is None
         assert prop.stats["llm_declined"] == 1
 
@@ -371,24 +447,35 @@ class TestDecidingProposer:
         is counted, and the deterministic heuristic answers for the gap."""
         llm = _FakeLLM(json.dumps({"act": False, "analysis": "not urgent", "mutations": [], "rationale": ""}))
         prop = DecidingProposer(llm)
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift",
-               "signal_id": 21}
+        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift", "signal_id": 21}
         out = await prop.propose(gap, env["compiled"])
         assert out["origin"] == "heuristic" and out["mutations"][0]["prop"] == "shift"
         assert prop.stats["llm_declined"] == 1
 
     async def test_llm_failure_falls_back_to_heuristic(self, env):
         prop = DecidingProposer(_BoomLLM(""))
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift",
-               "signal_id": 3, "rationale": "used 6x"}
+        gap = {
+            "kind": "add-optional-property",
+            "object": "production-order",
+            "prop": "shift",
+            "signal_id": 3,
+            "rationale": "used 6x",
+        }
         out = await prop.propose(gap, env["compiled"])
         assert out["origin"] == "heuristic" and out["mutations"][0]["type"] == "string"
         assert prop.stats["fallback"] == 1
 
     async def test_llm_decision_outside_catalog_is_rejected(self, env):
         # inventing a mutation kind the applier cannot apply
-        llm = _FakeLLM(json.dumps({"act": True, "mutations": [{"mutation": "drop-object", "object": "production-order"}],
-                                   "rationale": "x"}))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "mutations": [{"mutation": "drop-object", "object": "production-order"}],
+                    "rationale": "x",
+                }
+            )
+        )
         prop = DecidingProposer(llm)
         gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift", "signal_id": 4}
         out = await prop.propose(gap, env["compiled"])
@@ -399,10 +486,22 @@ class TestDecidingProposer:
         """The model names a property that already exists; the rule layer
         rejects the decision, and the heuristic template answers for the gap's
         REAL field (the unmapped one the signal was about)."""
-        llm = _FakeLLM(json.dumps({"act": True,
-                                   "mutations": [{"mutation": "add-optional-property", "object": "production-order",
-                                                  "prop": "status", "type": "string"}],
-                                   "rationale": "x"}))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "mutations": [
+                        {
+                            "mutation": "add-optional-property",
+                            "object": "production-order",
+                            "prop": "status",
+                            "type": "string",
+                        }
+                    ],
+                    "rationale": "x",
+                }
+            )
+        )
         prop = DecidingProposer(llm)
         gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift", "signal_id": 5}
         out = await prop.propose(gap, env["compiled"])
@@ -411,24 +510,50 @@ class TestDecidingProposer:
         assert prop.stats["llm_rejected"] == 1
 
     async def test_llm_type_must_parse_in_the_dsl(self, env):
-        llm = _FakeLLM(json.dumps({"act": True,
-                                   "mutations": [{"mutation": "add-optional-property", "object": "production-order",
-                                                  "prop": "shift", "type": "not a type!"}],
-                                   "rationale": "x"}))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "mutations": [
+                        {
+                            "mutation": "add-optional-property",
+                            "object": "production-order",
+                            "prop": "shift",
+                            "type": "not a type!",
+                        }
+                    ],
+                    "rationale": "x",
+                }
+            )
+        )
         prop = DecidingProposer(llm)
         gap = {"kind": "add-optional-property", "object": "production-order", "prop": "shift", "signal_id": 6}
         out = await prop.propose(gap, env["compiled"])
         assert out["origin"] == "heuristic"  # invalid type -> rule layer -> fallback
 
     async def test_llm_enum_widen_validated_against_live_enum(self, env):
-        ok = _FakeLLM(json.dumps({"act": True,
-                                  "mutations": [{"mutation": "enum-widen", "object": "production-order",
-                                                 "prop": "status", "value": "BLOCKED"}],
-                                  "rationale": "the source system produced a new status"}))
-        dup = _FakeLLM(json.dumps({"act": True,
-                                   "mutations": [{"mutation": "enum-widen", "object": "production-order",
-                                                  "prop": "status", "value": "PLANNED"}],
-                                   "rationale": "x"}))
+        ok = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "mutations": [
+                        {"mutation": "enum-widen", "object": "production-order", "prop": "status", "value": "BLOCKED"}
+                    ],
+                    "rationale": "the source system produced a new status",
+                }
+            )
+        )
+        dup = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "mutations": [
+                        {"mutation": "enum-widen", "object": "production-order", "prop": "status", "value": "PLANNED"}
+                    ],
+                    "rationale": "x",
+                }
+            )
+        )
         gap = {"kind": "enum-widen", "object": "production-order", "prop": "status", "signal_id": 7}
         good = await DecidingProposer(ok).propose(gap, env["compiled"])
         assert good["origin"] == "llm" and good["mutations"][0]["value"] == "BLOCKED"
@@ -443,16 +568,32 @@ class TestDecidingProposer:
     async def test_llm_metadata_promotes_all_the_way(self, env):
         """The model's display/description survive promotion and land in the
         package (they surface in every table header via the meta export)."""
-        from ontogeny.evolve.promoter import apply_mutations
         from ontogeny.core import load_package
+        from ontogeny.evolve.promoter import apply_mutations
 
-        llm = _FakeLLM(json.dumps({"act": True, "mutations": [{
-            "mutation": "add-optional-property", "object": "production-order", "prop": "shift",
-            "type": "enum[DAY, NIGHT]", "display": "Shift", "description": "Production shift this order belongs to"}],
-            "rationale": "shift recurs as a filter; semantically a shift enum"}))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": True,
+                    "mutations": [
+                        {
+                            "mutation": "add-optional-property",
+                            "object": "production-order",
+                            "prop": "shift",
+                            "type": "enum[DAY, NIGHT]",
+                            "display": "Shift",
+                            "description": "Production shift this order belongs to",
+                        }
+                    ],
+                    "rationale": "shift recurs as a filter; semantically a shift enum",
+                }
+            )
+        )
         prop = DecidingProposer(llm)
-        out = await prop.propose({"kind": "add-optional-property", "object": "production-order",
-                                  "prop": "shift", "signal_id": 9}, env["compiled"])
+        out = await prop.propose(
+            {"kind": "add-optional-property", "object": "production-order", "prop": "shift", "signal_id": 9},
+            env["compiled"],
+        )
         mutated = apply_mutations(load_package(env["pkg_root"]), out["mutations"])
         pdef = mutated.find("ObjectType", "production-order").spec.properties["shift"]
         assert pdef.display == "Shift"
@@ -464,17 +605,30 @@ class TestDirectionAKeepTheReasoning:
     a rule-validated alternative rides along as a second candidate."""
 
     async def test_decline_keeps_analysis_and_validated_alternative(self, env):
-        llm = _FakeLLM(json.dumps({
-            "act": False,
-            "analysis": "urgency 与已有 priority 枚举语义重叠，加自由文本列是冗余",
-            "mutations": [],
-            "rationale": "urgency duplicates priority",
-            "alternative": {"mutation": "enum-widen", "object": "production-order",
-                            "prop": "priority", "value": "CRITICAL"},
-        }))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": False,
+                    "analysis": "urgency 与已有 priority 枚举语义重叠，加自由文本列是冗余",
+                    "mutations": [],
+                    "rationale": "urgency duplicates priority",
+                    "alternative": {
+                        "mutation": "enum-widen",
+                        "object": "production-order",
+                        "prop": "priority",
+                        "value": "CRITICAL",
+                    },
+                }
+            )
+        )
         prop = DecidingProposer(llm)
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "urgency",
-               "signal_id": 7, "rationale": "filter field 'urgency' used 6x"}
+        gap = {
+            "kind": "add-optional-property",
+            "object": "production-order",
+            "prop": "urgency",
+            "signal_id": 7,
+            "rationale": "filter field 'urgency' used 6x",
+        }
         out = await prop.propose_full(gap, env["compiled"])
         # a concrete gap still gets the heuristic answer...
         assert out.proposal is not None and out.proposal["origin"] == "heuristic"
@@ -486,14 +640,30 @@ class TestDirectionAKeepTheReasoning:
         assert out.alternative["mutations"][0]["value"] == "CRITICAL"
 
     async def test_alternative_outside_the_catalog_is_dropped(self, env):
-        llm = _FakeLLM(json.dumps({
-            "act": False, "analysis": "no", "mutations": [], "rationale": "no",
-            "alternative": {"mutation": "add-optional-property", "object": "no-such-object",
-                            "prop": "x", "type": "string"},
-        }))
+        llm = _FakeLLM(
+            json.dumps(
+                {
+                    "act": False,
+                    "analysis": "no",
+                    "mutations": [],
+                    "rationale": "no",
+                    "alternative": {
+                        "mutation": "add-optional-property",
+                        "object": "no-such-object",
+                        "prop": "x",
+                        "type": "string",
+                    },
+                }
+            )
+        )
         prop = DecidingProposer(llm)
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "urgency",
-               "signal_id": 8, "rationale": "r"}
+        gap = {
+            "kind": "add-optional-property",
+            "object": "production-order",
+            "prop": "urgency",
+            "signal_id": 8,
+            "rationale": "r",
+        }
         out = await prop.propose_full(gap, env["compiled"])
         assert out.alternative is None  # unknown object: outside the model's authority
         assert out.proposal is not None  # the heuristic answer still stands
@@ -510,11 +680,19 @@ class TestDirectionAKeepTheReasoning:
         not whichever schema happens to be live."""
         c, sc = client
         async with sc.sessionmaker() as s:
-            row = ProposalRow(gap_kind="add-optional-property",
-                              diff=[{"mutation": "add-optional-property",
-                                     "object": "production-order", "prop": "urgency",
-                                     "type": "string"}],
-                              rationale="urgency recurs as a filter", origin="heuristic")
+            row = ProposalRow(
+                gap_kind="add-optional-property",
+                diff=[
+                    {
+                        "mutation": "add-optional-property",
+                        "object": "production-order",
+                        "prop": "urgency",
+                        "type": "string",
+                    }
+                ],
+                rationale="urgency recurs as a filter",
+                origin="heuristic",
+            )
             s.add(row)
             await s.commit()
             pid = row.id
@@ -559,8 +737,14 @@ class TestRuleTightenAndCaseSynth:
 
         pkg = load_package(env["pkg_root"])
         before = len(pkg.find("Action", "release-production-order").spec.rules)
-        diff = [{"mutation": "rule-tighten", "action": "release-production-order",
-                 "expr": "parameters.qty < 10000", "message": "单次释放数量过大"}]
+        diff = [
+            {
+                "mutation": "rule-tighten",
+                "action": "release-production-order",
+                "expr": "parameters.qty < 10000",
+                "message": "单次释放数量过大",
+            }
+        ]
         once = apply_mutations(load_package(env["pkg_root"]), diff)
         assert len(once.find("Action", "release-production-order").spec.rules) == before + 1
         twice = apply_mutations(once, diff)
@@ -570,31 +754,67 @@ class TestRuleTightenAndCaseSynth:
         from ontogeny.evolve.proposer import validate_llm_decision
 
         compiled = env["compiled"]
-        ok = validate_llm_decision({"mutations": [{"mutation": "rule-tighten",
-                                                   "action": "release-production-order",
-                                                   "expr": "target.qty < 10000"}],
-                                    "rationale": "cap release size"}, None, compiled)
+        ok = validate_llm_decision(
+            {
+                "mutations": [
+                    {"mutation": "rule-tighten", "action": "release-production-order", "expr": "target.qty < 10000"}
+                ],
+                "rationale": "cap release size",
+            },
+            None,
+            compiled,
+        )
         assert ok is not None and ok["mutations"][0]["action"] == "release-production-order"
         # malformed expression -> dropped
-        bad_expr = validate_llm_decision({"mutations": [{"mutation": "rule-tighten",
-                                                         "action": "release-production-order",
-                                                         "expr": "target.qty >< 10000"}],
-                                          "rationale": "x"}, None, compiled)
+        bad_expr = validate_llm_decision(
+            {
+                "mutations": [
+                    {"mutation": "rule-tighten", "action": "release-production-order", "expr": "target.qty >< 10000"}
+                ],
+                "rationale": "x",
+            },
+            None,
+            compiled,
+        )
         assert bad_expr is None
-        unknown_root = validate_llm_decision({"mutations": [{"mutation": "rule-tighten",
-                                                             "action": "release-production-order",
-                                                             "expr": "resource.qty < 10000"}],
-                                              "rationale": "x"}, None, compiled)
+        unknown_root = validate_llm_decision(
+            {
+                "mutations": [
+                    {"mutation": "rule-tighten", "action": "release-production-order", "expr": "resource.qty < 10000"}
+                ],
+                "rationale": "x",
+            },
+            None,
+            compiled,
+        )
         assert bad_expr is None
         # unknown action -> dropped; duplicate expr -> dropped
-        assert validate_llm_decision({"mutations": [{"mutation": "rule-tighten",
-                                                     "action": "no-such-action", "expr": "true"}],
-                                      "rationale": "x"}, None, compiled) is None
+        assert (
+            validate_llm_decision(
+                {
+                    "mutations": [{"mutation": "rule-tighten", "action": "no-such-action", "expr": "true"}],
+                    "rationale": "x",
+                },
+                None,
+                compiled,
+            )
+            is None
+        )
         assert unknown_root is None  # 'resource' is not a rule-context root
-        dup = validate_llm_decision({"mutations": [{"mutation": "rule-tighten",
-                                                    "action": "release-production-order",
-                                                    "expr": "target.status == 'PLANNED'"}],
-                                     "rationale": "x"}, None, compiled)
+        dup = validate_llm_decision(
+            {
+                "mutations": [
+                    {
+                        "mutation": "rule-tighten",
+                        "action": "release-production-order",
+                        "expr": "target.status == 'PLANNED'",
+                    }
+                ],
+                "rationale": "x",
+            },
+            None,
+            compiled,
+        )
         assert dup is None  # the shipped guard already says exactly this
 
     async def test_rule_tighten_classified_t2_and_gated_by_replay(self, env):
@@ -609,45 +829,81 @@ class TestRuleTightenAndCaseSynth:
 
         async with env["maker"]() as s:
             green = await env["runner"].run(
-                s, suite, candidate_pkg=apply_mutations(load_package(env["pkg_root"]), [
-                    {"mutation": "rule-tighten", "action": "release-production-order",
-                     "expr": "target.status != 'CANCELLED'"}]))
+                s,
+                suite,
+                candidate_pkg=apply_mutations(
+                    load_package(env["pkg_root"]),
+                    [
+                        {
+                            "mutation": "rule-tighten",
+                            "action": "release-production-order",
+                            "expr": "target.status != 'CANCELLED'",
+                        }
+                    ],
+                ),
+            )
         async with env["maker"]() as s:
             red = await env["runner"].run(
-                s, suite, candidate_pkg=apply_mutations(load_package(env["pkg_root"]), [
-                    {"mutation": "rule-tighten", "action": "release-production-order",
-                     "expr": "target.qty < 1000"}]))  # qty is 5, passes -- benign
+                s,
+                suite,
+                candidate_pkg=apply_mutations(
+                    load_package(env["pkg_root"]),
+                    [{"mutation": "rule-tighten", "action": "release-production-order", "expr": "target.qty < 1000"}],
+                ),
+            )  # qty is 5, passes -- benign
         # a tighten that fights history: only QUEUED orders may be released --
         # the human released a PLANNED one, so the candidate rejects history
         async with env["maker"]() as s:
             red = await env["runner"].run(
-                s, suite, candidate_pkg=apply_mutations(load_package(env["pkg_root"]), [
-                    {"mutation": "rule-tighten", "action": "release-production-order",
-                     "expr": "target.status == 'QUEUED'"}]))
+                s,
+                suite,
+                candidate_pkg=apply_mutations(
+                    load_package(env["pkg_root"]),
+                    [
+                        {
+                            "mutation": "rule-tighten",
+                            "action": "release-production-order",
+                            "expr": "target.status == 'QUEUED'",
+                        }
+                    ],
+                ),
+            )
         assert green["passed"] is True
         assert red["passed"] is False
 
         # and the promoter refuses a T2 promote on a red report
         prom = Promoter(Settings(dev_auth=True, env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"}), env["registry"])
         async with env["maker"]() as s:
-            row = ProposalRow(gap_kind="rule-tighten",
-                              diff=[{"mutation": "rule-tighten",
-                                     "action": "release-production-order",
-                                     "expr": "target.status == 'QUEUED'"}],
-                              rationale="fights history")
+            row = ProposalRow(
+                gap_kind="rule-tighten",
+                diff=[
+                    {
+                        "mutation": "rule-tighten",
+                        "action": "release-production-order",
+                        "expr": "target.status == 'QUEUED'",
+                    }
+                ],
+                rationale="fights history",
+            )
             s.add(row)
             await s.flush()
-            out = await prom.promote(s, row, env["pkg_root"],
-                                     eval_report={"passed": False, "suites": {}})
+            out = await prom.promote(s, row, env["pkg_root"], eval_report={"passed": False, "suites": {}})
         assert out["status"] == "rejected" and "eval" in out["reason"]
 
     async def test_eval_case_synth_appends_and_dedupes(self, env):
         from ontogeny.evolve.promoter import apply_mutations
 
-        diff = [{"mutation": "eval-case-synth", "suite": "production-flow-suite",
-                 "case": {"name": "hot-filter-urgency",
-                          "query": {"object": "production-order", "filter": {"urgency": "HIGH"}, "limit": 50},
-                          "expect": {"columns": ["order_id"]}}}]
+        diff = [
+            {
+                "mutation": "eval-case-synth",
+                "suite": "production-flow-suite",
+                "case": {
+                    "name": "hot-filter-urgency",
+                    "query": {"object": "production-order", "filter": {"urgency": "HIGH"}, "limit": 50},
+                    "expect": {"columns": ["order_id"]},
+                },
+            }
+        ]
 
         def suite_len(pkg):
             return len(pkg.find("EvalSuite", "production-flow-suite").spec.queries)
@@ -662,25 +918,70 @@ class TestRuleTightenAndCaseSynth:
         from ontogeny.evolve.proposer import validate_llm_decision
 
         compiled = env["compiled"]
-        ok = validate_llm_decision({"mutations": [{"mutation": "eval-case-synth",
-                                                   "suite": "production-flow-suite",
-                                                   "case": {"name": "c", "query": {"object": "product", "filter": {"status": "ACTIVE"}}}}],
-                                    "rationale": "hot product filter"}, None, compiled)
+        ok = validate_llm_decision(
+            {
+                "mutations": [
+                    {
+                        "mutation": "eval-case-synth",
+                        "suite": "production-flow-suite",
+                        "case": {"name": "c", "query": {"object": "product", "filter": {"status": "ACTIVE"}}},
+                    }
+                ],
+                "rationale": "hot product filter",
+            },
+            None,
+            compiled,
+        )
         assert ok is not None
         # unknown suite / unknown object / duplicate case -> dropped
-        assert validate_llm_decision({"mutations": [{"mutation": "eval-case-synth",
-                                                     "suite": "no-such-suite",
-                                                     "case": {"query": {"object": "product"}}}],
-                                      "rationale": "x"}, None, compiled) is None
-        assert validate_llm_decision({"mutations": [{"mutation": "eval-case-synth",
-                                                     "suite": "production-flow-suite",
-                                                     "case": {"query": {"object": "no-such-object"}}}],
-                                      "rationale": "x"}, None, compiled) is None
-        dup = validate_llm_decision({"mutations": [{"mutation": "eval-case-synth",
-                                                    "suite": "production-flow-suite",
-                                                    "case": {"query": {"object": "work-center",
-                                                                       "filter": {"status": "ACTIVE"}}}}],
-                                     "rationale": "x"}, None, compiled)
+        assert (
+            validate_llm_decision(
+                {
+                    "mutations": [
+                        {
+                            "mutation": "eval-case-synth",
+                            "suite": "no-such-suite",
+                            "case": {"query": {"object": "product"}},
+                        }
+                    ],
+                    "rationale": "x",
+                },
+                None,
+                compiled,
+            )
+            is None
+        )
+        assert (
+            validate_llm_decision(
+                {
+                    "mutations": [
+                        {
+                            "mutation": "eval-case-synth",
+                            "suite": "production-flow-suite",
+                            "case": {"query": {"object": "no-such-object"}},
+                        }
+                    ],
+                    "rationale": "x",
+                },
+                None,
+                compiled,
+            )
+            is None
+        )
+        dup = validate_llm_decision(
+            {
+                "mutations": [
+                    {
+                        "mutation": "eval-case-synth",
+                        "suite": "production-flow-suite",
+                        "case": {"query": {"object": "work-center", "filter": {"status": "ACTIVE"}}},
+                    }
+                ],
+                "rationale": "x",
+            },
+            None,
+            compiled,
+        )
         assert dup is None  # active-work-centers already covers this exact filter
 
 
@@ -707,10 +1008,21 @@ class TestDirectionD:
         tel = env["telemetry"]
         async with env["maker"]() as s:
             for _ in range(3):
-                s.add(AgentApprovalRow(session_id=1, plugin="planning-copilot", tool="act_x",
-                                       action="x", parameters={}, status="rejected"))
-            s.add(AgentApprovalRow(session_id=1, plugin="planning-copilot", tool="act_x",
-                                   action="x", parameters={}, status="executed"))
+                s.add(
+                    AgentApprovalRow(
+                        session_id=1,
+                        plugin="planning-copilot",
+                        tool="act_x",
+                        action="x",
+                        parameters={},
+                        status="rejected",
+                    )
+                )
+            s.add(
+                AgentApprovalRow(
+                    session_id=1, plugin="planning-copilot", tool="act_x", action="x", parameters={}, status="executed"
+                )
+            )
             await s.commit()
         async with env["maker"]() as s:
             sigs = await tel.aggregate_signals(s, thresholds={"approval_reject_min": 3})
@@ -725,8 +1037,7 @@ class TestDirectionD:
             await s.commit()
         async with env["maker"]() as s:
             sigs = await tel.aggregate_signals(s)
-            assert any(x["kind"] == "slow_query_p95" and x["evidence"]["object_type"] == "bom"
-                       for x in sigs)
+            assert any(x["kind"] == "slow_query_p95" and x["evidence"]["object_type"] == "bom" for x in sigs)
 
     async def test_hot_query_becomes_an_eval_case_gap(self, env):
         tel = env["telemetry"]
@@ -740,8 +1051,7 @@ class TestDirectionD:
         from ontogeny.evolve.diagnoser import diagnose
 
         async with env["maker"]() as s:
-            sigs = (await s.execute(
-                select(EvolveSignalRow).where(EvolveSignalRow.kind == "hot_query"))).scalars().all()
+            sigs = (await s.execute(select(EvolveSignalRow).where(EvolveSignalRow.kind == "hot_query"))).scalars().all()
         gaps = diagnose(list(sigs), env["compiled"])
         synth = [g for g in gaps if g["kind"] == "eval-case-synth"]
         assert synth and synth[0]["case"]["query"]["filter"] == {"status": "ACTIVE"}
@@ -750,12 +1060,13 @@ class TestDirectionD:
     async def test_informational_signals_cluster_by_object(self, env):
         from ontogeny.evolve.diagnoser import diagnose
 
-        sigs = [EvolveSignalRow(kind="empty_query_rate",
-                                evidence={"object_type": "product", "rate": 0.5, "samples": 10}),
-                EvolveSignalRow(kind="slow_query_p95",
-                                evidence={"object_type": "product", "p95_ms": 3000, "samples": 5}),
-                EvolveSignalRow(kind="unmapped_filter_field",
-                                evidence={"object_type": "product", "field": "channel", "count": 9})]
+        sigs = [
+            EvolveSignalRow(kind="empty_query_rate", evidence={"object_type": "product", "rate": 0.5, "samples": 10}),
+            EvolveSignalRow(kind="slow_query_p95", evidence={"object_type": "product", "p95_ms": 3000, "samples": 5}),
+            EvolveSignalRow(
+                kind="unmapped_filter_field", evidence={"object_type": "product", "field": "channel", "count": 9}
+            ),
+        ]
         for i, srow in enumerate(sigs):
             srow.id = i + 1
         gaps = diagnose(sigs, env["compiled"])
@@ -774,16 +1085,22 @@ class TestDirectionE:
     async def test_reject_api_records_reason(self, client):
         c, sc = client
         async with sc.sessionmaker() as s:
-            row = ProposalRow(gap_kind="add-optional-property",
-                              diff=[{"mutation": "add-optional-property",
-                                     "object": "production-order", "prop": "urgency",
-                                     "type": "string"}],
-                              rationale="r")
+            row = ProposalRow(
+                gap_kind="add-optional-property",
+                diff=[
+                    {
+                        "mutation": "add-optional-property",
+                        "object": "production-order",
+                        "prop": "urgency",
+                        "type": "string",
+                    }
+                ],
+                rationale="r",
+            )
             s.add(row)
             await s.commit()
             pid = row.id
-        r = await c.post(f"/api/v1/evolve/proposals/{pid}/reject",
-                         json={"reason": "urgency 与 priority 语义重叠"})
+        r = await c.post(f"/api/v1/evolve/proposals/{pid}/reject", json={"reason": "urgency 与 priority 语义重叠"})
         assert r.status_code == 200
         detail = (await c.get(f"/api/v1/evolve/proposals/{pid}")).json()
         assert detail["status"] == "rejected"
@@ -795,19 +1112,40 @@ class TestDirectionE:
 
             async def chat(self, messages, **kw):
                 type(self).last_messages = messages
-                return {"content": json.dumps({
-                    "act": True,
-                    "mutations": [{"mutation": "enum-widen", "object": "production-order",
-                                   "prop": "priority", "value": "URGENT"}],
-                    "rationale": "memory-aware alternative",
-                })}
+                return {
+                    "content": json.dumps(
+                        {
+                            "act": True,
+                            "mutations": [
+                                {
+                                    "mutation": "enum-widen",
+                                    "object": "production-order",
+                                    "prop": "priority",
+                                    "value": "URGENT",
+                                }
+                            ],
+                            "rationale": "memory-aware alternative",
+                        }
+                    )
+                }
 
         llm = _Capture("{}")
         prop = DecidingProposer(llm)
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "urgency",
-               "signal_id": 11, "rationale": "r"}
-        memory = [{"gap_kind": "add-optional-property", "rationale": "add urgency",
-                   "rejected_reason": "urgency 与 priority 语义重叠", "diff": []}]
+        gap = {
+            "kind": "add-optional-property",
+            "object": "production-order",
+            "prop": "urgency",
+            "signal_id": 11,
+            "rationale": "r",
+        }
+        memory = [
+            {
+                "gap_kind": "add-optional-property",
+                "rationale": "add urgency",
+                "rejected_reason": "urgency 与 priority 语义重叠",
+                "diff": [],
+            }
+        ]
         out = await prop.propose_full(gap, env["compiled"], memory=memory)
         assert out.proposal is not None
         user_text = llm.last_messages[-1]["content"]
@@ -816,20 +1154,34 @@ class TestDirectionE:
 
     async def test_promote_supersedes_sibling_candidates(self, env):
         prom = Promoter(Settings(dev_auth=True, env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"}), env["registry"])
-        diff = [{"mutation": "add-optional-property", "object": "production-order",
-                 "prop": "urgency", "type": "string"}]
+        diff = [
+            {"mutation": "add-optional-property", "object": "production-order", "prop": "urgency", "type": "string"}
+        ]
         async with env["maker"]() as s:
-            winner = ProposalRow(gap_kind="add-optional-property", signal_id=77,
-                                 diff=diff, rationale="heuristic answer", origin="heuristic")
-            sibling = ProposalRow(gap_kind="add-optional-property", signal_id=77,
-                                  diff=[{"mutation": "add-optional-property",
-                                         "object": "production-order", "prop": "urgency2",
-                                         "type": "string"}],
-                                  rationale="llm alternative", origin="llm")
+            winner = ProposalRow(
+                gap_kind="add-optional-property",
+                signal_id=77,
+                diff=diff,
+                rationale="heuristic answer",
+                origin="heuristic",
+            )
+            sibling = ProposalRow(
+                gap_kind="add-optional-property",
+                signal_id=77,
+                diff=[
+                    {
+                        "mutation": "add-optional-property",
+                        "object": "production-order",
+                        "prop": "urgency2",
+                        "type": "string",
+                    }
+                ],
+                rationale="llm alternative",
+                origin="llm",
+            )
             s.add_all([winner, sibling])
             await s.flush()
-            out = await prom.promote(s, winner, env["pkg_root"],
-                                     eval_report={"passed": True, "suites": {}})
+            out = await prom.promote(s, winner, env["pkg_root"], eval_report={"passed": True, "suites": {}})
             await s.flush()
             await s.refresh(sibling)
         assert out["status"] == "promoted"
@@ -849,14 +1201,28 @@ class TestDirectionB2B3:
             await s.commit()
         async with env["maker"]() as s:
             dirty = await prom.shadow_diff(
-                s, env["pkg_root"],
-                [{"mutation": "rule-tighten", "action": "release-production-order",
-                  "expr": "target.status == 'QUEUED'"}])
+                s,
+                env["pkg_root"],
+                [
+                    {
+                        "mutation": "rule-tighten",
+                        "action": "release-production-order",
+                        "expr": "target.status == 'QUEUED'",
+                    }
+                ],
+            )
         async with env["maker"]() as s:
             clean = await prom.shadow_diff(
-                s, env["pkg_root"],
-                [{"mutation": "rule-tighten", "action": "release-production-order",
-                  "expr": "target.status != 'CANCELLED'"}])
+                s,
+                env["pkg_root"],
+                [
+                    {
+                        "mutation": "rule-tighten",
+                        "action": "release-production-order",
+                        "expr": "target.status != 'CANCELLED'",
+                    }
+                ],
+            )
         assert dirty["clean"] is False
         act = dirty["actions"][0]
         assert act["would_reject"] == 1 and act["revisions"] == 1
@@ -865,15 +1231,21 @@ class TestDirectionB2B3:
     async def test_t2_promote_attaches_shadow_report(self, env):
         prom = env["promoter"]
         async with env["maker"]() as s:
-            row = ProposalRow(gap_kind="rule-tighten",
-                              diff=[{"mutation": "rule-tighten",
-                                     "action": "release-production-order",
-                                     "expr": "target.status != 'CANCELLED'"}],
-                              rationale="tighten", signal_id=99)
+            row = ProposalRow(
+                gap_kind="rule-tighten",
+                diff=[
+                    {
+                        "mutation": "rule-tighten",
+                        "action": "release-production-order",
+                        "expr": "target.status != 'CANCELLED'",
+                    }
+                ],
+                rationale="tighten",
+                signal_id=99,
+            )
             s.add(row)
             await s.flush()
-            out = await prom.promote(s, row, env["pkg_root"],
-                                     eval_report={"passed": True, "suites": {}})
+            out = await prom.promote(s, row, env["pkg_root"], eval_report={"passed": True, "suites": {}})
         assert out["status"] == "awaiting_human" and out["tier"] == "t2-canary"
         assert row.eval_report["shadow"]["clean"] is True
 
@@ -882,16 +1254,29 @@ class TestDirectionB2B3:
         # 10 consecutive clean promotions of the rule-tighten class
         async with sc.sessionmaker() as s:
             for i in range(10):
-                s.add(ProposalRow(gap_kind="rule-tighten",
-                                  diff=[{"mutation": "rule-tighten",
-                                         "action": "release-production-order",
-                                         "expr": f"target.qty < {1000 + i}"}],
-                                  rationale="clean", status="promoted"))
+                s.add(
+                    ProposalRow(
+                        gap_kind="rule-tighten",
+                        diff=[
+                            {
+                                "mutation": "rule-tighten",
+                                "action": "release-production-order",
+                                "expr": f"target.qty < {1000 + i}",
+                            }
+                        ],
+                        rationale="clean",
+                        status="promoted",
+                    )
+                )
             # a rejected one OLDER than the streak must not break it
-            s.add(ProposalRow(gap_kind="other", diff=[{"mutation": "enum-widen",
-                                                       "object": "product", "prop": "status",
-                                                       "value": "X"}],
-                               rationale="old", status="rejected"))
+            s.add(
+                ProposalRow(
+                    gap_kind="other",
+                    diff=[{"mutation": "enum-widen", "object": "product", "prop": "status", "value": "X"}],
+                    rationale="old",
+                    status="rejected",
+                )
+            )
             await s.commit()
         classes = (await c.get("/api/v1/evolve/graduation")).json()["classes"]
         by = {x["mutation"]: x for x in classes}
@@ -928,33 +1313,39 @@ class TestDirectionF:
     async def test_proposals_carry_impact(self, client):
         c, sc = client
         async with sc.sessionmaker() as s:
-            row = ProposalRow(gap_kind="add-optional-property",
-                              diff=[{"mutation": "add-optional-property",
-                                     "object": "production-order", "prop": "urgency",
-                                     "type": "string"}],
-                              rationale="r")
+            row = ProposalRow(
+                gap_kind="add-optional-property",
+                diff=[
+                    {
+                        "mutation": "add-optional-property",
+                        "object": "production-order",
+                        "prop": "urgency",
+                        "type": "string",
+                    }
+                ],
+                rationale="r",
+            )
             s.add(row)
             await s.commit()
             pid = row.id
         rows = (await c.get("/api/v1/evolve/proposals")).json()["proposals"]
-        mine = [x for x in rows if x["id"] == pid][0]
+        mine = next(x for x in rows if x["id"] == pid)
         assert mine["impact"]["objects"] == ["production-order"]
         # the planning-copilot plugin reads this object through its catalog
         assert "planning-copilot" in mine["impact"]["agents"]
 
     async def test_t0_promote_backs_up_and_rollback_restores(self, env):
         prom = env["promoter"]
-        diff = [{"mutation": "add-optional-property", "object": "production-order",
-                 "prop": "urgency", "type": "string"}]
+        diff = [
+            {"mutation": "add-optional-property", "object": "production-order", "prop": "urgency", "type": "string"}
+        ]
         async with env["maker"]() as s:
-            row = ProposalRow(gap_kind="add-optional-property", signal_id=101,
-                              diff=diff, rationale="r")
+            row = ProposalRow(gap_kind="add-optional-property", signal_id=101, diff=diff, rationale="r")
             s.add(row)
             await s.flush()
-            out = await prom.promote(s, row, env["pkg_root"],
-                                     eval_report={"passed": True, "suites": {}})
+            out = await prom.promote(s, row, env["pkg_root"], eval_report={"passed": True, "suites": {}})
         assert out["status"] == "promoted"
-        backup = _P(out["rollback_dir"])
+        backup = Path(out["rollback_dir"])
         assert backup.is_dir()
         # the mutated schema is on disk...
         assert "urgency" in load_package(env["pkg_root"]).find("ObjectType", "production-order").spec.properties

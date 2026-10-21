@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """CLI: validate (golden + broken), docs, diff."""
+
 from __future__ import annotations
 
 from typer.testing import CliRunner
@@ -58,8 +59,8 @@ class TestDocsAndDiff:
         other = tmp_path / "other"
         shutil.copytree(golden_pkg_path, other)
         obj = other / "objects" / "material.yaml"
-        obj.write_text(obj.read_text(encoding="utf-8").replace("display: Material",
-                                                               "display: Raw material"),
-                       encoding="utf-8")
+        obj.write_text(
+            obj.read_text(encoding="utf-8").replace("display: Material", "display: Raw material"), encoding="utf-8"
+        )
         result = runner.invoke(app, ["diff", str(golden_pkg_path), str(other)])
         assert "~ ObjectType/material" in result.output

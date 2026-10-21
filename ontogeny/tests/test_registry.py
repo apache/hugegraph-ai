@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Registry: publish (validate->persist->compile), cache, rebuild-from-DB."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,10 +25,10 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ontogeny.db import init_schema, make_engine, make_sessionmaker
 from ontogeny.core import load_package
+from ontogeny.db import init_schema, make_engine, make_sessionmaker
+from ontogeny.errors import DSLValidationError, OOError
 from ontogeny.registry import RegistryService, compile_package, snake
-from ontogeny.errors import DSLValidationError
 
 # the golden package: it is the one that declares a derived property in the
 # wild (production-order.release_lag_h, an expression over two timestamps)
@@ -49,7 +50,13 @@ class TestCompile:
         compiled = compile_package(golden_pkg)
         assert compiled.package_name == "product-manufacturing"
         assert set(compiled.objects) == {
-            "product", "bom", "material", "work-center", "production-order", "operation", "quality-inspection",
+            "product",
+            "bom",
+            "material",
+            "work-center",
+            "production-order",
+            "operation",
+            "quality-inspection",
         }
         assert compiled.table_name("production-order") == "ontogeny_obj_production_order"
         assert compiled.owner("production-order", "product_id") == "source"
@@ -105,8 +112,10 @@ class TestCompile:
         meta = compile_package(golden_pkg).to_meta()
         assert meta["objects"]["production-order"]["primaryKey"] == ["order_id"]
         assert "release-production-order" in meta["actions"]
-        assert [lnk for lnk in meta["objects"]["production-order"]["links"]] == [
-            "production-order-inspections", "production-order-operations", "production-order-product"
+        assert list(meta["objects"]["production-order"]["links"]) == [
+            "production-order-inspections",
+            "production-order-operations",
+            "production-order-product",
         ]
 
     def test_meta_export_carries_every_property_fact(self, golden_pkg):
@@ -121,7 +130,10 @@ class TestCompile:
         assert props["status"]["owner"] == "ontology"
         # a fact the package does state survives the round trip: the material's
         # internal marking is what hides unit cost from unmarked principals
-        assert compile_package(golden_pkg).to_meta()["objects"]["material"]["properties"]["unit_cost"]["marking"] == "internal"
+        assert (
+            compile_package(golden_pkg).to_meta()["objects"]["material"]["properties"]["unit_cost"]["marking"]
+            == "internal"
+        )
         # every property states all facts, even when the value is null --
         # a consumer must not have to probe for a key's existence
         for name, p in props.items():
@@ -184,9 +196,15 @@ class TestPublish:
 
         from ontogeny.registry.store import ResourceRow
 
-        rows = (await session.execute(
-            select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "work-center")
-        )).scalars().all()
+        rows = (
+            (
+                await session.execute(
+                    select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "work-center")
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1 and rows[0].version == 2
 
     async def test_publish_rejects_invalid(self, session: AsyncSession, golden_pkg):
@@ -216,9 +234,11 @@ class TestPublish:
 
         from ontogeny.registry.store import ResourceRow
 
-        row = (await session.execute(
-            select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "material")
-        )).scalar_one()
+        row = (
+            await session.execute(
+                select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "material")
+            )
+        ).scalar_one()
         assert row.deleted_at is not None
 
     async def test_lineage_edges(self, session: AsyncSession, golden_pkg):
@@ -227,9 +247,10 @@ class TestPublish:
         await session.commit()
         edges = await reg.lineage(session)
         pairs = {(e["src"], e["dst"]) for e in edges}
-        assert ("Store/mes", "ObjectType/production-order", ) in pairs or any(
-            e["src"] == "Store/mes" for e in edges
-        )
+        assert (
+            "Store/mes",
+            "ObjectType/production-order",
+        ) in pairs or any(e["src"] == "Store/mes" for e in edges)
         assert any(e["dst"] == "Projection/production-graph" for e in edges)
 
 
@@ -249,17 +270,20 @@ class TestSnapshotEvolution:
 
         cls = RESOURCE_BY_KIND["Function"]
         stale = {
-            "apiVersion": "ontogeny/v1", "kind": "Function",
+            "apiVersion": "ontogeny/v1",
+            "kind": "Function",
             "metadata": {"name": "legacy"},
             "spec": {
-                "runtime": "python", "entry": "legacy.py:run",
-                "capabilities": [], "publish": {"enabled": True},   # field since removed
+                "runtime": "python",
+                "entry": "legacy.py:run",
+                "capabilities": [],
+                "publish": {"enabled": True},  # field since removed
             },
         }
         pruned = _prune_unknown(cls, stale)
         assert "publish" not in pruned["spec"]
         assert pruned["spec"]["entry"] == "legacy.py:run"
-        cls.model_validate(pruned)          # must not raise
+        cls.model_validate(pruned)  # must not raise
 
     def test_a_typo_in_a_fresh_package_is_still_an_error(self, golden_pkg_path):
         """The tolerance is for stored history only: a file on disk with an
@@ -279,7 +303,7 @@ class TestSnapshotEvolution:
                 "spec:\n  runtime: python\n  entry: a.py:run\n  publishd: true\n",
                 encoding="utf-8",
             )
-            with _pytest.raises(Exception):
+            with _pytest.raises(OOError):
                 load_package(str(root))
         finally:
             shutil.rmtree(root, ignore_errors=True)

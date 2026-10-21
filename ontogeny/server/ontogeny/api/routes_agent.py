@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Agent plugin surfaces: sessions, tools, approvals (one governance door)."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -24,8 +25,7 @@ from sqlalchemy import select
 from ..errors import NotFoundError, OOError
 from ..service import ServiceContext
 from .deps import get_principal, get_sc, require_admin
-from .schemas import (AgentDecisionBody, AgentFinishBody, AgentRunBody,
-                      AgentSessionBody, AgentToolBody)
+from .schemas import AgentDecisionBody, AgentFinishBody, AgentRunBody, AgentSessionBody, AgentToolBody
 
 
 def register(r: APIRouter, sc: ServiceContext) -> None:
@@ -41,8 +41,11 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         has to be accountable for asking it to run.
         """
         if not principal.get("authenticated") and not sc.settings.dev_auth:
-            raise HTTPException(401, "agent surfaces require an authenticated driver "
-                                     "(sign in, or send the bearer token from /auth/login)")
+            raise HTTPException(
+                401,
+                "agent surfaces require an authenticated driver "
+                "(sign in, or send the bearer token from /auth/login)",
+            )
         return principal
 
     @r.get("/agent/plugins")
@@ -50,8 +53,9 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         return {"plugins": sc.agents.list_plugins()}
 
     @r.post("/agent/sessions")
-    async def agent_session_open(body: AgentSessionBody, sc: ServiceContext = Depends(get_sc),
-                                 principal: dict = Depends(get_principal)):
+    async def agent_session_open(
+        body: AgentSessionBody, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         _require_driver(principal, sc)
         expires = None
         if body.expires_at:
@@ -59,37 +63,48 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
 
             try:
                 expires = _dt.datetime.fromisoformat(body.expires_at.replace("Z", "+00:00"))
-            except ValueError:
-                raise HTTPException(400, "expires_at must be an ISO instant")
+            except ValueError as exc:
+                raise HTTPException(400, "expires_at must be an ISO instant") from exc
         return await sc.agents.open_session(
-            body.plugin, body.task,
+            body.plugin,
+            body.task,
             budget=body.budget.model_dump(exclude_none=True) if body.budget else None,
-            expires_at=expires, driver=principal)
+            expires_at=expires,
+            driver=principal,
+        )
 
     @r.get("/agent/sessions")
-    async def agent_sessions(plugin: str | None = None, limit: int = 50,
-                             sc: ServiceContext = Depends(get_sc),
-                             principal: dict = Depends(get_principal)):
+    async def agent_sessions(
+        plugin: str | None = None,
+        limit: int = 50,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         _require_driver(principal, sc)
         return {"sessions": await sc.agents.list_sessions(plugin=plugin, limit=min(limit, 200))}
 
     @r.get("/agent/sessions/{session_id}")
-    async def agent_session_get(session_id: int, sc: ServiceContext = Depends(get_sc),
-                                principal: dict = Depends(get_principal)):
+    async def agent_session_get(
+        session_id: int, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         _require_driver(principal, sc)
         return await sc.agents.get_session(session_id)
 
     @r.delete("/agent/sessions/{session_id}")
-    async def agent_session_delete(session_id: int, sc: ServiceContext = Depends(get_sc),
-                                   principal: dict = Depends(get_principal)):
+    async def agent_session_delete(
+        session_id: int, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         _require_driver(principal, sc)
         return await sc.agents.delete_session(session_id, principal=principal)
 
     @r.post("/agent/sessions/{session_id}/run")
-    async def agent_session_run(session_id: int, background: BackgroundTasks,
-                                body: AgentRunBody | None = None,
-                                sc: ServiceContext = Depends(get_sc),
-                                principal: dict = Depends(get_principal)):
+    async def agent_session_run(
+        session_id: int,
+        background: BackgroundTasks,
+        body: AgentRunBody | None = None,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         """Engine dispatcher (agent-paradigm §3): hand the session to the
         engine declared by its plugin. builtin-llm drives in-process (202,
         loop in background); external-push would delegate remotely (reserved);
@@ -115,12 +130,17 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         if kind == "external-pull":
             raise OOError(
                 "this plugin is driven by an external engine",
-                details={"engine": kind,
-                         "how": ("drive the session over the session protocol -- "
-                                 "MCP at /mcp (agent_open_session, then tools with "
-                                 "plugin/session_id) or REST: POST /api/v1/agent/"
-                                 "sessions/{id}/tools/{tool}; see "
-                                 "docs/architecture/05-agent-governance.md §5.2")})
+                details={
+                    "engine": kind,
+                    "how": (
+                        "drive the session over the session protocol -- "
+                        "MCP at /mcp (agent_open_session, then tools with "
+                        "plugin/session_id) or REST: POST /api/v1/agent/"
+                        "sessions/{id}/tools/{tool}; see "
+                        "docs/architecture/05-agent-governance.md §5.2"
+                    ),
+                },
+            )
 
         # generic engine dispatch (agent-paradigm §3.1): extensions register
         # kind -> factory(sc); the dispatcher never names a concrete engine
@@ -129,23 +149,24 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
             raise OOError(
                 f"engine kind {kind!r} is declared but no engine is registered "
                 "(the providing extension is not loaded)",
-                details={"code": "AGENT_ENGINE_UNAVAILABLE"})
+                details={"code": "AGENT_ENGINE_UNAVAILABLE"},
+            )
         engine = factory(sc)
         # engines that drive via an LLM carry an ``llm`` attribute; None means
         # the capability is absent (no provider extension / no ONTOGENY_LLM_BASE_URL)
         if getattr(engine, "llm", "n/a") is None:
             raise OOError(
                 "this engine requires the platform LLM (ONTOGENY_LLM_BASE_URL) to be configured",
-                details={"code": "LLM_NOT_CONFIGURED"})
+                details={"code": "LLM_NOT_CONFIGURED"},
+            )
 
         async def _drive():
             try:
                 await engine.drive(session_id)
-            except Exception as exc:  # noqa: BLE001 -- a dying engine must
+            except Exception as exc:
                 # still release the session (back to `open`, error recorded --
                 # a crashed run must not strand the session in `running`)
-                await sc.agents.set_status(
-                    session_id, "open", {"error": f"engine crashed: {exc}"})
+                await sc.agents.set_status(session_id, "open", {"error": f"engine crashed: {exc}"})
 
         # async background task: Starlette awaits it on the event loop AFTER the
         # response is sent. (Wrapping in asyncio.create_task ran it via a worker
@@ -154,16 +175,23 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         return {"id": session_id, "status": "running"}
 
     @r.post("/agent/sessions/{session_id}/finish")
-    async def agent_session_finish(session_id: int, body: AgentFinishBody,
-                                   sc: ServiceContext = Depends(get_sc),
-                                   principal: dict = Depends(get_principal)):
+    async def agent_session_finish(
+        session_id: int,
+        body: AgentFinishBody,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         _require_driver(principal, sc)
         return await sc.agents.finish_session(session_id, body.result)
 
     @r.post("/agent/sessions/{session_id}/tools/{tool}")
-    async def agent_tool_call(session_id: int, tool: str, body: AgentToolBody,
-                              sc: ServiceContext = Depends(get_sc),
-                              driver: dict = Depends(get_principal)):
+    async def agent_tool_call(
+        session_id: int,
+        tool: str,
+        body: AgentToolBody,
+        sc: ServiceContext = Depends(get_sc),
+        driver: dict = Depends(get_principal),
+    ):
         _require_driver(driver, sc)
         # agent-trace is a declared observability source (evolution policy), and
         # the agent_tool_error detector reads this table -- but nothing ever
@@ -173,8 +201,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
             payload = body.model_dump(exclude_none=True)
             # `thought` describes the call, it is not part of its arguments
             thought = str(payload.pop("thought", "") or "")
-            out = await sc.agents.call_tool(session_id, tool, payload, thought=thought,
-                                            driver=driver)
+            out = await sc.agents.call_tool(session_id, tool, payload, thought=thought, driver=driver)
         except Exception as exc:
             async with sc.sessionmaker() as s:
                 await sc.telemetry.record_agent(s, tool, error=f"{type(exc).__name__}: {exc}")
@@ -187,8 +214,9 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         return out
 
     @r.get("/agent/approvals")
-    async def agent_approvals(status: str = "pending", sc: ServiceContext = Depends(get_sc),
-                              principal: dict = Depends(get_principal)):
+    async def agent_approvals(
+        status: str = "pending", sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
+    ):
         _require_driver(principal, sc)
 
         from ..agent.models import AgentApprovalRow
@@ -200,18 +228,30 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
                 where = AgentApprovalRow.status.in_(("approved", "rejected", "executed", "failed"))
             else:
                 where = AgentApprovalRow.status == status
-            rows = (await s.execute(
-                select(AgentApprovalRow).where(where)
-                .order_by(AgentApprovalRow.id.desc()).limit(100)
-            )).scalars().all()
-        return {"approvals": [{
-            "id": a.id, "session_id": a.session_id, "plugin": a.plugin,
-            "tool": a.tool, "action": a.action, "parameters": a.parameters,
-            "target_id": a.target_id, "rationale": a.rationale, "status": a.status,
-            "decided_by": a.decided_by,
-            "decided_at": a.decided_at.isoformat() if a.decided_at else None,
-            "requested_at": a.requested_at.isoformat() if a.requested_at else None,
-        } for a in rows]}
+            rows = (
+                (await s.execute(select(AgentApprovalRow).where(where).order_by(AgentApprovalRow.id.desc()).limit(100)))
+                .scalars()
+                .all()
+            )
+        return {
+            "approvals": [
+                {
+                    "id": a.id,
+                    "session_id": a.session_id,
+                    "plugin": a.plugin,
+                    "tool": a.tool,
+                    "action": a.action,
+                    "parameters": a.parameters,
+                    "target_id": a.target_id,
+                    "rationale": a.rationale,
+                    "status": a.status,
+                    "decided_by": a.decided_by,
+                    "decided_at": a.decided_at.isoformat() if a.decided_at else None,
+                    "requested_at": a.requested_at.isoformat() if a.requested_at else None,
+                }
+                for a in rows
+            ]
+        }
 
     @r.get("/agent/plugins/{plugin_name}/resource")
     async def agent_plugin_resource(plugin_name: str, sc: ServiceContext = Depends(get_sc)):
@@ -224,17 +264,21 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         return {"resource": plug.model_dump(mode="json", by_alias=True, exclude_none=True)}
 
     @r.post("/agent/approvals/{approval_id}/decision")
-    async def agent_approval_decision(approval_id: int, body: AgentDecisionBody,
-                                      sc: ServiceContext = Depends(get_sc),
-                                      principal: dict = Depends(get_principal)):
+    async def agent_approval_decision(
+        approval_id: int,
+        body: AgentDecisionBody,
+        sc: ServiceContext = Depends(get_sc),
+        principal: dict = Depends(get_principal),
+    ):
         """Human gate for agent writes (invariant I3) -- logic lives in the
         broker so the engine resume path and the API share one implementation."""
         _require_driver(principal, sc)
         return await sc.agents.decide(approval_id, body.decision, principal)
 
     @r.delete("/agent/approvals/{approval_id}")
-    async def agent_approval_delete(approval_id: int, _: dict = Depends(require_admin),
-                                    sc: ServiceContext = Depends(get_sc)):
+    async def agent_approval_delete(
+        approval_id: int, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)
+    ):
         # deleting a decided approval erases a piece of the audit trail
         # (decided_by is part of the accountability chain): operator only.
         return await sc.agents.delete_approval(approval_id)

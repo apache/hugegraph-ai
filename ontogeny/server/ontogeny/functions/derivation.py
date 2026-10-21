@@ -33,6 +33,7 @@ Contract (docs/implementation.md §5.9):
   sync touches a thousand rows. Eventually consistent, like the graph
   projection; action decisions never read derived properties for correctness.
 """
+
 from __future__ import annotations
 
 import logging
@@ -146,15 +147,15 @@ class DerivationWorker:
         async with self.session_factory() as s:
             try:
                 values = await self.sandbox.map_rows(s, fn, assembled, {}, object_param=object_param)
-            except Exception as exc:  # noqa: BLE001 -- keep the loop alive
+            except Exception as exc:
                 log.warning("derivation %s.%s failed for %d rows: %s", object_type, prop, len(rows), exc)
                 return 0
-            for row_id, value in zip([r[pk] for r in assembled], values):
+            for row_id, value in zip([r[pk] for r in assembled], values, strict=False):
                 if value is None:
                     continue
                 try:
                     coerced = pdef.ptype().coerce(value, prop=f"{object_type}.{prop}")
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     log.warning("derivation %s.%s: bad value %r (%s)", object_type, prop, value, exc)
                     continue
                 await self.repo.set_derived_value(s, object_type, str(row_id), prop, coerced, ts)

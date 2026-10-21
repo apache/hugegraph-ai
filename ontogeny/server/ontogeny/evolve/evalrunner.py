@@ -24,6 +24,7 @@ L1 static (validate) is run by the promoter. This runner executes L2:
     actually did. The system-versioned store makes this a labeled dataset.
 LLM-judge is deliberately absent: explanation is never a pass condition.
 """
+
 from __future__ import annotations
 
 import re
@@ -36,7 +37,6 @@ from ..action.models import RevisionRow
 from ..core import expr as _expr
 from ..core.loader import OntologyPackage
 from ..registry.compiled import compile_package
-
 
 SYSTEM_COLUMNS = ("_rev", "_valid_from", "_valid_to", "_synced_at")
 
@@ -61,7 +61,11 @@ class EvalRunner:
         self.agent_broker = agent_broker
 
     async def run(
-        self, session, suite, *, candidate_pkg: OntologyPackage | None = None,
+        self,
+        session,
+        suite,
+        *,
+        candidate_pkg: OntologyPackage | None = None,
         system_principal: dict | None = None,
     ) -> dict[str, Any]:
         principal = system_principal or {"id": "eval-runner", "Role": {"eval"}}
@@ -76,11 +80,15 @@ class EvalRunner:
             objects: list[dict] = []
             try:
                 out = await self.query.query(
-                    session, object_type, principal,
-                    filt=q.get("filter"), sort=q.get("sort"), limit=int(q.get("limit") or 100),
+                    session,
+                    object_type,
+                    principal,
+                    filt=q.get("filter"),
+                    sort=q.get("sort"),
+                    limit=int(q.get("limit") or 100),
                 )
                 objects = out["objects"]
-            except Exception as exc:  # noqa: BLE001 -- regression = red, not crash
+            except Exception as exc:
                 error = f"{type(exc).__name__}: {exc}"
             latency = round((time.perf_counter() - started) * 1000, 2)
             ok = error is None
@@ -107,17 +115,31 @@ class EvalRunner:
         for case in suite.spec.replays:
             days = _parse_since(case.since)
             cutoff = _dt_now_minus_days(days)
-            revisions = (await session.execute(
-                select(RevisionRow).where(
-                    RevisionRow.action == case.action,
-                    RevisionRow.outcome == "executed",
-                    RevisionRow.created_at >= cutoff,
-                ).order_by(RevisionRow.created_at)
-            )).scalars().all()
+            revisions = (
+                (
+                    await session.execute(
+                        select(RevisionRow)
+                        .where(
+                            RevisionRow.action == case.action,
+                            RevisionRow.outcome == "executed",
+                            RevisionRow.created_at >= cutoff,
+                        )
+                        .order_by(RevisionRow.created_at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
             action_res = compiled.actions.get(case.action)
             if action_res is None:
-                report["cases"].append({"kind": "replay", "action": case.action, "ok": False,
-                                        "error": "action missing in candidate package"})
+                report["cases"].append(
+                    {
+                        "kind": "replay",
+                        "action": case.action,
+                        "ok": False,
+                        "error": "action missing in candidate package",
+                    }
+                )
                 report["passed"] = False
                 continue
             total = matched = after_rejected = 0
@@ -126,10 +148,16 @@ class EvalRunner:
                 # `get(at=rev.created_at)` lands exactly on the new version's
                 # _valid_from boundary and silently returns the AFTER state,
                 # which made any outcomes-match assertion unsatisfiable
-                before = rev.before if rev.before is not None else \
-                    await self.repo.get(session, action_res.spec.target, rev.object_id, at=rev.created_at)
-                after = rev.after if rev.after is not None else \
-                    await self.repo.get(session, action_res.spec.target, rev.object_id)
+                before = (
+                    rev.before
+                    if rev.before is not None
+                    else await self.repo.get(session, action_res.spec.target, rev.object_id, at=rev.created_at)
+                )
+                after = (
+                    rev.after
+                    if rev.after is not None
+                    else await self.repo.get(session, action_res.spec.target, rev.object_id)
+                )
                 if before is None:
                     # not replayable: the revision predates the current package's
                     # target binding (action retargeted / object type renamed), so
@@ -139,11 +167,8 @@ class EvalRunner:
                     # kept the suite red forever after a retargeting.
                     continue
                 total += 1
-                ctx = _expr.ExprContext(target=before, parameters=rev.params or {},
-                                        principal={"id": rev.principal})
-                rules_ok = all(
-                    bool(_expr.evaluate(r.expr, ctx)) for r in action_res.spec.rules
-                )
+                ctx = _expr.ExprContext(target=before, parameters=rev.params or {}, principal={"id": rev.principal})
+                rules_ok = all(bool(_expr.evaluate(r.expr, ctx)) for r in action_res.spec.rules)
                 # historical executions passed the OLD rules; the candidate must
                 # agree on the pass/fail outcome class for the replay to match
                 if rules_ok:
@@ -151,11 +176,8 @@ class EvalRunner:
                 # no-double-close: replaying against the CURRENT (post-action)
                 # state must be rejected by the candidate rules
                 if after is not None:
-                    ctx2 = _expr.ExprContext(target=after, parameters=rev.params or {},
-                                             principal={"id": rev.principal})
-                    after_rejected += 0 if all(
-                        bool(_expr.evaluate(r.expr, ctx2)) for r in action_res.spec.rules
-                    ) else 1
+                    ctx2 = _expr.ExprContext(target=after, parameters=rev.params or {}, principal={"id": rev.principal})
+                    after_rejected += 0 if all(bool(_expr.evaluate(r.expr, ctx2)) for r in action_res.spec.rules) else 1
             ok = True
             expectations: dict[str, Any] = {"replays": total, "outcome_matches": matched}
             if total and case.expect.outcomes_match is not None:
@@ -179,21 +201,19 @@ class EvalRunner:
         the script is the unit under test -- exactly what a promotion would
         release."""
 
-
         details: dict[str, Any] = {"plugin": case.plugin, "steps": len(case.script)}
         if self.agent_broker is None:
             return False, {**details, "error": "agent eval requires the broker (service not wired)"}
         try:
             self.agent_broker.plugin(case.plugin)  # existence probe: raises -> reported below
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return False, {**details, "error": f"unknown plugin: {exc}"}
 
         async def run_once() -> list[str]:
             sess = await self.agent_broker.open_session(case.plugin, f"eval:{case.name}")
             outcomes: list[str] = []
             for step in case.script:
-                out = await self.agent_broker.call_tool(sess["id"], str(step.get("tool")),
-                                                        dict(step.get("args") or {}))
+                out = await self.agent_broker.call_tool(sess["id"], str(step.get("tool")), dict(step.get("args") or {}))
                 outcomes.append(classify(str(out.get("outcome"))))
                 if classify(str(out.get("outcome"))) == "ok" and case.expect.idempotent:
                     continue
@@ -202,7 +222,7 @@ class EvalRunner:
 
         try:
             first = await run_once()
-        except Exception as exc:  # noqa: BLE001 -- regression = red, not crash
+        except Exception as exc:
             return False, {**details, "error": f"{type(exc).__name__}: {exc}"}
 
         if case.expect.outcomes and first != list(case.expect.outcomes):
@@ -214,10 +234,12 @@ class EvalRunner:
             # the write steps must be refused on replay: rules see post-state
             # (e.g. already-CLOSED), so a second execution means double-apply
             for idx, step in enumerate(case.script):
-                if str(step.get("tool", "")).startswith("act_"):
-                    if second[idx] == "ok":
-                        return False, {**details, "replay": second,
-                                       "error": f"step {idx} ({step.get('tool')}) executed twice"}
+                if str(step.get("tool", "")).startswith("act_") and second[idx] == "ok":
+                    return False, {
+                        **details,
+                        "replay": second,
+                        "error": f"step {idx} ({step.get('tool')}) executed twice",
+                    }
             details["replay"] = second
         return True, details
 

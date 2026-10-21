@@ -20,6 +20,7 @@
 DSL files reference secrets via ``${VAR}``; those are resolved here at runtime
 and never persisted. The process itself is configured by the same mechanism.
 """
+
 from __future__ import annotations
 
 import os
@@ -66,7 +67,7 @@ class Settings:
         """Resolve ``${VAR}`` references against process env + explicit scope."""
         import re
 
-        def sub(m: "re.Match[str]") -> str:
+        def sub(m: re.Match[str]) -> str:
             name = m.group(1)
             if name in self.env:
                 return self.env[name]
@@ -83,9 +84,7 @@ def load_settings(**overrides: str | bool) -> Settings:
         dev_auth=bool(overrides.get("dev_auth", os.environ.get("ONTOGENY_DEV_AUTH", "0") == "1")),
         webhook_allowlist=tuple(
             s.strip()
-            for s in overrides.get(
-                "webhook_allowlist", os.environ.get("ONTOGENY_WEBHOOK_ALLOWLIST", "")
-            ).split(",")
+            for s in overrides.get("webhook_allowlist", os.environ.get("ONTOGENY_WEBHOOK_ALLOWLIST", "")).split(",")
             if s.strip()
         ),
         llm_provider=overrides.get("llm_provider", os.environ.get("ONTOGENY_LLM_PROVIDER", "ollama")) or "ollama",
@@ -109,7 +108,8 @@ def load_settings(**overrides: str | bool) -> Settings:
             "storage_provider",
             os.environ.get("ONTOGENY_STORAGE_PROVIDER")
             or ("hugegraph" if os.environ.get("HUGEGRAPH_URL") else "sqlite"),
-        ) or "sqlite",
+        )
+        or "sqlite",
         extensions_dir=overrides.get("extensions_dir", os.environ.get("ONTOGENY_EXTENSIONS_DIR")) or None,
         log_level=overrides.get("log_level", os.environ.get("ONTOGENY_LOG_LEVEL", "INFO")),
     )

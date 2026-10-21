@@ -21,10 +21,11 @@ Strict by design: ``extra='forbid'`` everywhere so typos fail at load, not at
 runtime. Environment references (``${VAR}``) are carried unresolved; the
 runtime resolves them via Settings.
 """
+
 from __future__ import annotations
 
 import re
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -134,7 +135,7 @@ class BackingSpec(_Model):
 
 
 class ObjectTypeSpec(_Model):
-    primaryKey: list[str] = Field(min_length=1)
+    primaryKey: list[str]
     properties: dict[str, PropertyDef] = Field(min_length=1)
     backing: BackingSpec | None = None
 
@@ -159,7 +160,7 @@ class JoinTableJoin(_Model):
     keys: dict[str, dict[str, str]]  # {"source": {...}, "target": {...}}
 
 
-JoinSpec = Annotated[Union[ForeignKeyJoin, JoinTableJoin], Field(discriminator="kind")]
+JoinSpec = Annotated[ForeignKeyJoin | JoinTableJoin, Field(discriminator="kind")]
 
 
 class LinkSpec(_Model):
@@ -240,15 +241,13 @@ class EmitEventEffect(_EffectBase):
 
 
 Effect = Annotated[
-    Union[
-        ModifyTargetEffect,
-        ModifyLinkedEffect,
-        CreateObjectEffect,
-        ArchiveObjectEffect,
-        SetLinkEffect,
-        WebhookEffect,
-        EmitEventEffect,
-    ],
+    ModifyTargetEffect
+    | ModifyLinkedEffect
+    | CreateObjectEffect
+    | ArchiveObjectEffect
+    | SetLinkEffect
+    | WebhookEffect
+    | EmitEventEffect,
     Field(discriminator="kind"),
 ]
 
@@ -296,6 +295,7 @@ class FunctionStep(_Model):
     declarative side narrow is what stops it becoming a bad programming language
     with no debugger.
     """
+
     id: str
     kind: Literal["read", "llm", "http"]
     # read
@@ -320,6 +320,7 @@ class FunctionSpec(_Model):
     DSL, which is what makes a prompt editable, versionable and reviewable
     without editing Python.
     """
+
     runtime: Literal["python", "declarative"] = "python"
     # required for python; meaningless for declarative
     entry: str = ""
@@ -382,6 +383,7 @@ class AgentPluginPrincipal(_Model):
     principal would -- a plugin can never exceed what its declared identity
     is permitted, no matter what its tool list promises.
     """
+
     id: str
     Role: list[str] = Field(default_factory=list)
     roles: list[str] = Field(default_factory=list)  # lowercase alias, OIDC style
@@ -410,8 +412,8 @@ class AgentPluginTransport(_Model):
 
 
 class AgentPluginTools(_Model):
-    allow: list[str] = Field(default_factory=list)   # subset of the compiled catalog
-    deny: list[str] = Field(default_factory=list)    # explicit narrowing on top
+    allow: list[str] = Field(default_factory=list)  # subset of the compiled catalog
+    deny: list[str] = Field(default_factory=list)  # explicit narrowing on top
 
 
 class AgentPluginApproval(_Model):
@@ -435,6 +437,7 @@ class AgentEngineSpec(_Model):
     drives the session over the session protocol. external-push: the platform
     delegates to the engine's HTTP endpoint (fields reserved; not implemented).
     """
+
     kind: Literal["builtin-llm", "external-pull", "external-push"] = "external-pull"
     endpoint: str | None = None
 
@@ -459,6 +462,7 @@ class AgentCaseExpect(_Model):
     the whole script in a fresh session and requires every write step to be
     refused by rules/policy the second time -- a double-apply is a red.
     """
+
     outcomes: list[str] = Field(default_factory=list)
     idempotent: bool = False
 
@@ -488,7 +492,9 @@ class QueryCase(_Model):
 class ReplayExpectation(_Model):
     no_double_close: bool = Field(default=True, alias="no-double-close")
     effects_idempotent: bool = Field(default=True, alias="effects-idempotent")
-    outcomes_match: float | None = Field(default=None, alias="outcomes-match")  # min fraction of replays whose outcome class matches history
+    outcomes_match: float | None = Field(
+        default=None, alias="outcomes-match"
+    )  # min fraction of replays whose outcome class matches history
 
 
 class ReplayCase(_Model):
@@ -562,7 +568,6 @@ class _Resource(_Model):
     metadata: ResourceMeta
 
 
-
 class StoreResource(_Resource):
     kind: Literal["Store"]
     spec: StoreSpec
@@ -633,7 +638,14 @@ RESOURCE_BY_KIND = {
 }
 
 AnyResource = (
-    StoreResource | ObjectTypeResource | LinkTypeResource | ActionResource
-    | FunctionResource | PolicySetResource | ProjectionResource | EvalSuiteResource
-    | EvolutionPolicyResource | OntologyResource
+    StoreResource
+    | ObjectTypeResource
+    | LinkTypeResource
+    | ActionResource
+    | FunctionResource
+    | PolicySetResource
+    | ProjectionResource
+    | EvalSuiteResource
+    | EvolutionPolicyResource
+    | OntologyResource
 )

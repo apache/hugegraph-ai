@@ -22,6 +22,7 @@ the HugeGraph endpoint. They are deployment configuration, not ontology, so
 they must never be written into a package or a policy file. A single-row table
 keeps the demo's SQLite database and Postgres symmetric.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import Integer, Text, select
@@ -50,13 +51,12 @@ class RuntimeConfigRow(Base):
 
 
 async def load_runtime_config(session) -> RuntimeConfigRow | None:
-    return (await session.execute(
-        select(RuntimeConfigRow).where(RuntimeConfigRow.id == 1)
-    )).scalar_one_or_none()
+    return (await session.execute(select(RuntimeConfigRow).where(RuntimeConfigRow.id == 1))).scalar_one_or_none()
 
 
 async def save_runtime_config(
-    session, *,
+    session,
+    *,
     llm_provider: str | None,
     llm_base_url: str | None,
     llm_model: str | None,

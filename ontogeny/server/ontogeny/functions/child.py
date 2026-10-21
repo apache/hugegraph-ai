@@ -28,6 +28,7 @@ Protocol (one JSON object per line):
                 | {"type":"values", "values": [...]}                 (map mode)
                 | {"type":"error", "error": "..."}
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -79,7 +80,7 @@ def _load(module_path: str, func_name: str):
     mod = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(mod)
-    except Exception as exc:  # noqa: BLE001 -- surface user import errors
+    except Exception as exc:
         return None, None, f"import failed: {exc}"
     fn = getattr(mod, func_name, None)
     if fn is None:
@@ -122,7 +123,7 @@ def main() -> None:
             _emit({"type": "values", "values": values})
         else:
             _emit({"type": "error", "error": f"unknown mode {mode!r}"})
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _emit({"type": "error", "error": f"{type(exc).__name__}: {exc}"})
 
 

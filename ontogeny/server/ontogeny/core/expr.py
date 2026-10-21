@@ -29,6 +29,7 @@ Datetime arithmetic: ts - ts -> milliseconds (float); ts +/- number -> ts.
 ``x ?? y`` coalesces null/missing. ``a in [..]`` membership. ``x has f``
 presence check (used by Cedar-style conditions too).
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -167,22 +168,22 @@ class _Parser:
                 self.next()
                 left = Bin(op, left, self.expr(bp + 1))
             elif (t.kind == "op" and op in _CMP) or (t.kind == "kw" and op in ("in", "has")):
-                if _CMP_BP < min_bp:
+                if min_bp > _CMP_BP:
                     break
                 self.next()
                 left = Bin(op, left, self.expr(_CMP_BP + 1))
             elif t.kind == "op" and op == "??":
-                if _NULLCO_BP < min_bp:
+                if min_bp > _NULLCO_BP:
                     break
                 self.next()
                 left = Bin("??", left, self.expr(_NULLCO_BP))  # right-assoc
             elif t.kind == "op" and op in ("+", "-"):
-                if _ADD_BP < min_bp:
+                if min_bp > _ADD_BP:
                     break
                 self.next()
                 left = Bin(op, left, self.expr(_ADD_BP + 1))
             elif t.kind == "op" and op in ("*", "/"):
-                if _MUL_BP < min_bp:
+                if min_bp > _MUL_BP:
                     break
                 self.next()
                 left = Bin(op, left, self.expr(_MUL_BP + 1))
@@ -305,10 +306,7 @@ def _lookup(ctx: ExprContext, path: Path) -> Any:
         return (ctx.target or {}).get(name)
     value: Any = ctx.root(path.parts[0])
     for seg in path.parts[1:]:
-        if isinstance(value, dict):
-            value = value.get(seg, _MISSING)
-        else:
-            value = getattr(value, seg, _MISSING)
+        value = value.get(seg, _MISSING) if isinstance(value, dict) else getattr(value, seg, _MISSING)
         if value is _MISSING:
             return None  # missing -> null (so ?? and has work naturally)
     return value
@@ -321,7 +319,7 @@ def _truthy(v: Any) -> bool:
 def _as_number(v: Any) -> float | int:
     if isinstance(v, bool):
         raise ExpressionError("boolean used in arithmetic")
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return v
     raise ExpressionError(f"expected number, got {type(v).__name__}")
 
@@ -341,7 +339,7 @@ def _eq(a: Any, b: Any) -> bool:
         return a == b
     if isinstance(a, bool) or isinstance(b, bool):
         return a is b if isinstance(a, bool) and isinstance(b, bool) else a == b
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+    if isinstance(a, int | float) and isinstance(b, int | float):
         return a == b
     return type(a) is type(b) and a == b
 
@@ -431,7 +429,7 @@ def _bin(node: Bin, ctx: ExprContext) -> Any:
         if op == "-":
             return (_as_utc(a) - _as_utc(b)).total_seconds() * 1000.0  # milliseconds
         raise ExpressionError("datetime supports only subtraction")
-    if isinstance(a, _dt.datetime) and isinstance(b, (int, float)) and not isinstance(b, bool):
+    if isinstance(a, _dt.datetime) and isinstance(b, int | float) and not isinstance(b, bool):
         if op == "+":
             return a + _dt.timedelta(milliseconds=b)
         if op == "-":
@@ -457,10 +455,7 @@ def _lookup_holder(ctx: ExprContext, path: Path) -> Any:
         return ctx.root(path.parts[0])
     value: Any = ctx.root(path.parts[0])
     for seg in path.parts[1:-1]:
-        if isinstance(value, dict):
-            value = value.get(seg)
-        else:
-            value = getattr(value, seg, None)
+        value = value.get(seg) if isinstance(value, dict) else getattr(value, seg, None)
         if value is None:
             return None
     return value
@@ -479,8 +474,7 @@ _MAX_EXPR_LEN = 8192  # expressions are authored DSL, not programs
 
 def parse(src: str) -> Node:
     if len(src) > _MAX_EXPR_LEN:
-        raise ExpressionError(
-            f"expression exceeds {_MAX_EXPR_LEN} characters", details={"src": src[:80]})
+        raise ExpressionError(f"expression exceeds {_MAX_EXPR_LEN} characters", details={"src": src[:80]})
     node = _cache.get(src)
     if node is None:
         try:
@@ -488,8 +482,7 @@ def parse(src: str) -> Node:
         except RecursionError:
             # A deeply nested expression must be a validation error, never a
             # crash of the publish/import gate that calls analyze().
-            raise ExpressionError(
-                "expression too deeply nested", details={"src": src[:80]}) from None
+            raise ExpressionError("expression too deeply nested", details={"src": src[:80]}) from None
         if len(_cache) > 4096:
             _cache.clear()
         _cache[src] = node
@@ -532,7 +525,7 @@ def analyze(src: str) -> set[tuple[str, str]]:
                 out.add((n.parts[0], n.parts[1]))
             elif len(n.parts) == 1 and n.parts[0] not in ("target", "parameters", "user", "principal"):
                 out.add(("target", n.parts[0]))  # bare-name sugar for derived expressions
-        elif isinstance(n, (Lit,)):
+        elif isinstance(n, Lit):
             return
         elif isinstance(n, ListLit):
             for i in n.items:

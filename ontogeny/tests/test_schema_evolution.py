@@ -24,6 +24,7 @@ Two failures that only appear in a long-lived process:
 2. the evolution loop could merge a new property (T0) but the object table was
    never altered, leaving the promoted schema unqueryable.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -165,14 +166,22 @@ class TestAdditiveMigration:
 
         async with sc.sessionmaker() as s:
             proposal = ProposalRow(
-                gap_kind="add-optional-property", rationale="planners filter by shift pattern",
-                diff=[{"mutation": "add-optional-property", "object": "production-order",
-                       "prop": "shift-pattern", "type": "string"}],
+                gap_kind="add-optional-property",
+                rationale="planners filter by shift pattern",
+                diff=[
+                    {
+                        "mutation": "add-optional-property",
+                        "object": "production-order",
+                        "prop": "shift-pattern",
+                        "type": "string",
+                    }
+                ],
             )
             s.add(proposal)
             await s.flush()
             result = await Promoter(sc.settings, sc.registry).promote(
-                s, proposal, sc.package_root, eval_report={"passed": True})
+                s, proposal, sc.package_root, eval_report={"passed": True}
+            )
             await s.commit()
         assert result["status"] == "promoted"
 
@@ -180,7 +189,9 @@ class TestAdditiveMigration:
 
         async with sc.sessionmaker() as conn_session:
             conn = await conn_session.connection()
-            columns = await conn.run_sync(lambda c: {col["name"] for col in inspect(c).get_columns("ontogeny_obj_production_order")})
+            columns = await conn.run_sync(
+                lambda c: {col["name"] for col in inspect(c).get_columns("ontogeny_obj_production_order")}
+            )
         assert "shift_pattern" in columns, "promoted property must be added to the object table"
 
         # and it is queryable through the normal path
@@ -191,8 +202,9 @@ class TestAdditiveMigration:
 
         # a write through an action now sees the new column too
         async with sc.sessionmaker() as s:
-            await sc.repo.action_update(s, "production-order", "PO-1002",
-                                        {"shift-pattern": "DAY-DAY"}, dt.datetime.now(dt.timezone.utc))
+            await sc.repo.action_update(
+                s, "production-order", "PO-1002", {"shift-pattern": "DAY-DAY"}, dt.datetime.now(dt.timezone.utc)
+            )
             await s.commit()
             row = await sc.repo.get(s, "production-order", "PO-1002")
         assert row["shift_pattern"] == "DAY-DAY"
@@ -246,8 +258,7 @@ class TestTimestampTimezoneFidelity:
             # PO-1001 was created 2026-09-22T08:00Z and released 2026-09-23T08:00Z:
             # release_lag_h = (released_at - created_at) / 3600000 must be computed
             async with sc.sessionmaker() as s:
-                obj = await sc.query.get(s, "production-order", "PO-1001",
-                                         {"id": "t", "Role": ["planner"]})
+                obj = await sc.query.get(s, "production-order", "PO-1001", {"id": "t", "Role": ["planner"]})
             assert obj["release_lag_h"] is not None, "derived release_lag_h must not be blank"
             assert isinstance(obj["release_lag_h"], float)
             # the seed's fixed timestamps put the lag at exactly one day; just

@@ -16,6 +16,7 @@
 # limitations under the License.
 
 """Projection layer: schema compilation, worker delivery, rebuild (mocked HTTP)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,13 +25,13 @@ import httpx
 import pytest
 import pytest_asyncio
 import yaml
+from ontogeny_ext_hugegraph import HugeGraphClient
 
 from ontogeny.action.models import OutboxRow
 from ontogeny.core import load_package
 from ontogeny.errors import StoreError
-from ontogeny.registry import compile_package
 from ontogeny.projection import ProjectionWorker, compile_projection
-from ontogeny_ext_hugegraph import HugeGraphClient
+from ontogeny.registry import compile_package
 
 
 @pytest.fixture()
@@ -44,17 +45,29 @@ class TestCompiler:
         schema = compile_projection(compiled, prj)
         assert schema["graph"] == "product_manufacturing"  # the domain's own name
         labels = {v["label"] for v in schema["vertexlabels"]}
-        assert labels == {"product", "bom", "material", "work-center",
-                          "production-order", "operation", "quality-inspection"}
+        assert labels == {
+            "product",
+            "bom",
+            "material",
+            "work-center",
+            "production-order",
+            "operation",
+            "quality-inspection",
+        }
         pk = next(v for v in schema["vertexlabels"] if v["label"] == "production-order")
         assert pk["primary_keys"] == ["order_id"]
         # whitelisted properties only, marking never enters (validator enforces)
         mat = next(v for v in schema["vertexlabels"] if v["label"] == "material")
         assert "unit_cost" not in mat["properties"] and "name" in mat["properties"]
         edges = {e["name"] for e in schema["edgelabels"]}
-        assert edges == {"bom-product", "bom-material", "production-order-product",
-                         "production-order-operations", "production-order-inspections",
-                         "operation-work-center"}
+        assert edges == {
+            "bom-product",
+            "bom-material",
+            "production-order-product",
+            "production-order-operations",
+            "production-order-inspections",
+            "operation-work-center",
+        }
         types = {p["name"]: p["data_type"] for p in schema["propertykeys"]}
         assert types["name"] == "TEXT" and types["status"] == "TEXT"
 
@@ -99,9 +112,13 @@ class TestClientAndWorker:
         assert "confirm_message" in str(req.url)
 
     async def test_upsert_vertices_body(self, rig):
-        await rig["client"].upsert_vertices("work-center", "work_center_id", [
-            {"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"},
-        ])
+        await rig["client"].upsert_vertices(
+            "work-center",
+            "work_center_id",
+            [
+                {"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"},
+            ],
+        )
         import json
 
         body = json.loads(rig["calls"][-1].read())
@@ -111,16 +128,30 @@ class TestClientAndWorker:
         assert body[0]["properties"] == {"name": "CNC Machining Cell", "status": "ACTIVE"}
 
     async def test_archive_deletes_vertex(self, rig):
-        await rig["worker"].handle_event(None, None, OutboxRow(
-            object_type="work-center", object_id="WC-99", op="archive", payload={},
-        ))
+        await rig["worker"].handle_event(
+            None,
+            None,
+            OutboxRow(
+                object_type="work-center",
+                object_id="WC-99",
+                op="archive",
+                payload={},
+            ),
+        )
         last = rig["calls"][-1]
         assert last.method == "DELETE" and "WC-99" in str(last.url)
 
     async def test_unprojected_type_consumed_silently(self, rig):
-        ok = await rig["worker"].handle_event(None, None, OutboxRow(
-            object_type="not-in-projection", object_id="x", op="upsert", payload={},
-        ))
+        ok = await rig["worker"].handle_event(
+            None,
+            None,
+            OutboxRow(
+                object_type="not-in-projection",
+                object_id="x",
+                op="upsert",
+                payload={},
+            ),
+        )
         assert ok is True and not rig["calls"]
 
 
@@ -160,8 +191,7 @@ class TestScaffold:
         from ontogeny.core.models import ProjectionResource
 
         _, sc = client
-        payload = sc._derive_projection(name="auto-graph", graph=sc.graph_name(),
-                                        graphspace="DEFAULT")
+        payload = sc._derive_projection(name="auto-graph", graph=sc.graph_name(), graphspace="DEFAULT")
         res = ProjectionResource.model_validate(payload)
         assert res.spec.graph == sc.graph_name() == "product_manufacturing"
 
@@ -172,15 +202,15 @@ class TestScaffold:
 
         _, sc = client
         res = ProjectionResource.model_validate(
-            sc._derive_projection(name="auto-graph", graph=sc.graph_name(),
-                                  graphspace="DEFAULT")
+            sc._derive_projection(name="auto-graph", graph=sc.graph_name(), graphspace="DEFAULT")
         )
         # publish it into the working copy exactly as scaffold_projection does
         pkg_dir = Path(sc.package_root)
         (pkg_dir / "projections").mkdir(exist_ok=True)
         (pkg_dir / "projections" / "auto-graph.yaml").write_text(
-            yaml.safe_dump(res.model_dump(mode="json", by_alias=True, exclude_none=True),
-                           allow_unicode=True, sort_keys=False),
+            yaml.safe_dump(
+                res.model_dump(mode="json", by_alias=True, exclude_none=True), allow_unicode=True, sort_keys=False
+            ),
             encoding="utf-8",
         )
         rep = _validate(load_package(str(pkg_dir)))
@@ -198,13 +228,13 @@ class TestScaffold:
 
         _, sc = client
         res = ProjectionResource.model_validate(
-            sc._derive_projection(name="stray", graph="someone_elses_graph",
-                                  graphspace="DEFAULT")
+            sc._derive_projection(name="stray", graph="someone_elses_graph", graphspace="DEFAULT")
         )
         pkg_dir = Path(sc.package_root)
         (pkg_dir / "projections" / "stray.yaml").write_text(
-            yaml.safe_dump(res.model_dump(mode="json", by_alias=True, exclude_none=True),
-                           allow_unicode=True, sort_keys=False),
+            yaml.safe_dump(
+                res.model_dump(mode="json", by_alias=True, exclude_none=True), allow_unicode=True, sort_keys=False
+            ),
             encoding="utf-8",
         )
         rep = _validate(load_package(str(pkg_dir)))
@@ -291,8 +321,9 @@ class TestDeclaredVersusWired:
         pkg_root = tmp_path / "pkg"
         shutil.copytree(golden_pkg_path, pkg_root)
         sc = ServiceContext(
-            Settings(db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}",
-                     storage_provider="hugegraph"),   # hugegraph selected, no URL
+            Settings(
+                db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}", storage_provider="hugegraph"
+            ),  # hugegraph selected, no URL
             str(pkg_root),
         )
         await sc.initialize()

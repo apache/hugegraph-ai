@@ -16,10 +16,10 @@
 # limitations under the License.
 """PR #380 security-pack regression tests: Cedar forbid semantics,
 derived-property marking propagation, agent-session deletion guards."""
+
 from __future__ import annotations
 
 import copy
-import json
 
 import pytest
 
@@ -71,8 +71,9 @@ class TestForbidSemantics:
             'forbid(principal, action == Action::"release-production-order", resource) when {{ broken'
         )
         rep = validate(pkg)
-        assert any(i.code == "POLICY-FORBID" for i in rep.issues), \
-            "an unparseable forbid must fail publish, not ride silently"
+        assert any(
+            i.code == "POLICY-FORBID" for i in rep.issues
+        ), "an unparseable forbid must fail publish, not ride silently"
 
     def test_grant_parsing_ignores_forbid(self):
         # parse_policy_set stays permits-only: a forbid must never appear as a grant
@@ -87,7 +88,8 @@ class TestDerivedMarkingPropagation:
         from ontogeny.core.models import PropertyDef
 
         obj.spec.properties["cost_hint"] = PropertyDef(
-            type="decimal(10,2)", display="cost hint",
+            type="decimal(10,2)",
+            display="cost hint",
             derived="target.unit_cost * 1.1",  # unit_cost carries marking: internal
         )
         rep = validate(pkg)
@@ -99,7 +101,9 @@ class TestDerivedMarkingPropagation:
         from ontogeny.core.models import PropertyDef
 
         obj.spec.properties["cost_hint"] = PropertyDef(
-            type="decimal(10,2)", display="cost hint", marking="internal",
+            type="decimal(10,2)",
+            display="cost hint",
+            marking="internal",
             derived="target.unit_cost * 1.1",
         )
         rep = validate(pkg)
@@ -114,10 +118,18 @@ class TestSessionDeletionGuards:
         from ontogeny.agent.models import AgentSessionRow
 
         async with sc.sessionmaker() as s:
-            row = AgentSessionRow(plugin="planning-copilot", task="t", status="open",
-                                  principal=f"agent:x-{driver_id}", catalog_hash="h",
-                                  tools_json=[], budget_steps=1, budget_wall_ms=1000,
-                                  budget_writes=1, driver={"id": driver_id})
+            row = AgentSessionRow(
+                plugin="planning-copilot",
+                task="t",
+                status="open",
+                principal=f"agent:x-{driver_id}",
+                catalog_hash="h",
+                tools_json=[],
+                budget_steps=1,
+                budget_wall_ms=1000,
+                budget_writes=1,
+                driver={"id": driver_id},
+            )
             s.add(row)
             await s.commit()
             await s.flush()
@@ -145,9 +157,16 @@ class TestSessionDeletionGuards:
         c, sc = client
         sid = await self._seed(sc, driver_id="alice")
         async with sc.sessionmaker() as s:
-            s.add(AgentApprovalRow(session_id=sid, plugin="planning-copilot",
-                                   tool="act_release_production_order", action="release-production-order",
-                                   parameters={}, status="pending"))
+            s.add(
+                AgentApprovalRow(
+                    session_id=sid,
+                    plugin="planning-copilot",
+                    tool="act_release_production_order",
+                    action="release-production-order",
+                    parameters={},
+                    status="pending",
+                )
+            )
             await s.commit()
         with pytest.raises(ConflictError):
             await sc.agents.delete_session(sid, principal={"id": "alice"})

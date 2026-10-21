@@ -17,17 +17,17 @@
 
 """HTTP shell end-to-end: publish -> sync -> query -> act -> audit -> evolve,
 over a real (file-backed sqlite) ServiceContext through ASGI transport."""
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 # plant-north planner: the role the production policies grant planning actions
 PLANNER = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
 
-OBJECT_TYPES = ("product", "material", "bom", "work-center",
-                "production-order", "operation", "quality-inspection")
+OBJECT_TYPES = ("product", "material", "bom", "work-center", "production-order", "operation", "quality-inspection")
 
 
 def _hdr(p):
@@ -47,8 +47,9 @@ class TestEndToEnd:
             r = await c.post(f"/api/v1/admin/sync/{t}")
             assert r.status_code == 200
 
-        r = await c.post("/api/v1/objects/production-order/query",
-                         json={"filter": {"status": "RELEASED"}}, headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/objects/production-order/query", json={"filter": {"status": "RELEASED"}}, headers=_hdr(PLANNER)
+        )
         body = r.json()
         assert body["total"] == 2  # PO-1001 + PO-1003 both RELEASED after sync
         assert {o["order_id"] for o in body["objects"]} == {"PO-1001", "PO-1003"}
@@ -57,49 +58,58 @@ class TestEndToEnd:
         # principal without the claim, visible for one that holds it
         r = await c.get("/api/v1/objects/material/M-101", headers=_hdr(PLANNER))
         assert r.json()["unit_cost"] == "__masked__"
-        r = await c.get("/api/v1/objects/material/M-101",
-                        headers=_hdr({**PLANNER, "markings": ["internal"]}))
+        r = await c.get("/api/v1/objects/material/M-101", headers=_hdr({**PLANNER, "markings": ["internal"]}))
         assert r.json()["unit_cost"] == 210.0  # decimal coerced on sync
 
     async def test_action_execute_full_cycle(self, client):
         c, sc = client
         await c.post("/api/v1/admin/sync/production-order")
 
-        r = await c.post("/api/v1/actions/release-production-order/validate",
-                         json={"parameters": {}, "target_id": "PO-1002"},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/release-production-order/validate",
+            json={"parameters": {}, "target_id": "PO-1002"},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200 and r.json()["policy"]["allow"]
 
-        r = await c.post("/api/v1/actions/release-production-order/execute",
-                         json={"parameters": {}, "target_id": "PO-1002",
-                               "idempotency_key": "api-1"},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": "PO-1002", "idempotency_key": "api-1"},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200
         rev_id = r.json()["revision_id"]
         assert r.json()["after"]["status"] == "RELEASED"
 
         # idempotent replay through the API
-        r2 = await c.post("/api/v1/actions/release-production-order/execute",
-                          json={"parameters": {}, "target_id": "PO-1002",
-                                "idempotency_key": "api-1"},
-                          headers=_hdr(PLANNER))
+        r2 = await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": "PO-1002", "idempotency_key": "api-1"},
+            headers=_hdr(PLANNER),
+        )
         assert r2.json()["revision_id"] == rev_id
 
         # rule rejection surfaces as structured 422 (already RELEASED)
-        r3 = await c.post("/api/v1/actions/release-production-order/execute",
-                          json={"parameters": {}, "target_id": "PO-1002"},
-                          headers=_hdr(PLANNER))
+        r3 = await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": "PO-1002"},
+            headers=_hdr(PLANNER),
+        )
         assert r3.status_code == 422 and r3.json()["code"] == "RULE_REJECTED"
 
         # policy denial as 403 (fresh PLANNED target so rules pass first)
-        created = await c.post("/api/v1/actions/create-production-order/execute",
-                               json={"parameters": {"product_id": "P-100", "qty": 5}},
-                               headers=_hdr(PLANNER))
+        created = await c.post(
+            "/api/v1/actions/create-production-order/execute",
+            json={"parameters": {"product_id": "P-100", "qty": 5}},
+            headers=_hdr(PLANNER),
+        )
         assert created.status_code == 200, created.text
         new_order = created.json()["object_id"]
-        r4 = await c.post("/api/v1/actions/release-production-order/execute",
-                          json={"parameters": {}, "target_id": new_order},
-                          headers=_hdr({"id": "visitor"}))
+        r4 = await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": new_order},
+            headers=_hdr({"id": "visitor"}),
+        )
         assert r4.status_code == 403
 
         # audit trail
@@ -112,23 +122,30 @@ class TestEndToEnd:
         for t in OBJECT_TYPES:
             await c.post(f"/api/v1/admin/sync/{t}")
         # WC-01 runs OP-2001, OP-2002 (order PO-1001) and OP-2301 (order PO-1004)
-        r = await c.get("/api/v1/objects/work-center/WC-01/links/operation-work-center",
-                        headers=_hdr(PLANNER))
+        r = await c.get("/api/v1/objects/work-center/WC-01/links/operation-work-center", headers=_hdr(PLANNER))
         assert r.status_code == 200
         assert {o["operation_id"] for o in r.json()} == {"OP-2001", "OP-2002", "OP-2301"}
 
-        r = await c.post("/api/v1/graph/traverse", json={
-            "start_type": "work-center", "start_ids": ["WC-01"],
-            "path": [{"link": "operation-work-center", "direction": "out"}],
-        }, headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/graph/traverse",
+            json={
+                "start_type": "work-center",
+                "start_ids": ["WC-01"],
+                "path": [{"link": "operation-work-center", "direction": "out"}],
+            },
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200
         assert r.json()["steps"][-1]["type"] == "operation"
 
     async def test_outbox_dispatch_and_history(self, client):
         c, _ = client
         await c.post("/api/v1/admin/sync/production-order")
-        await c.post("/api/v1/actions/release-production-order/execute",
-                     json={"parameters": {}, "target_id": "PO-1002"}, headers=_hdr(PLANNER))
+        await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": "PO-1002"},
+            headers=_hdr(PLANNER),
+        )
         r = await c.post("/api/v1/admin/outbox/dispatch")
         assert r.status_code == 200
 
@@ -144,9 +161,11 @@ class TestEndToEnd:
             await c.post(f"/api/v1/admin/sync/{t}")
         # generate telemetry: repeated unmapped filter usage
         for _ in range(6):
-            await c.post("/api/v1/objects/production-order/query",
-                         json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
-                         headers=_hdr(PLANNER))
+            await c.post(
+                "/api/v1/objects/production-order/query",
+                json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
+                headers=_hdr(PLANNER),
+            )
         r = await c.post("/api/v1/evolve/aggregate")
         assert any(s["kind"] == "unmapped_filter_field" for s in r.json()["created"])
 
@@ -178,9 +197,11 @@ class TestEndToEnd:
         for t in OBJECT_TYPES:
             await c.post(f"/api/v1/admin/sync/{t}")
         for _ in range(6):
-            await c.post("/api/v1/objects/production-order/query",
-                         json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
-                         headers=_hdr(PLANNER))
+            await c.post(
+                "/api/v1/objects/production-order/query",
+                json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
+                headers=_hdr(PLANNER),
+            )
         r1 = await c.post("/api/v1/evolve/aggregate")
         assert any(s["kind"] == "unmapped_filter_field" for s in r1.json()["created"])
         r2 = await c.post("/api/v1/evolve/aggregate")
@@ -204,18 +225,26 @@ class TestEndToEnd:
         starving it. The two classes are different findings."""
         c, sc = client
         await c.post("/api/v1/admin/sync/production-order")
-        await c.post("/api/v1/actions/release-production-order/execute",
-                     json={"parameters": {}, "target_id": "PO-1002"},
-                     headers=_hdr(PLANNER))
-        await c.post("/api/v1/actions/release-production-order/execute",
-                     json={"parameters": {}, "target_id": "PO-1002"},
-                     headers=_hdr(PLANNER))  # rule rejection (already RELEASED)
-        created = await c.post("/api/v1/actions/create-production-order/execute",
-                               json={"parameters": {"product_id": "P-100", "qty": 5}},
-                               headers=_hdr(PLANNER))
-        await c.post("/api/v1/actions/release-production-order/execute",
-                     json={"parameters": {}, "target_id": created.json()["object_id"]},
-                     headers=_hdr({"id": "visitor"}))  # policy denial
+        await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": "PO-1002"},
+            headers=_hdr(PLANNER),
+        )
+        await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": "PO-1002"},
+            headers=_hdr(PLANNER),
+        )  # rule rejection (already RELEASED)
+        created = await c.post(
+            "/api/v1/actions/create-production-order/execute",
+            json={"parameters": {"product_id": "P-100", "qty": 5}},
+            headers=_hdr(PLANNER),
+        )
+        await c.post(
+            "/api/v1/actions/release-production-order/execute",
+            json={"parameters": {}, "target_id": created.json()["object_id"]},
+            headers=_hdr({"id": "visitor"}),
+        )  # policy denial
         from sqlalchemy import select
 
         from ontogeny.telemetry.service import TelemetryActionRow
@@ -238,22 +267,36 @@ class TestEndToEnd:
         for t in OBJECT_TYPES:
             await c.post(f"/api/v1/admin/sync/{t}")
         for _ in range(6):
-            await c.post("/api/v1/objects/production-order/query",
-                         json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
-                         headers=_hdr(PLANNER))
+            await c.post(
+                "/api/v1/objects/production-order/query",
+                json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
+                headers=_hdr(PLANNER),
+            )
         await c.post("/api/v1/evolve/aggregate")
 
         class _FakeLLM:
             model = "fake"
 
             async def chat(self, messages, **kw):
-                return {"content": _json.dumps({
-                    "act": True,
-                    "analysis": "shift is the shop-floor shift enum",
-                    "mutations": [{"mutation": "add-optional-property", "object": "production-order",
-                                   "prop": "shift", "type": "enum[DAY, NIGHT]",
-                                   "display": "Shift", "description": "Production shift this order belongs to"}],
-                    "rationale": "filter field shift recurs; semantically a shift enum"})}
+                return {
+                    "content": _json.dumps(
+                        {
+                            "act": True,
+                            "analysis": "shift is the shop-floor shift enum",
+                            "mutations": [
+                                {
+                                    "mutation": "add-optional-property",
+                                    "object": "production-order",
+                                    "prop": "shift",
+                                    "type": "enum[DAY, NIGHT]",
+                                    "display": "Shift",
+                                    "description": "Production shift this order belongs to",
+                                }
+                            ],
+                            "rationale": "filter field shift recurs; semantically a shift enum",
+                        }
+                    )
+                }
 
             async def health(self):
                 return {"ok": True}
@@ -300,14 +343,16 @@ class TestEndToEnd:
         )
         # the frontend preview auto-maps same-name columns and sends the FULL
         # mapping (empty mapping would mean "everything source-owned")
-        full_mapping = {k: k for k in
-                        ["order_id", "product_id", "qty", "priority", "created_at"]}
-        r = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "production-order",
-            "store": "csv-production-orders",
-            "source": {"kind": "csv", "filename": "production_orders.csv", "content": csv_text},
-            "mapping": full_mapping,
-        })
+        full_mapping = {k: k for k in ["order_id", "product_id", "qty", "priority", "created_at"]}
+        r = await c.post(
+            "/api/v1/admin/builder/mount",
+            json={
+                "object": "production-order",
+                "store": "csv-production-orders",
+                "source": {"kind": "csv", "filename": "production_orders.csv", "content": csv_text},
+                "mapping": full_mapping,
+            },
+        )
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["published"] is True and body["store"] == "csv-production-orders"
@@ -316,9 +361,11 @@ class TestEndToEnd:
         assert any(q["code"] and q["pk"] == "PO-BAD" for q in body["quarantine"])
 
         # the rows are queryable through the normal door
-        r = await c.post("/api/v1/objects/production-order/query",
-                         json={"filter": {"field": "order_id", "op": "eq", "value": "PO-M1"}},
-                         headers=_hdr(PLANNER))
+        r = await c.post(
+            "/api/v1/objects/production-order/query",
+            json={"filter": {"field": "order_id", "op": "eq", "value": "PO-M1"}},
+            headers=_hdr(PLANNER),
+        )
         assert r.status_code == 200 and r.json()["total"] == 1
 
         # the store resource and the binding are on disk (builder-visible)
@@ -331,21 +378,27 @@ class TestEndToEnd:
         assert obj_doc["spec"]["backing"]["source"]["table"] == "production_orders"
 
         # remount is idempotent (snapshot upsert -> noop)
-        r2 = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "production-order",
-            "store": "csv-production-orders",
-            "source": {"kind": "csv", "filename": "production_orders.csv", "content": csv_text},
-            "mapping": full_mapping,
-        })
+        r2 = await c.post(
+            "/api/v1/admin/builder/mount",
+            json={
+                "object": "production-order",
+                "store": "csv-production-orders",
+                "source": {"kind": "csv", "filename": "production_orders.csv", "content": csv_text},
+                "mapping": full_mapping,
+            },
+        )
         assert r2.json()["sync"]["inserted"] == 0
 
         # a mount WITHOUT a mapping derives the same-name mapping from the CSV
         # header (never empty mapping = everything source-owned)
-        r3 = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "production-order",
-            "store": "csv-production-orders",
-            "source": {"kind": "csv", "filename": "production_orders.csv", "content": csv_text},
-        })
+        r3 = await c.post(
+            "/api/v1/admin/builder/mount",
+            json={
+                "object": "production-order",
+                "store": "csv-production-orders",
+                "source": {"kind": "csv", "filename": "production_orders.csv", "content": csv_text},
+            },
+        )
         assert r3.status_code == 200
         assert r3.json()["mapping"]["order_id"] == "order_id"
 
@@ -354,42 +407,55 @@ class TestEndToEnd:
 
         src = tmp_path / "extra.db"
         con = sqlite3.connect(str(src))
-        con.execute("CREATE TABLE materials_extra (material_id TEXT PRIMARY KEY, name TEXT, "
-                    "unit_cost TEXT, stock_qty TEXT)")
+        con.execute(
+            "CREATE TABLE materials_extra (material_id TEXT PRIMARY KEY, name TEXT, " "unit_cost TEXT, stock_qty TEXT)"
+        )
         con.execute("INSERT INTO materials_extra VALUES ('MX-1','Gasket','3.5','80')")
         con.commit()
         con.close()
 
-        r = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "material",
-            "source": {"kind": "sqlite", "dsn": f"sqlite+aiosqlite:///{src}", "table": "materials_extra"},
-            "mapping": {"material_id": "material_id", "name": "name",
-                        "unit_cost": "unit_cost", "stock_qty": "stock_qty"},
-        })
+        r = await c.post(
+            "/api/v1/admin/builder/mount",
+            json={
+                "object": "material",
+                "source": {"kind": "sqlite", "dsn": f"sqlite+aiosqlite:///{src}", "table": "materials_extra"},
+                "mapping": {
+                    "material_id": "material_id",
+                    "name": "name",
+                    "unit_cost": "unit_cost",
+                    "stock_qty": "stock_qty",
+                },
+            },
+        )
         assert r.status_code == 200, r.text
         assert r.json()["sync"]["inserted"] == 1
 
     async def test_mount_rejects_unknown_object_and_bad_source(self, client):
         c, _ = client
-        r = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "nope", "source": {"kind": "csv", "content": "a\n1"}})
+        r = await c.post(
+            "/api/v1/admin/builder/mount", json={"object": "nope", "source": {"kind": "csv", "content": "a\n1"}}
+        )
         assert r.status_code == 404
-        r2 = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "production-order", "source": {"kind": "csv"}})  # no content
+        r2 = await c.post(
+            "/api/v1/admin/builder/mount", json={"object": "production-order", "source": {"kind": "csv"}}
+        )  # no content
         assert r2.status_code == 422
-        r3 = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "production-order", "source": {"kind": "sqlite"}})  # no dsn/table
+        r3 = await c.post(
+            "/api/v1/admin/builder/mount", json={"object": "production-order", "source": {"kind": "sqlite"}}
+        )  # no dsn/table
         assert r3.status_code == 422
 
     async def test_mount_refuses_source_missing_required_properties(self, client):
         """A CSV lacking a required property would hit NOT NULL mid-insert (a
         raw 500); the mount must refuse with the actual list instead."""
         c, _ = client
-        r = await c.post("/api/v1/admin/builder/mount", json={
-            "object": "production-order",  # product_id/qty are required too
-            "source": {"kind": "csv", "filename": "bad.csv",
-                       "content": "order_id\nPO-X"},
-        })
+        r = await c.post(
+            "/api/v1/admin/builder/mount",
+            json={
+                "object": "production-order",  # product_id/qty are required too
+                "source": {"kind": "csv", "filename": "bad.csv", "content": "order_id\nPO-X"},
+            },
+        )
         assert r.status_code == 422
         assert "qty" in r.json()["message"]
 
@@ -407,13 +473,12 @@ class TestEndToEnd:
         assert meta["roles"], "demo package must reference at least one role"
 
         plugin = {
-            "apiVersion": "ontogeny/v1", "kind": "AgentPlugin",
-            "metadata": {"name": "qc-copilot", "display": "Quality copilot",
-                         "description": "read-only queries"},
+            "apiVersion": "ontogeny/v1",
+            "kind": "AgentPlugin",
+            "metadata": {"name": "qc-copilot", "display": "Quality copilot", "description": "read-only queries"},
             "spec": {
                 "engine": {"kind": "builtin-llm"},
-                "principal": {"id": "agent:qc-copilot", "Role": meta["roles"][:1],
-                              "site": "plant-north"},
+                "principal": {"id": "agent:qc-copilot", "Role": meta["roles"][:1], "site": "plant-north"},
                 "tools": {"allow": ["describe_ontology", "search_production_order"]},
                 "approval": {"writes": "never"},
                 "budget": {"steps": 20, "wall_ms": 60000, "writes_per_session": 0},

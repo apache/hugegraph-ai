@@ -41,6 +41,7 @@ the report is a REVIEW LIST with per-button context, not a verdict.
 
 Requires Google Chrome (headless) + the console served by the real backend.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -145,11 +146,20 @@ class Chrome:
     async def start(self, width: int = 1440, height: int = 900):
         prof = tempfile.mkdtemp(prefix="ontogeny-audit-")
         self.proc = subprocess.Popen(
-            [CHROME, "--headless=new", f"--remote-debugging-port={self.port}",
-             "--no-first-run", "--no-default-browser-check",
-             "--disable-gpu", f"--window-size={width},{height}",
-             f"--user-data-dir={prof}", "about:blank"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            [
+                CHROME,
+                "--headless=new",
+                f"--remote-debugging-port={self.port}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-gpu",
+                f"--window-size={width},{height}",
+                f"--user-data-dir={prof}",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         for _ in range(50):
             try:
                 r = httpx.get(f"http://127.0.0.1:{self.port}/json/version", timeout=1)
@@ -189,9 +199,7 @@ class Chrome:
         await asyncio.sleep(wait)
 
     async def eval(self, expr, await_promise=False):
-        r = await self.send("Runtime.evaluate",
-                            expression=expr, returnByValue=True,
-                            awaitPromise=await_promise)
+        r = await self.send("Runtime.evaluate", expression=expr, returnByValue=True, awaitPromise=await_promise)
         if "exceptionDetails" in r:
             return {"__error__": r["exceptionDetails"].get("text", "exception")}
         # CDP nests: {id, result: {result: {type, value}}}
@@ -219,17 +227,21 @@ async def audit(base: str, settle: float) -> dict:
             quiet, errors = [], []
             for b in buttons:
                 before = await chrome.eval(READ_JS)
-                clicked = await chrome.eval(
-                    CLICK_JS.replace("IDX", str(b["idx"])))
+                clicked = await chrome.eval(CLICK_JS.replace("IDX", str(b["idx"])))
                 await asyncio.sleep(settle)
                 after = await chrome.eval(READ_JS) or {}
                 # element unmounted by an earlier click (a view/tab switch is
                 # itself activity): skip, do not count as quiet
                 if not clicked or not clicked.get("clicked") or clicked.get("__error__"):
                     continue
-                activity = (after.get("mutations", 0) - before.get("mutations", 0)
-                            + after.get("requests", 0) - before.get("requests", 0)
-                            + after.get("dialogs", 0) - before.get("dialogs", 0))
+                activity = (
+                    after.get("mutations", 0)
+                    - before.get("mutations", 0)
+                    + after.get("requests", 0)
+                    - before.get("requests", 0)
+                    + after.get("dialogs", 0)
+                    - before.get("dialogs", 0)
+                )
                 if activity == 0:
                     quiet.append(b["label"] or f"<#{b['idx']}>")
             final = await chrome.eval(READ_JS) or {}
@@ -237,8 +249,10 @@ async def audit(base: str, settle: float) -> dict:
             report["routes"][route] = {"buttons": len(buttons), "quiet": quiet}
             if errors:
                 report["errors"][route] = errors[:5]
-            print(f"{route:<16} buttons={len(buttons):3d} quiet={len(quiet):3d} "
-                  f"{'QUIET: ' + '; '.join(quiet[:6]) if quiet else ''}")
+            print(
+                f"{route:<16} buttons={len(buttons):3d} quiet={len(quiet):3d} "
+                f"{'QUIET: ' + '; '.join(quiet[:6]) if quiet else ''}"
+            )
     finally:
         await chrome.close()
     return report
@@ -254,8 +268,9 @@ def main() -> int:
     t0 = time.time()
     rep = asyncio.run(audit(args.base, args.settle))
     total_quiet = sum(len(r["quiet"]) for r in rep["routes"].values())
-    print(f"\n{total_quiet} quiet button(s) across {len(ROUTES)} routes "
-          f"({time.time() - t0:.0f}s); review list above")
+    print(
+        f"\n{total_quiet} quiet button(s) across {len(ROUTES)} routes " f"({time.time() - t0:.0f}s); review list above"
+    )
     if args.json:
         Path(args.json).write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     return 0

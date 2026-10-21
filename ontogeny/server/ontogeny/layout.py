@@ -20,6 +20,7 @@
 Lived on ServiceContext only because that was the object the HTTP shell could
 reach; the context delegates here so domain logic and console cosmetics stop
 sharing one god object."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,7 +47,7 @@ class LayoutStore:
             import yaml
 
             doc = yaml.safe_load(p.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001 -- a corrupt sidecar must not take the canvas down
+        except Exception:
             return {}
         layout = doc.get("layout") if isinstance(doc, dict) else None
         return layout if isinstance(layout, dict) else {}
@@ -66,7 +67,7 @@ class LayoutStore:
             if not isinstance(pos, dict):
                 continue
             x, y = pos.get("x"), pos.get("y")
-            if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+            if isinstance(x, int | float) and isinstance(y, int | float):
                 clean[str(node_id)] = {"x": float(x), "y": float(y)}
         if not clean:
             if p.exists():
@@ -78,7 +79,6 @@ class LayoutStore:
         p.write_text(
             "# ontogeny canvas layout: hand-arranged node positions of the ontology\n"
             "# workbench, committed with the model by a builder save. Per package,\n"
-            "# travels with zip import/export; safe to delete (auto layout returns).\n"
-            + payload,
+            "# travels with zip import/export; safe to delete (auto layout returns).\n" + payload,
             encoding="utf-8",
         )

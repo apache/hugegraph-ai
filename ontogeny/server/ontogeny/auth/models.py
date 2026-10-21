@@ -31,6 +31,7 @@ managing accounts and roles, which is not something a Cedar policy should be
 able to grant to a business principal by accident. The business roles a user
 carries live in ``roles`` and are enforced by the ordinary policy plane.
 """
+
 from __future__ import annotations
 
 import datetime as _dt

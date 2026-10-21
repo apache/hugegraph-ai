@@ -22,6 +22,7 @@ The provider is selected at runtime: ``ollama`` (default) or ``external``.
 Both satisfy the core ``ontogeny.llm.ChatClient`` contract and provide
 ``capability:llm`` when a base URL is configured.
 """
+
 from .adapter import OllamaChat, OpenAICompatibleChat
 
 __all__ = ["OllamaChat", "OpenAICompatibleChat", "register"]
@@ -52,9 +53,12 @@ def register(sc, host) -> None:
             http=http,
         )
     sc.llm = client
-    host.provide("capability:llm", {
-        "extension": "llm-ollama",
-        "provider": provider,
-        "model": client.model,
-        "base_url": client.base_url,
-    })
+    host.provide(
+        "capability:llm",
+        {
+            "extension": "llm-ollama",
+            "provider": provider,
+            "model": client.model,
+            "base_url": client.base_url,
+        },
+    )

@@ -27,8 +27,10 @@ exercised on a COPY of it that adds exactly one (product.open_order_count,
 counting the product's PLANNED production orders) -- the derivation contract
 must hold on the real domain shape, not on a toy ontology.
 """
+
 from __future__ import annotations
 
+from pathlib import Path
 
 import httpx
 import pytest
@@ -36,8 +38,6 @@ import pytest_asyncio
 
 from ontogeny.config import Settings
 from ontogeny.demo import prepare_demo
-from pathlib import Path
-
 from ontogeny.service import ServiceContext
 
 REPO = Path(__file__).resolve().parent.parent
@@ -61,21 +61,24 @@ def _pkg_with_function_property(root: Path) -> Path:
     product = root / "objects" / "product.yaml"
     text = product.read_text(encoding="utf-8")
     assert "  backing:" in text
-    product.write_text(text.replace(
-        "  backing:",
-        "    open_order_count:\n"
-        "      type: integer\n"
-        "      display: Open production orders\n"
-        "      description: Function-derived count of PLANNED production orders for\n"
-        "        this product, materialized by the derivation worker\n"
-        "      derived:\n"
-        "        kind: function\n"
-        "        entry: order_count.py:open_order_count\n"
-        "        object_param: obj\n"
-        "        triggers: [production-order]\n"
-        "  backing:",
-        1,
-    ), encoding="utf-8")
+    product.write_text(
+        text.replace(
+            "  backing:",
+            "    open_order_count:\n"
+            "      type: integer\n"
+            "      display: Open production orders\n"
+            "      description: Function-derived count of PLANNED production orders for\n"
+            "        this product, materialized by the derivation worker\n"
+            "      derived:\n"
+            "        kind: function\n"
+            "        entry: order_count.py:open_order_count\n"
+            "        object_param: obj\n"
+            "        triggers: [production-order]\n"
+            "  backing:",
+            1,
+        ),
+        encoding="utf-8",
+    )
 
     (root / "functions" / "order_count.py").write_text(
         '"""Open order count: a cross-object function-derived property.\n'
@@ -133,8 +136,8 @@ class TestFunctionBackedProperties:
         await sc.outbox.dispatch_pending()  # derivation consumer + drain
 
         async with sc.sessionmaker() as s:
-            p200 = await sc.repo.get(s, "product", "P-200")   # PO-1002 seeded PLANNED
-            p100 = await sc.repo.get(s, "product", "P-100")   # PO-1001 RELEASED, PO-1004 COMPLETED
+            p200 = await sc.repo.get(s, "product", "P-200")  # PO-1002 seeded PLANNED
+            p100 = await sc.repo.get(s, "product", "P-100")  # PO-1001 RELEASED, PO-1004 COMPLETED
         assert p200["open_order_count"] == 1
         assert p100["open_order_count"] == 0
 
@@ -148,7 +151,9 @@ class TestFunctionBackedProperties:
 
         async with sc.sessionmaker() as s:
             await sc.runtime.execute(
-                s, "create-production-order", PLANNER,
+                s,
+                "create-production-order",
+                PLANNER,
                 {"product_id": "P-300", "qty": 5},
                 None,
             )
@@ -165,7 +170,9 @@ class TestFunctionBackedProperties:
 
         async with sc.sessionmaker() as s:
             rev = await sc.runtime.execute(
-                s, "create-production-order", PLANNER,
+                s,
+                "create-production-order",
+                PLANNER,
                 {"product_id": "P-100", "qty": 2},
                 None,
             )
@@ -180,7 +187,11 @@ class TestFunctionBackedProperties:
         # releasing the order takes it out of the PLANNED count
         async with sc.sessionmaker() as s:
             await sc.runtime.execute(
-                s, "release-production-order", PLANNER, {}, order_id,
+                s,
+                "release-production-order",
+                PLANNER,
+                {},
+                order_id,
             )
             await s.commit()
         await sc.outbox.dispatch_pending()
@@ -207,17 +218,22 @@ class TestLlmInFunctions:
         )
 
         fn = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function",
+            apiVersion="ontogeny/v1",
+            kind="Function",
             metadata=ResourceMeta(name="summarize"),
             spec=FunctionSpec(
-                runtime="python", entry="summarize.py:summarize",
+                runtime="python",
+                entry="summarize.py:summarize",
                 parameters={"text": ParamDef(type="string", required=True)},
-                capabilities=[Capability(**{"read-objects": ["production-order"]}),
-                              Capability(**{"llm": {"max-calls": 2}})],
+                capabilities=[
+                    Capability(**{"read-objects": ["production-order"]}),
+                    Capability(**{"llm": {"max-calls": 2}}),
+                ],
             ),
         )
 
         ollama_hits = []
+
         def handler(request: httpx.Request) -> httpx.Response:
             ollama_hits.append(request)
             return httpx.Response(200, json={"message": {"role": "assistant", "content": "the summary"}})
@@ -256,17 +272,16 @@ class TestLlmInFunctions:
 
         shutil.copytree(golden_pkg_path, pkg_root)
         (pkg_root / "functions" / "loop.py").write_text(
-            "def loop(n):\n"
-            "    for _ in range(n):\n"
-            "        ontogeny.llm(prompt='x')\n"
-            "    return n\n",
+            "def loop(n):\n" "    for _ in range(n):\n" "        ontogeny.llm(prompt='x')\n" "    return n\n",
             encoding="utf-8",
         )
         fn = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function",
+            apiVersion="ontogeny/v1",
+            kind="Function",
             metadata=ResourceMeta(name="loop"),
             spec=FunctionSpec(
-                runtime="python", entry="loop.py:loop",
+                runtime="python",
+                entry="loop.py:loop",
                 parameters={"n": ParamDef(type="integer", required=True)},
                 capabilities=[Capability(**{"llm": {"max-calls": 2}})],
             ),
@@ -276,8 +291,13 @@ class TestLlmInFunctions:
             env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'e2.db'}"},
             llm_base_url="http://ollama.test",
         )
-        sc = ServiceContext(settings, str(pkg_root), llm_http=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"message": {"content": "ok"}}))))
+        sc = ServiceContext(
+            settings,
+            str(pkg_root),
+            llm_http=httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"message": {"content": "ok"}}))
+            ),
+        )
         await sc.initialize()
         try:
             async with sc.sessionmaker() as s:
@@ -295,16 +315,22 @@ class TestLlmInFunctions:
 
         shutil.copytree(golden_pkg_path, pkg_root)
         (pkg_root / "functions" / "s.py").write_text(
-            "def s(text):\n    return ontogeny.llm(prompt=text)['content']\n", encoding="utf-8")
-        fn = FunctionResource(
-            apiVersion="ontogeny/v1", kind="Function",
-            metadata=ResourceMeta(name="s"),
-            spec=FunctionSpec(runtime="python", entry="s.py:s",
-                              parameters={"text": ParamDef(type="string", required=True)},
-                              capabilities=[Capability(**{"llm": True})]),
+            "def s(text):\n    return ontogeny.llm(prompt=text)['content']\n", encoding="utf-8"
         )
-        settings = Settings(db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m3.db'}",
-                            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'e3.db'}"})
+        fn = FunctionResource(
+            apiVersion="ontogeny/v1",
+            kind="Function",
+            metadata=ResourceMeta(name="s"),
+            spec=FunctionSpec(
+                runtime="python",
+                entry="s.py:s",
+                parameters={"text": ParamDef(type="string", required=True)},
+                capabilities=[Capability(**{"llm": True})],
+            ),
+        )
+        settings = Settings(
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m3.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'e3.db'}"}
+        )
         sc = ServiceContext(settings, str(pkg_root))
         await sc.initialize()
         try:

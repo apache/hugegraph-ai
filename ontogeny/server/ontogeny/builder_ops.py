@@ -21,15 +21,23 @@ Used to be ~190 lines of file orchestration inside the HTTP handler; it is a
 platform operation (the role manager writes managed Cedar through it too), so
 it lives at the service level where CLI/other shells can reach it. Raises
 ``DSLValidationError`` instead of returning error responses."""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
 
-async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str] | None = None,
-                       layout: dict[str, Any] | None = None, story: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    from .core import load_package, validate as _v
+async def builder_save(
+    sc,
+    resources: list[dict[str, Any]],
+    *,
+    deletes: list[str] | None = None,
+    layout: dict[str, Any] | None = None,
+    story: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    from .core import load_package
+    from .core import validate as _v
     from .core.models import RESOURCE_BY_KIND
     from .errors import DSLValidationError
 
@@ -49,8 +57,6 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
     pkg_dir = Path(sc.package_root)
     if not pkg_dir.is_dir():
         raise DSLValidationError(f"package dir {pkg_dir} does not exist")
-
-
 
     # Inline data-source declarations: the console's data-mount editor puts
     # the source INTO backing.store_spec ({kind, connection}) — a bare store
@@ -84,18 +90,26 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
         try:
             parsed.append(cls.model_validate(raw))
         except Exception as exc:
-            errors.append({"resource": f"{kind}/{raw.get('metadata',{}).get('name','?')}",
-                           "message": str(exc)[:200]})
+            errors.append({"resource": f"{kind}/{raw.get('metadata',{}).get('name','?')}", "message": str(exc)[:200]})
     if errors:
         # the console shows per-resource errors; raise and let the HTTP shell
         # keep its legacy 422 envelope
         raise DSLValidationError("builder resources failed validation", details={"errors": errors})
 
     # write YAML files into the package directory (grouped by kind)
-    _DIR_MAP = {"Store": "stores", "ObjectType": "objects", "LinkType": "links",
-                "Action": "actions", "Function": "functions", "PolicySet": "policies",
-                "Projection": "projections", "EvalSuite": "evals", "AgentPlugin": "agents",
-                "EvolutionPolicy": None, "Ontology": None}
+    _DIR_MAP = {
+        "Store": "stores",
+        "ObjectType": "objects",
+        "LinkType": "links",
+        "Action": "actions",
+        "Function": "functions",
+        "PolicySet": "policies",
+        "Projection": "projections",
+        "EvalSuite": "evals",
+        "AgentPlugin": "agents",
+        "EvolutionPolicy": None,
+        "Ontology": None,
+    }
     # Ontology → ontology.yaml; EvolutionPolicy → evolution.yaml (flat files)
     manifest = next((r for r in parsed if r.kind == "Ontology"), None)
     if manifest is None:
@@ -103,9 +117,11 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
         existing_manifest = pkg_dir / "ontology.yaml"
         if existing_manifest.is_file():
             from .core.models import OntologyResource
+
             manifest = OntologyResource.model_validate(_yaml.safe_load(existing_manifest.read_text(encoding="utf-8")))
 
     import yaml as _yaml_mod
+
     # ObjectType store sidecars: the console's data-mount editor declares the
     # source INLINE as backing.store_spec ({kind, connection}); the first pass
     # (above) strips it before the pydantic parse because BackingSpec has no
@@ -120,19 +136,26 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
 
         if not store_name or not kind or not connection:
             raise DSLValidationError(
-                "ObjectType backing.store_spec: store name, source type and "
-                "connection are all required",
+                "ObjectType backing.store_spec: store name, source type and " "connection are all required",
                 details={"store": store_name, "kind": kind},
             )
         stores_dir = pkg_dir / "stores"
         stores_dir.mkdir(parents=True, exist_ok=True)
         (stores_dir / f"{store_name}.yaml").write_text(
-            _yaml.safe_dump({
-                "apiVersion": "ontogeny/v1", "kind": "Store",
-                "metadata": {"name": store_name},
-                "spec": {"type": kind, "connection": connection,
-                         "access": "read-only" if kind == "csv" else "read-write"},
-            }, allow_unicode=True, sort_keys=False),
+            _yaml.safe_dump(
+                {
+                    "apiVersion": "ontogeny/v1",
+                    "kind": "Store",
+                    "metadata": {"name": store_name},
+                    "spec": {
+                        "type": kind,
+                        "connection": connection,
+                        "access": "read-only" if kind == "csv" else "read-write",
+                    },
+                },
+                allow_unicode=True,
+                sort_keys=False,
+            ),
             encoding="utf-8",
         )
 
@@ -176,8 +199,11 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
     # manifest
     if manifest is not None:
         (pkg_dir / "ontology.yaml").write_text(
-            _yaml_mod.safe_dump(manifest.model_dump(mode="json", by_alias=True, exclude_none=True),
-                                allow_unicode=True, sort_keys=False), encoding="utf-8")
+            _yaml_mod.safe_dump(
+                manifest.model_dump(mode="json", by_alias=True, exclude_none=True), allow_unicode=True, sort_keys=False
+            ),
+            encoding="utf-8",
+        )
 
     # Enforce one YAML file per (kind, metadata.name). A resource renamed by
     # a prior save can otherwise leave the old filename behind; the next
@@ -192,7 +218,7 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
         for fp in sorted(d.glob("*.yaml")):
             try:
                 doc = _yaml_mod.safe_load(fp.read_text(encoding="utf-8")) or {}
-            except Exception:  # noqa: BLE001 -- malformed files fail in validate()
+            except Exception:
                 continue
             name = (doc.get("metadata") or {}).get("name")
             if isinstance(name, str):
@@ -222,7 +248,6 @@ async def builder_save(sc, resources: list[dict[str, Any]], *, deletes: list[str
         "removed": removed,
         "issues": [{"code": i.code, "severity": i.severity, "message": i.message} for i in rep.issues],
     }
-
 
 
 class _Body:

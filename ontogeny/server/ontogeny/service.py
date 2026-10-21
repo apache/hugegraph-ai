@@ -20,8 +20,10 @@
 REST API, MCP server, CLI and background workers are thin shells over this
 object -- governance (transactions, policy, audit) has exactly one path.
 """
+
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -33,8 +35,8 @@ from typing import Any
 import httpx
 
 from .action import ActionRuntime, OutboxDispatcher, SseBroker
-from .auth import AuthService
 from .agent.broker import AgentBroker
+from .auth import AuthService
 from .config import Settings
 from .core.loader import load_package
 from .db import init_schema, make_engine, make_sessionmaker
@@ -75,7 +77,7 @@ def _read_manifest(path: Path) -> dict[str, Any]:
 
         doc = yaml.safe_load((Path(path) / "ontology.yaml").read_text(encoding="utf-8"))
         return doc if isinstance(doc, dict) else {}
-    except Exception:  # noqa: BLE001 -- listing is best-effort by design
+    except Exception:
         return {}
 
 
@@ -100,9 +102,8 @@ def _check_package(path: Path) -> dict[str, Any]:
         rep = validate(load_package(str(path)))
         if rep.ok:
             return {"ok": True, "errors": []}
-        return {"ok": False,
-                "errors": [f"{i.resource}: {i.message}" for i in rep.issues if i.severity == "error"][:5]}
-    except Exception as exc:  # noqa: BLE001 -- any failure is the check's answer
+        return {"ok": False, "errors": [f"{i.resource}: {i.message}" for i in rep.issues if i.severity == "error"][:5]}
+    except Exception as exc:
         return {"ok": False, "errors": [str(exc)[:300]]}
 
 
@@ -122,9 +123,8 @@ _PROJECTION_BLOCK_REASONS = {
     "not-declared": "no projection declared",
     "provider-sqlite": "storage provider is {provider}, not 'hugegraph', so nothing is projected",
     "endpoint-unresolved": "the projection endpoint ${HUGEGRAPH_URL} cannot be resolved "
-                           "(set the HugeGraph address in the storage configuration)",
-    "extension-missing": "the graph-hugegraph extension is not loaded, so there is no "
-                         "graph client to wire",
+    "(set the HugeGraph address in the storage configuration)",
+    "extension-missing": "the graph-hugegraph extension is not loaded, so there is no " "graph client to wire",
 }
 
 
@@ -158,11 +158,16 @@ def _mask_dsn(dsn: str) -> str:
 
 
 class ServiceContext:
-    def __init__(self, settings: Settings, package_root: str | None = None,
-                 *, projection_http: httpx.AsyncClient | None = None,
-                 llm_http: httpx.AsyncClient | None = None,
-                 ui_dir: str | None = None,
-                 package_root_override: str | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        package_root: str | None = None,
+        *,
+        projection_http: httpx.AsyncClient | None = None,
+        llm_http: httpx.AsyncClient | None = None,
+        ui_dir: str | None = None,
+        package_root_override: str | None = None,
+    ) -> None:
         self.settings = settings
         self.package_root = package_root
         # The package this process booted from (ONTOGENY_PACKAGE_ROOT). Domain
@@ -175,6 +180,7 @@ class ServiceContext:
         self.package_root_override = package_root_override
         self.ui_dir = ui_dir  # built SPA directory served same-origin (optional)
         from .layout import LayoutStore
+
         self._layout = LayoutStore(package_root)
         self.registry = RegistryService()
         self.engine = None
@@ -193,7 +199,7 @@ class ServiceContext:
 
     # ------------------------------------------------------------- lifecycle
 
-    async def initialize(self) -> "ServiceContext":
+    async def initialize(self) -> ServiceContext:
         self.engine = make_engine(self.settings.db_dsn)
         await init_schema(self.engine)
         self.sessionmaker = make_sessionmaker(self.engine)
@@ -239,7 +245,9 @@ class ServiceContext:
         if row is None:
             return
         env = dict(self.settings.env)
-        storage_provider = row.storage_provider or ("hugegraph" if row.hugegraph_url else self.settings.storage_provider)
+        storage_provider = row.storage_provider or (
+            "hugegraph" if row.hugegraph_url else self.settings.storage_provider
+        )
         if storage_provider == "hugegraph":
             # the row's endpoint, else whatever the process was started with
             url = row.hugegraph_url or os.environ.get("HUGEGRAPH_URL")
@@ -287,7 +295,8 @@ class ServiceContext:
         }
 
     async def configure_runtime(
-        self, *,
+        self,
+        *,
         llm_provider: str | None = None,
         llm_base_url: str | None = None,
         llm_model: str | None = None,
@@ -310,8 +319,7 @@ class ServiceContext:
         # resolution scope is also exported into the process environment, took
         # the deployment's own variable down with it.
         if storage == "hugegraph":
-            url = (storage_url or self.settings.env.get("HUGEGRAPH_URL")
-                   or os.environ.get("HUGEGRAPH_URL"))
+            url = storage_url or self.settings.env.get("HUGEGRAPH_URL") or os.environ.get("HUGEGRAPH_URL")
             if url:
                 env["HUGEGRAPH_URL"] = url
         else:
@@ -337,8 +345,7 @@ class ServiceContext:
             hg_password = None
             hg_user = None
         else:
-            hg_password = (storage_password if storage_password
-                           else self.settings.hugegraph_password)
+            hg_password = storage_password if storage_password else self.settings.hugegraph_password
         self.settings = replace(
             self.settings,
             llm_provider=provider,
@@ -377,10 +384,8 @@ class ServiceContext:
         # the service objects that captured the old clients/endpoints.
         old_llm = self.llm
         if old_llm is not None and hasattr(old_llm, "aclose"):
-            try:
+            with contextlib.suppress(Exception):
                 await old_llm.aclose()
-            except Exception:  # noqa: BLE001 -- old client teardown is best-effort
-                pass
         self.llm = None
         self.graph_store_factory = None
         if self.ext is not None:
@@ -447,27 +452,37 @@ class ServiceContext:
         endpoint = self._graph_endpoint()
         if not endpoint:
             return {"graph_name": name, "graphspace": graphspace, "graph_exists": None}
-        probe = self.graph_store_factory(endpoint, name, graphspace=graphspace,
-                                         http=self.projection_http,
-                                         user=self.settings.hugegraph_user,
-                                         password=self.settings.hugegraph_password,
-                                         data_dir=self.settings.hugegraph_data_dir)
+        probe = self.graph_store_factory(
+            endpoint,
+            name,
+            graphspace=graphspace,
+            http=self.projection_http,
+            user=self.settings.hugegraph_user,
+            password=self.settings.hugegraph_password,
+            data_dir=self.settings.hugegraph_data_dir,
+        )
         try:
             exists = await probe.exists()
         except OOError as exc:
             # a probe we were not allowed to make must not read as "absent": the
             # console would offer a destructive build on a graph it cannot see
-            return {"graph_name": name, "graphspace": graphspace, "graph_exists": None,
-                    "probe_error": exc.message}
-        return {"graph_name": name, "graphspace": graphspace, "graph_exists": exists,
-                "auth_rejected": bool(getattr(probe, "auth_rejected", False))}
+            return {"graph_name": name, "graphspace": graphspace, "graph_exists": None, "probe_error": exc.message}
+        return {
+            "graph_name": name,
+            "graphspace": graphspace,
+            "graph_exists": exists,
+            "auth_rejected": bool(getattr(probe, "auth_rejected", False)),
+        }
 
     def _apply_package_root_override(self, compiled: CompiledOntology) -> CompiledOntology:
         """Point a DB-loaded snapshot at the on-disk package when available."""
         candidate = self.package_root_override or self.package_root
-        if candidate and Path(candidate).is_dir() \
-                and Path(compiled.package_root).resolve() != Path(candidate).resolve() \
-                and _manifest_name(candidate) == compiled.package_name:
+        if (
+            candidate
+            and Path(candidate).is_dir()
+            and Path(compiled.package_root).resolve() != Path(candidate).resolve()
+            and _manifest_name(candidate) == compiled.package_name
+        ):
             # only when the on-disk package IS the same package: a different
             # domain activated from domains/ must keep its own root, or builder
             # saves and promotions would land in the boot package's directory
@@ -495,9 +510,7 @@ class ServiceContext:
         """Refresh services from the registry (e.g. after an evolve promotion)."""
         async with self.sessionmaker() as session:
             compiled = await self.registry.load_latest(session)
-        if compiled is not None and (
-            self.compiled is None or compiled.content_hash != self.compiled.content_hash
-        ):
+        if compiled is not None and (self.compiled is None or compiled.content_hash != self.compiled.content_hash):
             self._rebuild_services(compiled)
             async with self.sessionmaker() as session:
                 await self.repo.ensure(session)
@@ -519,7 +532,9 @@ class ServiceContext:
             surface.refresh()
         self.repo = ObjectRepository(compiled)
         self.sync_engine = SyncEngine(
-            compiled, self.settings, self.repo,
+            compiled,
+            self.settings,
+            self.repo,
             lambda store: make_source(store, self.settings.resolve_env_ref(store.spec.connection)),
         )
         self.policy = PolicyEngine(compiled)
@@ -527,21 +542,30 @@ class ServiceContext:
         # repo); None means "capability absent" and every LLM consumer degrades.
         # The sandbox shares the platform LLM gateway: ontogeny.llm() inside a
         # function is budgeted + routed here, never called from the child
-        self.sandbox = FunctionSandbox(compiled, self.repo, llm=self.llm,
-                                       llm_call_timeout_s=self.settings.llm_call_timeout_s)
+        self.sandbox = FunctionSandbox(
+            compiled, self.repo, llm=self.llm, llm_call_timeout_s=self.settings.llm_call_timeout_s
+        )
         # Both ways of having a body, behind one door: code runs in the sandbox,
         # a declarative pipeline runs here through the same engine and gateway
         # the sandbox reaches over RPC. Every caller uses `self.functions`, so
         # the two cannot drift in budgeting, masking or error reporting.
-        self.functions = FunctionRuntime(self.sandbox, DeclarativeRuntime(
-            llm=self.llm, repo=self.repo, compiled=compiled,
-            http_allowlist=list(self.settings.function_http_allowlist or ()),
-            resolve_ref=self.settings.resolve_env_ref,
-            llm_call_timeout_s=self.settings.llm_call_timeout_s,
-        ))
+        self.functions = FunctionRuntime(
+            self.sandbox,
+            DeclarativeRuntime(
+                llm=self.llm,
+                repo=self.repo,
+                compiled=compiled,
+                http_allowlist=list(self.settings.function_http_allowlist or ()),
+                resolve_ref=self.settings.resolve_env_ref,
+                llm_call_timeout_s=self.settings.llm_call_timeout_s,
+            ),
+        )
         self.derivation = DerivationWorker(compiled, self.repo, self.functions, self.sessionmaker)
         self.runtime = ActionRuntime(
-            compiled, self.repo, self.policy, self.settings,
+            compiled,
+            self.repo,
+            self.policy,
+            self.settings,
             function_runner=self._function_runner,
         )
         self.query = QueryService(compiled, self.repo, self.policy)
@@ -553,6 +577,7 @@ class ServiceContext:
         # see ontogeny.evolve.proposer.DecidingProposer); without one the loop runs
         # the deterministic heuristic proposer unchanged
         from .evolve.proposer import DecidingProposer
+
         self.proposer = DecidingProposer(self.llm)
 
         # optional projection layer (zero dependency unless declared AND configured;
@@ -570,26 +595,36 @@ class ServiceContext:
         provider = self._storage_provider()
         if compiled.projections and provider != "hugegraph":
             self.projection_blocked_by = "provider-sqlite"
-            log.info("projection %s declared but storage provider is %s; running SQL-only",
-                     next(iter(compiled.projections.values())).metadata.name, provider)
+            log.info(
+                "projection %s declared but storage provider is %s; running SQL-only",
+                next(iter(compiled.projections.values())).metadata.name,
+                provider,
+            )
         if compiled.projections and provider == "hugegraph":
             first = next(iter(compiled.projections.values()))
             try:
                 endpoint = self.settings.resolve_env_ref(first.spec.endpoint)
             except KeyError as exc:
                 self.projection_blocked_by = "endpoint-unresolved"
-                log.warning("projection %s declared but endpoint unresolved (%s); "
-                            "running SQL-only, graph APIs disabled", first.metadata.name, exc)
+                log.warning(
+                    "projection %s declared but endpoint unresolved (%s); " "running SQL-only, graph APIs disabled",
+                    first.metadata.name,
+                    exc,
+                )
             else:
                 if self.graph_store_factory is None:
                     self.projection_blocked_by = "extension-missing"
-                    log.warning("projection %s declared but no graph extension is loaded "
-                                "(extensions/graph-hugegraph); running SQL-only",
-                                first.metadata.name)
+                    log.warning(
+                        "projection %s declared but no graph extension is loaded "
+                        "(extensions/graph-hugegraph); running SQL-only",
+                        first.metadata.name,
+                    )
                 else:
                     self.projection_client = self.graph_store_factory(
-                        endpoint, first.spec.graph,
-                        graphspace=first.spec.graphspace, api=first.spec.api,
+                        endpoint,
+                        first.spec.graph,
+                        graphspace=first.spec.graphspace,
+                        api=first.spec.api,
                         http=self.projection_http,
                         user=self.settings.hugegraph_user,
                         password=self.settings.hugegraph_password,
@@ -597,7 +632,6 @@ class ServiceContext:
                     )
                     self.projection_worker = ProjectionWorker(compiled, first, self.projection_client)
                     self.projection_decl = first
-
 
         async def _projection_hook(event) -> bool:
             if self.projection_worker is None:
@@ -612,8 +646,12 @@ class ServiceContext:
             return await self.derivation.drain()
 
         self.outbox = OutboxDispatcher(
-            self.sessionmaker, self.settings, sse=self.sse, projection_hook=_projection_hook,
-            derivation_hook=_derivation_hook, derivation_drain=_derivation_drain,
+            self.sessionmaker,
+            self.settings,
+            sse=self.sse,
+            projection_hook=_projection_hook,
+            derivation_hook=_derivation_hook,
+            derivation_drain=_derivation_drain,
         )
         self.agents = AgentBroker(self)
         self.eval_runner.agent_broker = self.agents  # agent eval cases use the same gates
@@ -662,9 +700,7 @@ class ServiceContext:
         candidates: list[Path] = []
         root = self.domains_root()
         if root.is_dir():
-            candidates.extend(
-                p for p in sorted(root.iterdir()) if (p / "ontology.yaml").is_file()
-            )
+            candidates.extend(p for p in sorted(root.iterdir()) if (p / "ontology.yaml").is_file())
         for pkg_root in (self.boot_package_root, self.package_root):
             path = Path(pkg_root) if pkg_root else None
             if path is not None and (path / "ontology.yaml").is_file():
@@ -679,17 +715,19 @@ class ServiceContext:
             if name in seen:
                 continue
             seen.add(name)
-            out.append({
-                "name": name,
-                "display": meta.get("display"),
-                "description": meta.get("description"),
-                "path": str(path.resolve()),
-                "objects": _count_yaml(path / "objects"),
-                "links": _count_yaml(path / "links"),
-                "actions": _count_yaml(path / "actions"),
-                "check": _check_package(path),
-                "active": name == active_name,
-            })
+            out.append(
+                {
+                    "name": name,
+                    "display": meta.get("display"),
+                    "description": meta.get("description"),
+                    "path": str(path.resolve()),
+                    "objects": _count_yaml(path / "objects"),
+                    "links": _count_yaml(path / "links"),
+                    "actions": _count_yaml(path / "actions"),
+                    "check": _check_package(path),
+                    "active": name == active_name,
+                }
+            )
         out.sort(key=lambda d: (not d["active"], d["name"]))
         return out
 
@@ -748,16 +786,13 @@ class ServiceContext:
         # console can then say "sqlite · /path/erp.db" instead of a bare store
         # name, which reads like a placeholder
         stores: dict[str, dict[str, str]] = {}
-        for name, store in (self.compiled.stores.items() if self.compiled else []):
+        for name, store in self.compiled.stores.items() if self.compiled else []:
             conn = store.spec.connection or ""
-            try:
+            with contextlib.suppress(Exception):
                 conn = self.settings.resolve_env_ref(conn)
-            except Exception:  # noqa: BLE001 -- an unresolved ${VAR} stays symbolic
-                pass
             stores[name] = {"type": store.spec.type, "target": _mask_dsn(conn)}
 
-        return {"target": target, "object_table_prefix": "ontogeny_obj_", "objects": objects,
-                "stores": stores}
+        return {"target": target, "object_table_prefix": "ontogeny_obj_", "objects": objects, "stores": stores}
 
     # canvas layout: a front-end concern, kept in its own module (ontogeny.layout)
     def layout_path(self) -> Path | None:
@@ -769,8 +804,7 @@ class ServiceContext:
     def write_layout(self, layout: dict[str, Any]) -> None:
         self._layout.write(layout)
 
-    def create_domain(self, name: str, *, display: str | None = None,
-                      description: str | None = None) -> dict[str, Any]:
+    def create_domain(self, name: str, *, display: str | None = None, description: str | None = None) -> dict[str, Any]:
         """Scaffold a minimal, valid package under the domains root: manifest +
         empty resource directories. Activation is the caller's decision."""
         if not _DOMAIN_NAME_RE.fullmatch(name):
@@ -796,14 +830,17 @@ class ServiceContext:
             "spec": {"imports": []},
         }
         (dom / "ontology.yaml").write_text(
-            yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False), encoding="utf-8",
+            yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
         )
         return {
             "name": name,
             "display": display or name,
             "description": description,
             "path": str(dom.resolve()),
-            "objects": 0, "links": 0, "actions": 0,
+            "objects": 0,
+            "links": 0,
+            "actions": 0,
             "active": False,
         }
 
@@ -881,24 +918,24 @@ class ServiceContext:
             # switcher would list something activate_domain must then refuse
             report = validate(load_package(str(staging)))
             if not report.ok:
-                errs = "; ".join(f"{i.code}@{i.resource}: {i.message}"
-                                 for i in report.issues if i.severity == "error")
-                raise DomainError(f"package rejected by validator: {errs}",
-                                  details={"issues": [
-                                      {"code": i.code, "resource": i.resource,
-                                       "message": i.message} for i in report.issues
-                                  ]})
+                errs = "; ".join(f"{i.code}@{i.resource}: {i.message}" for i in report.issues if i.severity == "error")
+                raise DomainError(
+                    f"package rejected by validator: {errs}",
+                    details={
+                        "issues": [
+                            {"code": i.code, "resource": i.resource, "message": i.message} for i in report.issues
+                        ]
+                    },
+                )
 
             name = (_read_manifest(staging).get("metadata") or {}).get("name") or ""
             if not _DOMAIN_NAME_RE.fullmatch(name):
-                raise DomainError(
-                    f"package name must be kebab-case [a-z][a-z0-9-], got {name!r}")
+                raise DomainError(f"package name must be kebab-case [a-z][a-z0-9-], got {name!r}")
             if name.lower() in ("domains", "pkg", "pkg.pristine"):
                 raise DomainError(f"domain name {name!r} is reserved")
             final = root / name
             if final.exists():
-                raise DomainError(f"domain {name!r} already exists",
-                                  details={"path": str(final)})
+                raise DomainError(f"domain {name!r} already exists", details={"path": str(final)})
 
             staging.rename(final)
         finally:
@@ -931,8 +968,7 @@ class ServiceContext:
         name matches one of them, else ``<domains root>/<name>``."""
         for pkg_root in (self.package_root, self.boot_package_root):
             path = Path(pkg_root) if pkg_root else None
-            if path is not None and (path / "ontology.yaml").is_file() \
-                    and _manifest_name(path) == name:
+            if path is not None and (path / "ontology.yaml").is_file() and _manifest_name(path) == name:
                 return path
         dom = self.domains_root() / name
         if (dom / "ontology.yaml").is_file():
@@ -954,16 +990,10 @@ class ServiceContext:
         report = _validate(pkg)
         if report.ok:
             return
-        errors = "; ".join(
-            f"{i.code}@{i.resource}: {i.message}"
-            for i in report.issues if i.severity == "error"
-        )
+        errors = "; ".join(f"{i.code}@{i.resource}: {i.message}" for i in report.issues if i.severity == "error")
         raise DSLValidationError(
             f"{label} package rejected by validator: {errors}",
-            details={"issues": [
-                {"code": i.code, "resource": i.resource, "message": i.message}
-                for i in report.issues
-            ]},
+            details={"issues": [{"code": i.code, "resource": i.resource, "message": i.message} for i in report.issues]},
         )
 
     async def activate_domain(self, package_root: str | Path) -> CompiledOntology:
@@ -980,7 +1010,7 @@ class ServiceContext:
                 self._validate_package_for_switch(current, "current domain")
             except DSLValidationError:
                 raise
-            except Exception as exc:  # noqa: BLE001 -- report as a switch guard
+            except Exception as exc:
                 raise DSLValidationError(f"current domain cannot be validated: {exc}") from exc
         self._validate_package_for_switch(target, "target domain")
         pkg = load_package(str(target))
@@ -1006,24 +1036,40 @@ class ServiceContext:
         from .action.models import RevisionRow
 
         async with self.sessionmaker() as session:
-            rows = (await session.execute(
-                select(RevisionRow)
-                .where(RevisionRow.object_type == "Function",
-                       RevisionRow.object_id == name,
-                       RevisionRow.action == "edit-function-source")
-                .order_by(RevisionRow.id.desc())
-                .limit(limit)
-            )).scalars().all()
+            rows = (
+                (
+                    await session.execute(
+                        select(RevisionRow)
+                        .where(
+                            RevisionRow.object_type == "Function",
+                            RevisionRow.object_id == name,
+                            RevisionRow.action == "edit-function-source",
+                        )
+                        .order_by(RevisionRow.id.desc())
+                        .limit(limit)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         return [
-            {"id": r.id, "principal": r.principal, "at": r.created_at.isoformat(),
-             "version": (r.after or {}).get("version"),
-             "bytes": (r.after or {}).get("bytes"),
-             "message": r.message}
+            {
+                "id": r.id,
+                "principal": r.principal,
+                "at": r.created_at.isoformat(),
+                "version": (r.after or {}).get("version"),
+                "bytes": (r.after or {}).get("bytes"),
+                "message": r.message,
+            }
             for r in rows
         ]
 
     async def save_function_source(
-        self, name: str, source: str, *, principal: dict,
+        self,
+        name: str,
+        source: str,
+        *,
+        principal: dict,
     ) -> dict[str, Any]:
         """Write a function's code, publish it, and record who did it.
 
@@ -1052,8 +1098,7 @@ class ServiceContext:
             raise NotFoundError(f"unknown function {name!r}")
         if fn.spec.runtime != "python":
             raise DSLValidationError(
-                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, "
-                "edit the steps instead"
+                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, " "edit the steps instead"
             )
         # Same entry guard as the test path: a malformed entry is authoring
         # input, which deserves a 400, not the SandboxError (a 500) that
@@ -1080,8 +1125,12 @@ class ServiceContext:
         if before == source:
             # nothing changed: report success without a publish or a revision row,
             # so the history stays a record of actual changes
-            return {"ok": True, "changed": False, "path": str(path),
-                    "version": self.compiled.function_versions.get(name)}
+            return {
+                "ok": True,
+                "changed": False,
+                "path": str(path),
+                "version": self.compiled.function_versions.get(name),
+            }
 
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source, encoding="utf-8")
@@ -1098,24 +1147,33 @@ class ServiceContext:
 
         version = compiled.function_versions.get(name)
         async with self.sessionmaker() as session:
-            session.add(RevisionRow(
-                action="edit-function-source",
-                object_type="Function",
-                object_id=name,
-                principal=str(principal.get("id") or "?"),
-                params={"path": str(path)},
-                before={"source": before, "bytes": len(before or "")},
-                after={"source": source, "bytes": len(source),
-                       "version": version,
-                       "sha256": hashlib.sha256(source.encode()).hexdigest()[:12]},
-                outcome="executed",
-                message=f"source edited in the console ({len(source)} bytes)",
-            ))
+            session.add(
+                RevisionRow(
+                    action="edit-function-source",
+                    object_type="Function",
+                    object_id=name,
+                    principal=str(principal.get("id") or "?"),
+                    params={"path": str(path)},
+                    before={"source": before, "bytes": len(before or "")},
+                    after={
+                        "source": source,
+                        "bytes": len(source),
+                        "version": version,
+                        "sha256": hashlib.sha256(source.encode()).hexdigest()[:12],
+                    },
+                    outcome="executed",
+                    message=f"source edited in the console ({len(source)} bytes)",
+                )
+            )
             await session.commit()
 
         out: dict[str, Any] = {
-            "ok": True, "changed": True, "path": str(path), "version": version,
-            "content_hash": compiled.content_hash, "bytes": len(source),
+            "ok": True,
+            "changed": True,
+            "path": str(path),
+            "version": version,
+            "content_hash": compiled.content_hash,
+            "bytes": len(source),
         }
         return out
 
@@ -1140,8 +1198,7 @@ class ServiceContext:
             raise NotFoundError(f"unknown function {name!r}")
         if fn.spec.runtime != "python":
             raise DSLValidationError(
-                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, "
-                "edit the steps instead"
+                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, " "edit the steps instead"
             )
         # A malformed entry would only explode later, inside the sandbox spawn
         # (``entry.split(":")``), surfacing as an opaque 500. Validate it here
@@ -1170,11 +1227,15 @@ class ServiceContext:
                 value = await self.functions.run_source(session, fn, source, params)
                 # the child answers over a JSON line, so the value is already
                 # wire-safe (dates arrived as strings, tensors do not exist here)
-                return {"ok": True, "value": value,
-                        "params": params, "param_sources": sources}
+                return {"ok": True, "value": value, "params": params, "param_sources": sources}
             except OOError as exc:
-                return {"ok": False, "code": exc.code, "message": exc.message,
-                        "params": params, "param_sources": sources}
+                return {
+                    "ok": False,
+                    "code": exc.code,
+                    "message": exc.message,
+                    "params": params,
+                    "param_sources": sources,
+                }
 
     async def _smoke_params(self, session, fn) -> tuple[dict[str, Any], dict[str, str]]:
         """Parameter values for a smoke run, and where each came from.
@@ -1245,16 +1306,21 @@ class ServiceContext:
             import datetime as _dt
 
             from .stores.sync import SyncRunRow
+
             try:
                 strategy = self.sync_engine.strategy_for(object_type)
-            except Exception:  # noqa: BLE001 -- label only, best effort
+            except Exception:
                 strategy = "snapshot"
             async with self.sessionmaker() as s2:
-                s2.add(SyncRunRow(
-                    object_type=object_type, strategy=strategy, status="error",
-                    error=f"{type(exc).__name__}: {exc}",
-                    finished_at=_dt.datetime.now(_dt.timezone.utc),
-                ))
+                s2.add(
+                    SyncRunRow(
+                        object_type=object_type,
+                        strategy=strategy,
+                        status="error",
+                        error=f"{type(exc).__name__}: {exc}",
+                        finished_at=_dt.datetime.now(_dt.timezone.utc),
+                    )
+                )
                 await s2.commit()
             raise
 
@@ -1290,9 +1356,12 @@ class ServiceContext:
                     async with self.sessionmaker() as s3:
                         rb = await self.promoter.rollback(s3, result["rollback_dir"])
                     await self.reload()
-                    result = {"status": "promoted_then_rolled_back",
-                              "reason": "post-merge eval went red -- auto-reverted",
-                              "rollback": rb, "original": result}
+                    result = {
+                        "status": "promoted_then_rolled_back",
+                        "reason": "post-merge eval went red -- auto-reverted",
+                        "rollback": rb,
+                        "original": result,
+                    }
         return result
 
     async def projection_rebuild(self) -> dict[str, int]:
@@ -1315,8 +1384,9 @@ class ServiceContext:
         async with self.sessionmaker() as session:
             return await self.projection_worker.rebuild(self.repo, session)
 
-    def _derive_projection(self, *, name: str, graph: str, graphspace: str,
-                           engine: str = "hugegraph") -> dict[str, Any]:
+    def _derive_projection(
+        self, *, name: str, graph: str, graphspace: str, engine: str = "hugegraph"
+    ) -> dict[str, Any]:
         """A whole-ontology projection: every object type and every link.
 
         The obvious projection is also the only one that can be derived without
@@ -1333,13 +1403,15 @@ class ServiceContext:
         objects: dict[str, dict[str, Any]] = {}
         for obj_name, obj in sorted(self.compiled.objects.items()):
             props = [
-                pname for pname, pdef in sorted(obj.spec.properties.items())
+                pname
+                for pname, pdef in sorted(obj.spec.properties.items())
                 if pdef.marking is None and pdef.derived is None
             ]
             objects[obj_name] = {"properties": props}
 
         links = sorted(
-            lname for lname, lnk in self.compiled.links.items()
+            lname
+            for lname, lnk in self.compiled.links.items()
             if lnk.spec.source in objects and lnk.spec.target in objects
         )
 
@@ -1355,8 +1427,7 @@ class ServiceContext:
             "metadata": {
                 "name": name,
                 "display": "全量图谱投影",
-                "description": "由运维台自动生成：包含本体全部对象类型与联系，"
-                               "支撑多跳追溯与图算法",
+                "description": "由运维台自动生成：包含本体全部对象类型与联系，" "支撑多跳追溯与图算法",
             },
             "spec": {
                 "engine": engine,
@@ -1370,7 +1441,10 @@ class ServiceContext:
         }
 
     async def scaffold_projection(
-        self, *, name: str | None = None, graphspace: str = "DEFAULT",
+        self,
+        *,
+        name: str | None = None,
+        graphspace: str = "DEFAULT",
     ) -> dict[str, Any]:
         """Declare this domain's projection, then LOAD or BUILD its graph.
 
@@ -1421,9 +1495,11 @@ class ServiceContext:
         target = pkg_dir / "projections" / f"{name}.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
         import yaml as _yaml
+
         target.write_text(
-            _yaml.safe_dump(resource.model_dump(mode="json", by_alias=True, exclude_none=True),
-                            allow_unicode=True, sort_keys=False),
+            _yaml.safe_dump(
+                resource.model_dump(mode="json", by_alias=True, exclude_none=True), allow_unicode=True, sort_keys=False
+            ),
             encoding="utf-8",
         )
 
@@ -1529,9 +1605,9 @@ class ServiceContext:
                 "blocked_by": blocked,
                 # literal substitution, not str.format: these strings contain
                 # ``${HUGEGRAPH_URL}`` and format() would read it as a field
-                "reason": _PROJECTION_BLOCK_REASONS.get(
-                    blocked, "projection is not wired"
-                ).replace("{provider}", repr(self._storage_provider())),
+                "reason": _PROJECTION_BLOCK_REASONS.get(blocked, "projection is not wired").replace(
+                    "{provider}", repr(self._storage_provider())
+                ),
             }
         spec = self.projection_decl.spec
         out: dict[str, Any] = {
@@ -1557,8 +1633,14 @@ class ServiceContext:
             out["labels"] = await self.projection_client.labels()
             out["counts"] = await self.projection_client.counts()
         except OOError as exc:
-            out.update({"ok": False, "error": exc.message, "code": exc.code,
-                        "auth_rejected": bool(getattr(self.projection_client, "auth_rejected", False))})
+            out.update(
+                {
+                    "ok": False,
+                    "error": exc.message,
+                    "code": exc.code,
+                    "auth_rejected": bool(getattr(self.projection_client, "auth_rejected", False)),
+                }
+            )
         return out
 
     async def projection_vertices(self, label: str, principal: dict, *, limit: int = 20) -> dict[str, Any]:
@@ -1584,8 +1666,7 @@ class ServiceContext:
                     rows.append(await self.query.get(session, label, key, principal))
                 except OOError:
                     hidden += 1  # not readable (deleted, or not authorised)
-        return {"label": label, "rows": rows, "hidden": hidden,
-                "sampled": len(vertices)}
+        return {"label": label, "rows": rows, "hidden": hidden, "sampled": len(vertices)}
 
     async def projection_edges(self, label: str, principal: dict, *, limit: int = 20) -> dict[str, Any]:
         """Sample graph edges; an edge surfaces only when both ends are readable."""
@@ -1608,23 +1689,38 @@ class ServiceContext:
                 except OOError:
                     hidden += 1
                     continue
-                rows.append({
-                    "id": edge.get("id"),
-                    "link": label,
-                    "source": {"type": lnk.spec.source, "id": src,
-                               "display": _display_of(out_obj, self.compiled, lnk.spec.source)},
-                    "target": {"type": lnk.spec.target, "id": dst,
-                               "display": _display_of(in_obj, self.compiled, lnk.spec.target)},
-                })
+                rows.append(
+                    {
+                        "id": edge.get("id"),
+                        "link": label,
+                        "source": {
+                            "type": lnk.spec.source,
+                            "id": src,
+                            "display": _display_of(out_obj, self.compiled, lnk.spec.source),
+                        },
+                        "target": {
+                            "type": lnk.spec.target,
+                            "id": dst,
+                            "display": _display_of(in_obj, self.compiled, lnk.spec.target),
+                        },
+                    }
+                )
         return {"label": label, "rows": rows, "hidden": hidden, "sampled": len(edges)}
-
 
     def snapshot(self) -> SimpleNamespace:
         """Convenience view for API/MCP shells."""
         return SimpleNamespace(
-            compiled=self.compiled, repo=self.repo, runtime=self.runtime,
-            query=self.query, sync_engine=self.sync_engine, telemetry=self.telemetry,
-            eval_runner=self.eval_runner, promoter=self.promoter, proposer=self.proposer,
-            registry=self.registry, outbox=self.outbox, sandbox=self.sandbox,
+            compiled=self.compiled,
+            repo=self.repo,
+            runtime=self.runtime,
+            query=self.query,
+            sync_engine=self.sync_engine,
+            telemetry=self.telemetry,
+            eval_runner=self.eval_runner,
+            promoter=self.promoter,
+            proposer=self.proposer,
+            registry=self.registry,
+            outbox=self.outbox,
+            sandbox=self.sandbox,
             derivation=self.derivation,
         )

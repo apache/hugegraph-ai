@@ -29,6 +29,7 @@ One service over two tables (see ``models.py``). It owns:
 Session lifetime is deliberately short and sliding-free: an expired session is
 re-authenticated, not silently extended.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -38,7 +39,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 
-from ..errors import ConflictError, AuthenticationError, DSLValidationError, NotFoundError
+from ..errors import AuthenticationError, ConflictError, DSLValidationError, NotFoundError
 from .models import SessionRow, UserRow
 from .passwords import hash_password, new_token, token_fingerprint, verify_password
 
@@ -55,9 +56,7 @@ class AuthService:
     # ------------------------------------------------------------------ users
 
     async def _user(self, session, username: str) -> UserRow | None:
-        return (await session.execute(
-            select(UserRow).where(UserRow.username == username)
-        )).scalar_one_or_none()
+        return (await session.execute(select(UserRow).where(UserRow.username == username))).scalar_one_or_none()
 
     @staticmethod
     def _view(row: UserRow) -> dict[str, Any]:
@@ -79,9 +78,17 @@ class AuthService:
             rows = (await session.execute(select(UserRow).order_by(UserRow.username))).scalars().all()
             return [self._view(r) for r in rows]
 
-    async def create_user(self, *, username: str, password: str, display: str = "",
-                          roles: list[str] | None = None, site: str | None = None,
-                          markings: list[str] | None = None, is_admin: bool = False) -> dict[str, Any]:
+    async def create_user(
+        self,
+        *,
+        username: str,
+        password: str,
+        display: str = "",
+        roles: list[str] | None = None,
+        site: str | None = None,
+        markings: list[str] | None = None,
+        is_admin: bool = False,
+    ) -> dict[str, Any]:
         username = (username or "").strip()
         if not username:
             raise DSLValidationError("username is required")
@@ -90,10 +97,13 @@ class AuthService:
             if await self._user(session, username):
                 raise DSLValidationError(f"user {username!r} already exists")
             row = UserRow(
-                username=username, display=display or username,
+                username=username,
+                display=display or username,
                 password_hash=hash_password(password),
-                roles=sorted(set(roles or [])), site=site or None,
-                markings=sorted(set(markings or [])), is_admin=bool(is_admin),
+                roles=sorted(set(roles or [])),
+                site=site or None,
+                markings=sorted(set(markings or [])),
+                is_admin=bool(is_admin),
                 status="active",
             )
             session.add(row)
@@ -125,12 +135,17 @@ class AuthService:
             # deployment out after the next restart; refuse it outright
             is_still_active_admin = row.is_admin and row.status == "active"
             if was_active_admin and not is_still_active_admin:
-                other_active_admins = (await session.execute(
-                    select(func.count()).select_from(UserRow).where(
-                        UserRow.is_admin.is_(True), UserRow.status == "active",
-                        UserRow.id != row.id,
+                other_active_admins = (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(UserRow)
+                        .where(
+                            UserRow.is_admin.is_(True),
+                            UserRow.status == "active",
+                            UserRow.id != row.id,
+                        )
                     )
-                )).scalar_one()
+                ).scalar_one()
                 if other_active_admins == 0:
                     raise ConflictError(
                         f"cannot demote or disable {username!r}: it is the last active administrator",
@@ -179,11 +194,13 @@ class AuthService:
             if row.status != "active":
                 raise AuthenticationError("this account is disabled")
             token = new_token()
-            session.add(SessionRow(
-                token_hash=token_fingerprint(token),
-                user_id=row.id,
-                expires_at=_dt.datetime.now(_dt.timezone.utc) + SESSION_TTL,
-            ))
+            session.add(
+                SessionRow(
+                    token_hash=token_fingerprint(token),
+                    user_id=row.id,
+                    expires_at=_dt.datetime.now(_dt.timezone.utc) + SESSION_TTL,
+                )
+            )
             row.last_login_at = _dt.datetime.now(_dt.timezone.utc)
             await session.commit()
             return token, row.principal()
@@ -194,9 +211,9 @@ class AuthService:
             return None
         now = _dt.datetime.now(_dt.timezone.utc)
         async with self.sc.sessionmaker() as session:
-            sess = (await session.execute(
-                select(SessionRow).where(SessionRow.token_hash == token_fingerprint(token))
-            )).scalar_one_or_none()
+            sess = (
+                await session.execute(select(SessionRow).where(SessionRow.token_hash == token_fingerprint(token)))
+            ).scalar_one_or_none()
             if sess is None:
                 return None
             expires = sess.expires_at
@@ -206,9 +223,7 @@ class AuthService:
                 await session.delete(sess)
                 await session.commit()
                 return None
-            user = (await session.execute(
-                select(UserRow).where(UserRow.id == sess.user_id)
-            )).scalar_one_or_none()
+            user = (await session.execute(select(UserRow).where(UserRow.id == sess.user_id))).scalar_one_or_none()
             if user is None or user.status != "active":
                 return None
             sess.last_seen = now
@@ -219,9 +234,7 @@ class AuthService:
         if not token:
             return
         async with self.sc.sessionmaker() as session:
-            await session.execute(
-                delete(SessionRow).where(SessionRow.token_hash == token_fingerprint(token))
-            )
+            await session.execute(delete(SessionRow).where(SessionRow.token_hash == token_fingerprint(token)))
             await session.commit()
 
     async def list_sessions(self, username: str | None = None) -> list[dict[str, Any]]:
@@ -233,17 +246,17 @@ class AuthService:
                     return []
                 stmt = stmt.where(SessionRow.user_id == user.id)
             rows = (await session.execute(stmt)).scalars().all()
-            users = {
-                u.id: u.username
-                for u in (await session.execute(select(UserRow))).scalars().all()
-            }
-            return [{
-                "token": r.token_hash[:12],
-                "user": users.get(r.user_id, "?"),
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "expires_at": r.expires_at.isoformat() if r.expires_at else None,
-                "last_seen": r.last_seen.isoformat() if r.last_seen else None,
-            } for r in rows]
+            users = {u.id: u.username for u in (await session.execute(select(UserRow))).scalars().all()}
+            return [
+                {
+                    "token": r.token_hash[:12],
+                    "user": users.get(r.user_id, "?"),
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+                    "last_seen": r.last_seen.isoformat() if r.last_seen else None,
+                }
+                for r in rows
+            ]
 
     # -------------------------------------------------------------- bootstrap
 
@@ -255,11 +268,13 @@ class AuthService:
         bootstrap value ``ontogeny@2026`` unless ``ONTOGENY_ADMIN_PASSWORD`` overrides it.
         """
         async with self.sc.sessionmaker() as session:
-            existing = (await session.execute(
-                select(func.count()).select_from(UserRow).where(
-                    UserRow.is_admin.is_(True), UserRow.status == "active"
+            existing = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(UserRow)
+                    .where(UserRow.is_admin.is_(True), UserRow.status == "active")
                 )
-            )).scalar_one()
+            ).scalar_one()
             if existing:
                 return None
 
@@ -282,8 +297,11 @@ class AuthService:
                 )
                 return self._view(row)
         user = await self.create_user(
-            username=username, password=password, display="平台管理员",
-            roles=["admin"], is_admin=True,
+            username=username,
+            password=password,
+            display="平台管理员",
+            roles=["admin"],
+            is_admin=True,
         )
         log.info(
             "created the bootstrap administrator %r (default password ontogeny@2026; "

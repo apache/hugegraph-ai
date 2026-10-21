@@ -38,7 +38,6 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["asyncpg>=0.29"]
-cedar = ["cedarpy>=0.5"]
 llm = ["litellm>=1.30"]
 queue = ["arq>=0.25", "redis>=5.0"]
 mcp = ["mcp>=2.2,<3"]

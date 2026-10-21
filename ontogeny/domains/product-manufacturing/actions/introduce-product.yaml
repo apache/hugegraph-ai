@@ -1,0 +1,50 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: introduce-product
+  display: Introduce product
+  description: Register a new sellable product in the catalogue
+spec:
+  target: product
+  parameters:
+    name:
+      type: string
+      display: Product name
+      required: true
+    category:
+      type: enum[MACHINE, MODULE, SPARE]
+      display: Category
+    unit_price:
+      type: decimal(14,2)
+      display: Unit price
+  policy: production
+  effects:
+  - kind: create-object
+    properties:
+      product_id: newId('P')
+      name: parameters.name
+      category: parameters.category
+      unit_price: parameters.unit_price
+      status: ACTIVE
+      created_at: now()
+  audit:
+    fields:
+    - target.product_id
+    - parameters

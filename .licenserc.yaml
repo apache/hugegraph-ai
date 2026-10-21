@@ -78,6 +78,8 @@ header: # `header` section is configurations for source codes license header.
     - '**/*.ipr'
     - '**/META-INF/MANIFEST.MF'
     - '.repository/**'
+    - '**/uv.lock'
+    - '**/package-lock.json'
     - '**/resources/**'
     - '**/poetry.lock'
     - '.github/**/*'

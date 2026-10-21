@@ -326,9 +326,17 @@ class DeclarativeRuntime:
                 )
                 steps[step.id] = out.get("content")
             elif step.kind == "http":
-                url = tpl.render_text(step.url or "")
+                # deployment ${VAR} first, THEN caller parameters: rendering
+                # the caller's value first let a parameter like "${WMS_WEBHOOK}"
+                # be re-resolved into a host the allowlist never checked
+                url = step.url or ""
                 if "${" in url and self.resolve_ref is not None:
                     url = self.resolve_ref(url)
+                url = tpl.render_text(url)
+                if "${" in url:
+                    raise SandboxError(
+                        "url still contains ${...} after parameter substitution: "
+                        "a parameter value must not inject a new reference")
                 await self._check_http_url(fn, url)
                 method = (step.method or "GET").upper()
                 body = tpl.render(step.body) if step.body is not None else None

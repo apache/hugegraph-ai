@@ -171,7 +171,11 @@ class ActionRuntime:
         # 1) idempotent replay
         if idempotency_key:
             existing = (
-                await session.execute(select(RevisionRow).where(RevisionRow.idempotency_key == idempotency_key))
+                await session.execute(select(RevisionRow).where(
+                    RevisionRow.idempotency_key == idempotency_key,
+                    RevisionRow.action == action_name,
+                    RevisionRow.principal == str(principal.get("id", "anonymous")),
+                ))
             ).scalar_one_or_none()
             if existing is not None:
                 if existing.outcome == "executed":

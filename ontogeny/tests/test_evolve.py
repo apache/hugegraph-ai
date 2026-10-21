@@ -284,7 +284,7 @@ class TestPromoter:
                 s,
                 proposal,
                 env["pkg_root"],
-                eval_report={"passed": True},
+                eval_report={"passed": True, "suites": {"flow": {"passed": True}}},
             )
             await s.commit()
         assert result["status"] == "promoted" and result["tier"] == "t0-auto-merge"
@@ -312,10 +312,20 @@ class TestPromoter:
                         }
                     ],
                 )
-                await env["promoter"].promote(s, p, env["pkg_root"], eval_report={"passed": True})
+                await env["promoter"].promote(
+                    s,
+                    p,
+                    env["pkg_root"],
+                    eval_report={"passed": True, "suites": {"flow": {"passed": True}}},
+                )
             p11 = await self._proposal(s, mutations)
             with pytest.raises(BudgetExceededError):
-                await env["promoter"].promote(s, p11, env["pkg_root"], eval_report={"passed": True})
+                await env["promoter"].promote(
+                    s,
+                    p11,
+                    env["pkg_root"],
+                    eval_report={"passed": True, "suites": {"flow": {"passed": True}}},
+                )
             await s.commit()
 
     async def test_t0_blocked_when_eval_red(self, env):
@@ -887,7 +897,9 @@ class TestRuleTightenAndCaseSynth:
             )
             s.add(row)
             await s.flush()
-            out = await prom.promote(s, row, env["pkg_root"], eval_report={"passed": False, "suites": {}})
+            out = await prom.promote(
+                s, row, env["pkg_root"], eval_report={"passed": False, "suites": {"flow": {"passed": True}}}
+            )
         assert out["status"] == "rejected" and "eval" in out["reason"]
 
     async def test_eval_case_synth_appends_and_dedupes(self, env):
@@ -1181,7 +1193,12 @@ class TestDirectionE:
             )
             s.add_all([winner, sibling])
             await s.flush()
-            out = await prom.promote(s, winner, env["pkg_root"], eval_report={"passed": True, "suites": {}})
+            out = await prom.promote(
+                s,
+                winner,
+                env["pkg_root"],
+                eval_report={"passed": True, "suites": {"flow": {"passed": True}}},
+            )
             await s.flush()
             await s.refresh(sibling)
         assert out["status"] == "promoted"
@@ -1245,7 +1262,12 @@ class TestDirectionB2B3:
             )
             s.add(row)
             await s.flush()
-            out = await prom.promote(s, row, env["pkg_root"], eval_report={"passed": True, "suites": {}})
+            out = await prom.promote(
+                s,
+                row,
+                env["pkg_root"],
+                eval_report={"passed": True, "suites": {"flow": {"passed": True}}},
+            )
         assert out["status"] == "awaiting_human" and out["tier"] == "t2-canary"
         assert row.eval_report["shadow"]["clean"] is True
 
@@ -1343,7 +1365,12 @@ class TestDirectionF:
             row = ProposalRow(gap_kind="add-optional-property", signal_id=101, diff=diff, rationale="r")
             s.add(row)
             await s.flush()
-            out = await prom.promote(s, row, env["pkg_root"], eval_report={"passed": True, "suites": {}})
+            out = await prom.promote(
+                s,
+                row,
+                env["pkg_root"],
+                eval_report={"passed": True, "suites": {"flow": {"passed": True}}},
+            )
         assert out["status"] == "promoted"
         backup = Path(out["rollback_dir"])
         assert backup.is_dir()

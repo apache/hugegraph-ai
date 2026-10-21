@@ -448,7 +448,14 @@ def _catalog_tool_fn(sc: ServiceContext, name: str, tdef, engine_mode: bool):
         plugin: str | None = None, session_id: int | None = None, thought: str | None = None, **kwargs: Any
     ) -> dict[str, Any]:
         if session_id is not None:
-            return await sc.agents.call_tool(int(session_id), name, kwargs, engine=engine_mode, thought=thought or "")
+            return await sc.agents.call_tool(
+                int(session_id),
+                name,
+                kwargs,
+                engine=engine_mode,
+                thought=thought or "",
+                driver=_MCP_DRIVER.get(),
+            )
         return await _readonly_call(sc, name, tdef, plugin, kwargs)
 
     # the SDK refuses parameters starting with '_', so the reserved transport

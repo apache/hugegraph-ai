@@ -160,7 +160,7 @@ class QueryService:
                         f"{pdef.marking!r} the principal does not hold",
                         details={"object_type": object_type, "field": field, "marking": pdef.marking},
                     )
-        return float(await self.repo.aggregate(session, object_type, fn, field, filt=filt))
+        return float(await self.repo.aggregate(session, object_type, fn, field, filt=filt, principal=principal))
 
     # ----------------------------------------------------------------- links
 

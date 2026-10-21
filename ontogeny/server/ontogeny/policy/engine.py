@@ -176,9 +176,18 @@ class PolicyEngine:
         return None
 
     def decide(self, principal: dict, action_name: str, resource: dict | None) -> PolicyDecision:
+        # an unauthenticated ANONYMOUS visitor must never be granted by an
+        # unscoped permit(principal, ...): the production policies scope by
+        # role, and a role-less caller matching no explicit clause must land
+        # in default-deny, not ride a principal-less permit
         roles = set(principal.get("Role") or principal.get("roles") or [])
         for policy_name, rule in self.rules_for(action_name):
             if rule.role is not None and rule.role not in roles:
+                continue
+            # unscoped permit(principal, ...) must not grant the anonymous
+            # visitor: require SOME principal identity beyond the fallback
+            if (principal.get("via") == "anonymous"
+                    and rule.role is None and not roles):
                 continue
             if rule.when is None:
                 matched = (True, f"permit by {policy_name} (unconditional)")

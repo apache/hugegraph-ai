@@ -83,7 +83,7 @@ class SqlSource:
     ) -> AsyncIterator[dict[str, Any]]:
         eng = await self._eng()
         table = qualified_name(ref, self.dsn)
-        is_sqlite = self.dsn.startswith("sqlite")
+        is_sqlite = self.dsn.startswith("sqlite")  # snapshot path only
         async with eng.connect() as conn:
             if watermark_col is not None:
                 # Keyset pagination on the watermark: loop until a short batch
@@ -98,7 +98,10 @@ class SqlSource:
                     if cursor is not None:
                         sql += f' WHERE "{watermark_col}" > :wm'
                         params["wm"] = cursor
-                    sql += " ORDER BY rowid" if is_sqlite else f' ORDER BY "{watermark_col}"'
+                    # order by the WATERMARK column on every dialect: rowid
+                    # order is unrelated to watermark order, so rowid keyset
+                    # pagination skipped rows past the first batch on SQLite
+                    sql += f' ORDER BY "{watermark_col}"'
                     sql += " LIMIT :lim"
                     params["lim"] = batch
                     rows = (await conn.execute(text(sql), params)).mappings().all()

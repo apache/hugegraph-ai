@@ -15,7 +15,7 @@
 # specific language governing permissions and
 # limitations under the License.
 
-"""Function ecosystem: the four Palantir-parity capabilities.
+"""Function ecosystem: the four kinetic-layer function capabilities.
 
 1. llm inside functions (gateway-routed, capability-declared, budgeted)
 2. function-backed properties (materialized by the derivation worker)

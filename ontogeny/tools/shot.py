@@ -88,8 +88,8 @@ class Chrome:
                         page = next(t for t in targets if t.get("type") == "page")
                         self.ws = await websockets.connect(page["webSocketDebuggerUrl"], max_size=2**26)
                         return
-            except Exception:
-                pass
+            except Exception:  # any failure during a probe = not ready yet
+                pass  # the loop retries until timeout, then raises below
             await asyncio.sleep(0.25)
         raise RuntimeError("chrome did not come up")
 

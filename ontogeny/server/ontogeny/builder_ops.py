@@ -24,6 +24,7 @@ it lives at the service level where CLI/other shells can reach it. Raises
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,9 @@ async def builder_save(
     pkg_dir = Path(sc.package_root)
     if not pkg_dir.is_dir():
         raise DSLValidationError(f"package dir {pkg_dir} does not exist")
+    # every request-supplied name below is normalized and containment-checked
+    # against this root before it may touch the filesystem
+    pkg_r = os.path.realpath(str(pkg_dir))
 
     # Inline data-source declarations: the console's data-mount editor puts
     # the source INTO backing.store_spec ({kind, connection}) — a bare store
@@ -139,9 +143,20 @@ async def builder_save(
                 "ObjectType backing.store_spec: store name, source type and connection are all required",
                 details={"store": store_name, "kind": kind},
             )
+        if "/" in store_name or ".." in store_name:
+            raise DSLValidationError(
+                f"store name {store_name!r} must be a single path segment",
+                details={"store": store_name},
+            )
         stores_dir = pkg_dir / "stores"
         stores_dir.mkdir(parents=True, exist_ok=True)
-        (stores_dir / f"{store_name}.yaml").write_text(
+        target = os.path.realpath(os.path.join(pkg_r, "stores", f"{store_name}.yaml"))
+        if not target.startswith(pkg_r + os.sep):
+            raise DSLValidationError(
+                f"store name {store_name!r} escapes the package directory",
+                details={"store": store_name},
+            )
+        Path(target).write_text(
             _yaml.safe_dump(
                 {
                     "apiVersion": "ontogeny/v1",
@@ -167,7 +182,10 @@ async def builder_save(
         if res.kind == "PolicySet" and not res.spec.source.strip().endswith(".cedar"):
             pol_dir = pkg_dir / "policies"
             pol_dir.mkdir(parents=True, exist_ok=True)
-            (pol_dir / f"{res.metadata.name}.cedar").write_text(res.spec.source, encoding="utf-8")
+            target = os.path.realpath(os.path.join(pkg_r, "policies", f"{res.metadata.name}.cedar"))
+            if not target.startswith(pkg_r + os.sep):
+                raise DSLValidationError(f"PolicySet name {res.metadata.name!r} escapes the package directory")
+            Path(target).write_text(res.spec.source, encoding="utf-8")
             res.spec.source = f"{res.metadata.name}.cedar"
 
     # tracked deletions first (also cleans a renamed resource's old file)
@@ -176,12 +194,18 @@ async def builder_save(
         kind, _, name = entry.partition("/")
         subdir = _DIR_MAP.get(kind)
         if subdir and "/" not in name and ".." not in name and name:
-            fp = pkg_dir / subdir / f"{name}.yaml"
+            fp_r = os.path.realpath(os.path.join(pkg_r, subdir, f"{name}.yaml"))
+            if not fp_r.startswith(pkg_r + os.sep):
+                raise DSLValidationError(f"delete entry {entry!r} escapes the package directory")
+            fp = Path(fp_r)
             if fp.is_file():
                 fp.unlink()
                 removed.append(entry)
             if kind == "PolicySet":
-                sidecar = pkg_dir / "policies" / f"{name}.cedar"
+                sidecar_r = os.path.realpath(os.path.join(pkg_r, "policies", f"{name}.cedar"))
+                if not sidecar_r.startswith(pkg_r + os.sep):
+                    raise DSLValidationError(f"delete entry {entry!r} escapes the package directory")
+                sidecar = Path(sidecar_r)
                 if sidecar.is_file():
                     sidecar.unlink()
 
@@ -192,7 +216,13 @@ async def builder_save(
             continue
         d = pkg_dir / subdir
         d.mkdir(parents=True, exist_ok=True)
-        fp = d / f"{res.metadata.name}.yaml"
+        fp_r = os.path.realpath(os.path.join(pkg_r, subdir, f"{res.metadata.name}.yaml"))
+        if not fp_r.startswith(pkg_r + os.sep):
+            raise DSLValidationError(
+                f"resource name {res.metadata.name!r} escapes the package directory",
+                details={"resource": res.metadata.name},
+            )
+        fp = Path(fp_r)
         payload = res.model_dump(mode="json", by_alias=True, exclude_none=True)
         fp.write_text(_yaml_mod.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
         written.append(f"{res.kind}/{res.metadata.name}")

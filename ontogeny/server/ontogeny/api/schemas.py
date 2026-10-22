@@ -81,10 +81,6 @@ class EvolveProposalBody(BaseModel):
     gap: dict[str, Any]
 
 
-class PublishBody(BaseModel):
-    path: str | None = None
-
-
 class DomainCreateBody(BaseModel):
     """Scaffold a new (empty) ontology package under the domains root."""
 

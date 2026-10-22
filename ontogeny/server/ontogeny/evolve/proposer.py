@@ -250,10 +250,10 @@ class DecidingProposer:
             "你是运行本体（operational ontology）的自进化提案器。给你一个适应度信号产生的缺口和目标对象的现有 schema，"
             "由你决定是否值得动手以及动手的具体方案。\n"
             "你只能从封闭的变异目录中选择：\n"
-            '  {"mutation": "add-optional-property", "object": "...", "prop": "...", "type": "string|integer|decimal(14,2)|boolean|timestamp|enum[A, B]", "display": "中文名", "description": "一句话业务含义"}\n'
+            '  {"mutation": "add-optional-property", "object": "...", "prop": "...", "type": "string|integer|decimal(14,2)|boolean|timestamp|enum[A, B]", "display": "中文名", "description": "一句话业务含义"}\n'  # noqa: E501 -- prompt literal, wrapping would alter model input
             '  {"mutation": "enum-widen", "object": "...", "prop": "已有枚举属性", "value": "新成员"}\n'
-            '  {"mutation": "rule-tighten", "action": "已有动作", "expr": "新规则表达式（只能追加收紧，不能放宽）", "message": "拒绝时的提示"}\n'
-            '  {"mutation": "eval-case-synth", "suite": "已有 EvalSuite", "case": {"name": "用例名", "query": {"object": "...", "filter": {...}, "limit": 50}, "expect": {"columns": ["主键"]}}}\n'
+            '  {"mutation": "rule-tighten", "action": "已有动作", "expr": "新规则表达式（只能追加收紧，不能放宽）", "message": "拒绝时的提示"}\n'  # noqa: E501 -- prompt literal (CJK width; wrapping alters model input)
+            '  {"mutation": "eval-case-synth", "suite": "已有 EvalSuite", "case": {"name": "用例名", "query": {"object": "...", "filter": {...}, "limit": 50}, "expect": {"columns": ["主键"]}}}\n'  # noqa: E501 -- prompt literal, wrapping would alter model input
             "硬约束（违反即被丢弃）：\n"
             "1) add-optional-property 的 prop 必须是对象尚未建模的新字段；type 必须是合法 DSL 类型；\n"
             "2) enum-widen 的 prop 必须是已存在的枚举属性，value 不得与现有成员重复；\n"

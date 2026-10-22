@@ -192,8 +192,8 @@ class Chrome:
                         page = next(t for t in targets if t.get("type") == "page")
                         self.ws = await websockets.connect(page["webSocketDebuggerUrl"], max_size=2**24)
                         return
-            except Exception:
-                pass
+            except Exception:  # any failure during a probe = not ready yet
+                pass  # the loop retries until timeout, then raises below
             await asyncio.sleep(0.25)
         raise RuntimeError("chrome did not come up")
 
@@ -388,12 +388,12 @@ async def audit(base: str, only: str | None = None, user: str = "admin", passwor
         await ch.goto(f"{base}/")
         await ch.eval("document.body.focus()")
         first = await ch.eval(
-            "(() => { const f = document.querySelector('a[href], button, input, select, textarea, [tabindex]:not([tabindex=\"-1\"])');"
-            " return f ? (f.getAttribute('data-testid') || f.tagName + ':' + (f.textContent||'').trim().slice(0,24)) : null; })()"
+            "(() => { const f = document.querySelector('a[href], button, input, select, textarea, [tabindex]:not([tabindex=\"-1\"])');"  # noqa: E501
+            " return f ? (f.getAttribute('data-testid') || f.tagName + ':' + (f.textContent||'').trim().slice(0,24)) : null; })()"  # noqa: E501
         )
         await ch.key("Tab")
         after_tab = await ch.eval(
-            "(() => { const el = document.activeElement; return el.getAttribute('data-testid') || el.tagName + ':' + (el.textContent||'').trim().slice(0,24); })()"
+            "(() => { const el = document.activeElement; return el.getAttribute('data-testid') || el.tagName + ':' + (el.textContent||'').trim().slice(0,24); })()"  # noqa: E501
         )
         nav = await ch.eval(
             "(() => { const el = document.querySelector('a[data-testid=\"skip-link\"]');"
@@ -423,7 +423,7 @@ async def audit(base: str, only: str | None = None, user: str = "admin", passwor
                 " const s = el ? getComputedStyle(el) : null;"
                 " const sk = document.querySelector('[data-testid=\"skeleton\"], .ontogeny-skeleton');"
                 " return { animateIn: s ? s.animationName + ' ' + s.animationDuration : null,"
-                " skeleton: sk ? getComputedStyle(sk).animationName + ' ' + getComputedStyle(sk).animationIterationCount : null,"
+                " skeleton: sk ? getComputedStyle(sk).animationName + ' ' + getComputedStyle(sk).animationIterationCount : null,"  # noqa: E501
                 " mediaMatches: matchMedia('(prefers-reduced-motion: reduce)').matches }; })()"
             )
         report["motion"] = motion

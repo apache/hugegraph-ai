@@ -99,7 +99,7 @@ class TestPluginScopedListTools:
         sc = await _make(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
-        async with app.router.lifespan_context(app):
+        async with app.router.lifespan_context(app):  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:
                 async with streamable_http_client("http://test/mcp", http_client=hc) as streams:
                     async with ClientSession(streams[0], streams[1]) as sess:
@@ -113,7 +113,7 @@ class TestPluginScopedListTools:
                             base_url="http://test",
                             headers={"X-ONTOGENY-Plugin": "planning-copilot"},
                         )
-                        async with streamable_http_client("http://test/mcp", http_client=scoped) as streams2:
+                        async with streamable_http_client("http://test/mcp", http_client=scoped) as streams2:  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
                             async with ClientSession(streams2[0], streams2[1]) as sess2:
                                 await sess2.initialize()
                                 narrow = await sess2.list_tools()
@@ -145,7 +145,7 @@ class TestPluginScopedListTools:
         sc = await _make(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
-        async with (
+        async with (  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
             app.router.lifespan_context(app),
             httpx.AsyncClient(
                 transport=transport, base_url="http://test", headers={"X-ONTOGENY-Plugin": "no-such-plugin"}

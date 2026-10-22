@@ -25,6 +25,7 @@ here. Loading is pure: no IO beyond reading the package directory.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -150,26 +151,26 @@ def _parse_file(path: Path, expected_kind: str | None = None) -> AnyResource:
 
 
 def _safe_path(path: str | Path) -> Path:
-    """Resolve and validate a path, rejecting traversal components.
+    """Canonical absolute path of ``path``, rejecting ``..`` components.
 
-    CodeQL recognizes this as path sanitization: the explicit '..' check
-    breaks the data-flow from user-controlled input to path expressions.
+    The root comes from operator configuration (CLI/env), never directly
+    from a request; request-supplied names are normalize-and-contain checked
+    against their base directory at each API entry point before any
+    filesystem use.
     """
-    p = Path(path)
-    if ".." in p.parts:
+    if ".." in Path(path).parts:
         raise DSLValidationError(f"path {str(path)!r} contains '..' components; traversal is not allowed")
-    return p.resolve()
+    return Path(os.path.realpath(str(path)))
 
 
 def load_package(root: str | Path) -> OntologyPackage:
-    root = Path(root)
+    root = _safe_path(root)
     manifest_path = root / "ontology.yaml"
     if not manifest_path.is_file():
         raise DSLValidationError(f"no ontology.yaml under {root}", details={"root": str(root)})
     manifest = _parse_file(manifest_path, expected_kind="Ontology")
 
     resources: list[AnyResource] = []
-    root = _safe_path(root)  # explicit traversal rejection (CodeQL sanitizer)
     files: dict[tuple[str, str], Path] = {}
 
     for dirname, kind in _DIR_KINDS.items():

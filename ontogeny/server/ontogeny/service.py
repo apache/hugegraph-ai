@@ -63,11 +63,15 @@ _DOMAIN_DIRS = ("objects", "links", "actions", "functions", "policies", "stores"
 
 
 def _safe_path(path: str | Path) -> Path:
-    """Resolve and reject traversal components (CodeQL sanitizer)."""
-    p = Path(path)
-    if ".." in p.parts:
+    """Canonical absolute path for operator-configured package directories.
+
+    Request-supplied names never take this route directly: each entry point
+    normalizes and containment-checks them against their base directory
+    before any filesystem use.
+    """
+    if ".." in Path(path).parts:
         raise DomainError(f"path {str(path)!r} contains '..' components")
-    return p.resolve()
+    return Path(os.path.realpath(str(path)))
 
 
 class DomainError(OOError):
@@ -112,8 +116,13 @@ def _check_package(path: Path) -> dict[str, Any]:
         if rep.ok:
             return {"ok": True, "errors": []}
         return {"ok": False, "errors": [f"{i.resource}: {i.message}" for i in rep.issues if i.severity == "error"][:5]}
-    except Exception as exc:
-        return {"ok": False, "errors": [str(exc)[:300]]}
+    except OOError as exc:
+        # platform errors carry curated, user-facing messages (yaml/validator)
+        return {"ok": False, "errors": [exc.message[:300]]}
+    except Exception:
+        # anything else may embed interpreter internals; the switcher only
+        # needs to know the domain is not activatable
+        return {"ok": False, "errors": ["package failed to load"]}
 
 
 def _pk_from_graph_id(graph_id: Any) -> str | None:
@@ -693,7 +702,8 @@ class ServiceContext:
         env = os.environ.get("ONTOGENY_DOMAINS_ROOT")
         if env:
             return Path(env)
-        base = Path(self.boot_package_root or self.package_root or ".").resolve().parent
+        root = self.boot_package_root or self.package_root or "."
+        base = Path(root).resolve().parent
         if base.name == "domains":
             # source-checkout layout: the boot package itself lives at
             # <repo>/domains/<name>, so parent IS the domains root -- appending
@@ -820,7 +830,13 @@ class ServiceContext:
             raise DomainError(f"domain name must be kebab-case [a-z][a-z0-9-], got {name!r}")
         if name.lower() in ("domains", "pkg", "pkg.pristine"):
             raise DomainError(f"domain name {name!r} is reserved")
-        dom = self.domains_root() / name
+        # kebab-case already cannot traverse; the normalize-then-contain
+        # check keeps that true even if the name rule is ever relaxed
+        root_r = os.path.realpath(str(self.domains_root()))
+        dom_r = os.path.realpath(os.path.join(root_r, name))
+        if not dom_r.startswith(root_r + os.sep):
+            raise DomainError(f"domain name {name!r} escapes the domains root")
+        dom = Path(dom_r)
         if dom.exists():
             raise DomainError(f"domain {name!r} already exists", details={"path": str(dom)})
         for sub in _DOMAIN_DIRS:
@@ -907,15 +923,19 @@ class ServiceContext:
             )
 
         staging = Path(tempfile.mkdtemp(prefix=".import-", dir=root))
+        staging_r = os.path.realpath(str(staging))
         try:
             total = 0
             for info in zf.infolist():
                 member = info.filename[plen:]
                 if not member or member.endswith("/"):
                     continue
-                target = (staging / member).resolve()
-                if staging.resolve() not in target.parents:
+                # zip-slip: each member is normalized and must resolve
+                # INSIDE the staging dir (symlinks cannot hop out either)
+                member_r = os.path.realpath(os.path.join(staging_r, member))
+                if not member_r.startswith(staging_r + os.sep):
                     raise DomainError(f"unsafe archive member: {info.filename!r}")
+                target = Path(member_r)
                 total += info.file_size
                 if total > MAX_UNCOMPRESSED:
                     raise DomainError("archive too large when extracted")
@@ -979,7 +999,13 @@ class ServiceContext:
             path = _safe_path(pkg_root) if pkg_root else None
             if path is not None and (path / "ontology.yaml").is_file() and _manifest_name(path) == name:
                 return path
-        dom = self.domains_root() / name
+        # a name is a *name*, not a path: anything that resolves outside
+        # the domains root (``..``, absolute, symlink) is simply unknown
+        root_r = os.path.realpath(str(self.domains_root()))
+        dom_r = os.path.realpath(os.path.join(root_r, name))
+        if not dom_r.startswith(root_r + os.sep):
+            raise NotFoundError(f"unknown domain: {name}")
+        dom = Path(dom_r)
         if (dom / "ontology.yaml").is_file():
             return dom
         raise NotFoundError(f"unknown domain: {name}")
@@ -1014,7 +1040,8 @@ class ServiceContext:
         """
         target = Path(package_root)
         current = Path(self.package_root) if self.package_root else None
-        if current is not None and current.is_dir() and current.resolve() != target.resolve():
+        differs = current is not None and current.resolve() != target.resolve()
+        if current is not None and current.is_dir() and differs:
             try:
                 self._validate_package_for_switch(current, "current domain")
             except DSLValidationError:

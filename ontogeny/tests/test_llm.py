@@ -82,7 +82,7 @@ class TestOllamaChat:
                 transport=_ollama_transport(
                     {
                         "message": {
-                            "content": 'Sure!\n```json\n{"mutations": [{"mutation": "enum-widen"}], "rationale": "r"}\n```\nDone.'
+                            "content": 'Sure!\n```json\n{"mutations": [{"mutation": "enum-widen"}], "rationale": "r"}\n```\nDone.'  # noqa: E501
                         },
                     }
                 )
@@ -186,7 +186,7 @@ class TestAssistantEndpoint:
                     json={
                         "message": {
                             "role": "assistant",
-                            "content": 'Use the ontology.\n```json\n{"mutations": [{"mutation": "add-optional-property", "object": "production-order", "prop": "wg", "type": "string"}], "rationale": "gap"}\n```',
+                            "content": 'Use the ontology.\n```json\n{"mutations": [{"mutation": "add-optional-property", "object": "production-order", "prop": "wg", "type": "string"}], "rationale": "gap"}\n```',  # noqa: E501
                         },
                     },
                 )

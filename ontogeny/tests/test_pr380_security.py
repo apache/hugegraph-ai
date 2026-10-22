@@ -71,9 +71,9 @@ class TestForbidSemantics:
             'forbid(principal, action == Action::"release-production-order", resource) when {{ broken'
         )
         rep = validate(pkg)
-        assert any(
-            i.code == "POLICY-FORBID" for i in rep.issues
-        ), "an unparseable forbid must fail publish, not ride silently"
+        assert any(i.code == "POLICY-FORBID" for i in rep.issues), (
+            "an unparseable forbid must fail publish, not ride silently"
+        )
 
     def test_grant_parsing_ignores_forbid(self):
         # parse_policy_set stays permits-only: a forbid must never appear as a grant
@@ -138,13 +138,13 @@ class TestSessionDeletionGuards:
     async def test_foreign_driver_cannot_delete(self, client):
         from ontogeny.errors import PolicyDeniedError
 
-        c, sc = client
+        _c, sc = client
         sid = await self._seed(sc, driver_id="alice")
         with pytest.raises(PolicyDeniedError):
             await sc.agents.delete_session(sid, principal={"id": "mallory"})
 
     async def test_own_driver_and_admin_can_delete(self, client):
-        c, sc = client
+        _c, sc = client
         sid = await self._seed(sc, driver_id="alice")
         assert (await sc.agents.delete_session(sid, principal={"id": "alice"}))["deleted"] == sid
         sid2 = await self._seed(sc, driver_id="bob")
@@ -154,7 +154,7 @@ class TestSessionDeletionGuards:
         from ontogeny.agent.models import AgentApprovalRow
         from ontogeny.errors import ConflictError
 
-        c, sc = client
+        _c, sc = client
         sid = await self._seed(sc, driver_id="alice")
         async with sc.sessionmaker() as s:
             s.add(

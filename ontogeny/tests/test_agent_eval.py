@@ -84,7 +84,7 @@ async def sc(golden_pkg_path, tmp_path):
     seed_from_package(golden_pkg_path, src, force=True)
     settings = Settings(
         dev_auth=True,
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
     ctx = ServiceContext(settings, str(root))

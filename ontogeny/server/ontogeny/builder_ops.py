@@ -90,7 +90,7 @@ async def builder_save(
         try:
             parsed.append(cls.model_validate(raw))
         except Exception as exc:
-            errors.append({"resource": f"{kind}/{raw.get('metadata',{}).get('name','?')}", "message": str(exc)[:200]})
+            errors.append({"resource": f"{kind}/{raw.get('metadata', {}).get('name', '?')}", "message": str(exc)[:200]})
     if errors:
         # the console shows per-resource errors; raise and let the HTTP shell
         # keep its legacy 422 envelope
@@ -136,7 +136,7 @@ async def builder_save(
 
         if not store_name or not kind or not connection:
             raise DSLValidationError(
-                "ObjectType backing.store_spec: store name, source type and " "connection are all required",
+                "ObjectType backing.store_spec: store name, source type and connection are all required",
                 details={"store": store_name, "kind": kind},
             )
         stores_dir = pkg_dir / "stores"

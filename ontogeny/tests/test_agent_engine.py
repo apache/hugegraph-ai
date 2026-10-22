@@ -75,7 +75,7 @@ spec:
 def _sc_settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
 

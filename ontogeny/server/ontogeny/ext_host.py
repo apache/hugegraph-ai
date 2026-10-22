@@ -135,7 +135,7 @@ class ExtensionHost:
                 rec = self._parse(manifest_path, root)
                 if rec is None:
                     continue
-                if not rec.manifest.get("enabled", True) or selected is not None and rec.name not in selected:
+                if not rec.manifest.get("enabled", True) or (selected is not None and rec.name not in selected):
                     rec.status = "disabled"
                 self.records.append(rec)
         for rec in self.records:
@@ -234,8 +234,7 @@ class ExtensionHost:
         owner = self._modules.get(module_name)
         if owner is not None and owner != rec.name:
             raise ImportError(
-                f"entry.module {module_name!r} is already provided by extension "
-                f"{owner!r}; rename one of the packages"
+                f"entry.module {module_name!r} is already provided by extension {owner!r}; rename one of the packages"
             )
         # the extension's own directory goes on sys.path: its Python package
         # (entry.module) lives directly inside it

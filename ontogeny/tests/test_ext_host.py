@@ -94,7 +94,7 @@ class TestDiscoveryAndLoading:
         assert sc.agent_engines["fake"](sc) == "ENGINE"
 
     async def test_unmet_require_skips_with_reason(self, tmp_path, monkeypatch):
-        sc, host = _host(
+        _sc, host = _host(
             tmp_path,
             packages={"fake-engine": "def register(sc, host):\n    raise AssertionError('must not run')\n"},
             manifests={"fake-engine": GOOD_ENGINE},
@@ -110,7 +110,7 @@ class TestDiscoveryAndLoading:
             "module: pkg_fake_llm", "module: pkg_broken_llm"
         )
         engine_no_req = GOOD_ENGINE.replace("requires: [capability:llm]\n", "")
-        sc, host = _host(
+        _sc, host = _host(
             tmp_path,
             packages={
                 "broken-llm": "raise RuntimeError('nope')\n",
@@ -127,7 +127,7 @@ class TestDiscoveryAndLoading:
 
     async def test_empty_allowlist_disables_everything(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ONTOGENY_EXTENSIONS", "")
-        sc, host = _host(
+        _sc, host = _host(
             tmp_path,
             packages={"fake-llm": "def register(sc, host):\n    pass\n"},
             manifests={"fake-llm": GOOD_PROVIDER},
@@ -138,7 +138,7 @@ class TestDiscoveryAndLoading:
 
     async def test_allowlist_selects_by_name(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ONTOGENY_EXTENSIONS", "fake-llm")
-        sc, host = _host(
+        _sc, host = _host(
             tmp_path,
             packages={
                 "fake-llm": "def register(sc, host):\n    sc.llm = 'GATEWAY'\n    host.provide('capability:llm')\n",
@@ -153,7 +153,7 @@ class TestDiscoveryAndLoading:
         assert by_name["fake-engine"].status == "disabled"  # not selected
 
     async def test_manifest_without_entry_is_skipped(self, tmp_path, monkeypatch):
-        sc, host = _host(
+        _sc, host = _host(
             tmp_path,
             packages={"fake-llm": ""},
             manifests={"fake-llm": "apiVersion: ontogeny-ext/v1\nname: fake-llm\n"},
@@ -225,8 +225,8 @@ async def api(golden_pkg_path, tmp_path):
     shutil.copytree(golden_pkg_path, pkg_root)
     settings = Settings(
         dev_auth=True,
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"},
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path / 'erp.db'}"},
     )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()

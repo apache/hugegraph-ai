@@ -107,9 +107,9 @@ class TestPackage:
         for fn in pkg.functions():
             for cap in fn.spec.capabilities:
                 declared |= set(cap.model_dump(exclude_none=True).keys())
-        assert declared and declared <= set(
-            CAPABILITY_KINDS
-        ), f"unknown capability kinds declared: {sorted(declared - set(CAPABILITY_KINDS))}"
+        assert declared and declared <= set(CAPABILITY_KINDS), (
+            f"unknown capability kinds declared: {sorted(declared - set(CAPABILITY_KINDS))}"
+        )
         assert "read-objects" in declared
 
     def test_the_whole_capability_vocabulary_stays_demonstrated(self, tmp_path):
@@ -130,9 +130,9 @@ class TestPackage:
         for fn in pkg.functions():
             for cap in fn.spec.capabilities:
                 declared |= set(cap.model_dump(exclude_none=True).keys())
-        assert declared == set(CAPABILITY_KINDS) - {
-            "read-objects"
-        }, f"capability kinds never demoed: {sorted(set(CAPABILITY_KINDS) - declared)}"
+        assert declared == set(CAPABILITY_KINDS) - {"read-objects"}, (
+            f"capability kinds never demoed: {sorted(set(CAPABILITY_KINDS) - declared)}"
+        )
 
     def test_ships_its_own_seed(self, golden_pkg_path):
         seed = golden_pkg_path / "seed" / "01_source.sql"
@@ -191,7 +191,7 @@ class TestSyncCoverage:
     async def test_every_object_type_syncs(self, sc):
         async with sc.sessionmaker() as s:
             for name in sc.compiled.objects:
-                rows, total = await sc.repo.query(s, name, limit=1)
+                _rows, total = await sc.repo.query(s, name, limit=1)
                 assert total > 0, f"{name} synced no rows"
 
     async def test_derived_properties_compute(self, sc):

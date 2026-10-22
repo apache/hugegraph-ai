@@ -69,7 +69,7 @@ spec:
 def _settings(tmp_path, src, *, db_dsn: str | None = None, **over) -> Settings:
     over.setdefault("dev_auth", True)  # the platform default is OFF; tests opt in
     return Settings(
-        db_dsn=db_dsn or f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=db_dsn or f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
         **over,
     )

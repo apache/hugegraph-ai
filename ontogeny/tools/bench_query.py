@@ -73,7 +73,7 @@ async def bench(sc, iters: int) -> None:
                     t0 = time.perf_counter()
                     await _run(s, filt)
                     samples.append((time.perf_counter() - t0) * 1000)
-            print(f"{name} [{label}]".ljust(44) + f" {pct(samples, .5):8.1f} {pct(samples, .95):8.1f} {iters:5d}")
+            print(f"{name} [{label}]".ljust(44) + f" {pct(samples, 0.5):8.1f} {pct(samples, 0.95):8.1f} {iters:5d}")
     for _name in traverses:
         # a cheap deterministic traversal: first object of the first type
         first_type = sorted(sc.compiled.objects)[0]
@@ -93,7 +93,9 @@ async def bench(sc, iters: int) -> None:
                 t0 = time.perf_counter()
                 await sc.query.traverse(s, first_type, [start_id], PRINCIPAL, path)
                 samples.append((time.perf_counter() - t0) * 1000)
-        print(f"traverse[{links[0]},1hop]:".ljust(44) + f" {pct(samples, .5):8.1f} {pct(samples, .95):8.1f} {iters:5d}")
+        print(
+            f"traverse[{links[0]},1hop]:".ljust(44) + f" {pct(samples, 0.5):8.1f} {pct(samples, 0.95):8.1f} {iters:5d}"
+        )
 
 
 async def main() -> None:
@@ -112,7 +114,7 @@ async def main() -> None:
         shutil.copytree(pkg_src, pkg)
         src = tmp / "src.db"
         seed_from_package(pkg_src, src, force=True)
-        dsn = os.environ.get("ONTOGENY_BENCH_DSN") or f"sqlite+aiosqlite:///{tmp/'main.db'}"
+        dsn = os.environ.get("ONTOGENY_BENCH_DSN") or f"sqlite+aiosqlite:///{tmp / 'main.db'}"
         sc = ServiceContext(Settings(db_dsn=dsn, env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}), str(pkg))
         await sc.initialize()
         for t in sc.compiled.objects:

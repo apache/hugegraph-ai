@@ -436,7 +436,7 @@ async def audit(base: str, only: str | None = None, user: str = "admin", passwor
 def summarize(rep: dict) -> int:
     problems = 0
     if not rep.get("signed_in"):
-        print(f"[FAIL] sign-in: {rep.get('login_error')}\n" "        the audit below measured only the login page\n")
+        print(f"[FAIL] sign-in: {rep.get('login_error')}\n        the audit below measured only the login page\n")
         problems += 1
     for theme, data in rep["contrast"].items():
         worst = data["worst"]

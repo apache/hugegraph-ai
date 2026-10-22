@@ -130,7 +130,7 @@ def docs(path: str, out: str = "docs-generated") -> None:
             lines.append(f"- description: {meta.description}")
         lines.append("")
     (outdir / "ontology.md").write_text("\n".join(lines), encoding="utf-8")
-    typer.secho(f"docs written to {outdir/'ontology.md'}", fg=typer.colors.GREEN)
+    typer.secho(f"docs written to {outdir / 'ontology.md'}", fg=typer.colors.GREEN)
 
 
 @app.command()

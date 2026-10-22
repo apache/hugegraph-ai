@@ -80,7 +80,7 @@ async def join_env(tmp_path):
     root = tmp_path / "join-pkg"
     root.mkdir()
     (root / "ontology.yaml").write_text(
-        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: join-table-demo}\n" "spec: {imports: []}\n",
+        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: join-table-demo}\nspec: {imports: []}\n",
         encoding="utf-8",
     )
     (root / "stores").mkdir()

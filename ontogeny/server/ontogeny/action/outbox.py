@@ -129,7 +129,7 @@ class OutboxDispatcher:
         # the event and say so — the alternative is a poison row blocking this
         # consumer forever.
         log.warning(
-            "webhook %s to %r rejected with %s (consumed; fix the endpoint " "and replay)",
+            "webhook %s to %r rejected with %s (consumed; fix the endpoint and replay)",
             event.id,
             url,
             resp.status_code,

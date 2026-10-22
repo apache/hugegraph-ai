@@ -165,7 +165,7 @@ class TestFunctionSourcesAfterRestart:
         """DB-only deployments must say what to configure, not fail obscurely."""
         from ontogeny.errors import SandboxError
 
-        settings, package_root, first = demo_env
+        settings, _package_root, first = demo_env
         await first.engine.dispose()
         second = await _restart(settings, None)
         try:

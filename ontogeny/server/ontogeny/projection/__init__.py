@@ -27,4 +27,4 @@ rebuildable index, so its absence only means SQL-only operation.
 from .compiler import compile_projection
 from .worker import GraphStore, ProjectionWorker
 
-__all__ = ["compile_projection", "GraphStore", "ProjectionWorker"]
+__all__ = ["GraphStore", "ProjectionWorker", "compile_projection"]

@@ -465,7 +465,7 @@ class ObjectRepository:
         # keys format: {"<target-side obj>.<prop>": "<source-side obj>.<prop>"}
         ((tgt_side, src_side),) = join.keys.items()
         tgt_obj, tgt_prop = tgt_side.split(".", 1)
-        src_obj, src_prop = src_side.split(".", 1)
+        _src_obj, _src_prop = src_side.split(".", 1)
 
         if from_source:
             # obj is a source-side object id; return target-side PKs where fk == obj_id

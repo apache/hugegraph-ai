@@ -20,4 +20,4 @@
 from .repo import ObjectRepository
 from .sync import QuarantineRow, SyncEngine, SyncRunRow, SyncStateRow
 
-__all__ = ["ObjectRepository", "SyncEngine", "SyncRunRow", "SyncStateRow", "QuarantineRow"]
+__all__ = ["ObjectRepository", "QuarantineRow", "SyncEngine", "SyncRunRow", "SyncStateRow"]

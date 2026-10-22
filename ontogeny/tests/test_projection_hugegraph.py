@@ -243,7 +243,7 @@ class TestDialectV17:
 
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
-        with pytest.raises(StoreError, match="graphs.yaml"):
+        with pytest.raises(StoreError, match=r"graphs\.yaml"):
             await client.ensure_graph()
         await http.aclose()
 
@@ -627,7 +627,7 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     settings = Settings(
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={
             "ERP_DSN": f"sqlite+aiosqlite:///{src}",
             "WMS_WEBHOOK": "https://wms.example.test/hook",

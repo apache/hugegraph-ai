@@ -20,4 +20,4 @@
 from .compiled import CompiledOntology, compile_package, snake
 from .store import RegistryService
 
-__all__ = ["CompiledOntology", "compile_package", "RegistryService", "snake"]
+__all__ = ["CompiledOntology", "RegistryService", "compile_package", "snake"]

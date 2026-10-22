@@ -37,17 +37,17 @@ from .roles import (
 from .service import SESSION_TTL, AuthService
 
 __all__ = [
-    "AuthService",
     "SESSION_TTL",
-    "UserRow",
-    "SessionRow",
-    "hash_password",
-    "verify_password",
+    "AuthService",
     "Grant",
-    "parse_grants",
+    "SessionRow",
+    "UserRow",
     "compile_role_policy",
     "effective_matrix",
-    "role_catalogue",
+    "hash_password",
     "managed_policy_name",
+    "parse_grants",
+    "role_catalogue",
     "slug_conflicts",
+    "verify_password",
 ]

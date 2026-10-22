@@ -92,7 +92,7 @@ async def link_env(tmp_path):
     root = tmp_path / "link-pkg"
     root.mkdir()
     (root / "ontology.yaml").write_text(
-        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: link-join-demo}\n" "spec: {imports: []}\n",
+        "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: link-join-demo}\nspec: {imports: []}\n",
         encoding="utf-8",
     )
     (root / "stores").mkdir()
@@ -253,7 +253,7 @@ class TestPolicyEngine:
         """
         compiled = env["compiled"]
         compiled.cedar_texts["role-visitor"] = (
-            'permit(principal in Role::"visitor", ' 'action == Action::"release-production-order", resource);'
+            'permit(principal in Role::"visitor", action == Action::"release-production-order", resource);'
         )
         pol = PolicyEngine(compiled)
         # the action still names its own policy set, and that set still applies

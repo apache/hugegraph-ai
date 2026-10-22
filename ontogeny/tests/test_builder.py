@@ -92,11 +92,11 @@ async def client(golden_pkg_path, tmp_path):
 
     settings = Settings(
         dev_auth=True,
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={
             "ERP_DSN": f"sqlite+aiosqlite:///{src}",
             "WMS_WEBHOOK": "https://wms.example.test/hook",
-            "SCENARIO_DSN": f"sqlite+aiosqlite:///{tmp_path/'scenario.db'}",
+            "SCENARIO_DSN": f"sqlite+aiosqlite:///{tmp_path / 'scenario.db'}",
         },
     )
     sc = ServiceContext(settings, str(pkg_root))
@@ -122,7 +122,7 @@ def _save(c, resources, deletes=None, layout=None):
 
 class TestBuilderSave:
     async def test_partial_save_writes_yaml_and_publishes(self, client):
-        c, sc, pkg = client
+        c, _sc, pkg = client
         work_center_yaml = (pkg / "objects" / "work-center.yaml").read_bytes()
 
         r = await _save(c, [SCENARIO_STORE, INSPECTION_POINT])
@@ -160,7 +160,7 @@ class TestBuilderSave:
         assert "record-inspection" in recompiled.cedar_texts["inspection-policy"]
 
     async def test_deletes_remove_files_and_publish(self, client):
-        c, sc, pkg = client
+        c, _sc, pkg = client
         assert (await _save(c, [INSPECTION_POINT])).status_code == 200
         assert (pkg / "objects" / "inspection-point.yaml").is_file()
 
@@ -177,7 +177,7 @@ class TestBuilderSave:
         assert r.json()["removed"] == []
 
     async def test_invalid_resources_reported_not_written(self, client):
-        c, sc, pkg = client
+        c, _sc, pkg = client
         bad = {
             "apiVersion": "ontogeny/v1",
             "kind": "ObjectType",
@@ -193,7 +193,7 @@ class TestBuilderSave:
 
     async def test_new_object_is_queryable_after_create_action(self, client):
         """The full builder loop: publish a scenario, then create + read a row."""
-        c, sc, pkg = client
+        c, _sc, _pkg = client
         task_obj = {
             "apiVersion": "ontogeny/v1",
             "kind": "ObjectType",
@@ -271,7 +271,7 @@ class TestBuilderResources:
     """
 
     async def test_returns_every_editable_kind_with_full_specs(self, client):
-        c, sc, pkg = client
+        c, sc, _pkg = client
         r = await c.get("/api/v1/admin/builder/resources")
         assert r.status_code == 200, r.text
         body = r.json()
@@ -312,7 +312,7 @@ class TestBuilderResources:
 
     async def test_round_trip_edit_does_not_strip_untouched_spec_fields(self, client):
         """Load → change one label → save → reload: nothing else moves."""
-        c, sc, pkg = client
+        c, _sc, _pkg = client
         before = {
             f"{x['kind']}/{x['metadata']['name']}": x
             for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]
@@ -342,7 +342,7 @@ class TestCanvasLayout:
     sidecar (next to ontology.yaml) when the user saves, not browser state."""
 
     async def test_layout_roundtrips_through_save_and_resources(self, client):
-        c, sc, pkg = client
+        c, _sc, pkg = client
         r = await _save(c, [], layout={"type:work-center": {"x": 120, "y": 80}})
         assert r.status_code == 200, r.text
 
@@ -353,7 +353,7 @@ class TestCanvasLayout:
         assert res.json()["layout"]["type:work-center"] == {"x": 120, "y": 80}
 
     async def test_empty_layout_removes_the_sidecar(self, client):
-        c, sc, pkg = client
+        c, _sc, pkg = client
         await _save(c, [], layout={"type:work-center": {"x": 1, "y": 2}})
         assert (pkg / "layout.yaml").is_file()
 
@@ -364,7 +364,7 @@ class TestCanvasLayout:
         assert res.json()["layout"] == {}
 
     async def test_save_without_layout_key_keeps_stored_positions(self, client):
-        c, sc, pkg = client
+        c, _sc, _pkg = client
         await _save(c, [], layout={"type:work-center": {"x": 1, "y": 2}})
         await _save(c, [INSPECTION_POINT])  # a plain resource save: no layout key
 
@@ -372,7 +372,7 @@ class TestCanvasLayout:
         assert res.json()["layout"]["type:work-center"] == {"x": 1, "y": 2}
 
     async def test_malformed_positions_are_dropped_not_fatal(self, client):
-        c, sc, pkg = client
+        c, _sc, _pkg = client
         r = await _save(c, [], layout={"a": {"x": "ghost", "y": 2}, "b": {"x": 3, "y": 4}})
         assert r.status_code == 200, r.text
         res = await c.get("/api/v1/admin/builder/resources")

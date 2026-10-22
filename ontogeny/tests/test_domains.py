@@ -46,7 +46,7 @@ async def test_list_domains_active_first(client):
 
 
 async def test_create_activate_and_switch_back(client):
-    c, sc = client
+    c, _sc = client
     # create an empty domain and land in it
     r = await c.post(
         "/api/v1/admin/domains",
@@ -113,7 +113,7 @@ async def test_activate_unknown_domain(client):
 
 async def test_list_domains_reports_a_health_check(client):
     """Every listed domain carries a live check: load + validate from disk."""
-    c, sc = client
+    c, _sc = client
     r = await c.get("/api/v1/admin/domains")
     dom = r.json()["domains"][0]
     assert dom["check"] == {"ok": True, "errors": []}

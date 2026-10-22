@@ -268,9 +268,7 @@ def main() -> int:
     t0 = time.time()
     rep = asyncio.run(audit(args.base, args.settle))
     total_quiet = sum(len(r["quiet"]) for r in rep["routes"].values())
-    print(
-        f"\n{total_quiet} quiet button(s) across {len(ROUTES)} routes " f"({time.time() - t0:.0f}s); review list above"
-    )
+    print(f"\n{total_quiet} quiet button(s) across {len(ROUTES)} routes ({time.time() - t0:.0f}s); review list above")
     if args.json:
         Path(args.json).write_text(json.dumps(rep, ensure_ascii=False, indent=1))
     return 0

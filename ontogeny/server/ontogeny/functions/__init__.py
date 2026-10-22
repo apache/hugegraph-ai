@@ -88,4 +88,4 @@ class FunctionRuntime:
         await self.declarative.aclose()
 
 
-__all__ = ["FunctionSandbox", "DeclarativeRuntime", "FunctionRuntime", "DerivationWorker"]
+__all__ = ["DeclarativeRuntime", "DerivationWorker", "FunctionRuntime", "FunctionSandbox"]

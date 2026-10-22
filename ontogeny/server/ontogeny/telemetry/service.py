@@ -265,7 +265,7 @@ class TelemetryService:
             if len(lats) < 2:
                 continue
             lats.sort()
-            p95 = lats[min(len(lats) - 1, int(round(0.95 * (len(lats) - 1))))]
+            p95 = lats[min(len(lats) - 1, round(0.95 * (len(lats) - 1)))]
             if p95 >= p95_th:
                 created.append(
                     {

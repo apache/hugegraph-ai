@@ -23,4 +23,4 @@ any permit.
 
 from .engine import PermitRule, PolicyDecision, PolicyEngine, parse_forbids, parse_policy_set
 
-__all__ = ["PolicyEngine", "PolicyDecision", "PermitRule", "parse_forbids", "parse_policy_set"]
+__all__ = ["PermitRule", "PolicyDecision", "PolicyEngine", "parse_forbids", "parse_policy_set"]

@@ -33,12 +33,12 @@ from .bootstrap import (
 )
 
 __all__ = [
-    "DEFAULT_PACKAGE",
     "DEFAULT_DEMO_DIR",
+    "DEFAULT_PACKAGE",
     "DemoPaths",
+    "copy_package",
     "prepare_demo",
     "reset_demo",
-    "copy_package",
     "seed_from_package",
     "seed_source_db",
 ]

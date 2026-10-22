@@ -20,6 +20,7 @@ derived-property marking propagation, agent-session deletion guards."""
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -170,3 +171,63 @@ class TestSessionDeletionGuards:
             await s.commit()
         with pytest.raises(ConflictError):
             await sc.agents.delete_session(sid, principal={"id": "alice"})
+
+
+class TestRequestPathBoundaries:
+    """Request-supplied strings must never become paths outside their base.
+
+    Every entry point (domain create/resolve, zip import, builder saves,
+    SPA file serving) normalizes the request value with realpath and only
+    accepts it when the normalized result stays under its base directory;
+    these tests pin that contract at the entry points users can reach.
+    """
+
+    async def test_resolve_domain_traversal_is_unknown_not_a_path(self, client):
+        """A domain *name* that would resolve outside the domains root is a
+        404 unknown domain, never a probe of directories outside it."""
+        from ontogeny.errors import NotFoundError
+
+        _c, sc = client
+        for name in ("../pkg", "..", "/etc"):
+            with pytest.raises(NotFoundError):
+                sc.resolve_domain(name)
+
+    async def test_builder_delete_entries_cannot_traverse(self, client):
+        """``deletes`` entries with slashes/dots are ignored, and nothing
+        outside the package directory is ever touched."""
+        from ontogeny.builder_ops import builder_save
+
+        _c, sc = client
+        outside = Path(sc.package_root).parent / "smuggled.yaml"
+        outside.write_text("keep", encoding="utf-8")
+        out = await builder_save(sc, [], deletes=["PolicySet/../..", "ObjectType/a/b"])
+        assert out["removed"] == []
+        assert outside.read_text(encoding="utf-8") == "keep"
+
+    async def test_domain_check_does_not_leak_raw_exceptions(self, client, monkeypatch):
+        """Unexpected loader failures report a generic sentence; curated
+        OOError messages (yaml/validator) keep reaching the switcher."""
+        from ontogeny import core as core_pkg
+        from ontogeny import service as svc
+
+        _c, sc = client
+        real = core_pkg.load_package
+
+        def boom(_path):
+            raise RuntimeError("secret internals /Users/someone/traceback")
+
+        monkeypatch.setattr(core_pkg, "load_package", boom)
+        out = svc._check_package(sc.package_root)
+        assert out["ok"] is False
+        assert "secret internals" not in " ".join(out["errors"])
+
+        monkeypatch.setattr(core_pkg, "load_package", real)
+        # a curated OOError still surfaces its message (validation UX)
+        from ontogeny.errors import DSLValidationError
+
+        def curated(_path):
+            raise DSLValidationError("yaml parse error in objects/x.yaml")
+
+        monkeypatch.setattr(core_pkg, "load_package", curated)
+        out = svc._check_package(sc.package_root)
+        assert out["ok"] is False and any("yaml parse error" in e for e in out["errors"])

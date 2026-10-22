@@ -160,15 +160,7 @@ ignore = [
 "ontogeny/server/ontogeny/api/**" = ["B008"]
 # DSL wire fields are camelCase pydantic attrs matching the YAML keys
 "ontogeny/server/ontogeny/core/models.py" = ["N815"]
-# prompt/string literals: wrapping would change the text sent to the model
-"ontogeny/server/ontogeny/evolve/proposer.py" = ["E501"]
 "ontogeny/tests/conftest.py" = ["E402"]  # sys.path setup precedes the imports it enables
-"ontogeny/tests/test_agent_approval.py" = ["E501"]
-"ontogeny/tests/test_ext_host.py" = ["E501"]
-"ontogeny/tests/test_llm.py" = ["E501"]
-"ontogeny/tests/test_mcp.py" = ["SIM117"]  # nested MCP client contexts read clearer
-"ontogeny/tests/test_optimizations.py" = ["SIM117", "E501"]
-"ontogeny/tools/headless_check.py" = ["E501"]  # console report table
 "hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
 

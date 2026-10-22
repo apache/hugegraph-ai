@@ -36,6 +36,7 @@ import json
 import shutil
 
 import httpx
+import pytest
 import pytest_asyncio
 
 from ontogeny.api import build_app
@@ -210,3 +211,43 @@ class TestSimulationIsDecidedByCedar:
         r = await c.post(validate, headers=_header(closer), json=body)
         assert r.status_code == 200, r.text
         assert r.json()["policy"]["allow"] is True, "matrix grant -> Cedar permits the simulation"
+
+
+class TestBootstrapCredential:
+    @pytest_asyncio.fixture()
+    async def default_pw_ctx(self, golden_pkg_path, tmp_path, monkeypatch):
+        """A fresh context with ONTOGENY_ADMIN_PASSWORD unset: initialize()
+        bootstraps the admin with the documented default."""
+        import shutil as _shutil
+
+        monkeypatch.setenv("ONTOGENY_ADMIN_USER", "root")
+        monkeypatch.delenv("ONTOGENY_ADMIN_PASSWORD", raising=False)
+        pkg_root = tmp_path / "pkg"
+        _shutil.copytree(golden_pkg_path, pkg_root)
+        settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}")
+        sc = ServiceContext(settings, str(pkg_root))
+        await sc.initialize()
+        return sc
+
+    async def test_unset_env_boots_with_documented_default(self, default_pw_ctx):
+        """Without ONTOGENY_ADMIN_PASSWORD the bootstrap account uses the
+        documented default (README + daemon.sh) and login works with it --
+        a random unrecoverable value would lock fresh deployments out."""
+        from ontogeny.auth.service import BOOTSTRAP_ADMIN_PASSWORD
+
+        assert BOOTSTRAP_ADMIN_PASSWORD == "ontogeny@2026"
+        sc = default_pw_ctx
+        token, principal = await sc.auth.login("root", BOOTSTRAP_ADMIN_PASSWORD)
+        assert token and principal["id"] == "root"
+
+    async def test_env_override_wins_over_default(self, client):
+        """The env var (the deployment path) decides the credential; the
+        documented default must NOT also authenticate."""
+        from ontogeny.auth.service import BOOTSTRAP_ADMIN_PASSWORD
+        from ontogeny.errors import AuthenticationError
+
+        _c, sc = client
+        token, principal = await sc.auth.login("root", "root-password")
+        assert token and principal["id"] == "root"
+        with pytest.raises(AuthenticationError):
+            await sc.auth.login("root", BOOTSTRAP_ADMIN_PASSWORD)

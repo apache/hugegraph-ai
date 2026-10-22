@@ -459,7 +459,7 @@ class AgentBroker:
             try:
                 return {n: ToolDef(**meta) for n, meta in sess.tools_json.items()}
             except TypeError:  # malformed freeze -- fall through to recompute
-                pass
+                pass  # a corrupt snapshot must not break the session
         if plug is None or self.sc.compiled is None:
             return {}
         tools = effective_tools(self.sc.compiled, plug)

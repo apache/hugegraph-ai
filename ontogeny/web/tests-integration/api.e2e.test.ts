@@ -229,11 +229,18 @@ describe('e2e: real backend', () => {
     // the model's exact wording varies run to run; assert plumbing + shape,
     // and surface the payload when a structural expectation fails
     expect(json.content, `empty content; payload=${JSON.stringify(json).slice(0, 300)}`).toBeTruthy()
+    // A live model may legitimately decline to propose (empty array) or
+    // return no proposals block at all -- both are valid answers. What the
+    // endpoint CONTRACTS is: proposals, when present, is an array, and every
+    // element carries a non-empty `mutation` string. Asserting on a
+    // first-element mutation made this test flaky on nondeterministic model
+    // output; the deterministic proposer path is covered by unit tests.
     if (json.proposals != null) {
       expect(Array.isArray(json.proposals), JSON.stringify(json.proposals).slice(0, 200)).toBe(true)
-      const m = json.proposals[0]
-      expect(typeof m.mutation, JSON.stringify(m)).toBe('string')
-      expect(m.mutation.length, JSON.stringify(m)).toBeGreaterThan(0)
+      for (const m of json.proposals) {
+        expect(typeof m?.mutation, JSON.stringify(m).slice(0, 200)).toBe('string')
+        expect(m.mutation.length, JSON.stringify(m).slice(0, 200)).toBeGreaterThan(0)
+      }
     }
   })
 })

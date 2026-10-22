@@ -228,7 +228,7 @@ class TestWireSurface:
         transport = httpx.ASGITransport(app=app)
         async with app.router.lifespan_context(app):
             assert any(getattr(r, "path", None) == MCP_HTTP_PATH for r in app.routes)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
                 async with streamable_http_client(f"http://test{MCP_HTTP_PATH}", http_client=hc) as streams:
                     async with ClientSession(streams[0], streams[1]) as sess:
                         await sess.initialize()
@@ -258,7 +258,7 @@ class TestWireSurface:
         sc = await _make_sc(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
-        async with app.router.lifespan_context(app):
+        async with app.router.lifespan_context(app):  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:
                 r = await hc.post(
                     MCP_HTTP_PATH,

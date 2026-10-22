@@ -288,7 +288,7 @@ class HugeGraphClient:
             if isinstance(backend, str) and backend:
                 return backend
         except (StoreError, ValueError, AttributeError):
-            pass
+            pass  # the backend probe is optional: default to rocksdb when unavailable
         return "rocksdb"
 
     # ---------------------------------------------------------------- schema

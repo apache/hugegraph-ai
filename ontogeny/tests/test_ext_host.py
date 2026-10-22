@@ -79,7 +79,7 @@ class TestDiscoveryAndLoading:
         sc, host = _host(
             tmp_path,
             packages={
-                "fake-llm": "CAPS = []\ndef register(sc, host):\n    sc.llm = 'GATEWAY'\n    host.provide('capability:llm', {'model': 'x'})\n",
+                "fake-llm": "CAPS = []\ndef register(sc, host):\n    sc.llm = 'GATEWAY'\n    host.provide('capability:llm', {'model': 'x'})\n",  # noqa: E501
                 "fake-engine": "def register(sc, host):\n    sc.agent_engines['fake'] = lambda sc: 'ENGINE'\n",
             },
             manifests={"fake-llm": GOOD_PROVIDER, "fake-engine": GOOD_ENGINE},

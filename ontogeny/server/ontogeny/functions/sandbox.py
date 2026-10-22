@@ -48,8 +48,8 @@ def _limits() -> None:  # pragma: no cover -- preexec in the child process
         with contextlib.suppress(ValueError, OSError):
             resource.setrlimit(resource.RLIMIT_AS, (512 << 20, 512 << 20))
         resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    except Exception:
-        pass
+    except OSError:
+        pass  # rlimits are best-effort: a hardened container may refuse them
 
 
 def _jsonable(value: Any) -> Any:

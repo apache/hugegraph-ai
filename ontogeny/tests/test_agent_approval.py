@@ -240,7 +240,7 @@ class TestApprovalGate:
 AUTO_PLUGIN = (
     PLUGIN.replace(
         "allow: [describe_ontology, search_production_order, act_release_production_order]",
-        "allow: [describe_ontology, search_production_order, act_release_production_order, act_create_production_order]",
+        "allow: [describe_ontology, search_production_order, act_release_production_order, act_create_production_order]",  # noqa: E501
     )
     .replace(
         "approval: { writes: confirm }",

@@ -45,6 +45,11 @@ from .passwords import hash_password, new_token, token_fingerprint, verify_passw
 
 log = logging.getLogger("ontogeny.auth")
 
+# Dev bootstrap credential (see ensure_admin): used only when the database has
+# no active admin and ONTOGENY_ADMIN_PASSWORD is unset. Deployments must set
+# the env var or change the password after first login.
+BOOTSTRAP_ADMIN_PASSWORD = "ontogeny@2026"
+
 SESSION_TTL = _dt.timedelta(hours=12)
 MIN_PASSWORD = 8
 
@@ -279,15 +284,9 @@ class AuthService:
                 return None
 
         username = os.environ.get("ONTOGENY_ADMIN_USER", "admin")
-        password = os.environ.get("ONTOGENY_ADMIN_PASSWORD")
-        if not password:
-            import secrets
-
-            password = "og-" + secrets.token_urlsafe(16)
-            log.warning("ONTOGENY_ADMIN_PASSWORD not set; generated a random bootstrap password (shown once)")
-            import sys
-
-            print(f"  bootstrap admin password: {password}", file=sys.stderr, flush=True)  # noqa: T201
+        # the documented dev bootstrap default: a random value that is never
+        # retrievable afterwards would lock every fresh non-env deployment out
+        password = os.environ.get("ONTOGENY_ADMIN_PASSWORD") or BOOTSTRAP_ADMIN_PASSWORD
         # self-heal instead of crashing: the bootstrap account may already
         # exist as non-admin or disabled (demoted by a buggy older path), and
         # create_user would raise "username exists" on the next restart

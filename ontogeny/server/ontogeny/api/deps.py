@@ -104,7 +104,7 @@ async def get_principal(request: Request) -> dict:
                     p["via"] = "dev-header"
                     return p
             except json.JSONDecodeError:
-                pass
+                pass  # malformed dev header: fall through to the anonymous principal
     return {"id": "anonymous", "Role": [], "authenticated": False, "is_admin": False, "via": "anonymous"}
 
 

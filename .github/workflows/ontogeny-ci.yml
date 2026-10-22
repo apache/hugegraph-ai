@@ -47,10 +47,17 @@ jobs:
       - name: ASF header presence
         working-directory: ontogeny
         run: |
-          missing=$(grep -rL --include='*.py' --include='*.ts' --include='*.tsx' -e 'Licensed to the Apache Software Foundation' server extensions tests tools web/src || true)
-          if [ -n "$missing" ]; then
-            echo "::error::files missing the ASF header:"; echo "$missing"; exit 1
-          fi
+          # Belt to the repository-wide licenserc check: fail when any module
+          # source file lacks the ASF header. Written with an explicit loop so
+          # no `|| true` / `!` can mask the exit status (grep -L inverts it).
+          failed=0
+          while IFS= read -r f; do
+            if ! grep -q "Licensed to the Apache Software Foundation" "$f"; then
+              echo "::error file=$f::missing the ASF license header"
+              failed=1
+            fi
+          done < <(find server extensions tests tools web/src -type f \( -name '*.py' -o -name '*.ts' -o -name '*.tsx' -o -name '*.sh' -o -name '*.yaml' -o -name '*.yml' -o -name 'Dockerfile' \) 2>/dev/null)
+          exit "$failed"
       - name: Tests
         working-directory: ontogeny
         run: .venv/bin/pytest -q

@@ -446,13 +446,14 @@ export const apiClient = {
       body: JSON.stringify({ name }),
     }),
 
-  /** Recompile + republish the package (`path` defaults to the server's root).
+  /** Recompile + republish the ACTIVE package (the endpoint takes no path;
+   *  pointing a republish at an arbitrary host directory is a CLI capability).
    *  Goes through `api()` like everything else, so the principal header, the
    *  `resp.ok` check and `ApiError` classification all apply. */
-  publish: (path?: string) =>
+  publish: () =>
     api<{ content_hash: string }>('/api/v1/admin/publish', {
       method: 'POST',
-      body: JSON.stringify(path ? { path } : {}),
+      body: JSON.stringify({}),
     }),
   dispatchOutbox: () => api<Record<string, number>>('/api/v1/admin/outbox/dispatch', { method: 'POST' }),
   rebuildProjection: () => api<Record<string, number>>('/api/v1/admin/projection/rebuild', { method: 'POST' }),

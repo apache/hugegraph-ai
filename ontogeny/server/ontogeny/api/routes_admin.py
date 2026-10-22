@@ -38,7 +38,6 @@ from .schemas import (
     DomainCreateBody,
     MountBody,
     ProjectionScaffoldBody,
-    PublishBody,
     RoleBody,
     RoleDeleteBody,
 )
@@ -276,11 +275,15 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         return {"activated": True, "name": body.name, "content_hash": compiled.content_hash}
 
     @admin_r.post("/publish")
-    async def admin_publish(body: PublishBody, sc: ServiceContext = Depends(get_sc)):
-        path = body.path or sc.package_root
-        if path is None:
-            raise HTTPException(400, "path required")
-        compiled = await sc.publish(path)
+    async def admin_publish(sc: ServiceContext = Depends(get_sc)):
+        """Recompile + republish the ACTIVE package.
+
+        The endpoint deliberately takes no path: republishing an arbitrary
+        filesystem directory is a CLI/operator capability, not something an
+        HTTP caller should be able to point at any location on the host."""
+        if sc.package_root is None:
+            raise HTTPException(400, "no active package to publish")
+        compiled = await sc.publish(sc.package_root)
         return {"content_hash": compiled.content_hash}
 
     @admin_r.post("/sync/{object_type}")

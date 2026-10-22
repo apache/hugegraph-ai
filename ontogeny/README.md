@@ -40,7 +40,7 @@ docker compose up -d          # self-contained demo (SQLite + seeded data)
 # docker compose --profile graph up -d      # + HugeGraph projection
 ```
 
-Console + API: **http://localhost:8000** — the first boot creates an `admin` account and prints the generated password to the container log (or preset `ONTOGENY_ADMIN_PASSWORD`). One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
+Console + API: **http://localhost:8000** — the first boot creates an `admin` account with the documented bootstrap password `ontogeny@2026` (override with `ONTOGENY_ADMIN_PASSWORD`, and change it after first login). One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
 
 ![The Overview dashboard — ontology model section](./docs/en/img/qs-dashboard.png)
 

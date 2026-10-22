@@ -194,7 +194,7 @@ class TestAssistantEndpoint:
         )
         settings = Settings(
             dev_auth=True,
-            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'a.db'}",
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'a.db'}",
             env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"},
             llm_base_url="http://ollama.test",
             llm_model=MODEL,
@@ -238,7 +238,7 @@ class TestAssistantEndpoint:
         sc = ServiceContext(
             Settings(
                 dev_auth=True,
-                db_dsn=f"sqlite+aiosqlite:///{tmp_path/'b.db'}",
+                db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'b.db'}",
                 env={"ERP_DSN": "sqlite+aiosqlite:///:memory:"},
             ),
             str(golden_pkg_path),

@@ -365,7 +365,7 @@ class BuiltinLlmEngine:
         while kept and _size(kept) > limit:
             kept.pop(0)
             dropped += 1
-        return [{"_elided": f"{dropped} earlier step(s) omitted to fit the " "context window"}, *kept]
+        return [{"_elided": f"{dropped} earlier step(s) omitted to fit the context window"}, *kept]
 
     def _transcript(self, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []

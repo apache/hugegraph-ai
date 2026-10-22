@@ -62,6 +62,14 @@ _DOMAIN_NAME_RE = re.compile(r"[a-z][a-z0-9-]{0,62}")
 _DOMAIN_DIRS = ("objects", "links", "actions", "functions", "policies", "stores", "evals")
 
 
+def _safe_path(path: str | Path) -> Path:
+    """Resolve and reject traversal components (CodeQL sanitizer)."""
+    p = Path(path)
+    if ".." in p.parts:
+        raise DomainError(f"path {str(path)!r} contains '..' components")
+    return p.resolve()
+
+
 class DomainError(OOError):
     """Bad domain name or the domain already exists."""
 
@@ -75,7 +83,8 @@ def _read_manifest(path: Path) -> dict[str, Any]:
     try:
         import yaml
 
-        doc = yaml.safe_load((Path(path) / "ontology.yaml").read_text(encoding="utf-8"))
+        candidate = _safe_path(path) / "ontology.yaml"
+        doc = yaml.safe_load(candidate.read_text(encoding="utf-8"))
         return doc if isinstance(doc, dict) else {}
     except Exception:
         return {}
@@ -124,7 +133,7 @@ _PROJECTION_BLOCK_REASONS = {
     "provider-sqlite": "storage provider is {provider}, not 'hugegraph', so nothing is projected",
     "endpoint-unresolved": "the projection endpoint ${HUGEGRAPH_URL} cannot be resolved "
     "(set the HugeGraph address in the storage configuration)",
-    "extension-missing": "the graph-hugegraph extension is not loaded, so there is no " "graph client to wire",
+    "extension-missing": "the graph-hugegraph extension is not loaded, so there is no graph client to wire",
 }
 
 
@@ -607,7 +616,7 @@ class ServiceContext:
             except KeyError as exc:
                 self.projection_blocked_by = "endpoint-unresolved"
                 log.warning(
-                    "projection %s declared but endpoint unresolved (%s); " "running SQL-only, graph APIs disabled",
+                    "projection %s declared but endpoint unresolved (%s); running SQL-only, graph APIs disabled",
                     first.metadata.name,
                     exc,
                 )
@@ -702,7 +711,7 @@ class ServiceContext:
         if root.is_dir():
             candidates.extend(p for p in sorted(root.iterdir()) if (p / "ontology.yaml").is_file())
         for pkg_root in (self.boot_package_root, self.package_root):
-            path = Path(pkg_root) if pkg_root else None
+            path = _safe_path(pkg_root) if pkg_root else None
             if path is not None and (path / "ontology.yaml").is_file():
                 candidates.append(path)
 
@@ -889,7 +898,7 @@ class ServiceContext:
                 return first + "/", len(first) + 1
             return None
 
-        prefix, plen = _strip_root(names) or ("", 0)
+        _prefix, plen = _strip_root(names) or ("", 0)
         rel_names = [n[plen:].rstrip("/") for n in names if n[plen:].rstrip("/")]
         if "ontology.yaml" not in rel_names:
             raise DomainError(
@@ -967,7 +976,7 @@ class ServiceContext:
         """Directory of a named domain: the active or boot package when the
         name matches one of them, else ``<domains root>/<name>``."""
         for pkg_root in (self.package_root, self.boot_package_root):
-            path = Path(pkg_root) if pkg_root else None
+            path = _safe_path(pkg_root) if pkg_root else None
             if path is not None and (path / "ontology.yaml").is_file() and _manifest_name(path) == name:
                 return path
         dom = self.domains_root() / name
@@ -1098,7 +1107,7 @@ class ServiceContext:
             raise NotFoundError(f"unknown function {name!r}")
         if fn.spec.runtime != "python":
             raise DSLValidationError(
-                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, " "edit the steps instead"
+                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, edit the steps instead"
             )
         # Same entry guard as the test path: a malformed entry is authoring
         # input, which deserves a 400, not the SandboxError (a 500) that
@@ -1198,7 +1207,7 @@ class ServiceContext:
             raise NotFoundError(f"unknown function {name!r}")
         if fn.spec.runtime != "python":
             raise DSLValidationError(
-                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, " "edit the steps instead"
+                f"function {name!r} is runtime={fn.spec.runtime}: its body IS the DSL, edit the steps instead"
             )
         # A malformed entry would only explode later, inside the sandbox spawn
         # (``entry.split(":")``), surfacing as an opaque 500. Validate it here
@@ -1427,7 +1436,7 @@ class ServiceContext:
             "metadata": {
                 "name": name,
                 "display": "全量图谱投影",
-                "description": "由运维台自动生成：包含本体全部对象类型与联系，" "支撑多跳追溯与图算法",
+                "description": "由运维台自动生成：包含本体全部对象类型与联系，支撑多跳追溯与图算法",
             },
             "spec": {
                 "engine": engine,

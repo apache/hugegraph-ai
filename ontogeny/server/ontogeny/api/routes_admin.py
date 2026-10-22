@@ -109,7 +109,7 @@ def register(r: APIRouter, admin_r: APIRouter, sc: ServiceContext) -> None:
         """
         from ..auth import compile_role_policy, managed_policy_name, slug_conflicts
 
-        grants, _actions, declared = _role_context(sc)
+        _grants, _actions, declared = _role_context(sc)
         known = sorted({*declared, *(r["name"] for r in (await admin_roles(_, sc))["roles"])} - {name})
         clashes = [pair for pair in slug_conflicts([name, *known]) if name in pair]
         if clashes:

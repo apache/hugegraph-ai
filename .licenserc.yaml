@@ -84,6 +84,11 @@ header: # `header` section is configurations for source codes license header.
     - '**/poetry.lock'
     - '.github/**/*'
     - 'docker/**/*'
+    - '**/*.cedar'
+    - '**/*.sql'
+    - '**/*.svg'
+    - 'ontogeny/.dockerignore'
+    - 'ontogeny/deploy/Dockerfile'
 
   comment: on-failure
   # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.

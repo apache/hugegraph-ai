@@ -74,7 +74,7 @@ def _hdr(p):
 def _sc_settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
 
@@ -157,7 +157,7 @@ class TestApprovalGate:
             assert approval.revision_id is not None
 
     async def test_reject_refuses_and_records(self, client):
-        c, sc = client
+        c, _sc = client
         pending = await _pending_approval(c)
         r = await c.post(
             f"/api/v1/agent/approvals/{pending['approval_id']}/decision",

@@ -52,7 +52,9 @@ async def client(golden_pkg_path, tmp_path, monkeypatch):
     seed_from_package(golden_pkg_path, src, force=True)
 
     settings = Settings(
-        dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}
+        dev_auth=True,
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"},
     )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()

@@ -299,9 +299,9 @@ class TestValidatorHardening:
 
     def test_linter_clean_on_golden(self, golden_pkg):
         rep = lint(golden_pkg)
-        assert not any(
-            i.code == "OO-004" for i in rep.issues
-        ), "the golden package must not false-positive on chain depth"
+        assert not any(i.code == "OO-004" for i in rep.issues), (
+            "the golden package must not false-positive on chain depth"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +371,7 @@ class TestSyncFailureAudit:
     async def test_failed_sync_records_an_error_run(self, client):
         import pathlib
 
-        c, sc = client
+        _c, sc = client
         # break the source: the production-order source table disappears
         dsn = sc.settings.env["ERP_DSN"]
         db_path = pathlib.Path(dsn.removeprefix("sqlite+aiosqlite:///"))

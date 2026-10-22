@@ -274,7 +274,8 @@ class TestSpaServing:
         (ui / "assets" / "app.js").write_text("console.log('ontogeny')", encoding="utf-8")
 
         settings = Settings(
-            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"}
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'm.db'}",
+            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path / 'erp.db'}"},
         )
         ctx = ServiceContext(settings, str(golden_pkg_path), ui_dir=str(ui))
         await ctx.initialize()

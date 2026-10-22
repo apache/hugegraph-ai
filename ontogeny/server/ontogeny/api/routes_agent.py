@@ -43,8 +43,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         if not principal.get("authenticated") and not sc.settings.dev_auth:
             raise HTTPException(
                 401,
-                "agent surfaces require an authenticated driver "
-                "(sign in, or send the bearer token from /auth/login)",
+                "agent surfaces require an authenticated driver (sign in, or send the bearer token from /auth/login)",
             )
         return principal
 
@@ -147,8 +146,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         factory = sc.agent_engines.get(kind)
         if factory is None:
             raise OOError(
-                f"engine kind {kind!r} is declared but no engine is registered "
-                "(the providing extension is not loaded)",
+                f"engine kind {kind!r} is declared but no engine is registered (the providing extension is not loaded)",
                 details={"code": "AGENT_ENGINE_UNAVAILABLE"},
             )
         engine = factory(sc)

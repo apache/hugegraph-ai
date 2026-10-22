@@ -246,7 +246,7 @@ class TestSync:
         async with env["maker"]() as s:
             summary = await env["sync"].sync(s, "work-center")
             await s.commit()
-            rows, total = await env["repo"].query(s, "work-center")
+            _rows, total = await env["repo"].query(s, "work-center")
         assert summary["archived"] == 1 and total == 2
 
     async def test_watermark_incremental(self, env):

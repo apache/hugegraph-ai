@@ -63,7 +63,9 @@ async def client(golden_pkg_path, tmp_path, monkeypatch):
     seed_from_package(golden_pkg_path, src, force=True)
 
     settings = Settings(
-        dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"}
+        dev_auth=True,
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}"},
     )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
@@ -165,9 +167,9 @@ class TestBearer:
         pkg_root = tmp_path / "pkg-secure"
         shutil.copytree(golden_pkg_path, pkg_root)
         settings = Settings(
-            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'secure.db'}",
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'secure.db'}",
             dev_auth=False,
-            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'erp.db'}"},
+            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path / 'erp.db'}"},
         )
         sc = ServiceContext(settings, str(pkg_root))
         await sc.initialize()

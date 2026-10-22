@@ -322,7 +322,7 @@ class TestDeclaredVersusWired:
         shutil.copytree(golden_pkg_path, pkg_root)
         sc = ServiceContext(
             Settings(
-                db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}", storage_provider="hugegraph"
+                db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'm.db'}", storage_provider="hugegraph"
             ),  # hugegraph selected, no URL
             str(pkg_root),
         )

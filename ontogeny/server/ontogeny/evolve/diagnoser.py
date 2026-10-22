@@ -71,7 +71,7 @@ def diagnose(signals: list[EvolveSignalRow], compiled) -> list[dict[str, Any]]:
                         "object": ev.get("object_type"),
                         "signal_id": sig.id,
                         "rationale": (
-                            f"{ev.get('count')} quarantined rows on " f"{ev.get('object_type')!r}; review mapping/types"
+                            f"{ev.get('count')} quarantined rows on {ev.get('object_type')!r}; review mapping/types"
                         ),
                     }
                 )

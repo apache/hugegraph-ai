@@ -211,9 +211,7 @@ class TestLlmInFunctions:
         shutil.copytree(golden_pkg_path, pkg_root)
         src = pkg_root / "functions" / "summarize.py"
         src.write_text(
-            "def summarize(text):\n"
-            "    out = ontogeny.llm(prompt=f'summary: {text}')\n"
-            "    return out['content']\n",
+            "def summarize(text):\n    out = ontogeny.llm(prompt=f'summary: {text}')\n    return out['content']\n",
             encoding="utf-8",
         )
 
@@ -239,8 +237,8 @@ class TestLlmInFunctions:
             return httpx.Response(200, json={"message": {"role": "assistant", "content": "the summary"}})
 
         settings = Settings(
-            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m.db'}",
-            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'e.db'}"},
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'm.db'}",
+            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path / 'e.db'}"},
             llm_base_url="http://ollama.test",
         )
         from ontogeny.service import ServiceContext
@@ -272,7 +270,7 @@ class TestLlmInFunctions:
 
         shutil.copytree(golden_pkg_path, pkg_root)
         (pkg_root / "functions" / "loop.py").write_text(
-            "def loop(n):\n" "    for _ in range(n):\n" "        ontogeny.llm(prompt='x')\n" "    return n\n",
+            "def loop(n):\n    for _ in range(n):\n        ontogeny.llm(prompt='x')\n    return n\n",
             encoding="utf-8",
         )
         fn = FunctionResource(
@@ -287,8 +285,8 @@ class TestLlmInFunctions:
             ),
         )
         settings = Settings(
-            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m2.db'}",
-            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'e2.db'}"},
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'm2.db'}",
+            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path / 'e2.db'}"},
             llm_base_url="http://ollama.test",
         )
         sc = ServiceContext(
@@ -329,7 +327,8 @@ class TestLlmInFunctions:
             ),
         )
         settings = Settings(
-            db_dsn=f"sqlite+aiosqlite:///{tmp_path/'m3.db'}", env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path/'e3.db'}"}
+            db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'm3.db'}",
+            env={"ERP_DSN": f"sqlite+aiosqlite:///{tmp_path / 'e3.db'}"},
         )
         sc = ServiceContext(settings, str(pkg_root))
         await sc.initialize()

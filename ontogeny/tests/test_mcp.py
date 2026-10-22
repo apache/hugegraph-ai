@@ -64,7 +64,7 @@ spec:
 def _settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,  # the /mcp bearer gate rejects anonymous when off
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
 

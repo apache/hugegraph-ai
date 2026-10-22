@@ -42,7 +42,7 @@ class TestEndToEnd:
         assert "production-order" in r.json()["objects"]
 
     async def test_sync_then_query_and_masking(self, client):
-        c, sc = client
+        c, _sc = client
         for t in OBJECT_TYPES:
             r = await c.post(f"/api/v1/admin/sync/{t}")
             assert r.status_code == 200
@@ -62,7 +62,7 @@ class TestEndToEnd:
         assert r.json()["unit_cost"] == 210.0  # decimal coerced on sync
 
     async def test_action_execute_full_cycle(self, client):
-        c, sc = client
+        c, _sc = client
         await c.post("/api/v1/admin/sync/production-order")
 
         r = await c.post(
@@ -403,12 +403,12 @@ class TestEndToEnd:
         assert r3.json()["mapping"]["order_id"] == "order_id"
 
     async def test_mount_sqlite_source(self, client, tmp_path):
-        c, sc = client
+        c, _sc = client
 
         src = tmp_path / "extra.db"
         con = sqlite3.connect(str(src))
         con.execute(
-            "CREATE TABLE materials_extra (material_id TEXT PRIMARY KEY, name TEXT, " "unit_cost TEXT, stock_qty TEXT)"
+            "CREATE TABLE materials_extra (material_id TEXT PRIMARY KEY, name TEXT, unit_cost TEXT, stock_qty TEXT)"
         )
         con.execute("INSERT INTO materials_extra VALUES ('MX-1','Gasket','3.5','80')")
         con.commit()
@@ -468,7 +468,7 @@ class TestEndToEnd:
         """The plugins tab's "new plugin" flow: AgentPlugin resource through the
         builder door -> on disk -> published -> listed with its effective
         toolset. The role vocabulary comes from meta.roles."""
-        c, sc = client
+        c, _sc = client
         meta = (await c.get("/api/v1/meta/ontology")).json()
         assert meta["roles"], "demo package must reference at least one role"
 
@@ -504,7 +504,7 @@ class TestEndToEnd:
 async def test_meta_storage_names_the_physical_target(client):
     """/meta/storage spells out where materialized data lives: the platform's
     own db (the console renders this next to every "materialized" label)."""
-    c, sc = client
+    c, _sc = client
     r = await c.get("/api/v1/meta/storage")
     assert r.status_code == 200
     body = r.json()

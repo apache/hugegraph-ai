@@ -34,13 +34,6 @@ from .types import PropertyType
 from .validator import ValidationReport, effective_owner, validate
 
 __all__ = [
-    "OntologyPackage",
-    "load_package",
-    "validate",
-    "lint",
-    "ValidationReport",
-    "effective_owner",
-    "PropertyType",
     "ActionResource",
     "AnyResource",
     "EvalSuiteResource",
@@ -48,7 +41,14 @@ __all__ = [
     "FunctionResource",
     "LinkTypeResource",
     "ObjectTypeResource",
+    "OntologyPackage",
     "PolicySetResource",
     "ProjectionResource",
+    "PropertyType",
     "StoreResource",
+    "ValidationReport",
+    "effective_owner",
+    "lint",
+    "load_package",
+    "validate",
 ]

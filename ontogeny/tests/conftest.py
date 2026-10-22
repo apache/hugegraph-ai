@@ -106,7 +106,7 @@ async def client(golden_pkg_path, tmp_path):
     seed_from_package(golden_pkg_path, src, force=True)
 
     settings = Settings(
-        db_dsn=f"sqlite+aiosqlite:///{tmp_path/'main.db'}",
+        db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         # the platform's production default is dev_auth OFF;
         # tests opt INTO the identity simulation explicitly
         dev_auth=True,

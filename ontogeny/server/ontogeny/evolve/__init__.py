@@ -22,11 +22,11 @@ from .models import BudgetRow, EvolveSignalRow, ProposalRow
 from .promoter import CONSTITUTION_MUTATIONS, Promoter, apply_mutations, write_package
 
 __all__ = [
-    "EvolveSignalRow",
-    "ProposalRow",
+    "CONSTITUTION_MUTATIONS",
     "BudgetRow",
+    "EvolveSignalRow",
     "Promoter",
+    "ProposalRow",
     "apply_mutations",
     "write_package",
-    "CONSTITUTION_MUTATIONS",
 ]

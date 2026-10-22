@@ -444,7 +444,7 @@ class HugeGraphClient:
             body.append({"label": label, "properties": values})
         if not body:
             return
-        strategies = {p: "OVERRIDE" for p in sorted(props)} or dict(_NOOP_STRATEGY)
+        strategies = dict.fromkeys(sorted(props), "OVERRIDE") or dict(_NOOP_STRATEGY)
         for chunk in _chunks(body, self.batch_size):
             await self._request(
                 "PUT", self._g("/graph/vertices/batch"), json_body={"vertices": chunk, "update_strategies": strategies}
@@ -488,7 +488,7 @@ class HugeGraphClient:
             for s, d in pairs
         ]
         props = self._edge_props.get(link_name) or []
-        strategies = {p: "OVERRIDE" for p in props} or dict(_NOOP_STRATEGY)
+        strategies = dict.fromkeys(props, "OVERRIDE") or dict(_NOOP_STRATEGY)
         for chunk in _chunks(body, self.batch_size):
             await self._request(
                 "PUT", self._g("/graph/edges/batch"), json_body={"edges": chunk, "update_strategies": strategies}

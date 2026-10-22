@@ -356,7 +356,7 @@ class McpSurface:
     async def run(self, app: Any) -> AsyncIterator[Any]:
         """Serve: build (if needed), graft, run the HTTP session manager."""
         if self.sdk is None:
-            log.info("MCP surface disabled: the optional extra is not installed " "(pip install 'ontogeny[mcp]')")
+            log.info("MCP surface disabled: the optional extra is not installed (pip install 'ontogeny[mcp]')")
             yield None
             return
         if self.server is None:

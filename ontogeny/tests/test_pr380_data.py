@@ -135,20 +135,20 @@ class TestAdminLockout:
     async def test_cannot_demote_last_admin(self, client):
         from ontogeny.errors import ConflictError
 
-        c, sc = client
+        _c, sc = client
         with pytest.raises(ConflictError):
             await sc.auth.update_user("admin", {"is_admin": False})
         with pytest.raises(ConflictError):
             await sc.auth.update_user("admin", {"status": "disabled"})
 
     async def test_second_admin_can_be_demoted(self, client):
-        c, sc = client
+        _c, sc = client
         await sc.auth.create_user(username="admin2", password="password123", roles=["admin"], is_admin=True)
         out = await sc.auth.update_user("admin2", {"is_admin": False})
         assert out["is_admin"] is False
 
     async def test_ensure_admin_self_heals_disabled_bootstrap(self, client):
-        c, sc = client
+        _c, sc = client
         # 直接把 root 停用（绕过守卫模拟历史脏数据），ensure_admin 应复活它而非崩溃
         from sqlalchemy import update
 
@@ -194,7 +194,7 @@ class TestSandboxStdoutIsolation:
         pkg = tmp_path / "pkg"
         shutil.copytree(golden_pkg_path, pkg)
         (pkg / "functions" / "chatty.py").write_text(
-            "def say(what):\n" "    print('user-side noise:', what)\n" "    return {'said': what}\n",
+            "def say(what):\n    print('user-side noise:', what)\n    return {'said': what}\n",
             encoding="utf-8",
         )
         import yaml as _yaml

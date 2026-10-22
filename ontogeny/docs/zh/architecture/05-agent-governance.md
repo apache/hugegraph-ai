@@ -128,9 +128,11 @@ blocked ──(批准后) run──▶ running   # resume = 人在环确认点
 sess = post(f"{BASE}/agent/sessions", {{"plugin": "my-agent", "task": task}})
 while True:
     catalog = get(f"{BASE}/agent/sessions/{sess['id']}")["tools"]
-    decision = my_llm_decide(task, catalog, transcript)      # 任意框架/模型
+    decision = my_llm_decide(task, catalog, transcript)  # 任意框架/模型
     if "final" in decision:
-        post(f"{BASE}/agent/sessions/{sess['id']}/finish", decision); break
+        post(f"{BASE}/agent/sessions/{sess['id']}/finish", decision)
+        break
     out = post(f"{BASE}/agent/sessions/{sess['id']}/tools/{decision['tool']}", decision["args"])
-    if out["outcome"] in ("AGENT_BUDGET_EXCEEDED", "AGENT_SESSION_CLOSED"): break
+    if out["outcome"] in ("AGENT_BUDGET_EXCEEDED", "AGENT_SESSION_CLOSED"):
+        break
 ```

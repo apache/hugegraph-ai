@@ -123,9 +123,11 @@ blocked ──(approved) run──▶ running   # resume = the human-in-the-loop
 sess = post(f"{BASE}/agent/sessions", {{"plugin": "my-agent", "task": task}})
 while True:
     catalog = get(f"{BASE}/agent/sessions/{sess['id']}")["tools"]
-    decision = my_llm_decide(task, catalog, transcript)      # any framework/model
+    decision = my_llm_decide(task, catalog, transcript)  # any framework/model
     if "final" in decision:
-        post(f"{BASE}/agent/sessions/{sess['id']}/finish", decision); break
+        post(f"{BASE}/agent/sessions/{sess['id']}/finish", decision)
+        break
     out = post(f"{BASE}/agent/sessions/{sess['id']}/tools/{decision['tool']}", decision["args"])
-    if out["outcome"] in ("AGENT_BUDGET_EXCEEDED", "AGENT_SESSION_CLOSED"): break
+    if out["outcome"] in ("AGENT_BUDGET_EXCEEDED", "AGENT_SESSION_CLOSED"):
+        break
 ```

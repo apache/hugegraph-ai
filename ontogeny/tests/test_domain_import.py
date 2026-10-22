@@ -90,7 +90,7 @@ class TestImportService:
         assert "product-manufacturing" in names
 
     async def test_import_can_activate_and_functions_resolve(self, rig):
-        sc, _c, root = rig
+        sc, _c, _root = rig
         out = await sc.import_domain(zip_domain(), activate=True)
         assert out["active"] is True and out.get("content_hash")
         assert set(sc.compiled.functions) == {"material-availability", "capacity-check", "order-yield"}
@@ -113,7 +113,7 @@ class TestImportService:
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("readme.txt", "no ontology here")
-        with pytest.raises(DomainError, match="ontology.yaml"):
+        with pytest.raises(DomainError, match=r"ontology.yaml"):
             await sc.import_domain(buf.getvalue())
         assert list(root.iterdir()) == []
 
@@ -125,7 +125,7 @@ class TestImportService:
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr(
                 "ontology.yaml",
-                "apiVersion: ontogeny/v1\nkind: Ontology\n" "metadata: {name: evil}\nspec: {imports: []}\n",
+                "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: evil}\nspec: {imports: []}\n",
             )
             zf.writestr("../escaped.txt", "pwn")
         with pytest.raises(DomainError, match="unsafe archive member"):
@@ -140,12 +140,12 @@ class TestImportService:
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr(
                 "bad/ontology.yaml",
-                "apiVersion: ontogeny/v1\nkind: Ontology\n" "metadata: {name: bad-domain}\nspec: {imports: []}\n",
+                "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata: {name: bad-domain}\nspec: {imports: []}\n",
             )
             # an action pointing at a type that does not exist -> validator error
             zf.writestr(
                 "bad/actions/x.yaml",
-                "apiVersion: ontogeny/v1\nkind: Action\nmetadata: {name: x}\n" "spec: {target: ghost, effects: []}\n",
+                "apiVersion: ontogeny/v1\nkind: Action\nmetadata: {name: x}\nspec: {target: ghost, effects: []}\n",
             )
         with pytest.raises(DomainError, match="rejected by validator") as excinfo:
             await sc.import_domain(buf.getvalue())
@@ -155,7 +155,7 @@ class TestImportService:
         assert [p.name for p in root.iterdir() if p.name.startswith(".import-")] == []
 
     async def test_duplicate_import_is_refused(self, rig):
-        sc, _c, root = rig
+        sc, _c, _root = rig
         await sc.import_domain(zip_domain(), activate=False)
         with pytest.raises(DomainError, match="already exists"):
             await sc.import_domain(zip_domain(), activate=False)
@@ -168,7 +168,7 @@ class TestImportRoute:
         assert r.status_code == 403
 
     async def test_http_import_round_trip(self, rig):
-        sc, c, root = rig
+        sc, c, _root = rig
         r = await c.post("/api/v1/admin/domains/import?activate=false", content=zip_domain(), headers=_hdr(ADMIN))
         assert r.status_code == 200, r.text
         body = r.json()

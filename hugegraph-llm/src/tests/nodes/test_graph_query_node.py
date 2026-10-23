@@ -19,10 +19,12 @@ from hugegraph_llm.nodes.hugegraph_node.graph_query_node import GraphQueryNode
 from tests.utils.mock import FakeGremlinEndpoint
 
 
-def _graph_query_node(endpoint):
+def _graph_query_node(endpoint, edge_label="knows"):
     node = GraphQueryNode()
     node._client = SimpleNamespace(gremlin=lambda: endpoint)
-    node._schema = "Vertex properties: [name: person, properties: []]\nEdge properties: [name: knows, properties: []]\n"
+    node._schema = (
+        f"Vertex properties: [name: person, properties: []]\nEdge properties: [name: {edge_label}, properties: []]\n"
+    )
     node._prop_to_match = None
     node._max_deep = 2
     node._max_items = 30
@@ -67,3 +69,28 @@ def test_subgraph_query_keeps_numeric_vertex_ids_numeric():
         "123--[knows]-->2{name: Bob}",
         "123{name: n123}--[knows]-->1{name: Alice}",
     ]
+
+
+def test_subgraph_query_escapes_edge_labels_with_apostrophes():
+    # Edge labels come from the graph schema, which LLM extraction can fill with names like "author's friend".
+    endpoint = FakeGremlinEndpoint({"1:alice": {"name": "alice"}})
+    node = _graph_query_node(endpoint, edge_label="author's friend")
+
+    node._subgraph_query({"match_vids": ["1:alice"]})
+
+    traversal = endpoint.scripts[1]
+    assert "bothE('author\\'s friend')" in traversal
+    assert "'author's" not in traversal
+
+
+def test_property_query_escapes_property_key_with_apostrophes():
+    endpoint = FakeGremlinEndpoint({})
+    node = _graph_query_node(endpoint)
+    node._prop_to_match = "owner's name"
+
+    node._subgraph_query({"keywords": ["x"]})
+
+    (script,) = endpoint.scripts
+    assert script.startswith("g.V().has('owner\\'s name', within('x'))")
+    assert script.count("values('owner\\'s name')") == 2
+    assert "'owner's" not in script

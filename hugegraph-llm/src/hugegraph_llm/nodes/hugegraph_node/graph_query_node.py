@@ -52,7 +52,7 @@ g.V({keywords})
 """
 
 PROPERTY_QUERY_NEIGHBOR_TPL = """\
-g.V().has('{prop}', within({keywords}))
+g.V().has({prop}, within({keywords}))
 .repeat(
    bothE({edge_labels}).limit({edge_limit}).otherV().dedup()
 ).times({max_deep}).emit()
@@ -64,8 +64,8 @@ g.V().has('{prop}', within({keywords}))
 )
 .by(project('label', 'inV', 'outV', 'props')
    .by(label())
-   .by(inV().values('{prop}'))
-   .by(outV().values('{prop}'))
+   .by(inV().values({prop}))
+   .by(outV().values({prop}))
    .by(valueMap().by(unfold()))
 )
 .limit({max_items})
@@ -347,7 +347,7 @@ class GraphQueryNode(BaseNode):
 
         # 2. Extract edge_labels from graph schema
         _, edge_labels = self._extract_labels_from_schema()
-        edge_labels_str = ",".join("'" + label + "'" for label in edge_labels)
+        edge_labels_str = ",".join(gremlin_literal(label) for label in edge_labels)
         # TODO: enhance the limit logic later
         edge_limit_amount = len(edge_labels) * huge_settings.edge_limit_pre_label
 
@@ -393,7 +393,7 @@ class GraphQueryNode(BaseNode):
             assert keywords, "No related property(keywords) for graph query."
             keywords_str = ",".join(gremlin_literal(kw) for kw in keywords)
             gremlin_query = PROPERTY_QUERY_NEIGHBOR_TPL.format(
-                prop=self._prop_to_match,
+                prop=gremlin_literal(self._prop_to_match),
                 keywords=keywords_str,
                 edge_labels=edge_labels_str,
                 edge_limit=edge_limit_amount,

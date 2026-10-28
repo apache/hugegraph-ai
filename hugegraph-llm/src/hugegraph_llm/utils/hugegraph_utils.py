@@ -34,6 +34,24 @@ MAX_EDGES = 200000
 BACKUP_DIR = str(os.path.join(resource_path, "backup-graph-data-4020", huge_settings.graph_name))
 
 
+_GROOVY_ESCAPES = {"\\": "\\\\", "'": "\\'", "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r"}
+
+
+def gremlin_literal(value) -> str:
+    """Render a vertex id or keyword as a Gremlin literal.
+
+    Integers stay numeric (HugeGraph treats 123 and '123' as different ids). Everything else becomes a
+    Groovy single-quoted string (no `$` interpolation) with quotes, backslashes and control chars escaped.
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    escaped = "".join(
+        _GROOVY_ESCAPES.get(ch) or (f"\\u{ord(ch):04x}" if ord(ch) < 0x20 or ord(ch) == 0x7F else ch)
+        for ch in str(value)
+    )
+    return f"'{escaped}'"
+
+
 def run_gremlin_query(query, fmt=True, connection=None):
     res = get_hg_client(connection=connection).gremlin().exec(query)
     return json.dumps(res, indent=4, ensure_ascii=False) if fmt else res

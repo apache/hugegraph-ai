@@ -34,7 +34,7 @@ authors = [
 ]
 
 dependencies = [
-    "fastmcp==3.2.4",
+    "fastmcp==3.4.10",
     "hugegraph-python>=1.8.0,<2",
 ]
 

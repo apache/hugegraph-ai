@@ -1,0 +1,47 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and
+# limitations under the License.
+
+# Shop-floor copilot: the operator-role agent. Tracks operations and work
+# centres on the floor and reports operation completion. Cedar grants the
+# operator exactly one write (complete-operation, not on COMPLETED orders) —
+# the plugin stays inside that surface and every write still asks a human.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: shopfloor-copilot
+  display: Shop-floor copilot
+  description: 'Operator-role agent: follow operations and work centres and report
+    operation completion — writes need human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:shopfloor-copilot"
+    Role: [operator]
+    site: plant-north
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_operation
+    - search_work_center
+    - search_production_order
+    - search_material
+    - act_complete_operation
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

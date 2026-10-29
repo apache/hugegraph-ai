@@ -1,0 +1,46 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: receive-material
+  display: Adjust material stock
+  description: Record a physical count and set the on-hand quantity
+spec:
+  target: material
+  parameters:
+    counted_qty:
+      type: integer
+      display: Counted on-hand quantity
+      required: true
+    note:
+      type: string
+      display: Note
+  rules:
+  - expr: parameters.counted_qty >= 0
+    message: Counted quantity cannot be negative
+  policy: production
+  effects:
+  - kind: modify-target
+    set:
+      stock_qty: parameters.counted_qty
+  audit:
+    fields:
+    - target.material_id
+    - target.stock_qty
+    - parameters

@@ -1,0 +1,47 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and
+# limitations under the License.
+
+# Quality copilot: the quality-role agent. Reads inspections and yield,
+# records and retracts inspection results. The write set is exactly what the
+# Cedar policies grant the quality role — nothing more.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: quality-copilot
+  display: Quality copilot
+  description: 'Quality-role agent: inspect quality records and yield, record and
+    retract inspections — writes need human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:quality-copilot"
+    Role: [quality]
+    site: plant-north
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_quality_inspection
+    - search_product
+    - search_production_order
+    - call_order_yield
+    - act_record_inspection
+    - act_retract_inspection
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

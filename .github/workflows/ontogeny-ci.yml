@@ -1,0 +1,110 @@
+# Ontogeny module gate: backend tests, frontend suite, full-stack integration,
+# plus the stage-1 zero-coupling invariant (this module must not import
+# upstream hugegraph-llm/hugegraph-ml until the step-2 feature merge lands).
+name: "Ontogeny CI"
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "ontogeny/**"
+      - ".github/workflows/ontogeny-ci.yml"
+  pull_request:
+    paths:
+      - "ontogeny/**"
+      - ".github/workflows/ontogeny-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install
+        working-directory: ontogeny
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e '.[mcp]' pytest pytest-asyncio httpx
+      - name: Zero-coupling gate (stage 1)
+        working-directory: ontogeny
+        run: |
+          # `! git grep` under bash -e can never fail; assert explicitly instead
+          if git grep -qnE '^[[:space:]]*(from|import)[[:space:]]+(hugegraph_llm|hugegraph_ml|pyhugegraph|vermeer)' -- server extensions tests tools; then
+            echo "::error::ontogeny imports upstream modules -- stage 1 must stay decoupled"
+            exit 1
+          fi
+      - name: ASF header presence
+        working-directory: ontogeny
+        run: |
+          # Belt to the repository-wide licenserc check: fail when any module
+          # source file lacks the ASF header. Written with an explicit loop so
+          # no `|| true` / `!` can mask the exit status (grep -L inverts it).
+          failed=0
+          while IFS= read -r f; do
+            if ! grep -q "Licensed to the Apache Software Foundation" "$f"; then
+              echo "::error file=$f::missing the ASF license header"
+              failed=1
+            fi
+          done < <(find server extensions tests tools web/src -type f \( -name '*.py' -o -name '*.ts' -o -name '*.tsx' -o -name '*.sh' -o -name '*.yaml' -o -name '*.yml' -o -name 'Dockerfile' \) 2>/dev/null)
+          exit "$failed"
+      - name: Tests
+        working-directory: ontogeny
+        run: .venv/bin/pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ontogeny/web/package-lock.json
+      - name: Install
+        working-directory: ontogeny/web
+        run: npm ci
+      - name: Type check
+        working-directory: ontogeny/web
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Unit tests
+        working-directory: ontogeny/web
+        run: npx vitest run
+      - name: Build
+        working-directory: ontogeny/web
+        run: npm run build
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install backend
+        working-directory: ontogeny
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e '.[mcp]' pytest pytest-asyncio httpx
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ontogeny/web/package-lock.json
+      - name: Install frontend
+        working-directory: ontogeny/web
+        run: npm ci
+      - name: Integration tests (real server)
+        working-directory: ontogeny/web
+        run: npm run test:e2e

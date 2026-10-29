@@ -218,3 +218,20 @@ cython_debug/
 *.out
 *.zip
 *.tar.gz
+
+# ---- ontogeny module: runtimes & local state ----
+.venv/
+.ontogeny-*/
+.kina-*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+web/dist/
+web/.e2e-port
+*.db
+*.log
+*.pid
+.DS_Store
+docs/pr380-reply-matrix.md

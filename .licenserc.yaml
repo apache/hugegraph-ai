@@ -78,10 +78,17 @@ header: # `header` section is configurations for source codes license header.
     - '**/*.ipr'
     - '**/META-INF/MANIFEST.MF'
     - '.repository/**'
+    - '**/uv.lock'
+    - '**/package-lock.json'
     - '**/resources/**'
     - '**/poetry.lock'
     - '.github/**/*'
     - 'docker/**/*'
+    - '**/*.cedar'
+    - '**/*.sql'
+    - '**/*.svg'
+    - 'ontogeny/.dockerignore'
+    - 'ontogeny/deploy/Dockerfile'
 
   comment: on-failure
   # on what condition license-eye will comment on the pull request, `on-failure`, `always`, `never`.

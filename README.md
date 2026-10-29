@@ -94,7 +94,7 @@ docker compose up -d
 docker compose exec ontogeny cat /data/admin-bootstrap-password  # first boot's owner-only credential
 ```
 
-Open **http://localhost:8000** and sign in as `admin`. Set
+Compose binds this demo to `127.0.0.1:8000` by default. Open **http://localhost:8000** and sign in as `admin`. Set
 `ONTOGENY_ADMIN_PASSWORD` before starting Compose to choose the initial password.
 See the [module guide](./ontogeny/README.md) for source installation and configuration.
 

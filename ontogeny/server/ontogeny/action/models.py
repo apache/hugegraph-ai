@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, Index, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -103,11 +103,21 @@ class OutboxRow(Base):
 
 
 class OutboxConsumerRow(Base):
-    """Per-consumer cursor for independent replay (webhook/projection/sse)."""
+    """Legacy cursor and receipt-migration state for each consumer."""
 
     __tablename__ = "ontogeny_outbox_cursor"
 
     consumer: Mapped[str] = mapped_column(String(100), primary_key=True)
     last_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    receipts_initialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     failures: Mapped[int] = mapped_column(default=0)
     updated_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class OutboxReceiptRow(Base):
+    """Committed delivery acknowledgement independent of ID/commit order."""
+
+    __tablename__ = "ontogeny_outbox_receipt"
+
+    consumer: Mapped[str] = mapped_column(String(100), primary_key=True)
+    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

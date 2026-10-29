@@ -198,7 +198,8 @@ class TestAdditiveMigration:
         async with sc.sessionmaker() as s:
             rows, total = await sc.repo.query(s, "production-order", limit=5)
         assert total >= 1
-        assert "shift_pattern" in rows[0] and rows[0]["shift_pattern"] is None
+        assert "shift-pattern" in rows[0] and rows[0]["shift-pattern"] is None
+        assert "shift_pattern" not in rows[0], "query results expose the declaration, not SQL storage aliases"
 
         # a write through an action now sees the new column too
         async with sc.sessionmaker() as s:
@@ -207,7 +208,7 @@ class TestAdditiveMigration:
             )
             await s.commit()
             row = await sc.repo.get(s, "production-order", "PO-1002")
-        assert row["shift_pattern"] == "DAY-DAY"
+        assert row["shift-pattern"] == "DAY-DAY"
 
         await sc.engine.dispose()
 

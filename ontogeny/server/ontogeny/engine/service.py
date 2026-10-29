@@ -22,7 +22,9 @@ the HugeGraph projection is an accelerator behind the same API).
 
 from __future__ import annotations
 
+import logging
 import time
+from graphlib import CycleError, TopologicalSorter
 from typing import Any
 
 from ..core import expr as _expr
@@ -30,6 +32,8 @@ from ..core.models import ForeignKeyJoin
 from ..errors import NotFoundError, StoreError
 from ..policy.engine import PolicyEngine
 from ..stores.repo import ObjectRepository
+
+log = logging.getLogger(__name__)
 
 
 def assemble_row(compiled, object_type: str, props: dict) -> dict:
@@ -43,15 +47,34 @@ def assemble_row(compiled, object_type: str, props: dict) -> dict:
     if obj is None:
         raise NotFoundError(f"unknown object type {object_type!r}")
     out = dict(props)
-    ctx = _expr.ExprContext(target=props)
-    for prop, pdef in obj.spec.properties.items():
-        # only expression deriveds are computed at read time; function deriveds
-        # are materialized columns maintained by the derivation worker
-        if pdef.derived_kind() == "expr":
+    # Only expression deriveds are computed here; function-derived values are
+    # already materialized in props. Clear stale expression values before
+    # evaluating so a broken or cyclic definition cannot reuse an old result.
+    derived = {name: pdef.derived for name, pdef in obj.spec.properties.items() if pdef.derived_kind() == "expr"}
+    out.update(dict.fromkeys(derived))
+    dependencies = {}
+    for name, expression in derived.items():
+        try:
+            refs = _expr.analyze(expression)
+        except _expr.ExpressionError:
+            refs = set()  # evaluation below keeps the existing None-on-error behavior
+        dependencies[name] = {field for root, field in refs if root == "target" and field in derived}
+
+    sorter = TopologicalSorter(dependencies)
+    try:
+        sorter.prepare()
+    except CycleError:
+        # get_ready() still yields independent nodes; cyclic nodes and their
+        # dependants remain None without preventing other fields from loading.
+        log.warning("cyclic derived properties for %s", object_type)
+    ctx = _expr.ExprContext(target=out)
+    while ready := sorter.get_ready():
+        for prop in ready:
             try:
-                out[prop] = _expr.evaluate(pdef.derived, ctx)
+                out[prop] = _expr.evaluate(derived[prop], ctx)
             except _expr.ExpressionError:
                 out[prop] = None
+        sorter.done(*ready)
     return out
 
 

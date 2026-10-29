@@ -338,12 +338,13 @@ class TestFunctionSourceEndpoint:
         c, sc = client
         fn = sc.compiled.functions["capacity-check"]
         outside = tmp_path / "secret.py"
-        outside.write_text("SECRET = 'private'", encoding="utf-8")
+        secret = "ontogeny_unique_source_escape_marker_93f5"
+        outside.write_text(secret, encoding="utf-8")
         for entry in (f"{outside}:main", "../../secret.py:main"):
             fn.spec.entry = entry
             response = await c.get("/api/v1/functions/capacity-check/source")
             assert response.status_code != 200
-            assert "private" not in response.text
+            assert secret not in response.text
 
     async def test_symlink_escape_rejected_by_validator_and_source(self, client, tmp_path):
         from pathlib import Path
@@ -353,7 +354,8 @@ class TestFunctionSourceEndpoint:
 
         c, sc = client
         outside = tmp_path / "secret.py"
-        outside.write_text("SECRET = 'private'", encoding="utf-8")
+        secret = "ontogeny_unique_source_escape_marker_93f5"
+        outside.write_text(secret, encoding="utf-8")
         (Path(sc.package_root) / "functions" / "outside.py").symlink_to(outside)
         pkg = load_package(sc.package_root)
         fn = next(fn for fn in pkg.functions() if fn.metadata.name == "capacity-check")
@@ -362,7 +364,7 @@ class TestFunctionSourceEndpoint:
         sc.compiled.functions["capacity-check"].spec.entry = "outside.py:main"
         response = await c.get("/api/v1/functions/capacity-check/source")
         assert response.status_code != 200
-        assert "private" not in response.text
+        assert secret not in response.text
 
     async def test_missing_file_is_reported_not_hidden(self, client, tmp_path):
         from ontogeny.core.models import FunctionResource, FunctionSpec, ResourceMeta

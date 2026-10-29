@@ -30,14 +30,11 @@
 
 set -u
 
-# ---- 业务环境（与此前 start.sh 一致） ----
-export ONTOGENY_LLM_BASE_URL=${ONTOGENY_LLM_BASE_URL:-http://10.70.11.36:63302}
-export ONTOGENY_LLM_MODEL=${ONTOGENY_LLM_MODEL:-qwen3.8:27b}
-export HUGEGRAPH_URL=${HUGEGRAPH_URL:-http://10.22.32.25:18080}
-# 平台自己创建的图，RocksDB 文件放哪。HugeGraph 的默认值是所有动态创建的图共用一个
-# 目录，只有第一张能打开（第二张必然 "lock hold by current process"）；这里指向
-# 该主机真实的数据目录。凭据不发到进程环境，由运维台写入 ontogeny_runtime_config。
-export HUGEGRAPH_DATA_DIR=${HUGEGRAPH_DATA_DIR:-/home/dm/hugegraph-data}
+# ---- 可选集成：未配置时只运行本地 SQLite 演示 ----
+export ONTOGENY_LLM_BASE_URL=${ONTOGENY_LLM_BASE_URL:-}
+export ONTOGENY_LLM_MODEL=${ONTOGENY_LLM_MODEL:-qwen3:27b}
+export HUGEGRAPH_URL=${HUGEGRAPH_URL:-}
+export HUGEGRAPH_DATA_DIR=${HUGEGRAPH_DATA_DIR:-}
 # 动作的 webhook 效果（外部 HTTP 调用）投递白名单；空 = 全部拒绝。这里只放环回地址，
 # 便于本地起个接收器验证；生产按实际目标主机配置。演示包里 ${WMS_WEBHOOK} 指向
 # wms.example.test（不存在的演示域名），不在白名单内 → 事件被消费并记日志，不会反复重试。
@@ -48,7 +45,7 @@ export ONTOGENY_WEBHOOK_ALLOWLIST=${ONTOGENY_WEBHOOK_ALLOWLIST:-127.0.0.1}
 export ONTOGENY_ADMIN_USER=${ONTOGENY_ADMIN_USER:-admin}
 
 # ---- 守护参数 ----
-HOST=${HOST:-0.0.0.0}
+HOST=${HOST:-127.0.0.1}
 PORT=${PORT:-8000}
 DATA_DIR=${DATA_DIR:-.ontogeny-daemon}
 # 首次自动生成的管理员密码写入此目录下的 admin-bootstrap-password（权限 0600）。
@@ -57,8 +54,6 @@ PORT_FILE=${PORT_FILE:-.ontogeny-daemon/ontogeny.port}
 LOG_FILE=${LOG_FILE:-.ontogeny-daemon/ontogeny.log}
 STOP_TIMEOUT=${STOP_TIMEOUT:-15}
 
-mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$LOG_FILE")"
-
 # 仓库根与前端目录：stop 时按工作目录识别"属于本仓库"的 vite dev server，
 # 其它项目（不同 cwd）的 vite 不会被动到
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -66,6 +61,7 @@ WEB_DIR="$REPO_ROOT/web"
 # 所有相对路径（.venv/bin/ontogeny、data-dir、pid/log 文件）都相对仓库根：
 # 从任何目录调用本脚本都成立
 cd "$REPO_ROOT"
+mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$PORT_FILE")" "$(dirname "$LOG_FILE")"
 
 pid_of() {
   [ -f "$PID_FILE" ] && cat "$PID_FILE" 2>/dev/null | tr -d '[:space:]'
@@ -109,6 +105,11 @@ do_start() {
   # 就绪探测：API 元数据端点可达即认为启动成功
   local i=0
   while [ "$i" -lt 40 ]; do
+    if ! is_running; then
+      echo "启动失败：进程已退出，详情见 $LOG_FILE" >&2
+      rm -f "$PID_FILE"
+      return 1
+    fi
     if curl -sf -o /dev/null "http://127.0.0.1:${probe_port}/api/v1/meta/ontology"; then
       echo "$probe_port" > "$PORT_FILE"
       echo "ONTOGENY 已启动 (pid $(pid_of)) → http://127.0.0.1:${probe_port}/  · 日志: $LOG_FILE"

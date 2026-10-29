@@ -302,6 +302,7 @@ class ActionRuntime:
         created_id: str | None = None
         linked_pairs: list[tuple[str, str]] = []  # (object_type, id) changed via modify-linked
         ts = utcnow()
+        applied_effects = []
 
         for eff in effects:
             if getattr(eff, "when", None) is not None and not bool(
@@ -309,6 +310,7 @@ class ActionRuntime:
             ):
                 continue
             outcome = await self._apply_effect(session, action, eff, ctx, target_id, ts)
+            applied_effects.append(eff)
             if outcome is not None:
                 after, created_id = outcome[0], outcome[1] or created_id
                 linked_pairs.extend(outcome[2] or [])
@@ -320,9 +322,7 @@ class ActionRuntime:
         rev = await _record(
             "executed", None, before=before, after=after, rules_hit=rules_hit, decision=decision, obj_id=effective_id
         )
-        events = await session.run_sync(
-            lambda _: self._outbox_events(action, effects, before, after, effective_id, ctx, linked_pairs)
-        )
+        events = self._outbox_events(applied_effects, before, after, effective_id, linked_pairs)
         for op, oid, payload in events:
             session.add(
                 OutboxRow(
@@ -421,7 +421,7 @@ class ActionRuntime:
                     )
                     if not resolved:
                         continue
-                    await self.repo.action_update(
+                    ctx.target = await self.repo.action_update(
                         session, action.spec.target, target_id, {fk_prop: next(iter(resolved.values()))}, ts
                     )
                     fk_written = True
@@ -437,7 +437,12 @@ class ActionRuntime:
                     cur = (ctx.target or {}).get(fk_prop)
                     if resolved and cur is not None and str(cur) == str(next(iter(resolved.values()))):
                         # FK membership has no "absent" row: removing = clearing the FK
-                        await self.repo.action_update(session, action.spec.target, target_id, {fk_prop: None}, ts)
+                        ctx.target = await self.repo.action_update(
+                            session, action.spec.target, target_id, {fk_prop: None}, ts
+                        )
+                        fk_written = True
+                if fk_written:
+                    return ctx.target, None, []
             else:
                 for entry in eff.add:
                     resolved = await session.run_sync(
@@ -539,11 +544,9 @@ class ActionRuntime:
             )
         return eff
 
-    def _outbox_events(self, action, effects, before, after, obj_id, ctx, linked_pairs=None):
+    def _outbox_events(self, effects, before, after, obj_id, linked_pairs=None):
         events: list[tuple[str, str | None, dict]] = []
         for eff in effects:
-            if getattr(eff, "when", None) is not None and not bool(_expr.evaluate(eff.when, ctx)):
-                continue
             if isinstance(eff, WebhookEffect):
                 # store the template; the dispatcher resolves ${VAR} at delivery
                 # time so a missing env var cannot abort a business transaction

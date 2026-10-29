@@ -23,6 +23,19 @@
 | `EvolutionPolicy` | 自进化 | 宪法文件：loop · observability · tiers T0–T3（mutations+预算）· graduation——**仅人可改** |
 | `Ontology` | 清单 | 包清单：name/display/version/imports（包依赖，模板市场基础） |
 
+## 主键与敏感属性
+
+主键是稳定的公开图身份，用于对象 ID 与链接端点。`primaryKey` 中的属性**禁止设置 `marking`**，包校验会在发布前清晰报错。应使用非敏感代理键作为主键，将敏感业务标识保存在单独带 marking 的非主键字段中。
+
+```yaml
+primaryKey: [record-id]
+properties:
+  record-id: {type: string, required: true}
+  customer-number: {type: string, marking: customer-pii}
+```
+
+API 对象与掩码判断使用声明的属性名（如 `customer-number`）。SQL 列名归一化属于内部存储细节，不得额外暴露未掩码的 `customer_number` 别名。
+
 ## 示例：两种派生
 
 ```yaml
@@ -62,6 +75,6 @@ open_mo_count:
 
 ## 校验器与 lint（发布闸门）
 
-**validate（阻断发布，20+ 检查码）**：引用完整性 · join 键类型 · 主键自洽 · **动作 set 源属属性 = 错**（所有权）· 派生禁 mapping · 投影 **marking 禁入** · 表达式静态分析 · 函数派生 entry 形状 · EvalSuite 引用 · 宪法标记。
+**validate（阻断发布，20+ 检查码）**：引用完整性 · join 键类型 · 主键自洽 · **主键禁止 marking** · **动作 set 源属属性 = 错**（所有权）· 派生禁 mapping · 投影 **marking 禁入** · 表达式静态分析 · 函数派生 entry 形状 · EvalSuite 引用 · 宪法标记。
 
 **lint（团队规范，可豁免）**：display/description 必填 · kebab-case · 派生链 ≤2 · webhook 动作需收窄 audit.fields——规范不挡发布但留痕。

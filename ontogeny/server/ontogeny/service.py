@@ -190,6 +190,8 @@ class ServiceContext:
         self.settings = settings
         self.package_root = package_root
         self._publish_lock = asyncio.Lock()
+        self._outbox_lock = asyncio.Lock()
+        self._outbox_instances = []
         # The package this process booted from (ONTOGENY_PACKAGE_ROOT). Domain
         # activation moves `package_root`, but the boot package stays listed
         # and switchable -- it is the deployment's default domain.
@@ -690,8 +692,8 @@ class ServiceContext:
             async with self.sessionmaker() as session:
                 return await self.projection_worker.handle_event(self.repo, session, event)
 
-        async def _derivation_hook(event) -> bool:
-            return await self.derivation.handle_event(event)
+        async def _derivation_hook(event, session) -> bool:
+            return await self.derivation.handle_event(event, session)
 
         async def _derivation_drain() -> dict[str, int]:
             return await self.derivation.drain()
@@ -703,7 +705,9 @@ class ServiceContext:
             projection_hook=_projection_hook,
             derivation_hook=_derivation_hook,
             derivation_drain=_derivation_drain,
+            dispatch_lock=self._outbox_lock,
         )
+        self._outbox_instances.append(self.outbox)
         self.agents = AgentBroker(self)
         self.eval_runner.agent_broker = self.agents  # agent eval cases use the same gates
         # accounts & sessions: identity only -- authorization stays in the policy

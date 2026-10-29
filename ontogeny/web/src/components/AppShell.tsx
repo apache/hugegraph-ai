@@ -401,7 +401,7 @@ function SignedInAccount({ onSignedOut }: { onSignedOut: () => void }) {
           size="sm"
           data-testid="sign-out"
           disabled={busy}
-          onClick={() => { setBusy(true); void signOut().finally(() => { setBusy(false); onSignedOut() }) }}
+          onClick={() => { setBusy(true); void signOut().then(onSignedOut).catch(() => {}).finally(() => setBusy(false)) }}
         >
           {t('access.signOut')}
         </Button>

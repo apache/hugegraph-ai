@@ -113,13 +113,17 @@ async def client(golden_pkg_path, tmp_path):
         env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
     )
     sc = ServiceContext(settings, str(pkg_root))
-    await sc.initialize()
-    app = build_app(sc)
-    transport = httpx.ASGITransport(app=app)
-    # Default identity for requests that do not name one: an admin dev
-    # principal, because the admin/evolve planes are gated now. Tests that
-    # exercise identity still pass their own X-Ontogeny-Principal header, which
-    # overrides this default for that request.
-    default_headers = {"X-Ontogeny-Principal": json.dumps({"id": "ci-admin", "is_admin": True})}
-    async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=default_headers) as c:
-        yield c, sc
+    try:
+        await sc.initialize()
+        app = build_app(sc)
+        transport = httpx.ASGITransport(app=app)
+        # Default identity for requests that do not name one: an admin dev
+        # principal, because the admin/evolve planes are gated now. Tests that
+        # exercise identity still pass their own X-Ontogeny-Principal header, which
+        # overrides this default for that request.
+        default_headers = {"X-Ontogeny-Principal": json.dumps({"id": "ci-admin", "is_admin": True})}
+        async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=default_headers) as c:
+            yield c, sc
+    finally:
+        if sc.engine is not None:
+            await sc.engine.dispose()

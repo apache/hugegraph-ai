@@ -80,6 +80,21 @@ describe('ObjectsBrowser', () => {
     })
   })
 
+  it('preserves leading zeroes when filtering a string identifier', async () => {
+    const { calls } = mockFetch([
+      { match: '/meta/ontology', body: META },
+      { match: '/objects/sales-order/query', body: { objects: [], total: 0, latency_ms: 1 } },
+    ])
+    render()
+    fireEvent.click(await screen.findByTestId('filter-add'))
+    fireEvent.change(screen.getByLabelText(/^value-/), { target: { value: '0012' } })
+    fireEvent.click(screen.getByTestId('apply-filter'))
+    await waitFor(() => {
+      const body = JSON.parse(String(calls.filter((c) => c.url.includes('/query')).at(-1)!.init?.body))
+      expect(body.filter).toEqual({ field: 'so_id', op: 'eq', value: '0012' })
+    })
+  })
+
   it('surfaces the structured backend error', async () => {
     mockFetch([
       { match: '/meta/ontology', body: META },

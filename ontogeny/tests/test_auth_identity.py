@@ -221,6 +221,13 @@ class TestBootstrapCredential:
 
         monkeypatch.setenv("ONTOGENY_ADMIN_USER", "root")
         monkeypatch.delenv("ONTOGENY_ADMIN_PASSWORD", raising=False)
+        random_values = iter((12, 345678))
+
+        def fixed_random(upper):
+            assert upper == 1_000_000
+            return next(random_values)
+
+        monkeypatch.setattr("ontogeny.auth.service.secrets.randbelow", fixed_random)
         pkg_root = tmp_path / "pkg"
         _shutil.copytree(golden_pkg_path, pkg_root)
         settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}")
@@ -236,7 +243,7 @@ class TestBootstrapCredential:
         from ontogeny.errors import AuthenticationError
 
         sc, password = default_pw_ctx
-        assert len(password) >= 32
+        assert password == "000012"
         token, principal = await sc.auth.login("root", password)
         assert token and principal["id"] == "root"
         with pytest.raises(AuthenticationError):
@@ -262,6 +269,19 @@ class TestBootstrapCredential:
         with pytest.raises(AuthenticationError):
             await sc.auth.login("root", "ontogeny@2026")
 
+    async def test_account_creation_and_password_change_accept_six_characters(self, client):
+        from ontogeny.errors import DSLValidationError
+
+        _, sc = client
+        with pytest.raises(DSLValidationError, match="at least 6"):
+            await sc.auth.create_user(username="short", password="12345")
+        await sc.auth.create_user(username="six", password="000012")
+        assert (await sc.auth.login("six", "000012"))[0]
+        with pytest.raises(DSLValidationError, match="at least 6"):
+            await sc.auth.update_user("six", {"password": "12345"})
+        await sc.auth.update_user("six", {"password": "345678"})
+        assert (await sc.auth.login("six", "345678"))[0]
+
     async def test_independent_databases_get_distinct_passwords(
         self, default_pw_ctx, golden_pkg_path, tmp_path, caplog
     ):
@@ -276,14 +296,14 @@ class TestBootstrapCredential:
         await second.initialize()
         second_password = (second_dir / "admin-bootstrap-password").read_text().strip()
         assert all(second_password not in r.getMessage() for r in caplog.records)
-        assert first_password != second_password
+        assert (first_password, second_password) == ("000012", "345678")
         assert (await first.auth.login("root", first_password))[0]
         assert (await second.auth.login("root", second_password))[0]
 
     async def test_configured_password_is_not_logged(self, golden_pkg_path, tmp_path, monkeypatch, caplog):
         import logging
 
-        password = "operator-configured-password"
+        password = "000007"
         monkeypatch.setenv("ONTOGENY_ADMIN_USER", "root")
         monkeypatch.setenv("ONTOGENY_ADMIN_PASSWORD", password)
         caplog.set_level(logging.INFO, logger="ontogeny.auth")

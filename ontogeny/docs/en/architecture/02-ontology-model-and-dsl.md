@@ -22,6 +22,19 @@
 | `EvolutionPolicy` | evolution | the constitution file: loop · observability · tiers T0–T3 (mutations + budget) · graduation — **human-editable only** |
 | `Ontology` | manifest | package manifest: name/display/version/imports (package dependencies, the basis of a template market) |
 
+## Primary keys and sensitive properties
+
+Primary keys are stable, public graph identities used by object IDs and link endpoints. A property listed in `primaryKey` **must not have a `marking`**; package validation rejects it before publishing. Use a non-sensitive surrogate primary key and keep a sensitive business identifier in a separately marked, non-primary-key property.
+
+```yaml
+primaryKey: [record-id]
+properties:
+  record-id: {type: string, required: true}
+  customer-number: {type: string, marking: customer-pii}
+```
+
+Property names stay as declared in API objects and masking decisions (for example, `customer-number`). SQL column normalization is an internal storage detail and must not introduce an unmasked alias such as `customer_number`.
+
 ## Example: the two kinds of derivation
 
 ```yaml
@@ -61,6 +74,6 @@ A hand-written Pratt parser (lexing → AST → tree evaluation, **eval() banned
 
 ## Validators & lint (the publish gates)
 
-**validate (blocks publishing, 20+ check codes)**: referential integrity · join key types · primary-key sanity · **actions writing source-owned properties = error** (ownership) · derivations banned from mapping · **markings banned from projections** · expression static analysis · function-derivation entry shape · EvalSuite references · constitution markings.
+**validate (blocks publishing, 20+ check codes)**: referential integrity · join key types · primary-key sanity · **markings forbidden on primary keys** · **actions writing source-owned properties = error** (ownership) · derivations banned from mapping · **markings banned from projections** · expression static analysis · function-derivation entry shape · EvalSuite references · constitution markings.
 
 **lint (team conventions, exemptable)**: display/description required · kebab-case · derivation chain ≤2 · webhook actions must narrow audit.fields — conventions don't block publishing but do leave a trace.

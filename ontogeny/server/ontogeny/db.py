@@ -51,6 +51,9 @@ def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 # already migrate additively in `stores/ddl.py`; this is the same idea for the
 # system tables, kept to portable types (TEXT/INTEGER work on SQLite+Postgres).
 ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
+    "ontogeny_outbox_cursor": {
+        "receipts_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
+    },
     "ontogeny_agent_session": {
         "expires_at": "TEXT",
         "run_count": "INTEGER",

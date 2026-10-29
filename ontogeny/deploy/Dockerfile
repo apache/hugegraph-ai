@@ -18,7 +18,7 @@
 # ontogeny -- single image: API + built UI on one port.
 #
 # Build:  docker build -f deploy/Dockerfile -t ontogeny .
-# Run:    docker run -p 8000:8000 -v ontogeny-data:/data ontogeny
+# Run:    docker run -p 127.0.0.1:8000:8000 -v ontogeny-data:/data ontogeny
 #
 # The UI stage compiles web/ and the app stage serves web/dist from the same
 # origin as the API (no CORS, no second service).
@@ -47,7 +47,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY server/ ./server/
 # the MCP tool surface (/mcp) is part of the shipped agent surface
-RUN pip install --no-cache-dir '.[mcp]'
+RUN pip install --no-cache-dir '.[mcp,postgres]'
 
 COPY extensions/ ./extensions/
 COPY domains/ ./domains/
@@ -66,4 +66,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/meta/ontology', timeout=4).status==200 else 1)"
 
 # --demo seeds sources, copies the package into /data/pkg and serves the UI
-CMD ["ontogeny", "serve", "--demo", "--data-dir", "/data", "--host", "0.0.0.0", "--port", "8000", "--no-build-ui"]
+CMD ["ontogeny", "serve", "--demo", "--copy-package", "--data-dir", "/data", "--host", "0.0.0.0", "--port", "8000", "--no-build-ui"]

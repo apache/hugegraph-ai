@@ -60,6 +60,8 @@ def _recorder(routes: list[tuple[str, str, httpx.Response]]):
         for method, needle, response in routes:
             if request.method == method and request.url.path.endswith(needle):
                 return response
+        if request.method == "GET" and request.url.path == "/graphspaces/DEFAULT/graphs":
+            return httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})
         return httpx.Response(200, json={})
 
     return handler, calls
@@ -168,9 +170,14 @@ class TestDialectV17:
         await http.aclose()
 
     async def test_exists_is_unknown_when_the_probe_fails(self):
+        probes = 0
+
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path.endswith("/graphspaces"):
-                return httpx.Response(200, json={})
+            nonlocal probes
+            if request.url.path == "/graphspaces/DEFAULT/graphs":
+                probes += 1
+                if probes == 1:
+                    return httpx.Response(200, json={"graphs": []})
             return httpx.Response(503, text="backend unavailable")
 
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -360,7 +367,8 @@ class TestDialectV15Legacy:
     async def rig(self, compiled):
         handler, calls = _recorder(
             [
-                ("GET", "/graphspaces", httpx.Response(404, json={})),  # 1.5 has no graphspaces
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(404, json={})),
+                ("GET", "/graphs", httpx.Response(200, json={"graphs": [GRAPH]})),
             ]
         )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -783,8 +791,8 @@ class TestAuthMode:
         from ontogeny.errors import StoreError
 
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path.endswith("/graphspaces"):
-                return httpx.Response(200, json={})
+            if request.url.path == "/graphspaces/DEFAULT/graphs":
+                return httpx.Response(200, json={"graphs": [GRAPH]})
             if request.url.path.endswith("/schema/vertexlabels"):
                 return httpx.Response(401, text="Unauthorized")
             return httpx.Response(200, json={"vertexlabels": [], "edgelabels": []})
@@ -799,12 +807,14 @@ class TestAuthMode:
         """A probe we were not allowed to make must never be reported as "the
         graph is gone" — that answer is what offers a destructive build."""
 
+        from ontogeny.errors import StoreError
+
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path.endswith("/graphspaces"):
-                return httpx.Response(200, json={})
             return httpx.Response(401, text="Unauthorized")
 
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
-        assert await client.exists() is None
+        with pytest.raises(StoreError, match="no credentials configured"):
+            await client.exists()
+        assert client.auth_rejected
         await http.aclose()

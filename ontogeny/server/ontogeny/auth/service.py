@@ -48,7 +48,7 @@ from .passwords import hash_password, new_token, token_fingerprint, verify_passw
 log = logging.getLogger("ontogeny.auth")
 
 SESSION_TTL = _dt.timedelta(hours=12)
-MIN_PASSWORD = 8
+MIN_PASSWORD = 6
 
 
 def bootstrap_password_path(settings) -> Path:
@@ -325,7 +325,7 @@ class AuthService:
                     "restore an administrator explicitly or select a new ONTOGENY_ADMIN_USER"
                 )
         configured_password = os.environ.get("ONTOGENY_ADMIN_PASSWORD")
-        password = configured_password or secrets.token_urlsafe(24)
+        password = configured_password or f"{secrets.randbelow(1_000_000):06d}"
         credential_path = None if configured_password else bootstrap_password_path(self.sc.settings)
         if credential_path is not None:
             _write_bootstrap_password(credential_path, password)

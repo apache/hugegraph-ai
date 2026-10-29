@@ -42,6 +42,8 @@
 
 **沙箱边界（全能力共用）**：独立子进程 + rlimits + 墙钟超时杀进程 + PYTHONDONTWRITEBYTECODE；跨界 RPC 由父进程按 capabilities 裁决；返回对象与 API 同形（**修复过沙箱内派生属性不可见导致库存全算 0 的错算**）。
 
+声明式 HTTP 步骤的 URL 中，只有 `${API_BASE}` 这类独立的 `UPPER_SNAKE` 部署引用才从环境变量解析；`${order_id}` 小写参数和 `${lookup.order_id}` 前序步骤引用仍按模板处理，即使环境里有同名变量也不会覆盖它们。先解析部署引用，再插入调用模板，最终 URL 必须通过 HTTP 白名单；参数值不能注入新的 `${...}` 引用。
+
 ## 4.2 函数型动作：效果计划（Function 出主意，Action 落地）
 
 ```yaml

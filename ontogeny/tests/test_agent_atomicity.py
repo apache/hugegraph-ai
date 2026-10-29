@@ -99,20 +99,22 @@ async def test_positive_session_override_tightens_plugin_limits(client):
 async def test_two_simultaneous_decisions_consume_intent_once(client, monkeypatch, decisions):
     c, sc = client
     pending = await _pending_approval(c)
-    original = sc.query.get
+    original = sc.repo.get
     arrived = 0
     ready = asyncio.Event()
 
     async def synchronize_approvers(*args, **kwargs):
         nonlocal arrived
         result = await original(*args, **kwargs)
+        if kwargs.get("for_update"):
+            return result
         arrived += 1
         if arrived == 2:
             ready.set()
         await asyncio.wait_for(ready.wait(), timeout=5)
         return result
 
-    monkeypatch.setattr(sc.query, "get", synchronize_approvers)
+    monkeypatch.setattr(sc.repo, "get", synchronize_approvers)
     results = await asyncio.gather(
         sc.agents.decide(pending["approval_id"], decisions[0], PLANNER),
         sc.agents.decide(pending["approval_id"], decisions[1], PLANNER),

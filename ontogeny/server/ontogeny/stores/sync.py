@@ -179,8 +179,9 @@ class SyncEngine:
                     raise StoreError("watermark strategy requires watermark.column")
                 after = state.watermark if state and state.watermark else None
 
-            seen_pks: set[str] = set()
+            seen_keys: set[tuple[Any, ...]] = set()
             max_wm: Any = after
+            observed_wm: Any = None
             pk_props = obj.spec.primaryKey
             ptypes = {p: d.ptype() for p, d in obj.spec.properties.items()}
             required_props = {
@@ -197,22 +198,39 @@ class SyncEngine:
             async for raw in rows:
                 if strategy == "watermark" and watermark_col is not None:
                     wm_val = raw.get(watermark_col)
-                    if wm_val is not None and (max_wm is None or str(wm_val) > str(max_wm)):
-                        max_wm = wm_val
+                    if wm_val is not None:
+                        # Compare the source's native values, never their
+                        # string checkpoints ("10" sorts before "9"). Rows
+                        # returned by a watermark source are >= the checkpoint.
+                        try:
+                            newer = observed_wm is None or wm_val > observed_wm
+                        except TypeError:
+                            newer = str(wm_val) > str(observed_wm)
+                        if newer:
+                            observed_wm = max_wm = wm_val
                 # Presence is independent of whether the other properties can
                 # be coerced. Quarantining an update must preserve the previous
                 # good object, not treat that source row as a snapshot deletion.
-                # Coerce the key alone so mapped/numeric keys use the same
-                # canonical ID as the materialized repository.
-                pk_prop = pk_props[0]
-                raw_pk = raw.get(mapped.get(pk_prop, pk_prop))
-                if raw_pk is not None:
-                    try:
-                        source_pk = ptypes[pk_prop].coerce(raw_pk, prop=pk_prop)
-                    except TypeMismatchError:
-                        pass  # an invalid key cannot identify an existing object
-                    else:
-                        seen_pks.add(str(source_pk))
+                # Compare complete typed keys: rows sharing the first key
+                # component are still distinct objects. A valid key remains
+                # present even if another field sends this row to quarantine.
+                try:
+                    source_key = tuple(
+                        ptypes[prop].coerce(raw.get(mapped.get(prop, prop)), prop=prop) for prop in pk_props
+                    )
+                except TypeMismatchError:
+                    pass  # an invalid key cannot identify an existing object
+                else:
+                    if all(value is not None for value in source_key):
+                        # SQL timestamp keys round-trip as aware UTC values.
+                        seen_keys.add(
+                            tuple(
+                                value.replace(tzinfo=_dt.UTC)
+                                if isinstance(value, _dt.datetime) and value.tzinfo is None
+                                else value
+                                for value in source_key
+                            )
+                        )
                 props, code, reason = _coerce_row(
                     object_type,
                     ptypes,
@@ -222,9 +240,11 @@ class SyncEngine:
                 )
                 pk = None
                 if props is not None:
-                    pk = str(props.get(pk_props[0]))
-                    if pk is None or pk == "None":
+                    key = tuple(props.get(prop) for prop in pk_props)
+                    if any(value is None for value in key):
                         props, code, reason = None, "MISSING_PK", "primary key missing/None"
+                    else:
+                        pk = str(key[0])
                 if props is None:
                     session.add(
                         QuarantineRow(
@@ -237,7 +257,6 @@ class SyncEngine:
                     )
                     summary["quarantined"] += 1
                     continue
-                seen_pks.add(pk)
                 outcome = await self.repo.sync_upsert(session, object_type, props, started)
                 summary[outcome if outcome in summary else "noop"] += 1
                 session.add(
@@ -252,12 +271,10 @@ class SyncEngine:
             # absent-means-archive (snapshot only, unless explicitly disabled)
             deletes = backing.sync.deletes if backing.sync else None
             if strategy == "snapshot" and deletes != "none":
-                alive = await self.repo.alive_ids(session, object_type)
-                for gone in alive:
-                    if str(gone) in seen_pks:
-                        continue
+                alive = await self.repo.alive_keys(session, object_type)
+                for gone in alive - seen_keys:
                     await self.repo.archive(session, object_type, gone, started)
-                    session.add(OutboxRow(object_type=object_type, object_id=gone, op="archive", payload={}))
+                    session.add(OutboxRow(object_type=object_type, object_id=str(gone[0]), op="archive", payload={}))
                     summary["archived"] += 1
 
             if state is None:

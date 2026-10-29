@@ -438,9 +438,15 @@ class AgentBroker:
             async def _require_action_permit() -> None:
                 target = None
                 if row.target_id:
-                    target = await self.sc.query.get(
-                        s, self.sc.compiled.action_target(row.action), row.target_id, principal
-                    )
+                    object_type = self.sc.compiled.action_target(row.action)
+                    # Policy decisions use the same unmasked stored target as
+                    # ActionRuntime; presentation masking is applied only to reads.
+                    target = await self.sc.repo.get(s, object_type, row.target_id)
+                    if target is None:
+                        raise NotFoundError(f"{object_type}/{row.target_id} not found")
+                    from ..engine.service import assemble_row
+
+                    target = assemble_row(self.sc.compiled, object_type, target)
                 self.sc.policy.require(principal, row.action, target)
 
             if decision == "rejected":

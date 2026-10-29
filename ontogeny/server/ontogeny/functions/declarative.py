@@ -57,6 +57,7 @@ from typing import Any
 
 import httpx
 
+from ..core.validator import _ENV_NAME_RE
 from ..errors import SandboxError
 
 log = logging.getLogger("ontogeny.functions.declarative")
@@ -331,7 +332,17 @@ class DeclarativeRuntime:
                 # be re-resolved into a host the allowlist never checked
                 url = step.url or ""
                 if "${" in url and self.resolve_ref is not None:
-                    url = self.resolve_ref(url)
+                    # Match the validator's deployment-name convention. Lower
+                    # case parameters and earlier steps belong to _Template,
+                    # even when the deployment has a variable with that name.
+                    url = _REF.sub(
+                        lambda ref: (
+                            self.resolve_ref(ref.group(0))
+                            if not ref.group(2) and _ENV_NAME_RE.fullmatch(ref.group(1))
+                            else ref.group(0)
+                        ),
+                        url,
+                    )
                 url = tpl.render_text(url)
                 if "${" in url:
                     raise SandboxError(

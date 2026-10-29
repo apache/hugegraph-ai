@@ -173,8 +173,16 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
             p = obj.spec.properties.get(pk)
             if p is None:
                 rep.error("PK-UNKNOWN", res_id, f"primaryKey {pk!r} is not a property")
-            elif not p.required:
-                rep.error("PK-REQUIRED", res_id, f"primaryKey {pk!r} must be required")
+            else:
+                if not p.required:
+                    rep.error("PK-REQUIRED", res_id, f"primaryKey {pk!r} must be required")
+                if p.marking:
+                    rep.error(
+                        "PK-MARKING",
+                        res_id,
+                        f"primary key {pk!r} cannot carry marking {p.marking!r}: object IDs are exposed; "
+                        "use an unmarked surrogate key and move the sensitive value to a marked non-key property",
+                    )
         b = obj.spec.backing
         if b is not None:
             if b.store not in stores:

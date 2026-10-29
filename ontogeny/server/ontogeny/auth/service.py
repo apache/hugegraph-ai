@@ -91,6 +91,14 @@ class AuthService:
 
     # ------------------------------------------------------------------ users
 
+    @staticmethod
+    async def _lock_account_changes(session) -> None:
+        """Serialize account mutations across PostgreSQL workers until commit."""
+        if session.get_bind().dialect.name == "postgresql":
+            # Fixed two-part namespace ("ONTO", "AUTH"); transaction-scoped so
+            # rollback and cancellation release the lock along with the write.
+            await session.execute(select(func.pg_advisory_xact_lock(0x4F4E544F, 0x41555448)))
+
     async def _user(self, session, username: str) -> UserRow | None:
         return (await session.execute(select(UserRow).where(UserRow.username == username))).scalar_one_or_none()
 
@@ -130,6 +138,7 @@ class AuthService:
             raise DSLValidationError("username is required")
         self._check_password(password)
         async with self.sc.sessionmaker() as session:
+            await self._lock_account_changes(session)
             if await self._user(session, username):
                 raise DSLValidationError(f"user {username!r} already exists")
             row = UserRow(
@@ -149,6 +158,7 @@ class AuthService:
 
     async def update_user(self, username: str, patch: dict[str, Any]) -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:
+            await self._lock_account_changes(session)
             row = await self._user(session, username)
             if row is None:
                 raise NotFoundError(f"user {username!r} not found")
@@ -199,6 +209,7 @@ class AuthService:
 
     async def delete_user(self, username: str) -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:
+            await self._lock_account_changes(session)
             row = await self._user(session, username)
             if row is None:
                 raise NotFoundError(f"user {username!r} not found")

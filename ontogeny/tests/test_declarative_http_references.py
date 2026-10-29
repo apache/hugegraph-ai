@@ -27,11 +27,11 @@ from ontogeny.core.models import Capability, FunctionStep, ParamDef
 from ontogeny.errors import SandboxError
 
 
-def function(url, *, steps=None, params=None, capabilities=None):
+def function(url, *, steps=None, params=None, capabilities=None, headers=None):
     return _fn(
         runtime="declarative",
         parameters=params or {"order_id": ParamDef(type="string")},
-        steps=[*(steps or []), FunctionStep(id="send", kind="http", url=url)],
+        steps=[*(steps or []), FunctionStep(id="send", kind="http", url=url, headers=headers)],
         capabilities=[Capability(**{"http": {"allow": ["hooks.test"]}}), *(capabilities or [])],
         returns_step="send",
     )
@@ -121,3 +121,66 @@ async def test_parameterized_request_does_not_follow_redirects_off_allowlist(cli
     )
     assert result["status"] == 302
     assert [request.url.host for request in calls] == ["hooks.test"]
+
+
+async def test_header_deployment_token_uses_real_settings_resolver_without_logging_it(client, monkeypatch, caplog):
+    _, sc = client
+    secret = "private-header-regression-token"
+    monkeypatch.setitem(sc.settings.env, "API_TOKEN", secret)
+    calls = []
+    result = await invoke(
+        sc, function("https://hooks.test/send", headers={"Authorization": "Bearer ${API_TOKEN}"}), {}, calls
+    )
+    assert calls[0].headers["Authorization"] == "Bearer " + secret
+    assert secret not in str(result)
+    assert secret not in caplog.text
+
+
+async def test_header_parameter_is_not_overridden_by_same_named_environment_value(client, monkeypatch):
+    _, sc = client
+    monkeypatch.setitem(sc.settings.env, "request_tag", "environment-tag")
+    calls = []
+    fn = function(
+        "https://hooks.test/send", params={"request_tag": ParamDef(type="string")}, headers={"X-Tag": "${request_tag}"}
+    )
+    await invoke(sc, fn, {"request_tag": "caller-tag"}, calls)
+    assert calls[0].headers["X-Tag"] == "caller-tag"
+
+
+async def test_header_prior_step_reference_uses_template_result(client):
+    _, sc = client
+    calls = []
+    fn = function(
+        "https://hooks.test/send",
+        steps=[FunctionStep(id="lookup", kind="http", url="https://hooks.test/lookup")],
+        headers={"X-Tag": "${lookup.json.tag}"},
+    )
+    await invoke(sc, fn, {}, calls, response=httpx.Response(200, json={"tag": "earlier-step"}))
+    assert calls[1].headers["X-Tag"] == "earlier-step"
+
+
+async def test_missing_header_deployment_reference_does_not_echo_resolved_secret(client, monkeypatch):
+    _, sc = client
+    secret = "private-header-regression-token"
+    monkeypatch.setitem(sc.settings.env, "API_TOKEN", secret)
+    monkeypatch.delenv("MISSING_API_TOKEN", raising=False)
+    calls = []
+    fn = function("https://hooks.test/send", headers={"Authorization": "Bearer ${API_TOKEN}/${MISSING_API_TOKEN}"})
+    with pytest.raises(SandboxError, match="MISSING_API_TOKEN") as error:
+        await invoke(sc, fn, {}, calls)
+    assert secret not in str(error.value)
+    assert calls == []
+
+
+async def test_header_parameter_cannot_inject_a_second_deployment_reference(client, monkeypatch):
+    _, sc = client
+    secret = "private-header-regression-token"
+    monkeypatch.setitem(sc.settings.env, "API_TOKEN", secret)
+    calls = []
+    fn = function(
+        "https://hooks.test/send", params={"auth": ParamDef(type="string")}, headers={"Authorization": "Bearer ${auth}"}
+    )
+    with pytest.raises(SandboxError, match="header still contains") as error:
+        await invoke(sc, fn, {"auth": "${API_TOKEN}"}, calls)
+    assert secret not in str(error.value)
+    assert calls == []

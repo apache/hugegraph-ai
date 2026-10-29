@@ -51,6 +51,8 @@ _FORBID_RE = re.compile(
     re.DOTALL,
 )
 
+_STATEMENT_START_RE = re.compile(r"\b(?:permit|forbid)\s*\(")
+
 
 @dataclass(frozen=True)
 class PermitRule:
@@ -109,12 +111,19 @@ def _policy_text(text: str) -> tuple[str, set[int]]:
     return "".join(out), quoted
 
 
+def _statement_matches(text: str, quoted: set[int], pattern: re.Pattern):
+    """Match only at unquoted statement starts, without skipping later starts."""
+    for start in _STATEMENT_START_RE.finditer(text):
+        if start.start() not in quoted:
+            match = pattern.match(text, start.start())
+            if match is not None:
+                yield match
+
+
 def parse_policy_set(text: str) -> list[PermitRule]:
     rules: list[PermitRule] = []
     text, quoted = _policy_text(text)
-    for m in _PERMIT_RE.finditer(text):
-        if m.start() in quoted:
-            continue
+    for m in _statement_matches(text, quoted, _PERMIT_RE):
         principal = m.group("principal").strip()
         role: str | None = None
         rm = re.fullmatch(r'principal in (?:Role|Group)::"([^"]+)"', principal)
@@ -133,9 +142,7 @@ def parse_forbids(text: str) -> list[PermitRule]:
     """Forbid statements, parsed with the same shape as permits."""
     rules: list[PermitRule] = []
     text, quoted = _policy_text(text)
-    for m in _FORBID_RE.finditer(text):
-        if m.start() in quoted:
-            continue
+    for m in _statement_matches(text, quoted, _FORBID_RE):
         principal = m.group("principal").strip()
         role: str | None = None
         rm = re.fullmatch(r'principal in (?:Role|Group)::"([^"]+)"', principal)

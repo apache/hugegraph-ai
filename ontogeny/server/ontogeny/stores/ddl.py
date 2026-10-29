@@ -20,8 +20,8 @@
 Each ObjectType gets ``ontogeny_obj_<type>`` with typed property columns plus system
 columns (``_rev/_valid_from/_valid_to/_synced_at``). Versioning is
 append-only: updates close the current row and insert a successor; the
-"alive current" state is exactly ``_valid_to IS NULL``. Derived properties are
-never stored (computed at assembly time).
+"alive current" state is exactly ``_valid_to IS NULL``. Expression-derived
+properties are computed on read; function-derived properties are materialized.
 """
 
 from __future__ import annotations
@@ -82,6 +82,38 @@ class UTCDateTime(TypeDecorator):
         return value.astimezone(_dt.UTC)
 
 
+class TypedJSON(TypeDecorator):
+    """JSON storage for declared arrays/structs, including nested dates."""
+
+    impl = JSON
+    # PropertyType's struct schema contains dictionaries and is not hashable.
+    cache_ok = False
+
+    def __init__(self, ptype: PropertyType):
+        super().__init__()
+        self.ptype = ptype
+
+    @classmethod
+    def _encode(cls, ptype: PropertyType, value):
+        if value is None:
+            return None
+        if ptype.kind in ("date", "timestamp"):
+            return value.isoformat()
+        if ptype.kind == "array":
+            return [cls._encode(ptype.inner, item) for item in value]
+        if ptype.kind == "struct":
+            return {name: cls._encode(field, value.get(name)) for name, field in ptype.struct_fields.items()}
+        return value
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return self._encode(self.ptype, self.ptype.coerce(value))
+
+    def process_result_value(self, value, dialect):
+        return self.ptype.coerce(value)
+
+
 # One MetaData per ontology snapshot: two packages may both define an
 # `equipment` table with different columns, and a republished package may change
 # them. Sharing one global MetaData by table name silently returned the wrong
@@ -115,7 +147,9 @@ def sql_type(ptype: PropertyType):
         return Date
     if k == "timestamp":
         return UTCDateTime()
-    if k in ("array", "struct", "vector", "geo-point", "geo-shape", "media", "document"):
+    if k in ("array", "struct"):
+        return TypedJSON(ptype)
+    if k in ("vector", "geo-point", "geo-shape", "media", "document"):
         return JSON
     raise ValueError(f"no sql mapping for {k}")  # pragma: no cover
 
@@ -138,7 +172,9 @@ def object_table(compiled, object_type: str) -> Table:
             Column(
                 compiled.col(prop),
                 sql_type(pdef.ptype()),
-                nullable=not pdef.required,
+                # A required function-derived value is validated by the worker,
+                # but is unavailable until it processes the initial write.
+                nullable=not pdef.required or (pdef.derived_kind() == "function" and compiled.col(prop) not in pk_cols),
                 # composite PK: business key + _valid_from -> versions coexist
                 primary_key=compiled.col(prop) in pk_cols,
             )

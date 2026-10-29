@@ -243,9 +243,8 @@ class ServiceContext:
                 raise StoreError("registry is empty and no ONTOGENY_PACKAGE_ROOT configured to publish from")
             compiled = await self.publish(self.package_root)
         else:
-            self._rebuild_services(compiled)
             async with self.sessionmaker() as session:
-                await self.repo.ensure(session)
+                await self._install_snapshot(session, compiled)
         return self
 
     async def _load_runtime_settings(self) -> None:
@@ -522,36 +521,46 @@ class ServiceContext:
             return await self._publish(package_root, created_by=created_by)
 
     async def _publish(self, package_root: str, *, created_by: str | None = None) -> CompiledOntology:
-        # Construct on the original context so callbacks keep the right `self`,
-        # but restore the old runtime before any await. Readers continue using
-        # the committed snapshot until registry commit succeeds.
-        previous = self.__dict__.copy()
         cache = self.registry._cache.copy()
-        surface = getattr(self, "mcp_surface", None)
         try:
             pkg = load_package(package_root)
             async with self.sessionmaker() as session:
                 compiled = await self.registry.publish(session, pkg, created_by=created_by or "ontogeny")
-                await ObjectRepository(compiled).ensure(session)
+                return await self._install_snapshot(session, compiled, package_root=package_root)
+        except BaseException:
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            raise
+
+    async def _install_snapshot(
+        self, session, compiled: CompiledOntology, *, package_root: str | None = None
+    ) -> CompiledOntology:
+        """Commit schema/registry changes before exposing a candidate runtime."""
+        previous = self.__dict__.copy()
+        cache = self.registry._cache.copy()
+        surface = getattr(self, "mcp_surface", None)
+        try:
+            await ObjectRepository(compiled).ensure(session)
+            if package_root is not None:
                 self.package_root = package_root
-                self._rebuild_services(compiled, refresh_mcp=False)
-                tools = surface.prepare_refresh() if surface is not None else None
-                candidate = self.__dict__.copy()
-                candidate_cache = self.registry._cache.copy()
-                self.__dict__.clear()
-                self.__dict__.update(previous)
-                self.registry._cache.clear()
-                self.registry._cache.update(cache)
-                await session.commit()
-                # Attribute/tool-manager swaps are synchronous and cannot expose
-                # a partially built runtime to another coroutine.
-                self.__dict__.clear()
-                self.__dict__.update(candidate)
-                self.registry._cache.clear()
-                self.registry._cache.update(candidate_cache)
-                if surface is not None:
-                    surface.apply_refresh(tools)
-                return compiled
+            # Build on the original context so callbacks keep the right self.
+            # No reader can observe the candidate across an await before commit.
+            self._rebuild_services(compiled, refresh_mcp=False)
+            tools = surface.prepare_refresh() if surface is not None else None
+            candidate = self.__dict__.copy()
+            candidate_cache = self.registry._cache.copy()
+            self.__dict__.clear()
+            self.__dict__.update(previous)
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            await session.commit()
+            self.__dict__.clear()
+            self.__dict__.update(candidate)
+            self.registry._cache.clear()
+            self.registry._cache.update(candidate_cache)
+            if surface is not None:
+                surface.apply_refresh(tools)
+            return self.compiled
         except BaseException:
             self.__dict__.clear()
             self.__dict__.update(previous)
@@ -561,13 +570,14 @@ class ServiceContext:
 
     async def reload(self) -> CompiledOntology:
         """Refresh services from the registry (e.g. after an evolve promotion)."""
-        async with self.sessionmaker() as session:
-            compiled = await self.registry.load_latest(session)
-        if compiled is not None and (self.compiled is None or compiled.content_hash != self.compiled.content_hash):
-            self._rebuild_services(compiled)
+        async with self._publish_lock:
             async with self.sessionmaker() as session:
-                await self.repo.ensure(session)
-        return self.compiled  # type: ignore[return-value]
+                compiled = await self.registry.load_latest(session)
+                if compiled is not None and (
+                    self.compiled is None or compiled.content_hash != self.compiled.content_hash
+                ):
+                    await self._install_snapshot(session, compiled)
+            return self.compiled  # type: ignore[return-value]
 
     def _rebuild_services(self, compiled: CompiledOntology, *, refresh_mcp: bool = True) -> None:
         compiled = self._apply_package_root_override(compiled)
@@ -1069,6 +1079,12 @@ class ServiceContext:
         )
 
     async def activate_domain(self, package_root: str | Path) -> CompiledOntology:
+        # Activation and ordinary publish must not concurrently claim the same
+        # materialized table for two domains in this process.
+        async with self._publish_lock:
+            return await self._activate_domain(package_root)
+
+    async def _activate_domain(self, package_root: str | Path) -> CompiledOntology:
         """Switch the active domain with a hard preflight on both sides.
 
         The requirement is asymmetric on purpose: a broken *target* must never
@@ -1087,14 +1103,15 @@ class ServiceContext:
                 raise DSLValidationError(f"current domain cannot be validated: {exc}") from exc
         self._validate_package_for_switch(target, "target domain")
         pkg = load_package(str(target))
-        async with self.sessionmaker() as session:
-            compiled = await self.registry.activate(session, pkg, created_by="console")
-            await session.commit()
-        self.package_root = str(target.resolve())
-        self._rebuild_services(compiled)
-        async with self.sessionmaker() as session:
-            await self.repo.ensure(session)
-        return compiled
+        cache = self.registry._cache.copy()
+        try:
+            async with self.sessionmaker() as session:
+                compiled = await self.registry.activate(session, pkg, created_by="console")
+                return await self._install_snapshot(session, compiled, package_root=str(target.resolve()))
+        except BaseException:
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            raise
 
     # ------------------------------------------------------------ operations
 

@@ -94,8 +94,8 @@ class GraphStore(Protocol):
 class ProjectionWorker:
     """Outbox consumer: object rows -> graph vertices/edges (eventual consistency).
 
-    Same-object events are processed strictly in outbox-id order; failures are
-    retried by cursor rewind rather than skipped (at-least-once, idempotent upserts).
+    Visible pending events are processed in outbox-id order; failures are
+    retried while unacknowledged (at-least-once, idempotent upserts).
     """
 
     def __init__(self, compiled, projection, client: GraphStore) -> None:

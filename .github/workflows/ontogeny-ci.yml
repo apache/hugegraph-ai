@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install
         working-directory: ontogeny
         run: |
@@ -77,6 +77,9 @@ jobs:
       - name: Type check
         working-directory: ontogeny/web
         run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Lint
+        working-directory: ontogeny/web
+        run: npm run lint
       - name: Unit tests
         working-directory: ontogeny/web
         run: npx vitest run
@@ -84,13 +87,72 @@ jobs:
         working-directory: ontogeny/web
         run: npm run build
 
+  postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend with PostgreSQL support
+        working-directory: ontogeny
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -e '.[postgres,mcp]' pytest pytest-asyncio httpx
+      - name: Start temporary PostgreSQL
+        run: |
+          export POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+          docker run -d --rm --name ontogeny-ci-postgres \
+            -e POSTGRES_USER=ontogeny -e POSTGRES_PASSWORD -e POSTGRES_DB=ontogeny \
+            -p 127.0.0.1::5432 postgres:16 >/dev/null
+          for attempt in $(seq 1 30); do
+            if docker exec ontogeny-ci-postgres pg_isready -U ontogeny >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo 'PostgreSQL did not start' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          port="$(docker port ontogeny-ci-postgres 5432/tcp | cut -d: -f2)"
+          umask 077
+          printf '%s' "$POSTGRES_PASSWORD" > "$RUNNER_TEMP/ontogeny-postgres-password"
+          printf '%s' "$port" > "$RUNNER_TEMP/ontogeny-postgres-port"
+      - name: PostgreSQL concurrency tests
+        working-directory: ontogeny
+        run: |
+          audit_password="$(cat "$RUNNER_TEMP/ontogeny-postgres-password")"
+          audit_port="$(cat "$RUNNER_TEMP/ontogeny-postgres-port")"
+          export ONTOGENY_PG_DSN="postgresql+asyncpg://ontogeny:${audit_password}@127.0.0.1:${audit_port}/ontogeny"
+          set -o pipefail
+          .venv/bin/pytest -q tests/test_postgres_id_sequence.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_agent_governance.py -k postgres 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_agent_identity_and_run_claim.py::test_concurrent_run_claim_on_postgres 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_agent_atomicity.py \
+            -k 'failed_second_effect or simultaneous_decisions or approval_preserves' -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_action_effect_order.py -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_action_plan_and_projection_events.py \
+            -k 'function_plan or created_object' -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_source_snapshot_and_native_values.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_postgres_watermark_sync.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_outbox_receipts.py tests/test_object_live_uniqueness.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_postgres_object_keys.py tests/test_auth_postgres_concurrency.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_typed_json_storage.py tests/test_service_schema_commit.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_action_idempotency_scope.py tests/test_approval_marked_policy.py -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
+      - name: Stop temporary PostgreSQL
+        if: always()
+        run: |
+          docker stop ontogeny-ci-postgres >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/ontogeny-postgres-password" "$RUNNER_TEMP/ontogeny-postgres-port"
+
   integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install backend
         working-directory: ontogeny
         run: |

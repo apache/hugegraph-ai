@@ -98,7 +98,10 @@ async def sc(golden_pkg_path, tmp_path):
     await ctx.initialize()
     for t in ctx.compiled.objects:
         await ctx.sync(t)
-    return ctx
+    try:
+        yield ctx
+    finally:
+        await ctx.engine.dispose()
 
 
 def _wire(sc, llm) -> BuiltinLlmEngine:
@@ -334,8 +337,15 @@ async def client(golden_pkg_path, tmp_path):
     await sc.initialize()
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, sc
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Ontogeny-Principal": json.dumps({"id": "dev-driver"})},
+    ) as c:
+        try:
+            yield c, sc
+        finally:
+            await sc.engine.dispose()
 
 
 class TestRunEndpoint:
@@ -371,7 +381,7 @@ class TestRunEndpoint:
 
 class TestUnlimitedBudget:
     async def test_steps_zero_never_exhausts(self, sc):
-        """A session opened with steps=0 is UNLIMITED: the engine must keep
+        """A plugin with steps=0 is UNLIMITED: the engine must keep
         driving past the number of steps that would exhaust a capped session
         (the gate used to fire at steps_used >= 0 -- instantly)."""
         llm = StubLLM(
@@ -388,6 +398,8 @@ class TestUnlimitedBudget:
             + [json.dumps({"thought": "done", "final": "ok"})]
         )
         engine = _wire(sc, llm)
+        plugin_budget = sc.compiled.agent_plugins["planning-copilot"].spec.budget
+        plugin_budget.steps = plugin_budget.wall_ms = plugin_budget.writes_per_session = 0
         s = await sc.agents.open_session(
             "planning-copilot", "unlimited drive", budget={"steps": 0, "wall_ms": 0, "writes_per_session": 0}
         )
@@ -397,5 +409,5 @@ class TestUnlimitedBudget:
         # the loop ended on the model's own final: session stays open
         assert sess["status"] == "open"
         assert len(sess["steps"]) == 8  # all 8 tool calls went through
-        # and the bounded plugin default (6) would have exhausted exactly here
+        # The original bounded plugin default (6) would have exhausted here.
         assert sess["budget"]["steps"] == 0

@@ -298,23 +298,19 @@ ROUTES = [
 
 
 def _bootstrap_password() -> str | None:
-    """The demo daemon prints a generated admin password once, on first start.
+    """Read the demo's owner-only bootstrap credential, if present.
 
     Reading it back keeps `python tools/headless_check.py` a one-liner against a
     fresh deployment; pass --login-password (or ONTOGENY_ADMIN_PASSWORD) to override.
     """
     if os.environ.get("ONTOGENY_ADMIN_PASSWORD"):
         return os.environ["ONTOGENY_ADMIN_PASSWORD"]
-    import re as _re
-
-    for log in (".ontogeny-daemon/ontogeny.log", ".ontogeny-demo/ontogeny.log"):
+    directories = [os.environ.get("ONTOGENY_DATA_DIR"), ".ontogeny-daemon", ".ontogeny-demo"]
+    for directory in filter(None, directories):
         try:
-            text = Path(log).read_text(encoding="utf-8", errors="ignore")
+            return (Path(directory) / "admin-bootstrap-password").read_text(encoding="utf-8").strip()
         except OSError:
             continue
-        found = _re.findall(r"generated password: (\S+)", text)
-        if found:
-            return found[-1]
     return None
 
 

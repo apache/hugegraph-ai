@@ -24,7 +24,12 @@ it lives at the service level where CLI/other shells can reach it. Raises
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import os
+import shutil
+import stat
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -37,12 +42,132 @@ async def builder_save(
     layout: dict[str, Any] | None = None,
     story: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    from .core import load_package
-    from .core import validate as _v
+    """Validate the complete candidate before touching the live package.
+
+    Builder requests share a lock: a failing request must never restore files
+    over another builder's successful save. Staging lives on the same filesystem
+    so each installed file can be replaced atomically. The journal also covers
+    deletes, Cedar/store sidecars, duplicate cleanup and the canvas layout.
+    """
+    from .core import load_package, validate
+    from .errors import DSLValidationError
+    from .layout import LayoutStore
+    from .registry.compiled import compile_package
+
+    lock = getattr(sc, "_builder_save_lock", None)
+    if lock is None:
+        lock = sc._builder_save_lock = asyncio.Lock()
+    async with lock:
+        if sc.package_root is None:
+            raise DSLValidationError("ONTOGENY_PACKAGE_ROOT not configured")
+        pkg_dir = Path(sc.package_root).resolve()
+        if not pkg_dir.is_dir():
+            raise DSLValidationError(f"package dir {pkg_dir} does not exist")
+        if any(path.is_symlink() for path in pkg_dir.rglob("*")):
+            raise DSLValidationError("builder packages must not contain symbolic links")
+        with tempfile.TemporaryDirectory(prefix=".ontogeny-builder-", dir=pkg_dir.parent) as tmp:
+            candidate = Path(tmp) / "package"
+            shutil.copytree(pkg_dir, candidate, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            written, removed = _materialize(candidate, copy.deepcopy(resources), deletes=deletes, story=story)
+            if layout is not None:
+                if (candidate / "layout.yaml").is_symlink():
+                    raise DSLValidationError("layout.yaml must not be a symbolic link")
+                LayoutStore(str(candidate)).write(layout)
+            pkg = load_package(candidate)
+            report = validate(pkg)
+            if not report.ok:
+                raise DSLValidationError(
+                    "builder package failed validation",
+                    details={
+                        "issues": [
+                            {"code": i.code, "resource": i.resource, "message": i.message}
+                            for i in report.issues
+                            if i.severity == "error"
+                        ]
+                    },
+                )
+            # Compilation reads function/policy sidecars too, so failures here
+            # must still leave the original package completely untouched.
+            compile_package(pkg)
+            before = _entries(pkg_dir)
+            after = _entries(candidate)
+            changed = {p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
+            directories = {p for p in pkg_dir.rglob("*") if p.is_dir() and not p.is_symlink()}
+            try:
+                _install(pkg_dir, after, changed)
+                compiled = await sc.publish(str(pkg_dir), created_by="builder")
+            except BaseException:
+                _install(pkg_dir, before, changed)
+                for directory in sorted(
+                    (p for p in pkg_dir.rglob("*") if p.is_dir() and not p.is_symlink()),
+                    key=lambda p: len(p.parts),
+                    reverse=True,
+                ):
+                    if directory not in directories:
+                        directory.rmdir()
+                raise
+        return {
+            "published": True,
+            "content_hash": compiled.content_hash,
+            "written": written,
+            "removed": removed,
+            "issues": [{"code": i.code, "severity": i.severity, "message": i.message} for i in report.issues],
+        }
+
+
+# A journal entry preserves bytes, permission bits and symlink targets; symlinks
+# are never followed while taking the snapshot or installing a replacement.
+def _entries(root: Path) -> dict[Path, tuple[bool, bytes | str, int]]:
+    entries = {}
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = [name for name in dirs if name not in {".git", "__pycache__"}]
+        symlinks = [name for name in dirs if (Path(directory) / name).is_symlink()]
+        dirs[:] = [name for name in dirs if name not in symlinks]
+        for name in [*[name for name in files if name not in {".git", "__pycache__"}], *symlinks]:
+            path = Path(directory) / name
+            link = path.is_symlink()
+            entries[path.relative_to(root)] = (
+                link,
+                os.readlink(path) if link else path.read_bytes(),
+                stat.S_IMODE(path.lstat().st_mode),
+            )
+    return entries
+
+
+def _install(root: Path, entries: dict[Path, tuple[bool, bytes | str, int]], changed: set[Path]) -> None:
+    for relative in sorted(changed):
+        path = root / relative
+        entry = entries.get(relative)
+        if entry is None:
+            path.unlink(missing_ok=True)
+            continue
+        link, content, mode = entry
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                if not link:
+                    stream.write(content)
+            if link:
+                os.unlink(temporary)
+                os.symlink(content, temporary)
+            else:
+                os.chmod(temporary, mode)
+            os.replace(temporary, path)
+        finally:
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
+
+
+def _materialize(
+    pkg_dir: Path,
+    resources: list[dict[str, Any]],
+    *,
+    deletes: list[str] | None,
+    story: list[dict[str, Any]] | None,
+) -> tuple[list[str], list[str]]:
     from .core.models import RESOURCE_BY_KIND
     from .errors import DSLValidationError
-
-    body = _Body(resources=resources, deletes=deletes, layout=layout, story=story)
 
     """Scenario Builder: accept resource JSON → write YAML to pkg dir → publish.
 
@@ -53,11 +178,6 @@ async def builder_save(
     """
     import yaml as _yaml
 
-    if sc.package_root is None:
-        raise DSLValidationError("ONTOGENY_PACKAGE_ROOT not configured")
-    pkg_dir = Path(sc.package_root)
-    if not pkg_dir.is_dir():
-        raise DSLValidationError(f"package dir {pkg_dir} does not exist")
     # every request-supplied name below is normalized and containment-checked
     # against this root before it may touch the filesystem
     pkg_r = os.path.realpath(str(pkg_dir))
@@ -261,31 +381,4 @@ async def builder_save(
                 if fp != preferred:
                     fp.unlink()
 
-    # reload from disk and publish
-    compiled = await sc.publish(str(pkg_dir), created_by="builder")
-
-    # the layout is committed alongside the model: a drag is an edit like
-    # any other, so it lands on disk only when the user saves
-    if layout is not None:
-        sc.write_layout(body.layout)
-
-    # run validation report for the response
-    rep = _v(load_package(str(pkg_dir)))
-    return {
-        "published": True,
-        "content_hash": compiled.content_hash,
-        "written": written,
-        "removed": removed,
-        "issues": [{"code": i.code, "severity": i.severity, "message": i.message} for i in rep.issues],
-    }
-
-
-class _Body:
-    """Keyword bag so the moved implementation reads exactly as it did inside
-    the HTTP handler (body.resources / body.deletes / body.layout)."""
-
-    def __init__(self, resources, deletes, layout, story):
-        self.resources = resources
-        self.deletes = deletes
-        self.layout = layout
-        self.story = story
+    return written, removed

@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 
 from ..errors import ExpressionError
 from . import expr as _expr
+from .function_entry import function_entry_file, resolve_function_entry
 from .loader import OntologyPackage
 from .models import (
     ActionResource,
@@ -40,6 +41,7 @@ from .models import (
     ModifyLinkedEffect,
     ModifyTargetEffect,
     ObjectTypeResource,
+    PolicySetResource,
     SetLinkEffect,
     WebhookEffect,
 )
@@ -144,7 +146,6 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
     actions = {a.metadata.name: a for a in pkg.actions()}
     policies = {p.metadata.name: p for p in pkg.policies()}
     stores = {s.metadata.name: s for s in pkg.stores()}
-    functions = {f.metadata.name: f for f in pkg.functions()}
 
     # ---- duplicates -------------------------------------------------------
     seen: set[tuple[str, str]] = set()
@@ -172,8 +173,16 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
             p = obj.spec.properties.get(pk)
             if p is None:
                 rep.error("PK-UNKNOWN", res_id, f"primaryKey {pk!r} is not a property")
-            elif not p.required:
-                rep.error("PK-REQUIRED", res_id, f"primaryKey {pk!r} must be required")
+            else:
+                if not p.required:
+                    rep.error("PK-REQUIRED", res_id, f"primaryKey {pk!r} must be required")
+                if p.marking:
+                    rep.error(
+                        "PK-MARKING",
+                        res_id,
+                        f"primary key {pk!r} cannot carry marking {p.marking!r}: object IDs are exposed; "
+                        "use an unmarked surrogate key and move the sensitive value to a marked non-key property",
+                    )
         b = obj.spec.backing
         if b is not None:
             if b.store not in stores:
@@ -292,12 +301,19 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
 
     _check_col_collisions(pkg, rep)
 
+    from ..policy.engine import _policy_text, _statement_matches, parse_forbids
+
     # ---- policies: resource-scoped statements are unsupported, fail closed -
     for pol in pkg.policies():
         text = pkg.sidecar_text("PolicySet", pol.metadata.name, pol.spec.source)
         import re as _re2
 
-        for m2 in _re2.finditer(r"(?:permit|forbid)\s*\([^)]*,\s*([^,)]+)\s*\)", text, _re2.S):
+        try:
+            clean, quoted = _policy_text(text)
+        except ValueError:
+            continue  # reported by the fail-closed policy check below
+        pattern = _re2.compile(r"(?:permit|forbid)\s*\([^)]*,\s*([^,)]+)\s*\)", _re2.S)
+        for m2 in _statement_matches(clean, quoted, pattern):
             res = m2.group(1).strip()
             if res not in ("resource", "*"):
                 rep.error(
@@ -310,12 +326,16 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
     # ---- policies: unparseable forbid must not ride silently --------------
     import re as _re
 
-    from ..policy.engine import parse_forbids
-
     for pol in pkg.policies():
         text = pkg.sidecar_text("PolicySet", pol.metadata.name, pol.spec.source)
-        authored = len(_re.findall(r"\bforbid\s*\(", text))
-        if authored and authored != len(parse_forbids(text)):
+        try:
+            clean, quoted = _policy_text(text)
+            authored = sum(1 for match in _re.finditer(r"\bforbid\s*\(", clean) if match.start() not in quoted)
+            parsed = len(parse_forbids(text))
+        except ValueError as exc:
+            rep.error("POLICY-FORBID", f"PolicySet/{pol.metadata.name}", f"invalid policy comments: {exc}")
+            continue
+        if authored != parsed:
             rep.error(
                 "POLICY-FORBID",
                 f"PolicySet/{pol.metadata.name}",
@@ -330,7 +350,7 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         if target is None:
             rep.error("ACTION-TARGET", res_id, f"target {act.spec.target!r} is not an ObjectType")
             continue
-        _validate_action_against(pkg, rep, act, target, objects, links, policies, functions)
+        _validate_action_against(rep, act, target, objects, links, policies)
 
     # ---- functions --------------------------------------------------------
     for fn in pkg.functions():
@@ -342,6 +362,12 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 rep.error("FN-CAP", res_id, f"unknown capability keys {sorted(bad)}")
         for issue in _validate_function_body(fn):
             rep.error(issue[0], res_id, issue[1])
+        if fn.spec.runtime == "python":
+            try:
+                resolve_function_entry(pkg.root, fn.spec.entry)
+            except ValueError as exc:
+                if not any(i.code == "FN-ENTRY" and i.resource == res_id for i in rep.issues):
+                    rep.error("FN-ENTRY", res_id, str(exc))
 
     # ---- projections ------------------------------------------------------
     #
@@ -489,8 +515,10 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
     spec = fn.spec
 
     if spec.runtime == "python":
-        if not spec.entry or ":" not in spec.entry:
-            out.append(("FN-ENTRY", "runtime=python needs entry 'file.py:function'"))
+        try:
+            function_entry_file(spec.entry)
+        except ValueError as exc:
+            out.append(("FN-ENTRY", str(exc)))
         if spec.steps:
             out.append(("FN-BODY", "steps are only meaningful for runtime=declarative"))
         return out
@@ -614,14 +642,12 @@ def _strings(value) -> list[str]:
 
 
 def _validate_action_against(
-    pkg: OntologyPackage,
     rep: ValidationReport,
     act: ActionResource,
     target: ObjectTypeResource,
     objects: dict[str, ObjectTypeResource],
     links: dict[str, LinkTypeResource],
-    policies: dict[str, str],
-    functions: dict[str, FunctionResource],
+    policies: dict[str, PolicySetResource],
 ) -> None:
     res_id = f"Action/{act.metadata.name}"
     spec = act.spec
@@ -668,6 +694,8 @@ def _validate_action_against(
             lnk = links.get(eff.link)
             if lnk is None:
                 rep.error("ACTION-LINK", res_id, f"modify-linked references unknown link {eff.link!r}")
+            elif spec.target not in (lnk.spec.source, lnk.spec.target):
+                rep.error("ACTION-LINK-TARGET", res_id, f"modify-linked link {eff.link!r} is not attached to target")
             else:
                 other = lnk.spec.target if lnk.spec.source == spec.target else lnk.spec.source
                 other_obj = objects.get(other)

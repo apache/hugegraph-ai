@@ -37,11 +37,12 @@ import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
-import { I18nProvider } from './i18n'
+import { I18nProvider, useI18n } from './i18n'
 import { AuthProvider, useAuth } from './api/auth'
 import { Login } from './pages/Login'
 import { OntologyDraftProvider } from './pages/ontology/draft'
-import { Skeleton } from './components/ui'
+import { Button, Skeleton } from './components/ui'
+import { ErrorBanner } from './components/ErrorBanner'
 import { Dashboard } from './pages/Dashboard'
 
 /** Everything except the dashboard is loaded on navigation.
@@ -85,8 +86,9 @@ function RouteFallback() {
  * `loading` is its own state: the answer comes from the server, so rendering the
  * login form while the first `/auth/me` is in flight would flash it at every
  * reload for users who are already signed in. */
-function RequireAuth() {
-  const { principal, loading } = useAuth()
+export function RequireAuth() {
+  const { principal, loading, error, refresh } = useAuth()
+  const { t } = useI18n()
   if (loading) {
     return (
       <div className="grid min-h-full place-items-center" style={{ background: 'var(--surface-app)' }}>
@@ -94,8 +96,19 @@ function RequireAuth() {
       </div>
     )
   }
+  if (error) {
+    return (
+      <div className="grid min-h-full place-items-center p-4" style={{ background: 'var(--surface-app)' }}>
+        <div className="w-full max-w-[380px]" role="alert">
+          <p className="mb-3">{t('auth.unavailable')}</p>
+          <ErrorBanner error={error} />
+          <Button className="mt-3" onClick={() => void refresh()}>{t('auth.retry')}</Button>
+        </div>
+      </div>
+    )
+  }
   if (!principal) return <Login />
-  return <Router />
+  return <OntologyDraftProvider key={principal.id} storageScope={principal.id}><Router /></OntologyDraftProvider>
 }
 
 export function Router() {
@@ -164,11 +177,7 @@ export default function App() {
             fetched or rendered until an account is signed in */}
         <BrowserRouter>
           <AuthProvider>
-            {/* one editing session above the router: Knowledge and Action share
-                a draft, so a rename on one page is visible on the other */}
-            <OntologyDraftProvider>
-              <RequireAuth />
-            </OntologyDraftProvider>
+            <RequireAuth />
           </AuthProvider>
         </BrowserRouter>
       </I18nProvider>

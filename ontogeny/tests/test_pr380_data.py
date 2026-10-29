@@ -47,7 +47,7 @@ class TestProjectionKeysetBackfill:
                         "shifts_per_day": 1,
                         "status": "ACTIVE",
                     },
-                    dt.datetime.now(dt.timezone.utc),
+                    dt.datetime.now(dt.UTC),
                 )
                 await s.commit()
 
@@ -147,18 +147,21 @@ class TestAdminLockout:
         out = await sc.auth.update_user("admin2", {"is_admin": False})
         assert out["is_admin"] is False
 
-    async def test_ensure_admin_self_heals_disabled_bootstrap(self, client):
+    async def test_ensure_admin_does_not_reactivate_disabled_bootstrap(self, client):
         _c, sc = client
-        # 直接把 root 停用（绕过守卫模拟历史脏数据），ensure_admin 应复活它而非崩溃
+        # Simulate an inconsistent database without an active administrator.
         from sqlalchemy import update
 
         from ontogeny.auth.models import UserRow
+        from ontogeny.errors import ConflictError
 
         async with sc.sessionmaker() as s:
             await s.execute(update(UserRow).values(status="disabled"))
             await s.commit()
-        user = await sc.auth.ensure_admin()
-        assert user is not None and user["is_admin"] is True and user["status"] == "active"
+        with pytest.raises(ConflictError, match="no active administrator"):
+            await sc.auth.ensure_admin()
+        users = await sc.auth.list_users()
+        assert next(u for u in users if u["username"] == "admin")["status"] == "disabled"
 
 
 class TestBoundedReads:

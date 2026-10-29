@@ -33,8 +33,8 @@ limitations under the License.
  */
 import { defineConfig } from 'vitest/config'
 
-/** Integration suite: runs against the REAL backend spawned in globalSetup
- * (sqlite data plane + manufacturing example + live Ollama assistant). */
+/** Integration suite: runs against the backend spawned in globalSetup with
+ * the SQLite manufacturing example. Live Ollama tests require a provider. */
 export default defineConfig({
   test: {
     environment: 'node',

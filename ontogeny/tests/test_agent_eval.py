@@ -23,9 +23,15 @@ from __future__ import annotations
 
 import shutil
 
+import httpx
 import pytest_asyncio
+from sqlalchemy import func, select
 
+from ontogeny.action.models import OutboxRow, RevisionRow
+from ontogeny.agent.models import AgentSessionRow, AgentStepRow
 from ontogeny.config import Settings
+from ontogeny.core import load_package
+from ontogeny.core.models import FunctionExecution
 from ontogeny.demo import seed_from_package
 from ontogeny.service import ServiceContext
 
@@ -95,6 +101,88 @@ async def sc(golden_pkg_path, tmp_path):
 
 
 class TestAgentEval:
+    async def test_eval_writes_only_to_isolated_snapshots(self, sc, monkeypatch):
+        suite = sc.compiled.eval_suites["planning-suite"].model_copy(deep=True)
+        suite.spec.agents.append(suite.spec.agents[0].model_copy(deep=True))
+        suite.spec.agents[1].name = "second-independent-case"
+
+        async def forbidden(*args, **kwargs):
+            raise AssertionError("evaluation used the live broker/runtime")
+
+        monkeypatch.setattr(sc.agents, "call_tool", forbidden)
+        monkeypatch.setattr(sc.runtime, "execute", forbidden)
+        async with sc.sessionmaker() as s:
+            before = await sc.repo.get(s, "production-order", "PO-1002")
+            counts = [
+                await s.scalar(select(func.count()).select_from(m))
+                for m in (RevisionRow, OutboxRow, AgentSessionRow, AgentStepRow)
+            ]
+            first = await sc.eval_runner.run(s, suite)
+            second = await sc.eval_runner.run(s, suite)
+            assert [c["outcomes"] for c in first["cases"]] == [["ok", "ok"], ["ok", "ok"]]
+            assert [c["replay"] for c in first["cases"]] == [c["replay"] for c in second["cases"]]
+            assert all(c["ok"] for c in first["cases"] + second["cases"])
+            assert await sc.repo.get(s, "production-order", "PO-1002") == before
+            assert counts == [
+                await s.scalar(select(func.count()).select_from(m))
+                for m in (RevisionRow, OutboxRow, AgentSessionRow, AgentStepRow)
+            ]
+
+    async def test_candidate_action_rules_are_used(self, sc):
+        suite = sc.compiled.eval_suites["planning-suite"]
+        candidate = load_package(sc.package_root)
+        action = candidate.find("Action", "release-production-order")
+        action.spec.rules[0].expr = "false"
+        async with sc.sessionmaker() as s:
+            report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
+        assert not report["cases"][0]["ok"]
+        assert report["cases"][0]["actual"] == ["ok", "rejected"]
+
+    async def test_webhook_effect_is_never_delivered(self, sc, monkeypatch):
+        candidate = load_package(sc.package_root)
+        action = candidate.find("Action", "release-production-order")
+        next(effect for effect in action.spec.effects if effect.kind == "webhook").when = None
+
+        async def forbidden(*args, **kwargs):
+            raise AssertionError("evaluation attempted an HTTP delivery")
+
+        monkeypatch.setattr(httpx.AsyncClient, "post", forbidden)
+        suite = sc.compiled.eval_suites["planning-suite"]
+        async with sc.sessionmaker() as s:
+            before = await s.scalar(select(func.count()).select_from(OutboxRow))
+            report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
+            assert report["cases"][0]["ok"], report
+            assert await s.scalar(select(func.count()).select_from(OutboxRow)) == before
+
+    async def test_function_backed_action_fails_closed(self, sc):
+        candidate = load_package(sc.package_root)
+        action = candidate.find("Action", "release-production-order")
+        action.spec.execution = FunctionExecution(kind="function", entry="capacity.py:capacity")
+        suite = sc.compiled.eval_suites["planning-suite"]
+        async with sc.sessionmaker() as s:
+            report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
+        assert not report["cases"][0]["ok"]
+        assert "cannot execute function-backed tool" in report["cases"][0]["error"]
+
+    async def test_function_tool_fails_closed(self, sc):
+        candidate = load_package(sc.package_root)
+        candidate.find("AgentPlugin", "planning-copilot").spec.tools.allow.append("call_material_availability")
+        suite = sc.compiled.eval_suites["planning-suite"].model_copy(deep=True)
+        suite.spec.agents[0].script = [{"tool": "call_material_availability", "args": {"parameters": {}}}]
+        async with sc.sessionmaker() as s:
+            report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
+        assert not report["cases"][0]["ok"]
+        assert "cannot execute function-backed tool" in report["cases"][0]["error"]
+
+    async def test_incompatible_candidate_schema_fails_closed(self, sc):
+        candidate = load_package(sc.package_root)
+        candidate.find("ObjectType", "material").spec.properties["unit_cost"].type = "string"
+        suite = sc.compiled.eval_suites["planning-suite"]
+        async with sc.sessionmaker() as s:
+            report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
+        assert not report["cases"][0]["ok"]
+        assert "incompatible eval snapshot" in report["cases"][0]["error"]
+
     async def test_scripted_replay_passes_and_detects_double_apply(self, sc):
         suite = sc.compiled.eval_suites["planning-suite"]
         async with sc.sessionmaker() as s:

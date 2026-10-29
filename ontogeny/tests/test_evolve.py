@@ -228,7 +228,7 @@ class TestEvalRunner:
                     outcome="executed",
                     principal="u-sup",
                     params={},
-                    created_at=_dt.datetime.now(_dt.timezone.utc),
+                    created_at=_dt.datetime.now(_dt.UTC),
                 )
             )
             await s.commit()

@@ -90,7 +90,7 @@ async def collect(sc) -> dict[str, Any]:
         ).one()
         outbox_stats = {"total": int(outbox[0] or 0), "pending": int(outbox[1] or 0)}
     return {
-        "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "generated_at": _dt.datetime.now(_dt.UTC).isoformat(),
         "queries": queries,
         "actions": actions,
         "agent": {**agent_calls, "steps_recorded": steps, "sessions": sessions},

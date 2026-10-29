@@ -29,7 +29,10 @@ Execution semantics (data-layer §3.2):
 from __future__ import annotations
 
 import datetime as _dt
+import math
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -88,6 +91,8 @@ def _coerce_row(
     props: dict[str, PropertyType],
     mapped: dict[str, str],
     raw: dict[str, Any],
+    *,
+    required: set[str] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """raw source row -> typed property dict; on failure return quarantine info."""
     out: dict[str, Any] = {}
@@ -104,6 +109,9 @@ def _coerce_row(
             return None, "TYPE_MISMATCH", exc.message
     for prop in (k for k in mapped if k not in out):
         out[prop] = None
+    missing = sorted(prop for prop in required or () if out.get(prop) is None)
+    if missing:
+        return None, "REQUIRED_PROPERTY", f"required source properties missing/None: {', '.join(missing)}"
     return out, None, None
 
 
@@ -171,10 +179,16 @@ class SyncEngine:
                     raise StoreError("watermark strategy requires watermark.column")
                 after = state.watermark if state and state.watermark else None
 
-            seen_pks: set[str] = set()
+            seen_keys: set[tuple[Any, ...]] = set()
             max_wm: Any = after
+            observed_wm: Any = None
             pk_props = obj.spec.primaryKey
             ptypes = {p: d.ptype() for p, d in obj.spec.properties.items()}
+            required_props = {
+                p
+                for p, definition in obj.spec.properties.items()
+                if definition.required and not definition.derived and p not in pk_props
+            }
 
             rows = source.fetch(
                 backing.source,
@@ -184,14 +198,53 @@ class SyncEngine:
             async for raw in rows:
                 if strategy == "watermark" and watermark_col is not None:
                     wm_val = raw.get(watermark_col)
-                    if wm_val is not None and (max_wm is None or str(wm_val) > str(max_wm)):
-                        max_wm = wm_val
-                props, code, reason = _coerce_row(object_type, ptypes, mapped, raw)
+                    if wm_val is not None:
+                        # Compare the source's native values, never their
+                        # string checkpoints ("10" sorts before "9"). Rows
+                        # returned by a watermark source are >= the checkpoint.
+                        try:
+                            newer = observed_wm is None or wm_val > observed_wm
+                        except TypeError:
+                            newer = str(wm_val) > str(observed_wm)
+                        if newer:
+                            observed_wm = max_wm = wm_val
+                # Presence is independent of whether the other properties can
+                # be coerced. Quarantining an update must preserve the previous
+                # good object, not treat that source row as a snapshot deletion.
+                # Compare complete typed keys: rows sharing the first key
+                # component are still distinct objects. A valid key remains
+                # present even if another field sends this row to quarantine.
+                try:
+                    source_key = tuple(
+                        ptypes[prop].coerce(raw.get(mapped.get(prop, prop)), prop=prop) for prop in pk_props
+                    )
+                except TypeMismatchError:
+                    pass  # an invalid key cannot identify an existing object
+                else:
+                    if all(value is not None for value in source_key):
+                        # SQL timestamp keys round-trip as aware UTC values.
+                        seen_keys.add(
+                            tuple(
+                                value.replace(tzinfo=_dt.UTC)
+                                if isinstance(value, _dt.datetime) and value.tzinfo is None
+                                else value
+                                for value in source_key
+                            )
+                        )
+                props, code, reason = _coerce_row(
+                    object_type,
+                    ptypes,
+                    mapped,
+                    raw,
+                    required=required_props,
+                )
                 pk = None
                 if props is not None:
-                    pk = str(props.get(pk_props[0]))
-                    if pk is None or pk == "None":
+                    key = tuple(props.get(prop) for prop in pk_props)
+                    if any(value is None for value in key):
                         props, code, reason = None, "MISSING_PK", "primary key missing/None"
+                    else:
+                        pk = str(key[0])
                 if props is None:
                     session.add(
                         QuarantineRow(
@@ -204,7 +257,6 @@ class SyncEngine:
                     )
                     summary["quarantined"] += 1
                     continue
-                seen_pks.add(pk)
                 outcome = await self.repo.sync_upsert(session, object_type, props, started)
                 summary[outcome if outcome in summary else "noop"] += 1
                 session.add(
@@ -219,10 +271,10 @@ class SyncEngine:
             # absent-means-archive (snapshot only, unless explicitly disabled)
             deletes = backing.sync.deletes if backing.sync else None
             if strategy == "snapshot" and deletes != "none":
-                alive = await self.repo.alive_ids(session, object_type)
-                for gone in alive - seen_pks:
+                alive = await self.repo.alive_keys(session, object_type)
+                for gone in alive - seen_keys:
                     await self.repo.archive(session, object_type, gone, started)
-                    session.add(OutboxRow(object_type=object_type, object_id=gone, op="archive", payload={}))
+                    session.add(OutboxRow(object_type=object_type, object_id=str(gone[0]), op="archive", payload={}))
                     summary["archived"] += 1
 
             if state is None:
@@ -249,13 +301,27 @@ class SyncEngine:
         return summary
 
 
-def _jsonable(raw: dict[str, Any]) -> dict[str, Any]:
-    import datetime as d
+def _jsonable(value: Any) -> Any:
+    """Keep source diagnostics JSON-safe without losing decimal precision.
 
-    out = {}
-    for k, v in raw.items():
-        if isinstance(v, d.datetime | d.date):
-            out[k] = v.isoformat()
-        else:
-            out[k] = v
-    return out
+    Drivers return native Decimal, UUID, datetime and binary values even for
+    rows rejected by schema coercion. Conversion must recurse through native
+    arrays/JSON too, otherwise one quarantined row can abort the whole sync.
+    """
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, _dt.datetime | _dt.date | _dt.time):
+        return value.isoformat()
+    if isinstance(value, Decimal | UUID):
+        return str(value)
+    if isinstance(value, bytes | bytearray | memoryview):
+        return bytes(value).hex()
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    # Preserve a useful diagnostic for other driver-specific scalar types
+    # (for example intervals/ranges), rather than failing to quarantine them.
+    return str(value)

@@ -32,7 +32,7 @@ limitations under the License.
  * limitations under the License.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 /** Spawns the real Python backend (tests/e2e_server.py), waits for readiness,
@@ -40,6 +40,7 @@ import path from 'node:path'
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const repo = path.resolve(__dirname, '..', '..')
   const marker = path.join(repo, 'web', '.e2e-port')
+  rmSync(marker, { force: true })
   const child: ChildProcess = spawn('.venv/bin/python', ['tests/e2e_server.py'], {
     cwd: repo,
     env: { ...process.env, PYTHONPATH: path.join(repo, 'server') },
@@ -49,44 +50,62 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   let stderr = ''
   child.stderr!.on('data', (d) => (stderr += String(d)))
 
-  const port = await new Promise<number>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`backend not ready in 60s\n${stderr}`)), 60_000)
-    let buf = ''
-    child.stdout!.on('data', (d) => {
-      buf += String(d)
-      const m = /READY (\d+)/.exec(buf)
-      if (m) {
+  const cleanup = async () => {
+    rmSync(marker, { force: true })
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => child.kill('SIGKILL'), 5_000)
+      child.once('exit', () => {
         clearTimeout(timer)
-        resolve(Number(m[1]))
-      }
+        resolve()
+      })
+      child.kill('SIGTERM')
     })
-    child.on('exit', (code) => {
-      clearTimeout(timer)
-      reject(new Error(`backend exited early (${code})\n${stderr}`))
-    })
-  })
-
-  const base = `http://127.0.0.1:${port}`
-  const deadline = Date.now() + 90_000
-  let ok = false
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`${base}/api/v1/meta/ontology`)
-      if (r.ok) {
-        ok = true
-        break
-      }
-    } catch {
-      /* retry */
-    }
-    await new Promise((r) => setTimeout(r, 500))
   }
-  if (!ok) throw new Error(`backend on :${port} never became healthy\n${stderr}`)
 
-  writeFileSync(marker, String(port))
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`backend not ready in 60s\n${stderr}`)), 60_000)
+      let buf = ''
+      child.stdout!.on('data', (d) => {
+        buf += String(d)
+        const m = /READY (\d+)/.exec(buf)
+        if (m) {
+          clearTimeout(timer)
+          resolve(Number(m[1]))
+        }
+      })
+      child.on('exit', (code) => {
+        clearTimeout(timer)
+        reject(new Error(`backend exited early (${code})\n${stderr}`))
+      })
+      child.on('error', (error) => {
+        clearTimeout(timer)
+        reject(error)
+      })
+    })
 
-  return async () => {
-    child.kill('SIGTERM')
-    await new Promise((r) => setTimeout(r, 300))
+    const base = `http://127.0.0.1:${port}`
+    const deadline = Date.now() + 90_000
+    let ok = false
+    while (Date.now() < deadline) {
+      try {
+        const r = await fetch(`${base}/api/v1/meta/ontology`)
+        if (r.ok) {
+          ok = true
+          break
+        }
+      } catch {
+        /* retry */
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    if (!ok) throw new Error(`backend on :${port} never became healthy\n${stderr}`)
+
+    writeFileSync(marker, String(port))
+    return cleanup
+  } catch (error) {
+    await cleanup()
+    throw error
   }
 }

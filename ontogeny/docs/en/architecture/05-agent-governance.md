@@ -58,6 +58,8 @@ spec:
 
 The console's "Agent sessions" page visualizes plugins, session traces and the approval queue. **Agent-eval**: runs evaluations over plugin sessions (tool-selection correctness) to prevent behavioral regressions.
 
+Approval authorization evaluates the stored, unmasked target state for the human reviewer. Marking masks apply to reader responses; approval does not replace the plugin identity's independent execution-policy check.
+
 ## 5.1 Three doors: the three ways to reach the ontology from outside
 
 External consumers reach the ontology through three channels; **the permission gate is the same policy engine (adjudicating by identity), and the session is not a gate but a safety device for autonomous runs**: a one-off data fetch uses ①②; letting an agent run a complete task autonomously (multi-step, possibly writing, requiring a trace) needs ③ to wrap the run in budgets and approvals.

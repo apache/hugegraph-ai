@@ -68,7 +68,7 @@ import { MutationDiff } from '../components/MutationDiff'
 import { StepTimeline } from './agent/panels'
 import { statusTone } from './agent/tone'
 import { IconChat, IconPlay, IconRefresh, IconRoute, IconSend, IconSpark, IconShield } from '../components/icons'
-import type { Mutation } from '../api/types'
+import type { AgentSession, Mutation } from '../api/types'
 
 type Mode = 'propose' | 'qa' | 'agent'
 
@@ -136,6 +136,7 @@ export function AgentConsoleBody({ className, flush = false, presetSessionId = n
   const [logs, setLogs] = useState<Record<Mode, Item[]>>({ propose: [], qa: [], agent: [] })
   const [input, setInput] = useState('')
   const [target, setTarget] = useState('')
+  const [openedSession, setOpenedSession] = useState<AgentSession | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
 
   const plugins = useQuery({ queryKey: ['agent-plugins'], queryFn: apiClient.agentPlugins })
@@ -178,7 +179,6 @@ export function AgentConsoleBody({ className, flush = false, presetSessionId = n
         kind: 'msg', id: uid(), role: 'assistant', content: reply.content,
         thinking: reply.thinking ?? null, proposals: (reply.proposals as Mutation[]) ?? null,
       })
-      setInput('')
       scrollDown()
     },
   })
@@ -189,12 +189,17 @@ export function AgentConsoleBody({ className, flush = false, presetSessionId = n
         const plugin = chosen.slice(4)
         const s = await apiClient.agentOpenSession(plugin, task)
         push('agent', { kind: 'run', id: uid(), sessionId: s.id, plugin: s.plugin, task: s.task })
+        // Opening succeeded even if dispatch later fails. Keep the created
+        // session selected so a retry resumes it instead of creating another.
+        setOpenedSession(s)
+        setTarget(`s:${s.id}`)
+        void qc.invalidateQueries({ queryKey: ['agent-sessions'] })
         await apiClient.agentRun(s.id)
         return
       }
       const id = Number(chosen.slice(2))
-      const known = rows.find((s) => s.id === id)
-      if (!known) return
+      const known = rows.find((s) => s.id === id) ?? (openedSession?.id === id ? openedSession : undefined)
+      if (!known) throw new Error(`Session ${id} is no longer available`)
       if (!logs.agent.some((it) => it.kind === 'run' && it.sessionId === id)) {
         push('agent', { kind: 'run', id: uid(), sessionId: known.id, plugin: known.plugin, task: known.task })
       }
@@ -203,8 +208,8 @@ export function AgentConsoleBody({ className, flush = false, presetSessionId = n
       // is re-opened by the run endpoint for this new instruction
       await apiClient.agentRun(id, task)
     },
-    onSuccess: () => {
-      setInput('')
+    onSuccess: (_out, payload) => {
+      setInput((current) => current.trim() === payload.task ? '' : current)
       scrollDown()
       qc.invalidateQueries({ queryKey: ['agent-sessions'] })
       // the drive is dispatched: refresh every mounted run card so its status
@@ -216,7 +221,8 @@ export function AgentConsoleBody({ className, flush = false, presetSessionId = n
   // default the agent target to the first plugin as soon as the catalogue lands
   const targetOptions = [
     ...declared.map((p) => ({ value: `new:${p.name}`, label: t('agent.composer.newSession', { plugin: p.name }) })),
-    ...rows.map((s) => ({ value: `s:${s.id}`, label: t('agent.composer.session', { id: s.id, task: s.task || '—' }) })),
+    ...[...rows, ...(openedSession && !rows.some((s) => s.id === openedSession.id) ? [openedSession] : [])]
+      .map((s) => ({ value: `s:${s.id}`, label: t('agent.composer.session', { id: s.id, task: s.task || '—' }) })),
   ]
   const effectiveTarget = target || targetOptions[0]?.value || ''
 
@@ -390,7 +396,7 @@ export function AgentConsoleBody({ className, flush = false, presetSessionId = n
       </Card>
 
       {chat.error ? <ErrorBanner error={chat.error} hint={t('assistant.notConfigured')} /> : null}
-      {openRun.error ? <ErrorBanner error={openRun.error} hint={t('agent.llmMissing')} /> : null}
+      {openRun.error ? <ErrorBanner error={openRun.error} /> : null}
     </div>
   )
 }
@@ -531,6 +537,8 @@ function AgentRunCard({ sessionId, plugin, task }: { sessionId: number; plugin: 
           ) : null}
         </div>
         <p className="mt-2 text-[12.5px] secondary-text">{task}</p>
+        {session.error ? <ErrorBanner error={session.error} /> : null}
+        {finish.error ? <ErrorBanner error={finish.error} /> : null}
 
         <div className="mt-3">
           <div className="mb-2 flex items-center justify-between">

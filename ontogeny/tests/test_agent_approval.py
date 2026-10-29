@@ -37,6 +37,7 @@ import json
 import shutil
 
 import httpx
+import pytest
 import pytest_asyncio
 
 from ontogeny.agent.models import AgentApprovalRow
@@ -99,8 +100,15 @@ async def client(golden_pkg_path, tmp_path):
         await sc.sync(t)
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, sc
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers=_hdr({"id": "agent-driver"}),
+    ) as c:
+        try:
+            yield c, sc
+        finally:
+            await sc.engine.dispose()
 
 
 async def _pending_approval(c) -> dict:
@@ -179,9 +187,48 @@ class TestApprovalGate:
             headers=_hdr(VISITOR),
         )
         assert r.status_code == 403
-        # and the approval is consumed as rejected, not left dangling
+        # An unauthorized caller cannot consume someone else's pending intent.
         approvals = (await c.get("/api/v1/agent/approvals")).json()["approvals"]
-        assert approvals == []
+        assert [a["id"] for a in approvals] == [pending["approval_id"]]
+        assert approvals[0]["status"] == "pending"
+
+    @pytest.mark.parametrize("decision", ["approved", "rejected"])
+    async def test_guessed_approval_id_cannot_change_state_or_budget(self, client, decision):
+        c, sc = client
+        pending = await _pending_approval(c)
+        sid = pending["session"]["id"]
+        before = await sc.agents.get_session(sid)
+        response = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": decision},
+            headers=_hdr(VISITOR),
+        )
+        assert response.status_code == 403
+        after = await sc.agents.get_session(sid)
+        assert after["budget"] == before["budget"]
+        async with sc.sessionmaker() as db:
+            approval = await db.get(AgentApprovalRow, pending["approval_id"])
+            assert approval.status == "pending"
+            assert approval.decided_by is None
+            assert approval.decided_at is None
+        # A different user with the action's permit may still decide it.
+        authorized = await c.post(
+            f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
+            json={"decision": decision},
+            headers=_hdr(PLANNER),
+        )
+        assert authorized.status_code == 200
+        assert authorized.json()["status"] == ("executed" if decision == "approved" else "rejected")
+
+    async def test_driver_may_reject_but_cannot_approve_without_action_permit(self, client):
+        c, sc = client
+        pending = await _pending_approval(c)
+        decision_url = f"/api/v1/agent/approvals/{pending['approval_id']}/decision"
+        # The fixture driver owns the session but does not hold a planner role.
+        assert (await c.post(decision_url, json={"decision": "approved"})).status_code == 403
+        assert (await c.post(decision_url, json={"decision": "rejected"})).status_code == 200
+        sess = await sc.agents.get_session(pending["session"]["id"])
+        assert sess["budget"]["writes_used"] == 0
 
     async def test_decision_is_single_shot(self, client):
         c, _ = client
@@ -297,8 +344,15 @@ async def auto_client(golden_pkg_path, tmp_path):
         await sc.sync(t)
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, sc
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers=_hdr({"id": "agent-driver"}),
+    ) as c:
+        try:
+            yield c, sc
+        finally:
+            await sc.engine.dispose()
 
 
 class TestAutoApproval:

@@ -156,7 +156,7 @@ export function ObjectsBrowserBody({ type, onNavigate }: {
           <Button
             variant="primary"
             data-testid="apply-filter"
-            onClick={() => { setPage(0); setApplied(buildFilter(conditions)) }}
+            onClick={() => { setPage(0); setApplied(buildFilter(conditions, objMeta.properties)) }}
           >
             {t('common.apply')}
           </Button>

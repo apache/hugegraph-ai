@@ -14,15 +14,15 @@
 | 指标 | 值 |
 |---|---|
 | DSL 资源 | 11 种 |
-| API 操作 | 79 个 |
+| API 操作 | 实时契约：`/openapi.json` |
 | 前端路由 | 15 页 + 9 条兼容重定向 |
 | 动作效果 | 7 类 |
 | outbox 消费者 | 4 路 |
 | 策略 | Cedar 子集 |
 | 图引擎 | Apache HugeGraph |
-| 真源 | Git 声明式 YAML |
+| 模型真源 | Git 声明式 YAML |
 | LLM | Ollama（可换） |
-| 测试 | 456 后端 · 241 前端 · 8 E2E |
+| 测试 | 后端、前端及 E2E 结果见 [CI](../../../.github/workflows/ontogeny-ci.yml) |
 
 ## 第一部分 · 架构文档（PART I · ARCHITECTURE）
 
@@ -52,4 +52,4 @@
 
 ---
 
-源文件索引：DSL `server/ontogeny/core/{models,loader,validator,linter,expr,types}.py` · 注册表 `server/ontogeny/registry/{compiled,store}.py` · 数据 `server/ontogeny/stores/{ddl,repo,sync,sources}.py` · 动力学 `server/ontogeny/action/{runtime,outbox,models}.py` · 策略 `server/ontogeny/policy/engine.py` · 读路径 `server/ontogeny/engine/service.py` · 函数 `server/ontogeny/functions/{sandbox,child,derivation}.py` · Agent `server/ontogeny/agent/{broker,catalog,models}.py` · `mcp_server.py` · 进化 `server/ontogeny/evolve/{diagnoser,proposer,evalrunner,promoter}.py` · 遥测 `server/ontogeny/telemetry/service.py` · 投影 `server/ontogeny/projection/{compiler,hugegraph}.py` · LLM `server/ontogeny/llm/ollama.py` · 服务组合 `server/ontogeny/service.py` · `api/app.py` · `cli.py`。
+源文件索引：DSL `server/ontogeny/core/{models,loader,validator,linter,expr,types}.py` · 注册表 `server/ontogeny/registry/{compiled,store}.py` · 数据 `server/ontogeny/stores/{ddl,repo,sync,sources}.py` · 动力学 `server/ontogeny/action/{runtime,outbox,models}.py` · 策略 `server/ontogeny/policy/engine.py` · 读路径 `server/ontogeny/engine/service.py` · 函数 `server/ontogeny/functions/{sandbox,child,derivation}.py` · Agent `server/ontogeny/agent/{broker,catalog,models}.py` · `mcp_server.py` · 进化 `server/ontogeny/evolve/{diagnoser,proposer,evalrunner,promoter}.py` · 遥测 `server/ontogeny/telemetry/service.py` · 投影 `server/ontogeny/projection/{compiler,worker}.py` + `extensions/graph-hugegraph/` · LLM `extensions/llm-ollama/` · 服务组合 `server/ontogeny/service.py` · `api/app.py` · `cli.py`。

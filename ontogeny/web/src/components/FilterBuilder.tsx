@@ -58,16 +58,22 @@ const OPS = [
 let nextId = 1
 
 /** Compiles UI conditions into the JSON filter AST the backend expects. */
-export function buildFilter(conditions: Condition[]): unknown {
+export function buildFilter(conditions: Condition[], fields: Record<string, { type: string }> = {}): unknown {
   const active = conditions.filter((c) =>
     c.field.trim() === '' ? false : c.op === 'isnull' ? true : c.value.trim() !== '',
   )
   if (active.length === 0) return undefined
   const clauses = active.map((c) => {
     if (c.op === 'isnull') return { field: c.field, op: 'eq', value: null }
-    let value: unknown = c.value
-    if (c.op === 'in') value = c.value.split(',').map((s) => s.trim()).filter(Boolean)
-    else if (/^-?\d+(\.\d+)?$/.test(c.value.trim())) value = Number(c.value)
+    const convert = (raw: string): string | number | boolean => {
+      const type = fields[c.field]?.type ?? ''
+      if (/^(integer|decimal)(\(|$)/.test(type) && /^-?\d+(\.\d+)?$/.test(raw.trim())) return Number(raw)
+      if (type === 'boolean' && /^(true|false)$/i.test(raw.trim())) return raw.trim().toLowerCase() === 'true'
+      return raw
+    }
+    const value = c.op === 'in'
+      ? c.value.split(',').map((s) => s.trim()).filter(Boolean).map(convert)
+      : convert(c.value)
     return { field: c.field, op: c.op, value }
   })
   return clauses.length === 1 ? clauses[0] : { and: clauses }

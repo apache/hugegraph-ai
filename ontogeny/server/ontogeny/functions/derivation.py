@@ -37,12 +37,26 @@ Contract (docs/implementation.md §5.9):
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+import secrets
+
+from sqlalchemy import String, delete, select
+from sqlalchemy.orm import Mapped, mapped_column
 
 from ..action.models import OutboxRow
+from ..db import Base
 from ..stores.repo import ObjectRepository, utcnow
 
 log = logging.getLogger("ontogeny.derive")
+
+
+class DerivationPendingRow(Base):
+    """Durable invalidation, written in the outbox consumer's transaction."""
+
+    __tablename__ = "ontogeny_derivation_pending"
+
+    object_type: Mapped[str] = mapped_column(String(255), primary_key=True)
+    object_id: Mapped[str] = mapped_column(String(500), primary_key=True)
+    generation: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
 class DerivationWorker:
@@ -51,7 +65,6 @@ class DerivationWorker:
         self.repo = repo
         self.sandbox = sandbox
         self.session_factory = session_factory
-        self._pending: dict[str, set[str]] = defaultdict(set)
 
     # ------------------------------------------------------------------ plan
 
@@ -83,7 +96,7 @@ class DerivationWorker:
                     out.setdefault(trigger, set()).add(name)
         return out
 
-    async def handle_event(self, event: OutboxRow) -> bool:
+    async def handle_event(self, event: OutboxRow, session=None) -> bool:
         """Outbox consumer: queue recompute for the owning object types.
 
         A cross-object derivation (a count over another type's rows) must
@@ -94,15 +107,35 @@ class DerivationWorker:
         parse out of sandboxed code; owner tables in an operational ontology
         are small enough that wholesale recompute is the correct trade.
         """
+        if session is None:
+            async with self.session_factory() as s:
+                result = await self.handle_event(event, s)
+                await s.commit()
+                return result
         if not event.object_type:
             return True
         owners = self._trigger_map().get(event.object_type) or set()
         for owner in owners:
             if owner == event.object_type:
-                self._pending[owner].add(str(event.object_id))
+                ids = {str(event.object_id)}
             else:
-                async with self.session_factory() as s:
-                    self._pending[owner] |= await self.repo.alive_ids(s, owner)
+                ids = {str(oid) for oid in await self.repo.alive_ids(session, owner)}
+            # SQLite and PostgreSQL support atomic upsert; a fresh token also
+            # prevents an old worker from deleting a later invalidation (ABA).
+            if session.bind.dialect.name == "sqlite":
+                from sqlalchemy.dialects.sqlite import insert
+            elif session.bind.dialect.name == "postgresql":
+                from sqlalchemy.dialects.postgresql import insert
+            else:
+                raise RuntimeError("durable derivation queue requires SQLite or PostgreSQL")
+            values = [{"object_type": owner, "object_id": str(oid), "generation": secrets.token_hex(16)} for oid in ids]
+            for start in range(0, len(values), 300):
+                stmt = insert(DerivationPendingRow).values(values[start : start + 300])
+                await session.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=["object_type", "object_id"], set_={"generation": stmt.excluded.generation}
+                    )
+                )
         return True
 
     async def drain(self) -> dict[str, int]:
@@ -110,34 +143,59 @@ class DerivationWorker:
         `POST /admin/derive`. Returns per-type processed counts."""
         counts: dict[str, int] = {}
         for object_type, props in self.targets().items():
-            ids = self._pending.pop(object_type, set())
-            if not ids:
+            async with self.session_factory() as s:
+                pending = (
+                    (
+                        await s.execute(
+                            select(DerivationPendingRow).where(DerivationPendingRow.object_type == object_type)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                generations = {row.object_id: row.generation for row in pending}
+            if not generations:
                 continue
+            complete = set(generations)
             for prop, entry in props:
-                done = await self._compute(object_type, prop, entry, sorted(ids))
+                done, succeeded = await self._compute(object_type, prop, entry, generations)
+                complete &= succeeded
                 counts[f"{object_type}.{prop}"] = done
+            async with self.session_factory() as s:
+                for oid in complete:
+                    await s.execute(
+                        delete(DerivationPendingRow).where(
+                            DerivationPendingRow.object_type == object_type,
+                            DerivationPendingRow.object_id == oid,
+                            DerivationPendingRow.generation == generations[oid],
+                        )
+                    )
+                await s.commit()
         return counts
 
     # ------------------------------------------------------------- computing
 
-    async def _compute(self, object_type: str, prop: str, entry: str, ids: list[str]) -> int:
+    async def _compute(
+        self, object_type: str, prop: str, entry: str, generations: dict[str, str]
+    ) -> tuple[int, set[str]]:
         fn = self._fn_for(object_type, entry)
         if fn is None:
             log.warning("function-derived %s.%s: entry %r not found", object_type, prop, entry)
-            return 0
+            return 0, set()
         obj = self.compiled.objects[object_type]
         pdef = obj.spec.properties[prop]
         object_param = pdef.derived_object_param()
         pk = obj.spec.primaryKey[0]
 
         async with self.session_factory() as s:
-            rows = await self.repo.get_many(s, object_type, ids)
+            rows = await self.repo.get_many(s, object_type, list(generations))
         if not rows:
-            return 0
+            return 0, set(generations)
 
         from ..engine.service import assemble_row
 
         assembled = [assemble_row(self.compiled, object_type, row) for row in rows]
+        succeeded = set(generations) - {str(row[pk]) for row in assembled}
 
         done = 0
         ts = utcnow()
@@ -149,16 +207,33 @@ class DerivationWorker:
                 values = await self.sandbox.map_rows(s, fn, assembled, {}, object_param=object_param)
             except Exception as exc:
                 log.warning("derivation %s.%s failed for %d rows: %s", object_type, prop, len(rows), exc)
-                return 0
+                return 0, set()
+            if len(values) != len(assembled):
+                log.warning(
+                    "derivation %s.%s returned %d values for %d rows", object_type, prop, len(values), len(rows)
+                )
+                return 0, set()
             for row_id, value in zip([r[pk] for r in assembled], values, strict=False):
-                if value is None:
+                if value is None and pdef.required:
                     continue
                 try:
-                    coerced = pdef.ptype().coerce(value, prop=f"{object_type}.{prop}")
+                    coerced = None if value is None else pdef.ptype().coerce(value, prop=f"{object_type}.{prop}")
                 except Exception as exc:
                     log.warning("derivation %s.%s: bad value %r (%s)", object_type, prop, value, exc)
                     continue
+                oid = str(row_id)
+                current = await s.scalar(
+                    select(DerivationPendingRow.generation)
+                    .where(
+                        DerivationPendingRow.object_type == object_type,
+                        DerivationPendingRow.object_id == oid,
+                    )
+                    .with_for_update()
+                )
+                if current != generations[oid]:
+                    continue
                 await self.repo.set_derived_value(s, object_type, str(row_id), prop, coerced, ts)
                 done += 1
+                succeeded.add(oid)
             await s.commit()
-        return done
+        return done, succeeded

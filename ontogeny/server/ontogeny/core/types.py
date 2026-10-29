@@ -124,7 +124,7 @@ class PropertyType:
                 return _dt.date.fromisoformat(str(value).strip())
             if k == "timestamp":
                 if isinstance(value, _dt.datetime):
-                    return value if value.tzinfo else value.replace(tzinfo=_dt.timezone.utc)
+                    return value if value.tzinfo else value.replace(tzinfo=_dt.UTC)
                 s = str(value).strip().replace("Z", "+00:00")
                 return _dt.datetime.fromisoformat(s)
             if k == "enum":

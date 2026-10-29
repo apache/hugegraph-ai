@@ -83,7 +83,7 @@ class TestClientAndWorker:
             return httpx.Response(201)
 
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        client = HugeGraphClient("http://hugegraph:8120", prj.spec.graph, http=http)
+        client = HugeGraphClient("http://hugegraph:8120", prj.spec.graph, api="1.5", http=http)
         worker = ProjectionWorker(compiled, prj, client)
         yield {"client": client, "worker": worker, "calls": calls, "prj": prj, "compiled": compiled}
         await http.aclose()
@@ -106,8 +106,7 @@ class TestClientAndWorker:
         await rig["client"].clear()
         req = rig["calls"][-1]
         assert req.method == "DELETE"
-        # the mock endpoint answers 201 to the dialect probe, so this rig is the
-        # legacy (1.5) shape: the graph-scoped path is bare
+        # This rig explicitly uses the legacy (1.5) shape.
         assert req.url.path.endswith("/clear")
         assert "confirm_message" in str(req.url)
 

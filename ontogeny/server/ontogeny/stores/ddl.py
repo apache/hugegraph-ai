@@ -20,13 +20,14 @@
 Each ObjectType gets ``ontogeny_obj_<type>`` with typed property columns plus system
 columns (``_rev/_valid_from/_valid_to/_synced_at``). Versioning is
 append-only: updates close the current row and insert a successor; the
-"alive current" state is exactly ``_valid_to IS NULL``. Derived properties are
-never stored (computed at assembly time).
+"alive current" state is exactly ``_valid_to IS NULL``. Expression-derived
+properties are computed on read; function-derived properties are materialized.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 
 from sqlalchemy import (
     JSON,
@@ -36,15 +37,18 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    Index,
     MetaData,
     String,
     Table,
     Text,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.types import TypeDecorator
 
 from ..core.models import JoinTableJoin
 from ..core.types import PropertyType
+from ..errors import StoreError
 
 SYSTEM_COLUMNS = ("_rev", "_valid_from", "_valid_to", "_synced_at")
 
@@ -67,15 +71,47 @@ class UTCDateTime(TypeDecorator):
         if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
             value = _dt.datetime(value.year, value.month, value.day)
         if value.tzinfo is None:
-            return value.replace(tzinfo=_dt.timezone.utc)
-        return value.astimezone(_dt.timezone.utc)
+            return value.replace(tzinfo=_dt.UTC)
+        return value.astimezone(_dt.UTC)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=_dt.timezone.utc)
-        return value.astimezone(_dt.timezone.utc)
+            return value.replace(tzinfo=_dt.UTC)
+        return value.astimezone(_dt.UTC)
+
+
+class TypedJSON(TypeDecorator):
+    """JSON storage for declared arrays/structs, including nested dates."""
+
+    impl = JSON
+    # PropertyType's struct schema contains dictionaries and is not hashable.
+    cache_ok = False
+
+    def __init__(self, ptype: PropertyType):
+        super().__init__()
+        self.ptype = ptype
+
+    @classmethod
+    def _encode(cls, ptype: PropertyType, value):
+        if value is None:
+            return None
+        if ptype.kind in ("date", "timestamp"):
+            return value.isoformat()
+        if ptype.kind == "array":
+            return [cls._encode(ptype.inner, item) for item in value]
+        if ptype.kind == "struct":
+            return {name: cls._encode(field, value.get(name)) for name, field in ptype.struct_fields.items()}
+        return value
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return self._encode(self.ptype, self.ptype.coerce(value))
+
+    def process_result_value(self, value, dialect):
+        return self.ptype.coerce(value)
 
 
 # One MetaData per ontology snapshot: two packages may both define an
@@ -111,7 +147,9 @@ def sql_type(ptype: PropertyType):
         return Date
     if k == "timestamp":
         return UTCDateTime()
-    if k in ("array", "struct", "vector", "geo-point", "geo-shape", "media", "document"):
+    if k in ("array", "struct"):
+        return TypedJSON(ptype)
+    if k in ("vector", "geo-point", "geo-shape", "media", "document"):
         return JSON
     raise ValueError(f"no sql mapping for {k}")  # pragma: no cover
 
@@ -134,7 +172,9 @@ def object_table(compiled, object_type: str) -> Table:
             Column(
                 compiled.col(prop),
                 sql_type(pdef.ptype()),
-                nullable=not pdef.required,
+                # A required function-derived value is validated by the worker,
+                # but is unavailable until it processes the initial write.
+                nullable=not pdef.required or (pdef.derived_kind() == "function" and compiled.col(prop) not in pk_cols),
                 # composite PK: business key + _valid_from -> versions coexist
                 primary_key=compiled.col(prop) in pk_cols,
             )
@@ -145,7 +185,20 @@ def object_table(compiled, object_type: str) -> Table:
         Column("_valid_to", DateTime(timezone=True), nullable=True),
         Column("_synced_at", DateTime(timezone=True), nullable=True),
     ]
-    return Table(name, metadata, *cols)
+    table = Table(name, metadata, *cols)
+    Index(
+        live_index_name(name),
+        *(table.c[compiled.col(p)] for p in obj.spec.primaryKey),
+        unique=True,
+        sqlite_where=table.c._valid_to.is_(None),
+        postgresql_where=table.c._valid_to.is_(None),
+    )
+    return table
+
+
+def live_index_name(table_name: str) -> str:
+    """Stable, identifier-length-safe index name for a current object row."""
+    return "uq_ontogeny_live_" + hashlib.sha256(table_name.encode()).hexdigest()[:24]
 
 
 def link_table(compiled, link_name: str) -> Table:
@@ -197,6 +250,14 @@ def ensure_tables(conn, compiled) -> None:
                 continue
             ddl_type = column.type.compile(conn.dialect)
             conn.execute(text(f'ALTER TABLE "{t.name}" ADD COLUMN "{column.name}" {ddl_type}'))
+        for index in t.indexes:
+            try:
+                index.create(conn, checkfirst=True)
+            except IntegrityError as exc:
+                raise StoreError(
+                    f"cannot enforce unique current rows in {t.name}: duplicate business keys exist; "
+                    "resolve them before retrying"
+                ) from exc
 
 
 def reset_metadata_cache() -> None:

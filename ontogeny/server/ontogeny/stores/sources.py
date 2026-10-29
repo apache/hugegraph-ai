@@ -32,7 +32,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from ..core.models import SourceRef, StoreResource
@@ -83,60 +83,73 @@ class SqlSource:
     ) -> AsyncIterator[dict[str, Any]]:
         eng = await self._eng()
         table = qualified_name(ref, self.dsn)
-        is_sqlite = self.dsn.startswith("sqlite")  # snapshot path only
+        is_sqlite = self.dsn.startswith("sqlite")
         async with eng.connect() as conn:
             if watermark_col is not None:
-                # Keyset pagination on the watermark: loop until a short batch
-                # proves the `> after` range is drained. The old code returned
-                # after the FIRST batch, so any source change touching more
-                # than `batch` rows was permanently lost behind the advanced
-                # watermark.
-                cursor = after
-                while True:
-                    sql = f"SELECT * FROM {table}"
-                    params: dict[str, Any] = {}
-                    if cursor is not None:
-                        sql += f' WHERE "{watermark_col}" > :wm'
-                        params["wm"] = cursor
-                    # order by the WATERMARK column on every dialect: rowid
-                    # order is unrelated to watermark order, so rowid keyset
-                    # pagination skipped rows past the first batch on SQLite
-                    sql += f' ORDER BY "{watermark_col}"'
-                    sql += " LIMIT :lim"
-                    params["lim"] = batch
-                    rows = (await conn.execute(text(sql), params)).mappings().all()
-                    if not rows:
-                        return
-                    for r in rows:
-                        yield dict(r)
-                    if len(rows) < batch:
-                        return  # drained: every row > cursor has been seen
-                    # NOTE: rows sharing the boundary watermark value *and*
-                    # spanning a full batch edge can still strand behind the
-                    # cursor (no cheap total order across dialects); a
-                    # sub-second-precision monotonic watermark makes this a
-                    # non-issue. The old code lost EVERY row past the first
-                    # batch, ties or not.
-                    cursor = max(r[watermark_col] for r in rows)
+                # Keep one ordered result open while fetching bounded batches.
+                # Advancing a cursor using only the last watermark would skip
+                # equal-valued rows straddling a batch boundary. A single SQL
+                # result drains that whole boundary before sync checkpoints it.
+                pk_columns = await conn.run_sync(
+                    lambda sync_conn: (
+                        inspect(sync_conn)
+                        .get_pk_constraint(ref.table, schema=None if is_sqlite else ref.schema_)
+                        .get("constrained_columns")
+                        or []
+                    )
+                )
+                if not pk_columns:
+                    # Views and tables without a PK still need deterministic
+                    # order. Identical full rows may tie harmlessly: a streamed
+                    # result returns each occurrence once without a new seek.
+                    result = await conn.execute(text(f"SELECT * FROM {table} LIMIT 0"))
+                    pk_columns = sorted(result.keys())
+                quote = eng.dialect.identifier_preparer.quote
+                order = [watermark_col, *(c for c in pk_columns if c != watermark_col)]
+                sql = f"SELECT * FROM {table}"
+                params: dict[str, Any] = {}
+                if after is not None:
+                    # The persisted checkpoint stores only the watermark, not
+                    # all source keys seen there. Replay its equality boundary
+                    # so a late row with the same timestamp is not stranded.
+                    # Repository upserts make that replay idempotent.
+                    if eng.dialect.name == "postgresql":
+                        # Checkpoints are persisted as text. asyncpg otherwise
+                        # infers the column's native type for :wm and rejects
+                        # that string before PostgreSQL can cast it. Bind text
+                        # first, then cast to the reflected source column type.
+                        columns_info = await conn.run_sync(
+                            lambda sync_conn: inspect(sync_conn).get_columns(ref.table, schema=ref.schema_)
+                        )
+                        column = next((c for c in columns_info if c["name"] == watermark_col), None)
+                        if column is None:
+                            raise StoreError(f"unknown watermark column {watermark_col!r} on {table}")
+                        sql_type = column["type"].compile(dialect=eng.dialect)
+                        sql += f" WHERE {quote(watermark_col)} >= CAST(CAST(:wm AS TEXT) AS {sql_type})"
+                        params["wm"] = str(after)
+                    else:
+                        sql += f" WHERE {quote(watermark_col)} >= :wm"
+                        params["wm"] = after
+                sql += " ORDER BY " + ", ".join(quote(c) for c in order)
+                async with conn.stream(text(sql), params, execution_options={"yield_per": batch}) as result:
+                    async for rows in result.mappings().partitions(batch):
+                        for row in rows:
+                            yield dict(row)
             else:
-                # Snapshot pagination needs a deterministic order: LIMIT/OFFSET
-                # without ORDER BY returns arbitrary subsets per page on
-                # Postgres, a skipped row looks "absent" and is then ARCHIVED
-                # -- soft-deleting live data. SQLite has the stable rowid; for
-                # everything else order by the full column list (a total order
-                # up to identical rows, which swapping is harmless).
+                # A deterministic ORDER BY alone does not make LIMIT/OFFSET
+                # safe: a concurrent deletion shifts later pages and can make a
+                # still-present object look absent to snapshot reconciliation.
+                # Keep one result (and its statement snapshot) open instead.
                 sel_cols = list(columns) if columns is not None else sorted(await self.columns(ref))
-                offset = 0
-                while True:
-                    sql = "SELECT " + ", ".join(f'"{c}"' for c in sel_cols) + f" FROM {table}"
-                    sql += " ORDER BY rowid" if is_sqlite else " ORDER BY " + ", ".join(f'"{c}"' for c in sel_cols)
-                    sql += " LIMIT :lim OFFSET :off"
-                    rows = (await conn.execute(text(sql), {"lim": batch, "off": offset})).mappings().all()
-                    if not rows:
-                        return
-                    for r in rows:
-                        yield dict(r)
-                    offset += batch
+                quote = eng.dialect.identifier_preparer.quote
+                sql = "SELECT " + ", ".join(quote(c) for c in sel_cols) + f" FROM {table}"
+                # No synthetic ordering is needed within a single statement.
+                # Sources may be views/WITHOUT ROWID tables, and PostgreSQL
+                # native JSON columns do not even define ordering operators.
+                async with conn.stream(text(sql), execution_options={"yield_per": batch}) as result:
+                    async for rows in result.mappings().partitions(batch):
+                        for row in rows:
+                            yield dict(row)
 
     async def dispose(self) -> None:
         if self.engine is not None:

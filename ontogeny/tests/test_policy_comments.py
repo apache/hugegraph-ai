@@ -49,3 +49,20 @@ def test_comments_between_tokens_and_comment_markers_inside_strings():
     policy = engine(text)
     assert policy.decide({"id": "alice"}, "open", {"url": "https://example.test/a/*literal*/"}).allow
     assert not policy.decide({"id": "alice"}, "open", {"url": "https://example.test/blocked"}).allow
+
+
+def test_quoted_fake_statements_do_not_consume_later_active_rules():
+    text = """
+    permit(principal, action == Action::"seed", resource)
+      when { resource.name == "forbid(fake)" };
+    forbid(principal, action == Action::"seed", resource)
+      when { resource.name == "permit(fake)" };
+    permit(principal, action == Action::"open", resource);
+    permit(principal, action == Action::"blocked", resource);
+    forbid(principal, action == Action::"blocked", resource);
+    """
+    assert [r.action for r in parse_policy_set(text)] == ["seed", "open", "blocked"]
+    assert [r.action for r in parse_forbids(text)] == ["seed", "blocked"]
+    policy = engine(text)
+    assert policy.decide({"id": "alice"}, "open", {}).allow
+    assert not policy.decide({"id": "alice"}, "blocked", {}).allow

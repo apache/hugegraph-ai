@@ -73,12 +73,13 @@ class RevisionRow(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(200), index=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    # The partial unique index must exist on BOTH dialects: sqlite_where alone
-    # is a SQLite-only argument, so Postgres silently got no constraint at all
-    # and a concurrent same-key replay produced two executed revisions.
+    # Match the runtime's replay lookup: keys are scoped to an action and
+    # principal. The partial predicate applies on both supported databases.
     __table_args__ = (
         Index(
-            "uq_revision_idem",
+            "uq_revision_idem_scope",
+            "action",
+            "principal",
             "idempotency_key",
             unique=True,
             sqlite_where=idempotency_key.is_not(None),

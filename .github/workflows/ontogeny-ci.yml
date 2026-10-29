@@ -132,8 +132,14 @@ jobs:
           PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_agent_atomicity.py \
             -k 'failed_second_effect or simultaneous_decisions or approval_preserves' -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
           PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_action_effect_order.py -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_action_plan_and_projection_events.py \
+            -k 'function_plan or created_object' -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
           .venv/bin/pytest -q tests/test_source_snapshot_and_native_values.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_postgres_watermark_sync.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
           .venv/bin/pytest -q tests/test_outbox_receipts.py tests/test_object_live_uniqueness.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_postgres_object_keys.py tests/test_auth_postgres_concurrency.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          .venv/bin/pytest -q tests/test_typed_json_storage.py tests/test_service_schema_commit.py 2>&1 | sed "s/${audit_password}/[redacted]/g"
+          PYTHONPATH=tests .venv/bin/pytest -p pg_agent_plugin tests/test_action_idempotency_scope.py tests/test_approval_marked_policy.py -q 2>&1 | sed "s/${audit_password}/[redacted]/g"
       - name: Stop temporary PostgreSQL
         if: always()
         run: |

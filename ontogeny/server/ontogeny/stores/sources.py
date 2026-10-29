@@ -113,8 +113,23 @@ class SqlSource:
                     # all source keys seen there. Replay its equality boundary
                     # so a late row with the same timestamp is not stranded.
                     # Repository upserts make that replay idempotent.
-                    sql += f" WHERE {quote(watermark_col)} >= :wm"
-                    params["wm"] = after
+                    if eng.dialect.name == "postgresql":
+                        # Checkpoints are persisted as text. asyncpg otherwise
+                        # infers the column's native type for :wm and rejects
+                        # that string before PostgreSQL can cast it. Bind text
+                        # first, then cast to the reflected source column type.
+                        columns_info = await conn.run_sync(
+                            lambda sync_conn: inspect(sync_conn).get_columns(ref.table, schema=ref.schema_)
+                        )
+                        column = next((c for c in columns_info if c["name"] == watermark_col), None)
+                        if column is None:
+                            raise StoreError(f"unknown watermark column {watermark_col!r} on {table}")
+                        sql_type = column["type"].compile(dialect=eng.dialect)
+                        sql += f" WHERE {quote(watermark_col)} >= CAST(CAST(:wm AS TEXT) AS {sql_type})"
+                        params["wm"] = str(after)
+                    else:
+                        sql += f" WHERE {quote(watermark_col)} >= :wm"
+                        params["wm"] = after
                 sql += " ORDER BY " + ", ".join(quote(c) for c in order)
                 async with conn.stream(text(sql), params, execution_options={"yield_per": batch}) as result:
                     async for rows in result.mappings().partitions(batch):

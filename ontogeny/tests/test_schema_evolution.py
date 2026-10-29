@@ -203,7 +203,7 @@ class TestAdditiveMigration:
         # a write through an action now sees the new column too
         async with sc.sessionmaker() as s:
             await sc.repo.action_update(
-                s, "production-order", "PO-1002", {"shift-pattern": "DAY-DAY"}, dt.datetime.now(dt.timezone.utc)
+                s, "production-order", "PO-1002", {"shift-pattern": "DAY-DAY"}, dt.datetime.now(dt.UTC)
             )
             await s.commit()
             row = await sc.repo.get(s, "production-order", "PO-1002")

@@ -34,6 +34,7 @@ Each block pins one fix:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 from dataclasses import replace
@@ -112,20 +113,20 @@ async def client(golden_pkg_path, tmp_path):
 
 
 class TestDriverAuthentication:
-    async def test_dev_mode_records_anonymous_driver(self, client):
-        """dev_auth on (opt-in): an anonymous driver may open and drive, and
-        the session honestly records that 'anonymous' asked for it."""
+    async def test_dev_mode_records_named_driver(self, client):
+        """Explicit dev identities own their sessions just like signed-in users."""
         c, _ = client
+        c.headers["X-Ontogeny-Principal"] = json.dumps({"id": "dev-driver"})
         r = await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
         assert r.status_code == 200
         sess = r.json()
-        assert sess["driver"]["id"] == "anonymous"
-        assert sess["driver"]["via"] == "anonymous"
+        assert sess["driver"]["id"] == "dev-driver"
+        assert sess["driver"]["via"] == "dev-header"
 
         out = (await c.post("/api/v1/agent/sessions/1/tools/search_work_center", json={"limit": 2})).json()
         assert out["outcome"] == "ok"
         detail = (await c.get("/api/v1/agent/sessions/1")).json()
-        assert detail["steps"][0]["driver"] == "anonymous"
+        assert detail["steps"][0]["driver"] == "dev-driver"
 
     async def test_dev_auth_off_refuses_anonymous_and_accepts_bearer(self, golden_pkg_path, tmp_path):
         sc = await _make(golden_pkg_path, tmp_path, dev_auth=False)

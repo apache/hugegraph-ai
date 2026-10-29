@@ -1063,7 +1063,7 @@ export const zh: Record<string, string> = {
   'login.password': '密码',
   'login.signIn': '登录',
   'login.signingIn': '登录中…',
-  'login.hint': '账号由管理员在「权限与角色」里创建。首次部署会自动创建一个管理员账号，密码打印在服务端日志里（也可用 ONTOGENY_ADMIN_PASSWORD 预先指定）。',
+  'login.hint': '账号由管理员在「权限与角色」里创建。首次部署会自动创建管理员，并将生成的密码保存在仅所有者可访问的文件中，服务日志会显示文件路径；也可预先设置 ONTOGENY_ADMIN_PASSWORD。',
   'access.title': '权限与角色',
   'access.tab.users': '账号',
   'access.tab.roles': '角色与权限',

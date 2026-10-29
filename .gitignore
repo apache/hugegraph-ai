@@ -222,6 +222,7 @@ cython_debug/
 # ---- ontogeny module: runtimes & local state ----
 .venv/
 .ontogeny-*/
+admin-bootstrap-password
 .kina-*/
 __pycache__/
 *.pyc

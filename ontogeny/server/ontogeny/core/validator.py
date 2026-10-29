@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 
 from ..errors import ExpressionError
 from . import expr as _expr
+from .function_entry import function_entry_file, resolve_function_entry
 from .loader import OntologyPackage
 from .models import (
     ActionResource,
@@ -342,6 +343,12 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 rep.error("FN-CAP", res_id, f"unknown capability keys {sorted(bad)}")
         for issue in _validate_function_body(fn):
             rep.error(issue[0], res_id, issue[1])
+        if fn.spec.runtime == "python":
+            try:
+                resolve_function_entry(pkg.root, fn.spec.entry)
+            except ValueError as exc:
+                if not any(i.code == "FN-ENTRY" and i.resource == res_id for i in rep.issues):
+                    rep.error("FN-ENTRY", res_id, str(exc))
 
     # ---- projections ------------------------------------------------------
     #
@@ -489,8 +496,10 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
     spec = fn.spec
 
     if spec.runtime == "python":
-        if not spec.entry or ":" not in spec.entry:
-            out.append(("FN-ENTRY", "runtime=python needs entry 'file.py:function'"))
+        try:
+            function_entry_file(spec.entry)
+        except ValueError as exc:
+            out.append(("FN-ENTRY", str(exc)))
         if spec.steps:
             out.append(("FN-BODY", "steps are only meaningful for runtime=declarative"))
         return out

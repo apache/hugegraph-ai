@@ -25,6 +25,18 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class PythonFloorContractTest(unittest.TestCase):
+    def test_ontogeny_uses_python_312_throughout(self) -> None:
+        config = tomllib.loads((ROOT / "ontogeny" / "pyproject.toml").read_text(encoding="utf-8"))
+        root_config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertEqual(">=3.12", config["project"]["requires-python"])
+        self.assertIn("Programming Language :: Python :: 3.12", config["project"]["classifiers"])
+        self.assertNotIn("per-file-target-version", root_config["tool"]["ruff"])
+        dockerfile = (ROOT / "ontogeny" / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("FROM python:3.12-slim", dockerfile)
+        workflow = (ROOT / ".github" / "workflows" / "ontogeny-ci.yml").read_text(encoding="utf-8")
+        self.assertEqual(2, workflow.count('python-version: "3.12"'))
+        self.assertNotIn('python-version: "3.10"', workflow)
+
     def test_standalone_ml_matches_client_python_floor(self) -> None:
         ml_config = tomllib.loads((ROOT / "hugegraph-ml" / "pyproject.toml").read_text(encoding="utf-8"))
         client_config = tomllib.loads((ROOT / "hugegraph-python-client" / "pyproject.toml").read_text(encoding="utf-8"))

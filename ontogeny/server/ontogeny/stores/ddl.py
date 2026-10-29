@@ -67,15 +67,15 @@ class UTCDateTime(TypeDecorator):
         if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
             value = _dt.datetime(value.year, value.month, value.day)
         if value.tzinfo is None:
-            return value.replace(tzinfo=_dt.timezone.utc)
-        return value.astimezone(_dt.timezone.utc)
+            return value.replace(tzinfo=_dt.UTC)
+        return value.astimezone(_dt.UTC)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=_dt.timezone.utc)
-        return value.astimezone(_dt.timezone.utc)
+            return value.replace(tzinfo=_dt.UTC)
+        return value.astimezone(_dt.UTC)
 
 
 # One MetaData per ontology snapshot: two packages may both define an

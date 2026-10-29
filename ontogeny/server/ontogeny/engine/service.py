@@ -101,6 +101,7 @@ class QueryService:
             sort=sort,
             limit=limit,
             offset=offset,
+            principal=principal,
         )
         objects = [self.assemble(object_type, r, principal) for r in rows]
         result: dict[str, Any] = {

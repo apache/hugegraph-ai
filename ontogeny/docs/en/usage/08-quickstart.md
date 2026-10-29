@@ -7,7 +7,7 @@
 ## 8.1 One command
 
 ```bash
-uv venv && source .venv/bin/activate && uv pip install -e .
+uv venv --python 3.12 && source .venv/bin/activate && uv pip install -e .
 cd web && npm install && cd ..
 ontogeny serve --demo --open        # → http://127.0.0.1:8000/ (UI and API on one port)
 # optionally attach an LLM (shared by the assistant + the RSI proposer):
@@ -18,7 +18,7 @@ ONTOGENY_LLM_BASE_URL=http://<ollama>:11434 ONTOGENY_LLM_MODEL=qwen3:27b ontogen
 
 ## 8.2 First login
 
-A fresh deployment auto-creates an `admin` account; the initial password is printed to the server log (or preset via `ONTOGENY_ADMIN_PASSWORD`). After logging in you land on the Overview dashboard: Ontogeny intro & overall architecture, the ontology model, agents and the RSI loop — four sections on one screen.
+A fresh deployment auto-creates an `admin` account; unless `ONTOGENY_ADMIN_PASSWORD` was preset, the generated password is saved to the owner-only `admin-bootstrap-password` file in the demo data directory (default `.ontogeny-demo`, or `/data` in Compose). Logs show its path, never the password. Change the password after login and securely delete the file. After logging in you land on the Overview dashboard: Ontogeny intro & overall architecture, the ontology model, agents and the RSI loop — four sections on one screen.
 
 ![The Ontogeny dashboard](../img/qs-dashboard.png)
 

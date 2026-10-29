@@ -8,7 +8,7 @@
 ## 8.1 一条命令启动
 
 ```bash
-uv venv && source .venv/bin/activate && uv pip install -e .
+uv venv --python 3.12 && source .venv/bin/activate && uv pip install -e .
 cd web && npm install && cd ..
 ontogeny serve --demo --open        # → http://127.0.0.1:8000/（UI 与 API 同端口）
 # 可选接大模型（助手 + RSI 提案器共用）：
@@ -19,7 +19,7 @@ ONTOGENY_LLM_BASE_URL=http://<ollama>:11434 ONTOGENY_LLM_MODEL=qwen3:27b ontogen
 
 ## 8.2 首次登录
 
-全新部署会自动创建管理员 `admin`，初始密码打印在服务日志（或预先设置 `ONTOGENY_ADMIN_PASSWORD`）。登录后落在运行看板：Ontogeny 介绍与总体架构、本体模型、智能 Agent 与 RSI 自进化闭环四个区块一屏可览。
+全新部署会自动创建管理员 `admin`。若未预先设置 `ONTOGENY_ADMIN_PASSWORD`，生成的密码保存在演示数据目录的 `admin-bootstrap-password` 文件中，只有文件所有者可访问（默认 `.ontogeny-demo`，Compose 中为 `/data`）。日志只显示文件路径。登录后请修改密码并安全删除该文件。登录后落在运行看板：Ontogeny 介绍与总体架构、本体模型、智能 Agent 与 RSI 自进化闭环四个区块一屏可览。
 
 ![Ontogeny 运行看板](../img/qs-dashboard.png)
 

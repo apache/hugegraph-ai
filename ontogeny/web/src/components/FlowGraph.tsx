@@ -149,6 +149,13 @@ export interface FlowGraphData {
 
 const ACCENT = '#2e5bff'
 
+/** G6 renders tooltip strings as HTML; model values must remain plain text. */
+function escapeTooltipText(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char]!)
+}
+
 // The ontology card is a custom element (see CardNode.ts): the built-in
 // rect+label+icon composition overlaps the two as soon as a name is longer than
 // the gap between them. Registering is global and idempotent.
@@ -340,7 +347,7 @@ export function FlowGraph({
           id: e.id ?? `e-${i}`,
           source: e.source,
           target: e.target,
-          data: { label: e.label, dashed: e.dashed },
+          data: { label: e.label, dashed: e.dashed, arrow: e.arrow },
         })),
       },
       node: {
@@ -571,18 +578,18 @@ export function FlowGraph({
             const wrap = 'white-space:normal;line-height:1.45;max-width:260px'
             // an edge's datum carries only its label: no description line
             if (!d.type && !d.sublabel) {
-              return `<div style="font:600 12px sans-serif">${d.label ?? ''}</div>`
+              return `<div style="font:600 12px sans-serif">${escapeTooltipText(d.label)}</div>`
             }
             // nodes WITH a description (entity cards): the card shows the
             // display name, so hover answers the next question — what it IS
             if (d.description) {
-              return `<div style="font:600 12px sans-serif">${d.display ?? d.label}</div>` +
-                `<div style="font:11px sans-serif;color:${C.textMuted};${wrap}">${d.description}</div>`
+              return `<div style="font:600 12px sans-serif">${escapeTooltipText(d.display ?? d.label)}</div>` +
+                `<div style="font:11px sans-serif;color:${C.textMuted};${wrap}">${escapeTooltipText(d.description)}</div>`
             }
-            return `<div style="font:600 12px sans-serif">${d.label}</div>` +
-              (d.display ? `<div style="font:11px sans-serif;color:${C.textMuted}">${d.display}</div>` : '') +
-              (d.badge ? `<div style="font:11px sans-serif;color:${C.border}">${d.badge}</div>`
-                : d.sublabel ? `<div style="font:11px sans-serif;color:${C.textMuted}">${d.sublabel}</div>` : '')
+            return `<div style="font:600 12px sans-serif">${escapeTooltipText(d.label)}</div>` +
+              (d.display ? `<div style="font:11px sans-serif;color:${C.textMuted}">${escapeTooltipText(d.display)}</div>` : '') +
+              (d.badge ? `<div style="font:11px sans-serif;color:${C.border}">${escapeTooltipText(d.badge)}</div>`
+                : d.sublabel ? `<div style="font:11px sans-serif;color:${C.textMuted}">${escapeTooltipText(d.sublabel)}</div>` : '')
           },
         },
       ],

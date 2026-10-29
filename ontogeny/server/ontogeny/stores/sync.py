@@ -186,6 +186,20 @@ class SyncEngine:
                     wm_val = raw.get(watermark_col)
                     if wm_val is not None and (max_wm is None or str(wm_val) > str(max_wm)):
                         max_wm = wm_val
+                # Presence is independent of whether the other properties can
+                # be coerced. Quarantining an update must preserve the previous
+                # good object, not treat that source row as a snapshot deletion.
+                # Coerce the key alone so mapped/numeric keys use the same
+                # canonical ID as the materialized repository.
+                pk_prop = pk_props[0]
+                raw_pk = raw.get(mapped.get(pk_prop, pk_prop))
+                if raw_pk is not None:
+                    try:
+                        source_pk = ptypes[pk_prop].coerce(raw_pk, prop=pk_prop)
+                    except TypeMismatchError:
+                        pass  # an invalid key cannot identify an existing object
+                    else:
+                        seen_pks.add(str(source_pk))
                 props, code, reason = _coerce_row(object_type, ptypes, mapped, raw)
                 pk = None
                 if props is not None:
@@ -220,7 +234,9 @@ class SyncEngine:
             deletes = backing.sync.deletes if backing.sync else None
             if strategy == "snapshot" and deletes != "none":
                 alive = await self.repo.alive_ids(session, object_type)
-                for gone in alive - seen_pks:
+                for gone in alive:
+                    if str(gone) in seen_pks:
+                        continue
                     await self.repo.archive(session, object_type, gone, started)
                     session.add(OutboxRow(object_type=object_type, object_id=gone, op="archive", payload={}))
                     summary["archived"] += 1

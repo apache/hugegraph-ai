@@ -210,7 +210,7 @@ class OutboxDispatcher:
                     # self-assignment (always NULL), so delivery latency was
                     # unobservable and "pending" counts never decreased.
                     if row.published_at is None:
-                        row.published_at = _dt.datetime.now(_dt.timezone.utc)
+                        row.published_at = _dt.datetime.now(_dt.UTC)
                 if cursor is None:
                     session.add(OutboxConsumerRow(consumer=name, last_id=last_id))
                 else:

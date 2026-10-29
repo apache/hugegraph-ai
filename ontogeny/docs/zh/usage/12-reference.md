@@ -24,10 +24,12 @@
 | 变量 | 默认 | 用途 |
 |---|---|---|
 | `ONTOGENY_DB_DSN` | `sqlite+aiosqlite:///./ontogeny.db` | 元数据 + 对象表 + outbox（生产用 Postgres asyncpg） |
+| `ONTOGENY_DATA_DIR` | 演示数据目录；否则为 SQLite 数据库目录或 `.ontogeny/` | 仅所有者可访问的 `admin-bootstrap-password` 文件目录；不会覆盖已有文件 |
+| `ONTOGENY_ADMIN_PASSWORD` | 未设置 | 显式指定管理员初始密码；设置后不会创建初始凭据文件 |
 | `ONTOGENY_PACKAGE_ROOT` | — | 本体包 Git 工作副本；DB 重建快照时函数源码靠它定位 |
 | `ONTOGENY_UI_DIR` | `web/dist` | 同源托管的前端构建产物（容器内置） |
 | `ONTOGENY_WEBHOOK_ALLOWLIST` | 空 = 全拒 | 出站 webhook 域名白名单（防 SSRF） |
-| `ONTOGENY_DEV_AUTH` | `1` | 接受 X-Ontogeny-Principal 头（生产关闭，换 OIDC） |
+| `ONTOGENY_DEV_AUTH` | `0` | 仅在开发时设为 `1`，以接受 X-Ontogeny-Principal 头。 |
 | `ONTOGENY_LLM_BASE_URL / ONTOGENY_LLM_MODEL` | 未配置 | Ollama 端点与模型；未配置 → 助手 503，其余功能不受影响 |
 | DSL 内 `${ERP_DSN}` 等 | — | 业务配置由部署注入；webhook 变量缺失只影响投递不影响事务 |
 

@@ -87,7 +87,11 @@ async def _make_sc(golden_pkg_path, tmp_path):
 
 @pytest_asyncio.fixture()
 async def sc(golden_pkg_path, tmp_path):
-    return await _make_sc(golden_pkg_path, tmp_path)
+    context = await _make_sc(golden_pkg_path, tmp_path)
+    try:
+        yield context
+    finally:
+        await context.engine.dispose()
 
 
 async def _open(mcp, plugin: str = "planning-copilot", task: str = "t") -> int:
@@ -189,12 +193,17 @@ class TestProtocolSurface:
     async def test_running_session_isolation_engine_vs_external(self, sc):
         """§2: while the engine owns a running session, an external MCP caller
         gets the structured refusal; the engine-mode surface drives on."""
-        sid = (await sc.agents.open_session("planning-copilot", "x"))["id"]
+        from ontogeny.mcp_server import _MCP_DRIVER
+
+        driver = {"id": "external-driver"}
+        token = _MCP_DRIVER.set(driver)
+        sid = (await sc.agents.open_session("planning-copilot", "x", driver=driver))["id"]
         await sc.agents.set_status(sid, "running")
 
         async with in_process_mcp_session(sc, engine_mode=False) as external:
             out = await external.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
             assert out["outcome"] == "AGENT_SESSION_RUNNING"
+        _MCP_DRIVER.reset(token)
         async with in_process_mcp_session(sc) as engine_client:
             out = await engine_client.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
             assert out["outcome"] == "ok"
@@ -219,16 +228,19 @@ class TestWireSurface:
     """The mounted /mcp endpoint, driven by a real streamable-HTTP MCP client
     over the ASGI transport (no sockets): what Claude Desktop et al. do."""
 
-    async def test_streamable_http_end_to_end(self, golden_pkg_path, tmp_path):
+    async def test_streamable_http_end_to_end(self, sc):
         from mcp.client.session import ClientSession
         from mcp.client.streamable_http import streamable_http_client
 
-        sc = await _make_sc(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
         async with app.router.lifespan_context(app):
             assert any(getattr(r, "path", None) == MCP_HTTP_PATH for r in app.routes)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
+            async with httpx.AsyncClient(  # noqa: SIM117 -- nested transport contexts read clearer
+                transport=transport,
+                base_url="http://test",
+                headers={"X-Ontogeny-Principal": json.dumps({"id": "wire-driver"})},
+            ) as hc:
                 async with streamable_http_client(f"http://test{MCP_HTTP_PATH}", http_client=hc) as streams:
                     async with ClientSession(streams[0], streams[1]) as sess:
                         await sess.initialize()
@@ -254,8 +266,7 @@ class TestWireSurface:
                         assert res.structured_content["outcome"] == "ok"
                         assert res.structured_content["detail"]["total"] == 2
 
-    async def test_mcp_route_is_never_shadowed(self, golden_pkg_path, tmp_path):
-        sc = await _make_sc(golden_pkg_path, tmp_path)
+    async def test_mcp_route_is_never_shadowed(self, sc):
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
         async with app.router.lifespan_context(app):  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
@@ -350,3 +361,50 @@ class TestRefreshOnPromote:
         names = {t.name for t in tools}
         assert "search_work_center" not in names
         assert "search_production_order" in names
+
+    async def test_prepared_catalog_remains_private_until_applied(self, sc):
+        from dataclasses import replace
+
+        from ontogeny.mcp_server import McpSurface
+
+        surface = McpSurface(sc, engine_mode=True)
+        surface.build()
+        live_server = surface.server
+        original_manager = live_server._tool_manager
+        original_compiled = sc.compiled
+        sc.compiled = replace(
+            original_compiled, objects={k: v for k, v in original_compiled.objects.items() if k != "work-center"}
+        )
+        try:
+            prepared = surface.prepare_refresh()
+        finally:
+            sc.compiled = original_compiled
+        assert surface.server is live_server
+        assert surface.server._tool_manager is original_manager
+        assert "search_work_center" in {t.name for t in await surface.server.list_tools()}
+        surface.apply_refresh(prepared)
+        assert surface.server is live_server
+        assert surface.server._tool_manager is prepared
+        assert "search_work_center" not in {t.name for t in await surface.server.list_tools()}
+        assert "agent_get_session" in {t.name for t in await surface.server.list_tools()}
+
+    async def test_failed_catalog_preparation_preserves_live_tools(self, sc, monkeypatch):
+        import pytest
+
+        from ontogeny.mcp_server import McpSurface
+
+        surface = McpSurface(sc, engine_mode=True)
+        surface.build()
+        original_manager = surface.server._tool_manager
+        original_names = {t.name for t in await surface.server.list_tools()}
+        register = McpSurface._register_catalog_tools
+
+        def register_then_fail(candidate):
+            register(candidate)
+            raise RuntimeError("registration failed after adding catalog tools")
+
+        monkeypatch.setattr(McpSurface, "_register_catalog_tools", register_then_fail)
+        with pytest.raises(RuntimeError, match="registration failed"):
+            surface.prepare_refresh()
+        assert surface.server._tool_manager is original_manager
+        assert {t.name for t in await surface.server.list_tools()} == original_names

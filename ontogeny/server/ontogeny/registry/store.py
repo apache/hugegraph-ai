@@ -47,9 +47,7 @@ class ResourceRow(Base):
     source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int] = mapped_column(default=1)
     created_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    created_at: Mapped[_dt.datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: _dt.datetime.now(_dt.timezone.utc)
-    )
+    created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=lambda: _dt.datetime.now(_dt.UTC))
     deleted_at: Mapped[_dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (Index("ix_meta_res_pk", "pkg", "kind", "api_name", unique=True),)
@@ -154,7 +152,7 @@ class RegistryService:
 
         compiled = compile_package(pkg)
         pkg_name = pkg.manifest.metadata.name
-        now = _dt.datetime.now(_dt.timezone.utc)
+        now = _dt.datetime.now(_dt.UTC)
 
         # soft-deleted rows are matched too: the unique index covers
         # (pkg, kind, api_name) regardless of deleted_at, so re-publishing a
@@ -224,7 +222,7 @@ class RegistryService:
         soft delete is what lets the retired domains come back untouched when
         they are activated again.
         """
-        now = _dt.datetime.now(_dt.timezone.utc)
+        now = _dt.datetime.now(_dt.UTC)
         await session.execute(
             update(ResourceRow)
             .where(ResourceRow.pkg != pkg.manifest.metadata.name, ResourceRow.deleted_at.is_(None))

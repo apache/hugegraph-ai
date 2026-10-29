@@ -213,7 +213,7 @@ class TestNewId:
                         "qty": 1,
                         "status": "PLANNED",
                     },
-                    dt.datetime.now(dt.timezone.utc),
+                    dt.datetime.now(dt.UTC),
                 )
 
 
@@ -338,9 +338,9 @@ class TestWatermarkPagination:
         async for row in src.fetch(ref, watermark_col="updated_at", batch=2):
             seen.append(row["id"])
         assert len(seen) == 7, "rows past the first batch were lost behind the cursor"
-        # second pass: everything is behind the watermark now
+        # The checkpoint's equality boundary is replayed for late arrivals.
         again = [r async for r in src.fetch(ref, watermark_col="updated_at", after="2026-01-01T00:00:06Z", batch=2)]
-        assert again == []
+        assert [row["id"] for row in again] == ["R-6"]
 
     async def test_snapshot_fetch_pages_deterministically(self, tmp_path):
         from ontogeny.core.models import SourceRef, StoreResource

@@ -268,15 +268,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         if not principal.get("authenticated") and principal.get("via") != "dev-header":
             raise AuthenticationError("function invoke requires an authenticated principal")
         invoke_action = f"invoke-{name}"
-        if any(r.action == invoke_action for _, r in sc.policy.rules_for(invoke_action)):
-            decision = sc.policy.decide(principal, invoke_action, {"function": name})
-            if not decision.allow:
-                from ..errors import PolicyDeniedError
-
-                raise PolicyDeniedError(
-                    f"policy denied invoke of {name!r}: {decision.reason}",
-                    details={"function": name},
-                )
+        sc.policy.require_if_defined(principal, invoke_action, {"function": name})
         if body.version is not None:
             current = sc.compiled.function_versions.get(name)
             if current is not None and body.version != current:
@@ -291,7 +283,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         return {"value": value}
 
     @r.get("/functions/{name}/source")
-    async def function_source(name: str, sc: ServiceContext = Depends(get_sc)):
+    async def function_source(name: str, _: dict = Depends(require_admin), sc: ServiceContext = Depends(get_sc)):
         """What actually runs for this function — read-only.
 
         A **code** function's DSL only *names* its file (``spec.entry``:
@@ -414,3 +406,4 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
     async def algorithm(body: dict, sc: ServiceContext = Depends(get_sc)):
         if sc.projection_client is None:
             raise HTTPException(501, "graph algorithms require the HugeGraph projection (not declared)")
+        raise HTTPException(501, "graph algorithms are not implemented")

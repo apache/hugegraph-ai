@@ -23,6 +23,7 @@ object -- governance (transactions, policy, audit) has exactly one path.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -188,6 +189,7 @@ class ServiceContext:
     ) -> None:
         self.settings = settings
         self.package_root = package_root
+        self._publish_lock = asyncio.Lock()
         # The package this process booted from (ONTOGENY_PACKAGE_ROOT). Domain
         # activation moves `package_root`, but the boot package stays listed
         # and switchable -- it is the deployment's default domain.
@@ -514,15 +516,46 @@ class ServiceContext:
         return compiled
 
     async def publish(self, package_root: str, *, created_by: str | None = None) -> CompiledOntology:
-        self.package_root = package_root
-        pkg = load_package(package_root)
-        async with self.sessionmaker() as session:
-            compiled = await self.registry.publish(session, pkg, created_by=created_by or "ontogeny")
-            await session.commit()
-        self._rebuild_services(compiled)
-        async with self.sessionmaker() as session:
-            await self.repo.ensure(session)
-        return compiled
+        async with self._publish_lock:
+            return await self._publish(package_root, created_by=created_by)
+
+    async def _publish(self, package_root: str, *, created_by: str | None = None) -> CompiledOntology:
+        # Construct on the original context so callbacks keep the right `self`,
+        # but restore the old runtime before any await. Readers continue using
+        # the committed snapshot until registry commit succeeds.
+        previous = self.__dict__.copy()
+        cache = self.registry._cache.copy()
+        surface = getattr(self, "mcp_surface", None)
+        try:
+            pkg = load_package(package_root)
+            async with self.sessionmaker() as session:
+                compiled = await self.registry.publish(session, pkg, created_by=created_by or "ontogeny")
+                await ObjectRepository(compiled).ensure(session)
+                self.package_root = package_root
+                self._rebuild_services(compiled, refresh_mcp=False)
+                tools = surface.prepare_refresh() if surface is not None else None
+                candidate = self.__dict__.copy()
+                candidate_cache = self.registry._cache.copy()
+                self.__dict__.clear()
+                self.__dict__.update(previous)
+                self.registry._cache.clear()
+                self.registry._cache.update(cache)
+                await session.commit()
+                # Attribute/tool-manager swaps are synchronous and cannot expose
+                # a partially built runtime to another coroutine.
+                self.__dict__.clear()
+                self.__dict__.update(candidate)
+                self.registry._cache.clear()
+                self.registry._cache.update(candidate_cache)
+                if surface is not None:
+                    surface.apply_refresh(tools)
+                return compiled
+        except BaseException:
+            self.__dict__.clear()
+            self.__dict__.update(previous)
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            raise
 
     async def reload(self) -> CompiledOntology:
         """Refresh services from the registry (e.g. after an evolve promotion)."""
@@ -534,7 +567,7 @@ class ServiceContext:
                 await self.repo.ensure(session)
         return self.compiled  # type: ignore[return-value]
 
-    def _rebuild_services(self, compiled: CompiledOntology) -> None:
+    def _rebuild_services(self, compiled: CompiledOntology, *, refresh_mcp: bool = True) -> None:
         compiled = self._apply_package_root_override(compiled)
         if not Path(compiled.package_root).is_dir() and compiled.functions:
             log.warning(
@@ -546,7 +579,7 @@ class ServiceContext:
         # the MCP tool list is a compiled artifact: a promote that changes the
         # ontology must be reflected at the next list_tools, not after a restart
         surface = getattr(self, "mcp_surface", None)
-        if surface is not None:
+        if surface is not None and refresh_mcp:
             surface.refresh()
         self.repo = ObjectRepository(compiled)
         self.sync_engine = SyncEngine(
@@ -1323,7 +1356,7 @@ class ServiceContext:
             elif kind.kind in ("date", "timestamp"):
                 import datetime as _dt
 
-                params[name] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                params[name] = _dt.datetime.now(_dt.UTC).isoformat()
                 sources[name] = "now"
             else:
                 params[name], sources[name] = "sample", "sample text"
@@ -1354,7 +1387,7 @@ class ServiceContext:
                         strategy=strategy,
                         status="error",
                         error=f"{type(exc).__name__}: {exc}",
-                        finished_at=_dt.datetime.now(_dt.timezone.utc),
+                        finished_at=_dt.datetime.now(_dt.UTC),
                     )
                 )
                 await s2.commit()
@@ -1390,14 +1423,21 @@ class ServiceContext:
                         red = red or not rep["passed"]
                 if red:
                     async with self.sessionmaker() as s3:
-                        rb = await self.promoter.rollback(s3, self.package_root, result["rollback_dir"])
+                        p = await s3.get(ProposalRow, proposal_id)
+                        if p is not None:
+                            p.status = "rolled_back"
+                            p.rejected_reason = "post-merge eval went red -- auto-reverted"
+                        rb = await self.promoter.rollback(s3, self.package_root, result["rollback_dir"], commit=True)
                     await self.reload()
+                    self.promoter.cleanup_backup(result["rollback_dir"])
                     result = {
                         "status": "promoted_then_rolled_back",
                         "reason": "post-merge eval went red -- auto-reverted",
                         "rollback": rb,
                         "original": result,
                     }
+                else:
+                    self.promoter.cleanup_backup(result["rollback_dir"])
         return result
 
     async def projection_rebuild(self) -> dict[str, int]:

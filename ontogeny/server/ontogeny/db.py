@@ -57,12 +57,14 @@ ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "driver": "TEXT",
         "run_started_at": "TEXT",
         "tools_json": "TEXT",
+        "principal_snapshot": "JSON",
     },
     "ontogeny_agent_step": {
         "thought": "TEXT",
         "run_no": "INTEGER",
         "driver": "TEXT",
     },
+    "ontogeny_agent_approval": {"expected_revision": "INTEGER", "failure_reason": "TEXT"},
     "ontogeny_evolve_proposal": {
         # the model's own reasoning, persisted even when it DECLINED the
         # mutation -- the decline rationale is often the most valuable part
@@ -91,7 +93,16 @@ async def init_schema(engine: AsyncEngine) -> None:
     import contextlib
     import importlib
 
-    for mod in ("stores", "action", "telemetry", "evolve", "agent.models", "auth.models", "runtime_config"):
+    for mod in (
+        "stores",
+        "action",
+        "telemetry",
+        "evolve",
+        "agent.models",
+        "auth.models",
+        "runtime_config",
+        "functions.derivation",
+    ):
         # a layer not implemented yet: its tables register once it exists
         with contextlib.suppress(ModuleNotFoundError):
             importlib.import_module(f".{mod}", package="ontogeny")

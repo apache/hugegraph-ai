@@ -177,7 +177,10 @@ async def sc(golden_pkg_path, tmp_path):
     )
     ctx = ServiceContext(settings, str(root))
     await ctx.initialize()
-    return ctx
+    try:
+        yield ctx
+    finally:
+        await ctx.engine.dispose()
 
 
 class TestBroker:
@@ -267,7 +270,7 @@ class TestDirectionSessionControls:
     async def test_expired_session_refuses_calls_and_runs(self, sc):
         import datetime as _dt
 
-        past = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=1)
+        past = _dt.datetime.now(_dt.UTC) - _dt.timedelta(minutes=1)
         sess = await sc.agents.open_session("planning-copilot", "expired", expires_at=past)
         out = await sc.agents.call_tool(sess["id"], "describe_ontology", {})
         assert out["outcome"] == "AGENT_SESSION_EXPIRED"

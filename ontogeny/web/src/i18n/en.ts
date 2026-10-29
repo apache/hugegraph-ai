@@ -1064,7 +1064,7 @@ export const en: Record<string, string> = {
   'login.password': 'Password',
   'login.signIn': 'Sign in',
   'login.signingIn': 'Signing in…',
-  'login.hint': 'Accounts are created by an administrator under Access control. A fresh deployment creates one administrator automatically and prints its password to the server log (or set ONTOGENY_ADMIN_PASSWORD beforehand).',
+  'login.hint': 'Accounts are created by an administrator under Access control. A fresh deployment creates an administrator and stores a generated password in an owner-only file; the server log shows its path. Alternatively set ONTOGENY_ADMIN_PASSWORD beforehand.',
   'access.title': 'Access control',
   'access.tab.users': 'Accounts',
   'access.tab.roles': 'Roles & permissions',

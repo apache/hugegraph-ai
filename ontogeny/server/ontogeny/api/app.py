@@ -84,7 +84,11 @@ def build_app(sc: ServiceContext) -> FastAPI:
             if principal is not None:
                 principal.setdefault("via", "bearer")
                 set_mcp_driver(principal)
-            elif not sc.settings.dev_auth:
+            elif sc.settings.dev_auth:
+                from .deps import get_principal
+
+                set_mcp_driver(await get_principal(request))
+            else:
                 return JSONResponse(
                     status_code=401,
                     content={

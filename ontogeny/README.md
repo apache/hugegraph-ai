@@ -40,15 +40,17 @@ docker compose up -d          # self-contained demo (SQLite + seeded data)
 # docker compose --profile graph up -d      # + HugeGraph projection
 ```
 
-Console + API: **http://localhost:8000** — the first boot creates an `admin` account with the documented bootstrap password `ontogeny@2026` (override with `ONTOGENY_ADMIN_PASSWORD`, and change it after first login). One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
+Console + API: **http://localhost:8000** — the first boot creates an `admin` account. Unless `ONTOGENY_ADMIN_PASSWORD` was set, its random password is stored in an owner-only file on the data volume; retrieve it with `docker compose exec ontogeny cat /data/admin-bootstrap-password`. Change the password after first login and securely delete the file. Existing credential files are never overwritten. One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
 
 ![The Overview dashboard — ontology model section](./docs/en/img/qs-dashboard.png)
 
 ### Option 2: From Source
 
+The MCP extra requires Python 3.12 or later.
+
 ```bash
 # backend (with the MCP extra so /mcp is served)
-uv venv && source .venv/bin/activate && uv pip install -e '.[mcp]'
+uv venv --python 3.12 && source .venv/bin/activate && uv pip install -e '.[mcp]'
 
 # web console
 cd web && npm install && npm run build && cd ..
@@ -58,7 +60,9 @@ ontogeny serve --demo --open   # → http://127.0.0.1:8000/
 ```
 
 > [!NOTE]
-> The API is session/bearer authenticated. The `X-Ontogeny-Principal` dev header is **enabled by default** for evaluation (`ONTOGENY_DEV_AUTH=0` disables it) — turn it off in production, where the agent surfaces (REST + `/mcp`) then require a signed-in driver and every session records WHO drove it.
+> The API is session/bearer authenticated. The `X-Ontogeny-Principal` dev header is disabled by default; set `ONTOGENY_DEV_AUTH=1` only for development or evaluation. With it disabled, the agent surfaces (REST + `/mcp`) require a signed-in driver and every session records WHO drove it.
+
+For a source demo, the bootstrap credential file is `.ontogeny-demo/admin-bootstrap-password` (or under `--data-dir`). Set `ONTOGENY_DATA_DIR` to override its directory. Without demo mode, it defaults to the SQLite database directory, or `.ontogeny/` for a non-file database. Logs show only the file path.
 
 ## Connecting an Agent (MCP)
 

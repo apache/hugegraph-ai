@@ -30,12 +30,12 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.sql.elements import ColumnElement
 
-from ..errors import ConflictError, NotFoundError, StoreError
+from ..errors import ConflictError, NotFoundError, PolicyDeniedError, StoreError
 from .ddl import ensure_tables, object_table
 
 
 def utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 def _and(*conds):
@@ -144,10 +144,19 @@ class ObjectRepository:
 
         Forms: {"field","op","value"} | {"and":[...]} | {"or":[...]} | {"not":F}
         Shorthand {"prop": value} -> eq.  Ops: eq ne lt le gt ge in contains isnull.
+
+        A principal enforces marking claims. None is reserved for trusted
+        repository callers such as projection and function execution.
         """
         t = self._table(object_type)
         if filt is None:
             return None
+
+        marked = (
+            {self.compiled.col(p) for p in self._marked_props(object_type, principal)}
+            if principal is not None
+            else set()
+        )
 
         def one(f: dict) -> ColumnElement:
             if "and" in f:
@@ -165,6 +174,11 @@ class ObjectRepository:
                 return _and(*[one({"field": k, "op": "eq", "value": v}) for k, v in f.items()])
             if name.startswith("_"):
                 raise StoreError(f"filter on system column {name!r} is not allowed")
+            if self.compiled.col(name) in marked:
+                raise PolicyDeniedError(
+                    f"cannot filter {object_type}.{name}: marked property",
+                    details={"object_type": object_type, "field": name},
+                )
             col = getattr(t.c, self.compiled.col(name), None)
             if col is None:
                 raise NotFoundError(f"unknown filter field {name!r} on {object_type}")
@@ -219,8 +233,11 @@ class ObjectRepository:
             # sorting by a marked property the principal lacks is an oracle
             # (binary-search the masked value through ORDER BY)
             marked = self._marked_props(object_type, principal)
-            if name in marked:
-                raise StoreError(f"sort on marked property {name!r} is not allowed")
+            if self.compiled.col(name) in {self.compiled.col(p) for p in marked}:
+                raise PolicyDeniedError(
+                    f"cannot sort {object_type}.{name}: marked property",
+                    details={"object_type": object_type, "field": name},
+                )
             stmt = stmt.order_by(col.desc() if str(direction).lower() == "desc" else col.asc())
         stmt = stmt.limit(limit).offset(offset)
         rows = (await session.execute(stmt)).mappings().all()
@@ -242,9 +259,7 @@ class ObjectRepository:
         # "Boolean value of this clause is not defined" -- compare with None.
         col = getattr(t.c, self.compiled.col(field)) if field else None
         marked = self._marked_props(object_type, principal)
-        if field and field in marked:
-            from ..errors import PolicyDeniedError
-
+        if field and self.compiled.col(field) in {self.compiled.col(p) for p in marked}:
             raise PolicyDeniedError(
                 f"cannot aggregate {object_type}.{field}: marked property",
                 details={"object_type": object_type, "field": field},

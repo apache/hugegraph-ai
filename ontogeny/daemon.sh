@@ -46,12 +46,12 @@ export ONTOGENY_WEBHOOK_ALLOWLIST=${ONTOGENY_WEBHOOK_ALLOWLIST:-127.0.0.1}
 # 并把对应主机加进上面的白名单。未设置时事件被消费但不投递，日志写
 # "not delivered ... (fix config and replay)" —— 配置错不该拖垮业务事务。
 export ONTOGENY_ADMIN_USER=${ONTOGENY_ADMIN_USER:-admin}
-export ONTOGENY_ADMIN_PASSWORD=${ONTOGENY_ADMIN_PASSWORD:-ontogeny@2026}
 
 # ---- 守护参数 ----
 HOST=${HOST:-0.0.0.0}
 PORT=${PORT:-8000}
 DATA_DIR=${DATA_DIR:-.ontogeny-daemon}
+# 首次自动生成的管理员密码写入此目录下的 admin-bootstrap-password（权限 0600）。
 PID_FILE=${PID_FILE:-.ontogeny-daemon/ontogeny.pid}
 PORT_FILE=${PORT_FILE:-.ontogeny-daemon/ontogeny.port}
 LOG_FILE=${LOG_FILE:-.ontogeny-daemon/ontogeny.log}

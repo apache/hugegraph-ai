@@ -39,7 +39,16 @@ def _bigid() -> BigInteger:
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
+
+
+class IdSequenceRow(Base):
+    """Last allocated ID for a prefix, updated in the action transaction."""
+
+    __tablename__ = "ontogeny_id_sequence"
+
+    prefix: Mapped[str] = mapped_column(String(500), primary_key=True)
+    value: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class RevisionRow(Base):

@@ -121,24 +121,20 @@ class SqlSource:
                         for row in rows:
                             yield dict(row)
             else:
-                # Snapshot pagination needs a deterministic order: LIMIT/OFFSET
-                # without ORDER BY returns arbitrary subsets per page on
-                # Postgres, a skipped row looks "absent" and is then ARCHIVED
-                # -- soft-deleting live data. SQLite has the stable rowid; for
-                # everything else order by the full column list (a total order
-                # up to identical rows, which swapping is harmless).
+                # A deterministic ORDER BY alone does not make LIMIT/OFFSET
+                # safe: a concurrent deletion shifts later pages and can make a
+                # still-present object look absent to snapshot reconciliation.
+                # Keep one result (and its statement snapshot) open instead.
                 sel_cols = list(columns) if columns is not None else sorted(await self.columns(ref))
-                offset = 0
-                while True:
-                    sql = "SELECT " + ", ".join(f'"{c}"' for c in sel_cols) + f" FROM {table}"
-                    sql += " ORDER BY rowid" if is_sqlite else " ORDER BY " + ", ".join(f'"{c}"' for c in sel_cols)
-                    sql += " LIMIT :lim OFFSET :off"
-                    rows = (await conn.execute(text(sql), {"lim": batch, "off": offset})).mappings().all()
-                    if not rows:
-                        return
-                    for r in rows:
-                        yield dict(r)
-                    offset += batch
+                quote = eng.dialect.identifier_preparer.quote
+                sql = "SELECT " + ", ".join(quote(c) for c in sel_cols) + f" FROM {table}"
+                # No synthetic ordering is needed within a single statement.
+                # Sources may be views/WITHOUT ROWID tables, and PostgreSQL
+                # native JSON columns do not even define ordering operators.
+                async with conn.stream(text(sql), execution_options={"yield_per": batch}) as result:
+                    async for rows in result.mappings().partitions(batch):
+                        for row in rows:
+                            yield dict(row)
 
     async def dispose(self) -> None:
         if self.engine is not None:

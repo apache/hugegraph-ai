@@ -236,6 +236,9 @@ def serve(
         None, "--package", help="ontology package to install into the demo (default: domains/product-manufacturing)"
     ),
     reseed: bool = typer.Option(False, "--reseed", help="rebuild the demo source db and package copy from scratch"),
+    in_place: bool = typer.Option(
+        True, "--in-place/--copy-package", help="edit domains/ packages in place, or copy into --data-dir (containers)"
+    ),
     build_ui: bool = typer.Option(True, "--build-ui/--no-build-ui", help="build web/dist when missing"),
     ui_dir: str = typer.Option(None, "--ui-dir", help="serve an already-built SPA from this directory"),
     open_browser: bool = typer.Option(False, "--open", help="open the UI in a browser once ready"),
@@ -254,7 +257,7 @@ def serve(
         pkg_arg = Path(package or DEFAULT_PACKAGE)
         if not pkg_arg.is_absolute():
             pkg_arg = Path.cwd() / pkg_arg
-        direct = pkg_arg.resolve().parent.name == "domains"
+        direct = in_place and pkg_arg.resolve().parent.name == "domains"
 
         paths = prepare_demo(data_dir, package=package or DEFAULT_PACKAGE, reseed=reseed, direct=direct)
         os.environ.setdefault("ONTOGENY_DATA_DIR", str(paths.root.resolve()))

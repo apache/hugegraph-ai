@@ -109,9 +109,9 @@ const PRINCIPAL_KEY = 'ontogeny.principal'
  * non-ASCII display name is not even a legal HTTP header value.
  */
 export function getDevPrincipal(): Principal | null {
-  const raw = localStorage.getItem(PRINCIPAL_KEY)
-  if (!raw) return null
   try {
+    const raw = localStorage.getItem(PRINCIPAL_KEY)
+    if (!raw) return null
     const p = JSON.parse(raw)
     if (p && typeof p.id === 'string') return p
   } catch {
@@ -127,11 +127,13 @@ export function getPrincipal(): Principal {
 }
 
 export function setPrincipal(p: Principal | null): void {
-  if (p === null) {
-    localStorage.removeItem(PRINCIPAL_KEY)
-    return
+  try {
+    if (p === null) localStorage.removeItem(PRINCIPAL_KEY)
+    else localStorage.setItem(PRINCIPAL_KEY, JSON.stringify(p))
+  } catch {
+    // The development override is optional. Disabled storage must not turn a
+    // successful server login/logout into a failed authentication operation.
   }
-  localStorage.setItem(PRINCIPAL_KEY, JSON.stringify(p))
 }
 
 /** HTTP header values are ISO-8859-1; a principal with a Chinese display name
@@ -178,7 +180,13 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const body = await resp.json()
       code = body.code ?? code
-      message = body.message ?? body.error ?? message
+      const detail = body.detail
+      message = body.message ?? body.error ?? (typeof detail === 'string' ? detail : undefined) ?? message
+      if (!body.message && !body.error && Array.isArray(detail)) {
+        message = detail.map((item: { loc?: unknown[]; msg?: string }) =>
+          `${item.loc?.slice(1).join('.') || 'request'}: ${item.msg ?? 'invalid value'}`,
+        ).join('; ')
+      }
       // builder/save validation reports {code, errors: [{resource, message}]}
       details = body.details ?? (body.errors ? { errors: body.errors } : undefined)
     } catch {

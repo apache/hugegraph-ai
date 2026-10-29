@@ -27,6 +27,7 @@ never stored (computed at assembly time).
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 
 from sqlalchemy import (
     JSON,
@@ -36,15 +37,18 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    Index,
     MetaData,
     String,
     Table,
     Text,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.types import TypeDecorator
 
 from ..core.models import JoinTableJoin
 from ..core.types import PropertyType
+from ..errors import StoreError
 
 SYSTEM_COLUMNS = ("_rev", "_valid_from", "_valid_to", "_synced_at")
 
@@ -145,7 +149,20 @@ def object_table(compiled, object_type: str) -> Table:
         Column("_valid_to", DateTime(timezone=True), nullable=True),
         Column("_synced_at", DateTime(timezone=True), nullable=True),
     ]
-    return Table(name, metadata, *cols)
+    table = Table(name, metadata, *cols)
+    Index(
+        live_index_name(name),
+        *(table.c[compiled.col(p)] for p in obj.spec.primaryKey),
+        unique=True,
+        sqlite_where=table.c._valid_to.is_(None),
+        postgresql_where=table.c._valid_to.is_(None),
+    )
+    return table
+
+
+def live_index_name(table_name: str) -> str:
+    """Stable, identifier-length-safe index name for a current object row."""
+    return "uq_ontogeny_live_" + hashlib.sha256(table_name.encode()).hexdigest()[:24]
 
 
 def link_table(compiled, link_name: str) -> Table:
@@ -197,6 +214,14 @@ def ensure_tables(conn, compiled) -> None:
                 continue
             ddl_type = column.type.compile(conn.dialect)
             conn.execute(text(f'ALTER TABLE "{t.name}" ADD COLUMN "{column.name}" {ddl_type}'))
+        for index in t.indexes:
+            try:
+                index.create(conn, checkfirst=True)
+            except IntegrityError as exc:
+                raise StoreError(
+                    f"cannot enforce unique current rows in {t.name}: duplicate business keys exist; "
+                    "resolve them before retrying"
+                ) from exc
 
 
 def reset_metadata_cache() -> None:

@@ -41,6 +41,8 @@
 
 **Sandbox boundary (shared by all capabilities)**: an isolated subprocess + rlimits + wall-clock kill + PYTHONDONTWRITEBYTECODE; cross-boundary RPC is adjudicated by the parent process against the declared capabilities; returned objects are API-shaped (**fixed: derived properties used to be invisible inside the sandbox, driving inventory computations to zero**).
 
+For declarative HTTP step URLs, only bare `UPPER_SNAKE` deployment references such as `${API_BASE}` are resolved from the environment. Lowercase parameters (`${order_id}`) and prior-step references (`${lookup.order_id}`) remain templates, even if similarly named environment variables exist. Deployment references resolve first, then call templates; the final URL must pass the HTTP allowlist, and parameter values cannot inject another `${...}` reference.
+
 ## 4.2 Functional actions: effect plans (the Function proposes, the Action disposes)
 
 ```yaml

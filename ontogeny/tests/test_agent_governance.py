@@ -93,16 +93,30 @@ async def _make(golden_pkg_path, tmp_path, *, db_dsn: str | None = None, **setti
 
 
 @pytest_asyncio.fixture()
-async def sc(golden_pkg_path, tmp_path):
-    return await _make(golden_pkg_path, tmp_path)
+async def make_sc(golden_pkg_path, tmp_path):
+    contexts = []
+
+    async def make(**kwargs):
+        context = await _make(golden_pkg_path, tmp_path, **kwargs)
+        contexts.append(context)
+        return context
+
+    yield make
+    for context in contexts:
+        await context.engine.dispose()
 
 
 @pytest_asyncio.fixture()
-async def client(golden_pkg_path, tmp_path):
+async def sc(make_sc):
+    return await make_sc()
+
+
+@pytest_asyncio.fixture()
+async def client(make_sc):
     # no lifespan wrapper here: the MCP session manager carries anyio cancel
     # scopes that must exit in the task that entered them (fixtures tear down
     # in another task); the REST surface below needs no lifespan anyway
-    sc = await _make(golden_pkg_path, tmp_path)
+    sc = await make_sc()
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -128,8 +142,8 @@ class TestDriverAuthentication:
         detail = (await c.get("/api/v1/agent/sessions/1")).json()
         assert detail["steps"][0]["driver"] == "dev-driver"
 
-    async def test_dev_auth_off_refuses_anonymous_and_accepts_bearer(self, golden_pkg_path, tmp_path):
-        sc = await _make(golden_pkg_path, tmp_path, dev_auth=False)
+    async def test_dev_auth_off_refuses_anonymous_and_accepts_bearer(self, make_sc):
+        sc = await make_sc(dev_auth=False)
         await sc.auth.create_user(username="op", password="op-password-123", roles=["planner"], is_admin=True)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
@@ -164,10 +178,10 @@ class TestDriverAuthentication:
             )
             assert r.status_code == 200
 
-    async def test_mcp_bearer_gate(self, golden_pkg_path, tmp_path):
+    async def test_mcp_bearer_gate(self, make_sc):
         """dev_auth off: /mcp refuses anonymous, serves a valid bearer, and
         the opened session records the token's principal as its driver."""
-        sc = await _make(golden_pkg_path, tmp_path, dev_auth=False)
+        sc = await make_sc(dev_auth=False)
         await sc.auth.create_user(username="mcpop", password="mcp-password-123", roles=["planner"], is_admin=True)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
@@ -264,14 +278,14 @@ class TestAtomicBudgets:
     @pytest.mark.skipif(
         not os.environ.get("ONTOGENY_PG_DSN"), reason="set ONTOGENY_PG_DSN to run the Postgres concurrency probe"
     )
-    async def test_concurrent_step_cap_on_postgres(self, golden_pkg_path, tmp_path):
+    async def test_concurrent_step_cap_on_postgres(self, make_sc):
         """The same atomicity probe on Postgres, where read-modify-write
         races actually lose updates (SQLite serializes writes and hides them).
 
         Run with: ONTOGENY_PG_DSN=postgresql+asyncpg://.../ontogeny_test pytest \
             tests/test_agent_governance.py -k postgres
         """
-        sc = await _make(golden_pkg_path, tmp_path, db_dsn=os.environ["ONTOGENY_PG_DSN"])
+        sc = await make_sc(db_dsn=os.environ["ONTOGENY_PG_DSN"])
         sid = (await sc.agents.open_session("planning-copilot", "pg race"))["id"]
         outs = await asyncio.gather(*[sc.agents.call_tool(sid, "describe_ontology", {}) for _ in range(12)])
         ok = [o for o in outs if o["outcome"] == "ok"]

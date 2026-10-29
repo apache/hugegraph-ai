@@ -29,7 +29,10 @@ Execution semantics (data-layer §3.2):
 from __future__ import annotations
 
 import datetime as _dt
+import math
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -88,6 +91,8 @@ def _coerce_row(
     props: dict[str, PropertyType],
     mapped: dict[str, str],
     raw: dict[str, Any],
+    *,
+    required: set[str] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """raw source row -> typed property dict; on failure return quarantine info."""
     out: dict[str, Any] = {}
@@ -104,6 +109,9 @@ def _coerce_row(
             return None, "TYPE_MISMATCH", exc.message
     for prop in (k for k in mapped if k not in out):
         out[prop] = None
+    missing = sorted(prop for prop in required or () if out.get(prop) is None)
+    if missing:
+        return None, "REQUIRED_PROPERTY", f"required source properties missing/None: {', '.join(missing)}"
     return out, None, None
 
 
@@ -175,6 +183,11 @@ class SyncEngine:
             max_wm: Any = after
             pk_props = obj.spec.primaryKey
             ptypes = {p: d.ptype() for p, d in obj.spec.properties.items()}
+            required_props = {
+                p
+                for p, definition in obj.spec.properties.items()
+                if definition.required and not definition.derived and p not in pk_props
+            }
 
             rows = source.fetch(
                 backing.source,
@@ -200,7 +213,13 @@ class SyncEngine:
                         pass  # an invalid key cannot identify an existing object
                     else:
                         seen_pks.add(str(source_pk))
-                props, code, reason = _coerce_row(object_type, ptypes, mapped, raw)
+                props, code, reason = _coerce_row(
+                    object_type,
+                    ptypes,
+                    mapped,
+                    raw,
+                    required=required_props,
+                )
                 pk = None
                 if props is not None:
                     pk = str(props.get(pk_props[0]))
@@ -265,13 +284,27 @@ class SyncEngine:
         return summary
 
 
-def _jsonable(raw: dict[str, Any]) -> dict[str, Any]:
-    import datetime as d
+def _jsonable(value: Any) -> Any:
+    """Keep source diagnostics JSON-safe without losing decimal precision.
 
-    out = {}
-    for k, v in raw.items():
-        if isinstance(v, d.datetime | d.date):
-            out[k] = v.isoformat()
-        else:
-            out[k] = v
-    return out
+    Drivers return native Decimal, UUID, datetime and binary values even for
+    rows rejected by schema coercion. Conversion must recurse through native
+    arrays/JSON too, otherwise one quarantined row can abort the whole sync.
+    """
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, _dt.datetime | _dt.date | _dt.time):
+        return value.isoformat()
+    if isinstance(value, Decimal | UUID):
+        return str(value)
+    if isinstance(value, bytes | bytearray | memoryview):
+        return bytes(value).hex()
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    # Preserve a useful diagnostic for other driver-specific scalar types
+    # (for example intervals/ranges), rather than failing to quarantine them.
+    return str(value)

@@ -24,7 +24,13 @@ env/volume coherence, and the exact CLI flags used by the image CMD.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -73,18 +79,43 @@ class TestCompose:
         env = compose["services"]["ontogeny"]["environment"]
         assert env["ONTOGENY_ADMIN_USER"] == "${ONTOGENY_ADMIN_USER:-admin}"
         assert env["ONTOGENY_ADMIN_PASSWORD"] == "${ONTOGENY_ADMIN_PASSWORD:-}"
-        assert env["ONTOGENY_DATA_DIR"] == "${ONTOGENY_DATA_DIR:-/data}"
+        assert env["ONTOGENY_DATA_DIR"] == "/data"
 
-    def test_optional_profiles_are_declared_and_referenced(self, compose):
-        # service name -> profile name (they differ for the graph profile)
-        for service, profile in (("postgres", "postgres"), ("hugegraph", "graph")):
-            assert service in compose["services"], service
-            assert compose["services"][service]["profiles"] == [profile]
-        assert "ontogeny-pg" in compose["volumes"] and "ontogeny-graph" in compose["volumes"]
+    def test_default_port_is_loopback(self, compose):
+        assert compose["services"]["ontogeny"]["ports"] == [
+            "${ONTOGENY_BIND_HOST:-127.0.0.1}:${ONTOGENY_PORT:-8000}:8000"
+        ]
 
-    def test_postgres_profile_dsn_hint_is_overridable(self, compose):
-        # ONTOGENY_DB_DSN must be env-overridable so the postgres profile can swap it
-        assert "${ONTOGENY_DB_DSN:" in compose["services"]["ontogeny"]["environment"]["ONTOGENY_DB_DSN"]
+    @pytest.mark.parametrize("mode", ["postgres", "graph"])
+    def test_overrides_wire_application_configuration(self, mode):
+        docker = shutil.which("docker")
+        if docker is None:
+            pytest.skip("Docker Compose CLI is unavailable")
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("ONTOGENY_", "HUGEGRAPH_", "POSTGRES_"))}
+        env.update(
+            POSTGRES_PASSWORD="deployment-config-test",
+            HUGEGRAPH_URL="http://graph.example.test:8080",
+            HUGEGRAPH_USER="admin",
+            HUGEGRAPH_PASSWORD="deployment-config-test",
+        )
+        result = subprocess.run(
+            [docker, "compose", "-f", str(COMPOSE), "-f", str(REPO / "deploy" / f"compose.{mode}.yaml"), "config"],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+        merged = yaml.safe_load(result.stdout)
+        services = merged["services"]
+        app_env = services["ontogeny"]["environment"]
+        if mode == "postgres":
+            assert "@postgres:5432/ontogeny" in app_env["ONTOGENY_DB_DSN"]
+            assert services["ontogeny"]["depends_on"]["postgres"]["condition"] == "service_healthy"
+            assert "ports" not in services["postgres"]
+        else:
+            assert app_env["HUGEGRAPH_URL"] == env["HUGEGRAPH_URL"]
+            assert app_env["ONTOGENY_STORAGE_PROVIDER"] == "hugegraph"
+            assert "hugegraph" not in services  # server is independently managed
 
 
 class TestDockerfile:
@@ -108,6 +139,8 @@ class TestDockerfile:
         assert cmd, "no CMD found"
         cmd_text = cmd.group(1)
         assert "--demo" in cmd_text
+        assert "--copy-package" in cmd_text
+        assert "'.[mcp,postgres]'" in dockerfile
         assert "--data-dir" in cmd_text and "/data" in cmd_text
         # the UI is prebuilt in the image; never shell out to npm at runtime
         assert "--no-build-ui" in cmd_text
@@ -169,7 +202,7 @@ class TestImageCmdFlags:
         for p in serve.params:
             names.update(getattr(p, "opts", None) or [])
             names.update(getattr(p, "secondary_opts", None) or [])
-        for flag in ("--demo", "--data-dir", "--no-build-ui", "--host", "--port"):
+        for flag in ("--demo", "--copy-package", "--data-dir", "--no-build-ui", "--host", "--port"):
             assert flag in names, f"ontogeny serve no longer accepts {flag}"
 
     def test_demo_related_commands_exist(self):
@@ -177,3 +210,97 @@ class TestImageCmdFlags:
         assert result.exit_code == 0
         for cmd in ("serve", "sync", "publish", "validate", "evolve", "projection"):
             assert cmd in result.output, f"ontogeny lost the {cmd} command"
+
+
+async def test_container_copy_mode_boots_from_its_configured_package_volume(golden_pkg_path, tmp_path, monkeypatch):
+    import uvicorn
+
+    from ontogeny.config import load_settings
+    from ontogeny.service import ServiceContext
+
+    package = tmp_path / "domains" / "sample"
+    shutil.copytree(golden_pkg_path, package)
+    data = tmp_path / "data"
+    monkeypatch.setenv("ONTOGENY_PACKAGE_ROOT", str(data / "pkg"))
+    monkeypatch.setenv("ONTOGENY_DATA_DIR", str(data))
+    monkeypatch.delenv("ONTOGENY_DB_DSN", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+    result = CliRunner().invoke(
+        cli_app,
+        [
+            "serve",
+            "--demo",
+            "--copy-package",
+            "--package",
+            str(package),
+            "--data-dir",
+            str(data),
+            "--no-build-ui",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (data / "pkg/ontology.yaml").is_file()
+    sc = ServiceContext(load_settings(), os.environ["ONTOGENY_PACKAGE_ROOT"])
+    try:
+        await sc.initialize()
+        assert Path(sc.compiled.package_root).resolve() == (data / "pkg").resolve()
+        assert sc.compiled.package_name == "product-manufacturing"
+    finally:
+        await sc.engine.dispose()
+
+
+def test_daemon_start_resolves_relative_state_paths_from_module_directory(tmp_path):
+    module, outside = tmp_path / "module", tmp_path / "elsewhere"
+    (module / ".venv/bin").mkdir(parents=True)
+    outside.mkdir()
+    shutil.copy2(REPO / "daemon.sh", module / "daemon.sh")
+    server = module / ".venv/bin/ontogeny"
+    server.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, pathlib, sys, time\n"
+        "pathlib.Path('startup.json').write_text(json.dumps({\n"
+        " 'args':sys.argv[1:], 'llm':os.environ.get('ONTOGENY_LLM_BASE_URL'),\n"
+        " 'graph':os.environ.get('HUGEGRAPH_URL')}))\n"
+        "while True: time.sleep(1)\n"
+    )
+    server.chmod(0o755)
+    helpers = tmp_path / "bin"
+    helpers.mkdir()
+    curl = helpers / "curl"
+    curl.write_text("#!/bin/sh\nexit 0\n")
+    curl.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("ONTOGENY_", "HUGEGRAPH_"))}
+    env.update(
+        PATH=f"{helpers}:{env['PATH']}",
+        PORT="38507",
+        PID_FILE="state/server.pid",
+        PORT_FILE="ports/server.port",
+        LOG_FILE="logs/server.log",
+    )
+    env.pop("HOST", None)
+    try:
+        result = subprocess.run(
+            ["bash", str(module / "daemon.sh"), "start", "--copy-package", "--no-build-ui"],
+            cwd=outside,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        assert result.returncode == 0, result.stderr
+        assert (module / "ports/server.port").read_text().strip() == "38507"
+        assert not (outside / "state").exists()
+        for _ in range(100):
+            if (module / "startup.json").exists():
+                break
+            time.sleep(0.01)
+        import json
+
+        started = json.loads((module / "startup.json").read_text())
+        assert "--copy-package" in started["args"]
+        assert started["args"][started["args"].index("--host") + 1] == "127.0.0.1"
+        assert started["llm"] == started["graph"] == ""
+    finally:
+        pid_file = module / "state/server.pid"
+        if pid_file.exists():
+            os.kill(int(pid_file.read_text()), signal.SIGTERM)

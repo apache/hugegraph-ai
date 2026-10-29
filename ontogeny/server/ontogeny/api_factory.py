@@ -64,6 +64,7 @@ def create_app_factory():
 
     @asynccontextmanager
     async def lifespan(_app):
+        import asyncio
         import logging
 
         # uvicorn's own logger is configured to INFO by default (the "ontogeny"
@@ -77,53 +78,89 @@ def create_app_factory():
         suspicion = multiprocess_suspected()
         if suspicion:
             log.error("MULTIPROCESS DEPLOYMENT SUSPECTED: %s", suspicion)
-        await sc.initialize()
-        if os.environ.get("ONTOGENY_DEMO_POPULATE") == "1" and sc.package_root:
-            # `ontogeny serve --demo`: a fresh demo boots with its source data
-            # already synced (no guided story -- the console is the interface)
-            import logging
-
-            log = logging.getLogger("ontogeny.demo")
-            total = 0
-            for object_type in sc.compiled.objects if sc.compiled else {}:
-                async with sc.sessionmaker() as s:
-                    summary = await sc.sync_engine.sync(s, object_type)
-                    await s.commit()
-                total += int(summary.get("inserted", 0))
-            log.info("demo data synced: %d rows across %d object types", total, len(sc.compiled.objects))
-        # direction F: the observe+diagnose beats on the domain's cadence.
-        # Promotion is NEVER automatic from here -- the ladder keeps its gates.
-        import asyncio
-        import logging
-
-        log = logging.getLogger("ontogeny.evolve")
-
-        async def _evolve_worker():
-            from .evolve.ops import run_diagnose
-
-            while True:
-                await asyncio.sleep(minutes * 60)
-                try:
+        try:
+            await sc.initialize()
+            if os.environ.get("ONTOGENY_DEMO_POPULATE") == "1" and sc.package_root:
+                total = 0
+                for object_type in sc.compiled.objects if sc.compiled else {}:
                     async with sc.sessionmaker() as s:
-                        evo = getattr(sc.compiled, "evolution", None)
-                        obs = getattr(getattr(evo, "spec", None), "observability", None) if evo else None
-                        await sc.telemetry.aggregate_signals(s, thresholds=getattr(obs, "thresholds", None) or None)
+                        summary = await sc.sync_engine.sync(s, object_type)
                         await s.commit()
-                    await run_diagnose(sc)
-                    log.info("evolve cycle ok")
-                except Exception as exc:
-                    log.warning("evolve cycle failed: %s", exc)
+                    total += int(summary.get("inserted", 0))
+                logging.getLogger("ontogeny.demo").info(
+                    "demo data synced: %d rows across %d object types", total, len(sc.compiled.objects)
+                )
 
-        evo = getattr(sc.compiled, "evolution", None)
-        spec = getattr(evo, "spec", None)
-        minutes = int(getattr(spec, "interval_minutes", 0) or 0) if spec else 0
-        if getattr(spec, "loop", False) and minutes > 0:
-            app.state.evolve_task = asyncio.get_running_loop().create_task(_evolve_worker())
-        async with base_lifespan(app):
-            yield
-        task = getattr(app.state, "evolve_task", None)
-        if task is not None:
-            task.cancel()
+            async def _evolve_worker():
+                from .evolve.ops import run_diagnose
+
+                while True:
+                    await asyncio.sleep(minutes * 60)
+                    try:
+                        async with sc.sessionmaker() as s:
+                            evo = getattr(sc.compiled, "evolution", None)
+                            obs = getattr(getattr(evo, "spec", None), "observability", None) if evo else None
+                            await sc.telemetry.aggregate_signals(s, thresholds=getattr(obs, "thresholds", None) or None)
+                            await s.commit()
+                        await run_diagnose(sc)
+                        logging.getLogger("ontogeny.evolve").info("evolve cycle ok")
+                    except Exception as exc:
+                        logging.getLogger("ontogeny.evolve").warning("evolve cycle failed: %s", exc)
+
+            async def _outbox_worker():
+                while True:
+                    try:
+                        # Publish/domain switches replace the runtime. Resolve
+                        # its dispatcher on every tick, never retain an old one.
+                        await sc.outbox.dispatch_pending()
+                    except Exception as exc:
+                        logging.getLogger("ontogeny.outbox").warning("outbox tick failed: %s", exc)
+                    await asyncio.sleep(1.0)
+
+            evo = getattr(sc.compiled, "evolution", None)
+            spec = getattr(evo, "spec", None)
+            minutes = int(getattr(spec, "interval_minutes", 0) or 0) if spec else 0
+            async with base_lifespan(app):
+
+                def log_task_failure(task):
+                    if not task.cancelled() and task.exception() is not None:
+                        exc = task.exception()
+                        log.error(
+                            "background task %s failed", task.get_name(), exc_info=(type(exc), exc, exc.__traceback__)
+                        )
+
+                tasks = []
+                try:
+                    tasks.append(asyncio.create_task(_outbox_worker(), name="ontogeny-outbox"))
+                    app.state.outbox_task = tasks[0]
+                    if getattr(spec, "loop", False) and minutes > 0:
+                        app.state.evolve_task = asyncio.create_task(_evolve_worker(), name="ontogeny-evolve")
+                        tasks.append(app.state.evolve_task)
+                    for task in tasks:
+                        task.add_done_callback(log_task_failure)
+                    yield
+                finally:
+                    for task in tasks:
+                        task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            # Initialization can fail partway through; close only resources
+            # that were actually created, after background tasks have stopped.
+            resources = [getattr(sc, "functions", None), getattr(sc, "projection_client", None), sc.llm]
+            resources.extend(outbox.http for outbox in sc._outbox_instances)
+            closed = set()
+            for resource in resources:
+                if resource is None or id(resource) in closed:
+                    continue
+                closed.add(id(resource))
+                close = getattr(resource, "aclose", None)
+                if close is not None:
+                    try:
+                        await close()
+                    except Exception:
+                        log.exception("resource shutdown failed")
+            if sc.engine is not None:
+                await sc.engine.dispose()
 
     app.router.lifespan_context = lifespan
     return app

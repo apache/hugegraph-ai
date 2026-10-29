@@ -139,6 +139,10 @@ class TestValidator:
             _fn(runtime="python", entry="a.py:main", steps=[FunctionStep(id="a", kind="llm", prompt="x")])
         )
 
+    @pytest.mark.parametrize("entry", ["../../secret.py:main", "/tmp/secret.py:main", ":main", "a.txt:main", "a.py:"])
+    def test_code_entry_rejects_invalid_paths(self, entry):
+        assert "FN-ENTRY" in _codes(_fn(runtime="python", entry=entry))
+
     def test_a_declarative_function_has_no_file(self):
         assert "FN-ENTRY" in _codes(
             _fn(
@@ -453,7 +457,7 @@ class TestFunctionBoundaryRule:
 
         _, sc = client
         await sc.sync("work-center")
-        src = tmp_path / "peek.py"
+        src = Path(sc.package_root) / "functions" / "peek.py"
         src.write_text(
             textwrap.dedent("""
             def peek() -> dict:
@@ -468,7 +472,7 @@ class TestFunctionBoundaryRule:
             metadata=ResourceMeta(name="peek"),
             spec=FunctionSpec(
                 runtime="python",
-                entry=f"{src}:peek",
+                entry="peek.py:peek",
                 parameters={},
                 capabilities=[Capability(**{"read-objects": ["work-center"]})],
             ),
@@ -505,12 +509,13 @@ class TestFunctionSourceEditing:
     async def _python_fn(self, sc, tmp_path, name="editable"):
         import textwrap
 
+        function_name = name.replace("-", "_")
         root = Path(sc.package_root) / "functions"
         root.mkdir(parents=True, exist_ok=True)
         src = root / f"{name}.py"
         src.write_text(
             textwrap.dedent(f"""
-            def {name}() -> dict:
+            def {function_name}() -> dict:
                 return {{"version": 1}}
         """).lstrip(),
             encoding="utf-8",
@@ -518,7 +523,7 @@ class TestFunctionSourceEditing:
         (root / f"{name}.yaml").write_text(
             "apiVersion: ontogeny/v1\nkind: Function\n"
             f"metadata: {{name: {name}}}\n"
-            f"spec:\n  runtime: python\n  entry: {name}.py:{name}\n"
+            f"spec:\n  runtime: python\n  entry: {name}.py:{function_name}\n"
             "  capabilities:\n  - read-objects: [work-center]\n",
             encoding="utf-8",
         )

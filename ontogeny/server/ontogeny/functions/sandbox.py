@@ -35,6 +35,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ..core.function_entry import resolve_function_entry
 from ..errors import SandboxError
 from ..stores.repo import ObjectRepository
 
@@ -71,10 +72,10 @@ def function_source_path(compiled, function_resource) -> Path:
     "what code runs here?") need the path even when it is missing, which is
     exactly the case a canvas-created function starts in.
     """
-    file, _, func = function_resource.spec.entry.partition(":")
-    if not func:
-        raise SandboxError(f"entry must be 'file.py:function', got {function_resource.spec.entry!r}")
-    return Path(compiled.package_root) / "functions" / file
+    try:
+        return resolve_function_entry(compiled.package_root, function_resource.spec.entry)
+    except ValueError as exc:
+        raise SandboxError(f"invalid function entry {function_resource.spec.entry!r}: {exc}") from exc
 
 
 def _llm_budget(cfg: dict | None) -> int:
@@ -293,7 +294,7 @@ class FunctionSandbox:
         budget = self._budget(function_resource)
         try:
             return await asyncio.wait_for(child_main(), timeout=budget)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise SandboxError(f"function {entry!r} exceeded {budget:g}s wall clock") from exc
         finally:
             with contextlib.suppress(ProcessLookupError):

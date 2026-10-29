@@ -257,6 +257,7 @@ def serve(
         direct = pkg_arg.resolve().parent.name == "domains"
 
         paths = prepare_demo(data_dir, package=package or DEFAULT_PACKAGE, reseed=reseed, direct=direct)
+        os.environ.setdefault("ONTOGENY_DATA_DIR", str(paths.root.resolve()))
         # operator-provided env wins: --demo used to clobber ONTOGENY_DB_DSN
         # (and friends), so edits/promotions landed outside the /data volume
         # and vanished on container recreation

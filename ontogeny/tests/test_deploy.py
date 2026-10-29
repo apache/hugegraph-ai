@@ -69,6 +69,12 @@ class TestCompose:
         env = compose["services"]["ontogeny"]["environment"]
         assert "ONTOGENY_LLM_BASE_URL" in env and "ONTOGENY_LLM_MODEL" in env
 
+    def test_bootstrap_credentials_can_be_passed_to_the_container(self, compose):
+        env = compose["services"]["ontogeny"]["environment"]
+        assert env["ONTOGENY_ADMIN_USER"] == "${ONTOGENY_ADMIN_USER:-admin}"
+        assert env["ONTOGENY_ADMIN_PASSWORD"] == "${ONTOGENY_ADMIN_PASSWORD:-}"
+        assert env["ONTOGENY_DATA_DIR"] == "${ONTOGENY_DATA_DIR:-/data}"
+
     def test_optional_profiles_are_declared_and_referenced(self, compose):
         # service name -> profile name (they differ for the graph profile)
         for service, profile in (("postgres", "postgres"), ("hugegraph", "graph")):

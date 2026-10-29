@@ -73,9 +73,48 @@ def translate_when(cond: str) -> str:
     return out.replace("&&", " and ").replace("||", " or ")
 
 
+def _policy_text(text: str) -> tuple[str, set[int]]:
+    """Remove comments without changing quoted literals or token boundaries."""
+    out = list(text)
+    quoted: set[int] = set()
+    i = 0
+    while i < len(text):
+        if text[i] in ('"', "'"):
+            quote, start = text[i], i
+            i += 1
+            while i < len(text):
+                if text[i] == "\\":
+                    i += 2
+                elif text[i] == quote:
+                    i += 1
+                    break
+                else:
+                    i += 1
+            quoted.update(range(start, min(i, len(text))))
+        elif text.startswith("//", i) or text.startswith("/*", i):
+            start = i
+            if text.startswith("//", i):
+                end = text.find("\n", i + 2)
+                i = len(text) if end == -1 else end
+            else:
+                end = text.find("*/", i + 2)
+                if end == -1:
+                    raise ValueError("unterminated Cedar block comment")
+                i = end + 2
+            for j in range(start, i):
+                if text[j] not in "\r\n":
+                    out[j] = " "
+        else:
+            i += 1
+    return "".join(out), quoted
+
+
 def parse_policy_set(text: str) -> list[PermitRule]:
     rules: list[PermitRule] = []
+    text, quoted = _policy_text(text)
     for m in _PERMIT_RE.finditer(text):
+        if m.start() in quoted:
+            continue
         principal = m.group("principal").strip()
         role: str | None = None
         rm = re.fullmatch(r'principal in (?:Role|Group)::"([^"]+)"', principal)
@@ -93,7 +132,10 @@ def parse_policy_set(text: str) -> list[PermitRule]:
 def parse_forbids(text: str) -> list[PermitRule]:
     """Forbid statements, parsed with the same shape as permits."""
     rules: list[PermitRule] = []
+    text, quoted = _policy_text(text)
     for m in _FORBID_RE.finditer(text):
+        if m.start() in quoted:
+            continue
         principal = m.group("principal").strip()
         role: str | None = None
         rm = re.fullmatch(r'principal in (?:Role|Group)::"([^"]+)"', principal)
@@ -223,6 +265,13 @@ class PolicyEngine:
                 details={"action": action_name, "principal": principal.get("id")},
             )
         return decision
+
+    def require_if_defined(self, principal: dict, action_name: str, resource: dict | None) -> None:
+        """Apply an optional action policy, including forbid-only policies."""
+        if self.rules_for(action_name) or any(
+            rule.action == action_name for rules in self._forbids.values() for rule in rules
+        ):
+            self.require(principal, action_name, resource)
 
     # --------------------------------------------------------------- masking
 

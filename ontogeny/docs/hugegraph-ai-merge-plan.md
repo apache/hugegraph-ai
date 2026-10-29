@@ -1,7 +1,7 @@
 # Ontogeny × hugegraph-ai 三步合并方案
 
 > 状态：方案（未执行）
-> 上游仓库：<https://github.com/apache/hugegraph-ai>（Apache-2.0，Python 3.10+）
+> 上游仓库：<https://github.com/apache/hugegraph-ai>（Apache-2.0，Python 3.12+）
 > 主仓库：本仓库（ontogeny）
 > 关联文档：[ARCHITECTURE.md](ARCHITECTURE.md) · [extensions.md](extensions.md) · [data-layer.md](data-layer.md)
 

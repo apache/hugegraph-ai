@@ -32,6 +32,7 @@ DEFAULT_DB_DSN = "sqlite+aiosqlite:///./ontogeny.db"
 @dataclass(frozen=True)
 class Settings:
     db_dsn: str = DEFAULT_DB_DSN
+    data_dir: str | None = None
     # Off by default: the X-Ontogeny-Principal dev header is a full identity
     # simulation (it may even claim is_admin/markings), so it must be an
     # explicit opt-in for CI/demo (ONTOGENY_DEV_AUTH=1), never a silent default.
@@ -81,6 +82,7 @@ class Settings:
 def load_settings(**overrides: str | bool) -> Settings:
     return Settings(
         db_dsn=overrides.get("db_dsn", os.environ.get("ONTOGENY_DB_DSN", DEFAULT_DB_DSN)),
+        data_dir=overrides.get("data_dir", os.environ.get("ONTOGENY_DATA_DIR")) or None,
         dev_auth=bool(overrides.get("dev_auth", os.environ.get("ONTOGENY_DEV_AUTH", "0") == "1")),
         webhook_allowlist=tuple(
             s.strip()

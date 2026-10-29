@@ -201,7 +201,7 @@ class TestQuery:
         q, repo = join_env["query"], join_env["repo"]
         async with join_env["maker"]() as s:
             # ontology-owned link membership (join table is engine-managed)
-            await repo.link_add(s, "container-items", "C-1", "I-2", dt.datetime.now(dt.timezone.utc))
+            await repo.link_add(s, "container-items", "C-1", "I-2", dt.datetime.now(dt.UTC))
             await s.commit()
             members = await repo.link_members(s, "container-items", src_id="C-1")
         assert members == [("C-1", "I-2")]
@@ -254,9 +254,12 @@ class TestSandbox:
                 await env["sandbox"].run(s, fn, {"work_center_id": "WC-01", "qty": 10})
 
     async def test_timeout_kills_runaway(self, env, tmp_path):
+        from dataclasses import replace
+
         from ontogeny.core.models import Capability, FunctionResource, FunctionSpec, ParamDef, ResourceMeta
 
-        bad = tmp_path / "bad.py"
+        (tmp_path / "functions").mkdir()
+        bad = tmp_path / "functions" / "bad.py"
         bad.write_text("import time\ndef spin(x):\n    time.sleep(60)\n    return 1\n", encoding="utf-8")
         fr = FunctionResource(
             apiVersion="ontogeny/v1",
@@ -264,12 +267,12 @@ class TestSandbox:
             metadata=ResourceMeta(name="spin"),
             spec=FunctionSpec(
                 runtime="python",
-                entry=f"{bad}:spin",
+                entry="bad.py:spin",
                 parameters={"x": ParamDef(type="integer")},
                 capabilities=[Capability(**{"read-objects": ["production-order"]})],
             ),
         )
-        sandbox = FunctionSandbox(env["compiled"], env["repo"], timeout_s=1.5)
+        sandbox = FunctionSandbox(replace(env["compiled"], package_root=str(tmp_path)), env["repo"], timeout_s=1.5)
         async with env["maker"]() as s:
             with pytest.raises(SandboxError, match="wall clock"):
                 await sandbox.run(s, fr, {"x": 1})
@@ -322,6 +325,44 @@ class TestFunctionSourceEndpoint:
         assert body["exists"] is True
         assert body["path"].endswith("functions/capacity.py")
         assert "def capacity_check" in body["source"]
+
+    async def test_source_requires_admin(self, client):
+        c, _ = client
+        for identity in ("", '{"id": "ordinary", "is_admin": false}'):
+            response = await c.get(
+                "/api/v1/functions/capacity-check/source", headers={"X-Ontogeny-Principal": identity}
+            )
+            assert response.status_code == 403
+
+    async def test_source_rejects_escape_even_for_admin(self, client, tmp_path):
+        c, sc = client
+        fn = sc.compiled.functions["capacity-check"]
+        outside = tmp_path / "secret.py"
+        outside.write_text("SECRET = 'private'", encoding="utf-8")
+        for entry in (f"{outside}:main", "../../secret.py:main"):
+            fn.spec.entry = entry
+            response = await c.get("/api/v1/functions/capacity-check/source")
+            assert response.status_code != 200
+            assert "private" not in response.text
+
+    async def test_symlink_escape_rejected_by_validator_and_source(self, client, tmp_path):
+        from pathlib import Path
+
+        from ontogeny.core import load_package
+        from ontogeny.core.validator import validate
+
+        c, sc = client
+        outside = tmp_path / "secret.py"
+        outside.write_text("SECRET = 'private'", encoding="utf-8")
+        (Path(sc.package_root) / "functions" / "outside.py").symlink_to(outside)
+        pkg = load_package(sc.package_root)
+        fn = next(fn for fn in pkg.functions() if fn.metadata.name == "capacity-check")
+        fn.spec.entry = "outside.py:main"
+        assert any(issue.code == "FN-ENTRY" for issue in validate(pkg).issues)
+        sc.compiled.functions["capacity-check"].spec.entry = "outside.py:main"
+        response = await c.get("/api/v1/functions/capacity-check/source")
+        assert response.status_code != 200
+        assert "private" not in response.text
 
     async def test_missing_file_is_reported_not_hidden(self, client, tmp_path):
         from ontogeny.core.models import FunctionResource, FunctionSpec, ResourceMeta

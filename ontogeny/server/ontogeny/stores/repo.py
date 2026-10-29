@@ -23,10 +23,10 @@ by ActionRuntime (ownership already validated at publish time).
 from __future__ import annotations
 
 import datetime as _dt
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, select, tuple_, update
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import ColumnElement
@@ -76,6 +76,27 @@ class ObjectRepository:
     def _pk(self, object_type: str, t) -> list:
         """Primary-key Column objects for the object's table."""
         return [t.c[c] for c in self._pk_cols(object_type)]
+
+    def _key_values(self, object_type: str, obj_id: Any) -> tuple[Any, ...]:
+        """Coerce API and internal key values using the declared property types."""
+        obj = self.compiled.objects[object_type]
+        values = list(obj_id) if isinstance(obj_id, (list, tuple)) else [obj_id]
+        if len(values) != len(obj.spec.primaryKey):
+            raise StoreError(f"expected {len(obj.spec.primaryKey)} key value(s), got {len(values)}")
+        if any(value is None for value in values):
+            raise StoreError("primary key values must not be null")
+        return tuple(
+            obj.spec.properties[prop].ptype().coerce(value, prop=prop)
+            for prop, value in zip(obj.spec.primaryKey, values, strict=True)
+        )
+
+    def _key_where(self, object_type: str, table, obj_id: Any):
+        return _and(
+            *[
+                col == value
+                for col, value in zip(self._pk(object_type, table), self._key_values(object_type, obj_id), strict=True)
+            ]
+        )
 
     def row_to_props(self, object_type: str, row: RowMapping) -> dict[str, Any]:
         """Column dict -> property dict (adds _rev/_valid_from/_valid_to/_synced_at)."""
@@ -146,18 +167,13 @@ class ObjectRepository:
         self,
         session,
         object_type: str,
-        obj_id: str | Sequence[str],
+        obj_id: Any,
         *,
         at: _dt.datetime | None = None,
         for_update: bool = False,
     ) -> dict[str, Any] | None:
         t = self._table(object_type)
-        pk_cols = self._pk_cols(object_type)
-        ids = [obj_id] if isinstance(obj_id, str) else list(obj_id)
-        if len(ids) != len(pk_cols):
-            raise StoreError(f"expected {len(pk_cols)} key value(s), got {len(ids)}")
-        pk_columns = self._pk(object_type, t)
-        where = _and(self._current_where(object_type, at), *[c == v for c, v in zip(pk_columns, ids, strict=False)])
+        where = _and(self._current_where(object_type, at), self._key_where(object_type, t, obj_id))
         stmt = select(t).where(where).limit(1)
         if for_update:
             stmt = stmt.with_for_update()
@@ -168,20 +184,21 @@ class ObjectRepository:
         self,
         session,
         object_type: str,
-        ids: Iterable[str],
+        ids: Iterable[Any],
         *,
         at: _dt.datetime | None = None,
     ) -> list[dict[str, Any]]:
         t = self._table(object_type)
-        pk = self._pk(object_type, t)[0]
-        stmt = select(t).where(_and(self._current_where(object_type, at), pk.in_(list(ids))))
+        pk = self._pk(object_type, t)
+        values = [self._key_values(object_type, obj_id) for obj_id in ids]
+        predicate = pk[0].in_([value[0] for value in values]) if len(pk) == 1 else tuple_(*pk).in_(values)
+        stmt = select(t).where(_and(self._current_where(object_type, at), predicate))
         rows = (await session.execute(stmt)).mappings().all()
         return [self.row_to_props(object_type, r) for r in rows]
 
-    async def history(self, session, object_type: str, obj_id: str) -> list[dict[str, Any]]:
+    async def history(self, session, object_type: str, obj_id: Any) -> list[dict[str, Any]]:
         t = self._table(object_type)
-        pk = self._pk(object_type, t)[0]
-        stmt = select(t).where(pk == obj_id).order_by(t.c._valid_from)
+        stmt = select(t).where(self._key_where(object_type, t, obj_id)).order_by(t.c._valid_from)
         return [self.row_to_props(object_type, r) for r in (await session.execute(stmt)).mappings().all()]
 
     def _marked_props(self, object_type: str, principal: dict | None) -> set[str]:
@@ -348,6 +365,7 @@ class ObjectRepository:
         missing = [c for c in pk_cols if props.get(c) is None]
         if missing:
             raise StoreError(f"sync row missing primary key {missing}")
+        props.update(dict(zip(pk_cols, self._key_values(object_type, [props[c] for c in pk_cols]), strict=True)))
         where = _and(t.c._valid_to.is_(None), *[t.c[c] == props[c] for c in pk_cols])
         current = (await session.execute(select(t).where(where).limit(1).with_for_update())).mappings().first()
 
@@ -391,11 +409,16 @@ class ObjectRepository:
                 return prop
         return col_name
 
-    async def alive_ids(self, session, object_type: str) -> set[str]:
+    async def alive_ids(self, session, object_type: str) -> set[Any]:
         t = self._table(object_type)
         pk = self._pk(object_type, t)[0]
         rows = (await session.execute(select(pk).where(t.c._valid_to.is_(None)))).scalars()
         return set(rows)
+
+    async def alive_keys(self, session, object_type: str) -> set[tuple[Any, ...]]:
+        t = self._table(object_type)
+        rows = (await session.execute(select(*self._pk(object_type, t)).where(t.c._valid_to.is_(None)))).all()
+        return {tuple(row) for row in rows}
 
     # ----------------------------------------------------------- action writes
 
@@ -403,7 +426,8 @@ class ObjectRepository:
         t = self._table(object_type)
         props = self._to_columns(object_type, props)
         pk_cols = self._pk_cols(object_type)
-        pk_vals = [props.get(c) for c in pk_cols]
+        pk_vals = self._key_values(object_type, [props.get(c) for c in pk_cols])
+        props.update(dict(zip(pk_cols, pk_vals, strict=True)))
         # The versioned schema keys rows by (business key, _valid_from), so a
         # duplicate business key does NOT violate any table constraint: without
         # this guard it produced two alive rows and `get` silently picked one
@@ -432,15 +456,14 @@ class ObjectRepository:
         self,
         session,
         object_type: str,
-        obj_id: str,
+        obj_id: Any,
         changes: dict[str, Any],
         ts: _dt.datetime,
         *,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
         t = self._table(object_type)
-        pk = self._pk(object_type, t)[0]
-        where = _and(t.c._valid_to.is_(None), pk == obj_id)
+        where = _and(t.c._valid_to.is_(None), self._key_where(object_type, t, obj_id))
         current = (await session.execute(select(t).where(where).limit(1).with_for_update())).mappings().first()
         if current is None:
             raise NotFoundError(f"{object_type}/{obj_id} not found (or archived)")
@@ -459,10 +482,9 @@ class ObjectRepository:
         await session.execute(t.insert().values(**merged))
         return self.row_to_props(object_type, dict(current) | merged)
 
-    async def archive(self, session, object_type: str, obj_id: str, ts: _dt.datetime) -> None:
+    async def archive(self, session, object_type: str, obj_id: Any, ts: _dt.datetime) -> None:
         t = self._table(object_type)
-        pk = self._pk(object_type, t)[0]
-        where = _and(t.c._valid_to.is_(None), pk == obj_id)
+        where = _and(t.c._valid_to.is_(None), self._key_where(object_type, t, obj_id))
         current = (
             await session.execute(select(t.c._valid_from).where(where).limit(1).with_for_update())
         ).scalar_one_or_none()
@@ -535,9 +557,12 @@ class ObjectRepository:
         audit trail the first time a sync touches a thousand rows.
         """
         t = self._table(object_type)
-        pk = self._pk(object_type, t)[0]
         col = t.c[self.compiled.col(prop)]
-        await session.execute(update(t).where(_and(t.c._valid_to.is_(None), pk == obj_id)).values({col.name: value}))
+        await session.execute(
+            update(t)
+            .where(_and(t.c._valid_to.is_(None), self._key_where(object_type, t, obj_id)))
+            .values({col.name: value})
+        )
 
     # FK links are read from the object tables themselves
     async def fk_linked_ids(
@@ -565,7 +590,8 @@ class ObjectRepository:
             t = self._table(tgt_obj)
             fk_col = t.c[self.compiled.col(tgt_prop)]
             pk_col = t.c[self._pk_cols(tgt_obj)[0]]
-            stmt = select(pk_col).where(_and(self._current_where(tgt_obj, at), fk_col == obj_id))
+            fk_value = self.compiled.objects[tgt_obj].spec.properties[tgt_prop].ptype().coerce(obj_id, prop=tgt_prop)
+            stmt = select(pk_col).where(_and(self._current_where(tgt_obj, at), fk_col == fk_value))
             return [str(v) for v in (await session.execute(stmt)).scalars()]
         # obj is a target-side object id; read its fk value as the source id
         row = await self.get(session, tgt_obj, obj_id, at=at)

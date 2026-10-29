@@ -38,6 +38,7 @@ from typing import Any
 from ..core.function_entry import resolve_function_entry
 from ..errors import SandboxError
 from ..stores.repo import ObjectRepository
+from .declarative import _MAX_RESPONSE_BYTES as _MAX_FRAME_BYTES
 
 
 def _limits() -> None:  # pragma: no cover -- preexec in the child process
@@ -252,6 +253,10 @@ class FunctionSandbox:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            # Bound child stdout frames, using the existing response cap.
+            # Parent inputs/RPC replies keep the original stdin contract: a
+            # child may aggregate a large input into a small bounded result.
+            limit=_MAX_FRAME_BYTES,
             env=env,
             preexec_fn=_limits if os.name == "posix" else None,
         )
@@ -266,7 +271,12 @@ class FunctionSandbox:
             await proc.stdin.drain()
             nonlocal llm_used
             while True:
-                line = await proc.stdout.readline()
+                try:
+                    line = await proc.stdout.readline()
+                except ValueError as exc:
+                    raise SandboxError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit") from exc
+                if len(line) > _MAX_FRAME_BYTES:
+                    raise SandboxError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit")
                 if not line:
                     raise SandboxError("sandbox exited before returning a result")
                 try:
@@ -345,6 +355,7 @@ class FunctionSandbox:
             session,
             object_type,
             filt=params.get("filter"),
+            sort=params.get("sort"),
             limit=int(params.get("limit") or 100),
         )
         # hand functions the same object shape the API returns: derived

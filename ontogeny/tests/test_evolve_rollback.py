@@ -118,12 +118,15 @@ async def test_rollback_commit_failure_keeps_promoted_state_and_recovery_backup(
     pid = await _evaluated_proposal(sc)
     root = Path(sc.package_root)
     commit = AsyncSession.commit
-    commits = 0
+    injected = False
 
     async def fail_rollback_commit(session):
-        nonlocal commits
-        commits += 1
-        if commits == 2:
+        nonlocal injected
+        if any(
+            isinstance(row, ProposalRow) and row.id == pid and row.status == "rolled_back"
+            for row in session.identity_map.values()
+        ):
+            injected = True
             assert list(root.parent.glob(f"{root.name}.evolve-backup-*"))
             raise failure("rollback commit failed")
         await commit(session)
@@ -131,6 +134,7 @@ async def test_rollback_commit_failure_keeps_promoted_state_and_recovery_backup(
     monkeypatch.setattr(AsyncSession, "commit", fail_rollback_commit)
     with pytest.raises(failure, match="rollback commit failed"):
         await sc.evolve_promote(pid)
+    assert injected
     backups = list(root.parent.glob(f"{root.name}.evolve-backup-*"))
     assert len(backups) == 1
     assert PROPERTY not in load_package(backups[0]).find("ObjectType", "product").spec.properties

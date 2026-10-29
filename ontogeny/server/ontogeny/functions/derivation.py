@@ -119,7 +119,7 @@ class DerivationWorker:
             if owner == event.object_type:
                 ids = {str(event.object_id)}
             else:
-                ids = await self.repo.alive_ids(session, owner)
+                ids = {str(oid) for oid in await self.repo.alive_ids(session, owner)}
             # SQLite and PostgreSQL support atomic upsert; a fresh token also
             # prevents an old worker from deleting a later invalidation (ABA).
             if session.bind.dialect.name == "sqlite":

@@ -1336,7 +1336,7 @@
       "vertex_path": [],
       "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/ProfileAPI.java"
     },
-    "profile.show_all_ap_is": {
+    "profile.show_all_apis": {
       "method": "GET",
       "path": "apis",
       "query": [],
@@ -1369,7 +1369,7 @@
       "vertex_path": [],
       "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/WhiteIpListAPI.java"
     },
-    "white_ip_list.update_white_i_ps": {
+    "white_ip_list.update_white_ips": {
       "method": "POST",
       "path": "whiteiplist",
       "query": [],

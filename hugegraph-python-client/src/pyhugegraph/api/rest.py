@@ -546,9 +546,9 @@ class ProfileAPI(RestResource):
         """GET /."""
         return self.request("profile.get_profile")
 
-    def show_all_ap_is(self) -> Any:
+    def show_all_apis(self) -> Any:
         """GET /apis."""
-        return self.request("profile.show_all_ap_is")
+        return self.request("profile.show_all_apis")
 
 
 class VersionAPI(RestResource):
@@ -562,9 +562,9 @@ class WhiteIpListAPI(RestResource):
         """GET /whiteiplist."""
         return self.request("white_ip_list.list")
 
-    def update_white_i_ps(self, *, body: Any = None) -> Any:
+    def update_white_ips(self, *, body: Any = None) -> Any:
         """POST /whiteiplist."""
-        return self.request("white_ip_list.update_white_i_ps", body=body)
+        return self.request("white_ip_list.update_white_ips", body=body)
 
     def update_status(self, *, status: Any = None) -> Any:
         """PUT /whiteiplist."""

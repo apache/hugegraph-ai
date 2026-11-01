@@ -165,9 +165,6 @@ def main():
     parser.add_argument("--website-root", type=Path, help="also synchronize the bilingual website reference tables")
     args = parser.parse_args()
     contract = json.loads((PACKAGE / "api/server_contract.json").read_text())
-    errors = check_operation_bindings(contract)
-    if errors:
-        parser.exit(1, "\n".join(errors) + "\n")
     generated = render_resources()
     algorithms = render_algorithms(contract)
     algorithm_target = PACKAGE / "api/olap.py"
@@ -185,6 +182,9 @@ def main():
         or reference.read_text() != table
     ):
         parser.exit(1, "Generated API/coverage is stale. Run python scripts/client_api.py --write and format.\n")
+    errors = check_operation_bindings(contract)
+    if errors:
+        parser.exit(1, "\n".join(errors) + "\n")
     if args.website_root:
         for lang in ("en", "cn"):
             page = args.website_root / f"content/{lang}/docs/clients/hugegraph-python-client.md"

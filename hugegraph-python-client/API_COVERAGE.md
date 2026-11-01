@@ -124,7 +124,7 @@ Server: `8e327b8f3d3ffcf61547be7fea1a15d3af2de8b4`
 | `rest.paths.post()` | POST | `/graphspaces/{graphspace}/graphs/{graph}/traversers/paths` | — |
 | `rest.personal_rank.personal_rank()` | POST | `/graphspaces/{graphspace}/graphs/{graph}/traversers/personalrank` | — |
 | `rest.profile.get_profile()` | GET | `/` | — |
-| `rest.profile.show_all_ap_is()` | GET | `/apis` | — |
+| `rest.profile.show_all_apis()` | GET | `/apis` | — |
 | `rest.project.create()` | POST | `/graphspaces/{graphspace}/auth/projects` | — |
 | `rest.project.delete()` | DELETE | `/graphspaces/{graphspace}/auth/projects/{id}` | — |
 | `rest.project.get()` | GET | `/graphspaces/{graphspace}/auth/projects/{id}` | — |
@@ -197,4 +197,4 @@ Server: `8e327b8f3d3ffcf61547be7fea1a15d3af2de8b4`
 | `rest.weighted_shortest_path.get()` | GET | `/graphspaces/{graphspace}/graphs/{graph}/traversers/weightedshortestpath` | source, target, direction, label, weight, max_degree, skip_degree, with_vertex, with_edge, capacity |
 | `rest.white_ip_list.list()` | GET | `/whiteiplist` | — |
 | `rest.white_ip_list.update_status()` | PUT | `/whiteiplist` | status |
-| `rest.white_ip_list.update_white_i_ps()` | POST | `/whiteiplist` | — |
+| `rest.white_ip_list.update_white_ips()` | POST | `/whiteiplist` | — |

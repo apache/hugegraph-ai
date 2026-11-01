@@ -23,6 +23,7 @@ from pathlib import Path
 
 PATH = Path(__file__).resolve().parents[1] / "client_api.py"
 SPEC = importlib.util.spec_from_file_location("client_api", PATH)
+assert SPEC is not None and SPEC.loader is not None
 client_api = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(client_api)
 

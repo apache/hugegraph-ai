@@ -22,6 +22,9 @@ import math
 import time
 from typing import Any
 
+import requests
+from urllib3.util import Timeout
+
 from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.utils.exceptions import (
     ResponseParseError,
@@ -50,21 +53,32 @@ class TaskManager(HugeParamsBase):
         """Wait for success and load the result once. Timeout does not cancel the job."""
         self.validate_wait(timeout, poll_interval)
         deadline = time.monotonic() + timeout
-        while True:
+
+        def load(with_result: bool) -> dict:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TaskTimeoutError(task_id, timeout)
             connect, read = self.session.cfg.timeout
-            request_timeout = (min(connect, remaining), min(read, remaining))
-            task = self.get_task(task_id, with_result=False, timeout=request_timeout)
+            request_timeout = Timeout(total=remaining, connect=min(connect, remaining), read=min(read, remaining))
+            try:
+                task = self.get_task(
+                    task_id, with_result=with_result, timeout=request_timeout, retries=False, allow_redirects=False
+                )
+            except requests.Timeout as exc:
+                if time.monotonic() >= deadline:
+                    raise TaskTimeoutError(task_id, timeout) from exc
+                raise
+            if time.monotonic() >= deadline:
+                raise TaskTimeoutError(task_id, timeout)
+            return task
+
+        while True:
+            task = load(False)
             status = str(task.get("task_status", "")).lower()
             if not status:
                 raise ResponseParseError(f"Task {task_id} response has no task_status")
             if status in {"success", "failed", "cancelled"}:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise TaskTimeoutError(task_id, timeout)
-                task = self.get_task(task_id, with_result=True, timeout=(min(connect, remaining), min(read, remaining)))
+                task = load(True)
                 final_status = str(task.get("task_status", "")).lower()
                 if final_status == "failed":
                     raise TaskFailedError(task)

@@ -52,7 +52,7 @@ class PyHugeClient:
         *,
         token: str | None = None,
     ):
-        self.cfg = HGraphConfig(url, user, pwd, graph, graphspace, timeout or (0.5, 15.0))
+        self.cfg = HGraphConfig(url, user, pwd, graph, graphspace, timeout or (0.5, 15.0), token=token)
         self._session = HGraphSession(self.cfg)
         if token is not None:
             self.use_token(token)

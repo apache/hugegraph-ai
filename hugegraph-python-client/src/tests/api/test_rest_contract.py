@@ -18,11 +18,14 @@
 """Exercise resource calls through real requests preparation and response parsing."""
 
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import requests
+from pyhugegraph.api.auth import AuthManager
 from pyhugegraph.api.graph import GraphManager
 from pyhugegraph.api.olap import OlapManager
 from pyhugegraph.api.rest import RestManager
@@ -30,11 +33,13 @@ from pyhugegraph.api.task import TaskManager
 from pyhugegraph.client import PyHugeClient
 from pyhugegraph.utils.exceptions import (
     ResponseParseError,
+    ServerError,
     TaskCancelledError,
     TaskFailedError,
     TaskTimeoutError,
     UnsupportedOperationError,
 )
+from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.huge_requests import HGraphSession
 
 pytestmark = pytest.mark.contract
@@ -149,7 +154,7 @@ def test_wait_loads_result_once_after_success(clock):
     task = tasks.wait(7, timeout=5, poll_interval=0.2)
     assert tasks.result(task) == {"count": 3}
     assert [query(req)["with_result"] for req, _ in http.calls] == [["false"], ["false"], ["true"]]
-    assert all(max(options["timeout"]) <= 5 for _, options in http.calls)
+    assert all(options["timeout"].total <= 5 for _, options in http.calls)
 
 
 @pytest.mark.parametrize("status, error", [("failed", TaskFailedError), ("cancelled", TaskCancelledError)])
@@ -168,6 +173,65 @@ def test_wait_timeout_never_cancels_or_deletes_remote_job(clock):
         TaskManager(session).wait(7, timeout=0.3, poll_interval=0.1)
     assert exc.value.task_id == 7
     assert all(request.method == "GET" for request, _ in http.calls)
+
+
+def test_wait_rechecks_deadline_after_loading_result(clock, monkeypatch):
+    session, http = transport([{"id": 7, "task_status": "success"}] * 2)
+    send = http.send
+
+    def delayed_result(request, **kwargs):
+        if query(request)["with_result"] == ["true"]:
+            clock.now += 2
+        return send(request, **kwargs)
+
+    monkeypatch.setattr(http, "send", delayed_result)
+    with pytest.raises(TaskTimeoutError):
+        TaskManager(session).wait(7, timeout=1)
+
+
+def test_wait_converts_expired_read_timeout(clock, monkeypatch):
+    session, http = transport()
+
+    def timeout(request, **kwargs):
+        clock.now += 1
+        raise requests.ReadTimeout("read timed out")
+
+    monkeypatch.setattr(http, "send", timeout)
+    with pytest.raises(TaskTimeoutError):
+        TaskManager(session).wait(7, timeout=0.1)
+
+
+def test_wait_disables_transport_retries_without_changing_later_requests():
+    calls = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            calls.append(self.path)
+            self.send_response(500 if len(calls) <= 2 else 200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"id": 7, "task_status": "running"}')
+
+        def log_message(self, *_args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        session, _ = transport(url=f"http://127.0.0.1:{server.server_port}")
+        http = requests.Session()
+        http.trust_env = False
+        session = HGraphSession(session.cfg, retries=2, backoff_factor=0, session=http)
+        try:
+            with pytest.raises(ServerError):
+                TaskManager(session).wait(7, timeout=1)
+            assert len(calls) == 1
+            assert TaskManager(session).get_task(7)["task_status"] == "running"
+            assert len(calls) == 3
+        finally:
+            session.close()
+            server.shutdown()
+            thread.join(timeout=2)
 
 
 def test_wait_rejects_malformed_task_state(clock):
@@ -239,10 +303,28 @@ def test_snake_case_edge_properties_preserve_server_wire_keys():
     assert edge.to_dict()["inV"] == "123"
 
 
-def test_bearer_header_is_not_overwritten_by_basic_authentication():
+def test_bearer_header_is_not_overwritten_by_basic_or_netrc_authentication(monkeypatch):
+    monkeypatch.setattr("requests.sessions.get_netrc_auth", lambda _: ("netrc-user", "netrc-password"))
     session, http = transport()
     RestManager(session).login.verify_token(authorization="Bearer private-token")
     assert http.calls[0][0].headers["Authorization"] == "Bearer private-token"
+
+    session.use_token("session-token")
+    AuthManager(session).list_users(name="alice")
+    assert http.calls[1][0].headers["Authorization"] == "Bearer session-token"
+    assert query(http.calls[1][0]) == {"name": ["alice"]}
+
+
+@pytest.mark.parametrize("token", [None, "proxy-token"])
+def test_version_probe_uses_the_selected_authentication(monkeypatch, token):
+    http = RecordingHTTP([{"versions": {"core": "1.6.0"}}])
+    monkeypatch.setattr("requests.sessions.get_netrc_auth", lambda _: ("netrc-user", "netrc-password"))
+    monkeypatch.setattr("pyhugegraph.utils.huge_config.requests.get", http.get)
+    cfg = HGraphConfig("http://example.test/proxy", "admin", "password", "g", token=token)
+    assert cfg.version == [1, 6, 0]
+    expected = "Bearer proxy-token" if token else requests.auth._basic_auth_str("admin", "password")
+    assert http.calls[0][0].headers["Authorization"] == expected
+    assert "proxy-token" not in repr(cfg)
 
 
 def test_gremlin_get_forwards_uri_parameters_missing_from_openapi():

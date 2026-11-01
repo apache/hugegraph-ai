@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 
 import requests
 
+from pyhugegraph.utils.authentication import request_auth
+
 
 @dataclass
 class HGraphConfig:
@@ -31,10 +33,13 @@ class HGraphConfig:
     graph_name: str
     graphspace: str | None = None
     timeout: tuple[float, float] = (0.5, 15.0)
+    token: str | None = field(default=None, repr=False, kw_only=True)
     gs_supported: bool = field(default=False, init=False)
     version: list[int] = field(default_factory=list)
 
     def __post_init__(self):
+        if self.token is not None and not self.token.strip():
+            raise ValueError("token must not be empty")
         if not self.url.startswith(("http://", "https://")):
             self.url = f"http://{self.url}"
         self.url = self.url.rstrip("/")
@@ -43,7 +48,13 @@ class HGraphConfig:
             self.gs_supported = True
             return
         try:
-            response = requests.get(f"{self.url}/versions", timeout=self.timeout)
+            headers = {"Authorization": f"Bearer {self.token}"} if self.token is not None else {}
+            response = requests.get(
+                f"{self.url}/versions",
+                timeout=self.timeout,
+                headers=headers,
+                auth=request_auth(headers, (self.username, self.password)),
+            )
             response.raise_for_status()
             core = response.json()["versions"]["core"]
         except (requests.RequestException, ValueError, KeyError, TypeError) as exc:

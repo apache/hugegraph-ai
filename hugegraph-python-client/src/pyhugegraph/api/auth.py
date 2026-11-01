@@ -34,8 +34,7 @@ class AuthManager(HugeParamsBase):
 
     # User endpoints - graphspace-scoped
     def list_users(self, limit=None, *, name=None):
-        params = {"limit": limit, "name": name} if limit is not None else {}
-        return self.request("user.list", params=params)
+        return self.request("user.list", params={"limit": limit, "name": name})
 
     def create_user(self, user_name, user_password, user_phone=None, user_email=None) -> dict | None:
         return self.request(

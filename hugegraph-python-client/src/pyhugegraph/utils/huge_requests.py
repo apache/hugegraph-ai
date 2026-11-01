@@ -17,17 +17,34 @@
 
 
 import logging
+from contextvars import ContextVar
+from copy import copy
 from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
+from requests.structures import CaseInsensitiveDict
 from urllib3.util.retry import Retry
 
+from pyhugegraph.utils.authentication import request_auth
 from pyhugegraph.utils.compat import ServerAdapter
 from pyhugegraph.utils.constants import Constants
 from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.log import log
 from pyhugegraph.utils.util import ResponseValidation, redact_sensitive_data
+
+_REQUEST_RETRIES: ContextVar[bool] = ContextVar("hugegraph_request_retries", default=True)
+
+
+class _RetryAdapter(HTTPAdapter):
+    def send(self, request, *args, **kwargs):
+        # Requests has no per-request retry option. A context-local policy and a
+        # shallow adapter copy retain the same pools without mutating other calls.
+        adapter = self
+        if not _REQUEST_RETRIES.get():
+            adapter = copy(self)
+            adapter.max_retries = Retry(total=0)
+        return HTTPAdapter.send(adapter, request, *args, **kwargs)
 
 
 class HGraphSession:
@@ -69,7 +86,7 @@ class HGraphSession:
             backoff_factor=self._backoff_factor,
             status_forcelist=self._status_forcelist,
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
+        adapter = _RetryAdapter(max_retries=retry_strategy)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
         log.debug(
@@ -141,6 +158,7 @@ class HGraphSession:
         path: str,
         method: str = "GET",
         validator=None,
+        retries: bool = True,
         **kwargs: Any,
     ) -> Any:
         if validator is None:
@@ -148,16 +166,21 @@ class HGraphSession:
         if self._closed:
             raise RuntimeError("The HugeGraph client is closed")
         url = self.resolve(path)
-        headers = self._headers | kwargs.pop("headers", {})
-        auth = None if "Authorization" in headers else self._auth
+        headers = CaseInsensitiveDict(self._headers)
+        headers.update(kwargs.pop("headers", {}))
+        auth = request_auth(headers, self._auth)
         timeout = kwargs.pop("timeout", self._timeout)
-        response: requests.Response = getattr(self._session, method.lower())(
-            url,
-            auth=auth,
-            headers=headers,
-            timeout=timeout,
-            **kwargs,
-        )
+        policy = _REQUEST_RETRIES.set(retries)
+        try:
+            response: requests.Response = getattr(self._session, method.lower())(
+                url,
+                auth=auth,
+                headers=headers,
+                timeout=timeout,
+                **kwargs,
+            )
+        finally:
+            _REQUEST_RETRIES.reset(policy)
         if log.isEnabledFor(logging.DEBUG):
             log.debug(
                 "Request: %s %s validator=%s kwargs=%s %s",

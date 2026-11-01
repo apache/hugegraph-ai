@@ -113,6 +113,7 @@ Older servers may ignore `with_result=false` and still return a task result duri
 `result(task)` decodes its serialized JSON result once and preserves plain text. `run()` returns that decoded value.
 Failed/cancelled jobs raise `TaskFailedError`/`TaskCancelledError`, with `.task` and `.task_id` for inspection.
 `TaskTimeoutError` means waiting ended; it does not cancel the server job. HTTP and waiting timeouts are distinct.
+Waiting requests use the remaining deadline without automatic HTTP retries or redirects; configure the final service URL.
 Cancel explicitly with `cancel_task(id)`; delete task records with `delete_task(id, force=False)`.
 `list_tasks(ids=[...])` cannot combine IDs with status or page filters.
 

@@ -118,6 +118,13 @@ class TestCISelection(unittest.TestCase):
             with self.subTest(module=module):
                 self.assertEqual(["3.12", "3.13", "3.14"], ci.FULL_PYTHONS[module])
 
+    def test_ontogeny_changes_select_only_its_own_suite(self):
+        # ontogeny is decoupled from the upstream modules (stage-1 gate), so
+        # its paths must not drag client/sdk/llm/mcp suites along.
+        self.assert_modules(["ontogeny/server/ontogeny/service.py"], {"ontogeny"})
+        self.assertTrue(ci.select(["ontogeny/README.md"])["ontogeny"])
+        self.assertFalse(ci.select(["ontogeny/README.md"])["quality"])
+
     def test_module_changes_are_isolated(self):
         self.assert_modules(["hugegraph-llm/src/hugegraph_llm/config/hugegraph_config.py"], {"llm"})
         self.assert_modules(["hugegraph-mcp/tests/contracts/write_confirmation_v2.json"], {"mcp"})
@@ -127,7 +134,7 @@ class TestCISelection(unittest.TestCase):
     def test_shared_config_and_workflows_do_not_skip_tests(self):
         for path in ("pyproject.toml", "scripts/ci.py", ".github/actions/setup-python-env/action.yml"):
             with self.subTest(path=path):
-                self.assert_modules([path], {"client", "sdk", "llm", "mcp"})
+                self.assert_modules([path], {"client", "sdk", "llm", "mcp", "ontogeny"})
         self.assert_modules([".github/workflows/hugegraph-llm.yml"], {"llm"})
 
     def test_dependency_review_requires_dependency_changes(self):

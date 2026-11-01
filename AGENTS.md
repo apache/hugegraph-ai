@@ -45,6 +45,7 @@ uv run --extra dev ty check hugegraph-llm-sdk/src/hugegraph_llm_sdk hugegraph-ll
 - Before editing, identify whether the change belongs to `hugegraph-llm`, `hugegraph-python-client`, or root workspace configuration.
 - For multi-file features, API contract changes, or cross-module design changes, read `rules/README.md` first.
 - Keep changes scoped to the module that owns the behavior. Avoid opportunistic rewrites in sibling modules.
+- DSL taxonomy: the 11 kinds (9 platform resources + 2 manifest) are registered once in `ontogeny/server/ontogeny/core/kinds.py`. Adding or removing a kind must update that registry, the frozen table in `ontogeny/tests/test_kind_registry.py`, and `ontogeny/docs/{zh,en}/architecture/00-kind-taxonomy.md`. `/meta/ontology.kinds` and the console board read from the registry — do not add a second list.
 
 ## Cross-module Notes
 

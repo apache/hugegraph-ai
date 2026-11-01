@@ -31,13 +31,13 @@ from ontogeny.errors import DSLValidationError, TypeMismatchError
 
 class TestGoldenPackage:
     def test_loads_all_resources(self, golden_pkg):
-        assert golden_pkg.manifest.metadata.name == "product-manufacturing"
-        assert len(golden_pkg.stores()) == 1
-        assert len(golden_pkg.objects()) == 7
-        assert len(golden_pkg.links()) == 6
-        assert len(golden_pkg.actions()) == 11
-        assert len(golden_pkg.functions()) == 3
-        assert len(golden_pkg.policies()) == 2  # production + package default
+        assert golden_pkg.manifest.metadata.name == "chip-lifecycle"
+        assert len(golden_pkg.stores()) == 2
+        assert len(golden_pkg.objects()) == 10
+        assert len(golden_pkg.links()) == 8
+        assert len(golden_pkg.actions()) == 16
+        assert len(golden_pkg.functions()) == 4
+        assert len(golden_pkg.policies()) == 2  # lifecycle + package default
         assert len(golden_pkg.projections()) == 1
         assert len(golden_pkg.eval_suites()) == 1
         assert golden_pkg.evolution_policy() is not None
@@ -60,30 +60,30 @@ class TestGoldenPackage:
         `TypeError: unhashable type: 'dict'` and `ontogeny lint` died on any package
         that used a derived property backed by a function.
 
-        The product-manufacturing domain does exactly that once such a property
+        The chip-lifecycle domain does exactly that once such a property
         is declared, which is how this was found: `ontogeny lint` on a freshly
         booted `--demo` instance crashed.
         """
         import copy
 
         pkg = copy.deepcopy(golden_pkg)
-        obj = pkg.find("ObjectType", "work-center")
+        obj = pkg.find("ObjectType", "equipment")
         # a function-backed derived property (a dict), alongside the golden
-        # package's expression-backed one
-        obj.spec.properties["open_orders"] = obj.spec.properties["work_center_id"].model_copy(
-            update={"derived": {"kind": "function", "entry": "count.py:main", "triggers": ["production-order"]}},
+        # package's expression-backed one (tapeout-version.fab_lag_h)
+        obj.spec.properties["open_step_count"] = obj.spec.properties["equipment_id"].model_copy(
+            update={"derived": {"kind": "function", "entry": "count.py:main", "triggers": ["process-step"]}},
         )
         rep = lint(pkg)
         assert isinstance(rep.issues, list)
         # and the expression-backed property is still measured
-        assert not [i for i in rep.issues if i.code == "OO-004" and "work-center" in i.resource]
+        assert not [i for i in rep.issues if i.code == "OO-004" and "equipment" in i.resource]
 
     def test_marking_does_not_leak_into_projection(self, golden_pkg):
-        prj = golden_pkg.find("Projection", "production-graph")
-        mat = golden_pkg.find("ObjectType", "material")
-        marked = {n for n, p in mat.spec.properties.items() if p.marking}
-        whitelisted = set(prj.spec.include.objects["material"].properties)
-        assert marked, "material must carry at least one marked property"
+        prj = golden_pkg.find("Projection", "production-lifecycle-graph")
+        ver = golden_pkg.find("ObjectType", "tapeout-version")
+        marked = {n for n, p in ver.spec.properties.items() if p.marking}
+        whitelisted = set(prj.spec.include.objects["tapeout-version"].properties)
+        assert marked, "tapeout-version must carry at least one marked property"
         assert not (marked & whitelisted), "marked property in graph whitelist"
 
 
@@ -95,71 +95,71 @@ class TestInjectedFaults:
 
     def test_link_endpoint_unknown(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        pkg.find("LinkType", "operation-work-center").spec.target = "no-such-type"
+        pkg.find("LinkType", "lot-steps").spec.target = "no-such-type"
         rep = validate(pkg)
         assert any(i.code == "LINK-ENDPOINT" for i in rep.issues)
 
     def test_action_sets_source_owned_property(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        eff = pkg.find("Action", "release-production-order").spec.effects[0]
-        eff.set["due_date"] = "'2026-12-01'"  # due_date is source-owned (mapped)
+        eff = pkg.find("Action", "tapeout").spec.effects[0]
+        eff.set["notes"] = "'re-taped out'"  # notes is source-owned (mapped)
         rep = validate(pkg)
         assert any(i.code == "ACTION-OWNER" for i in rep.issues)
 
     def test_action_sets_derived_property(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        eff = pkg.find("Action", "release-production-order").spec.effects[0]
-        eff.set["release_lag_h"] = "60"
+        eff = pkg.find("Action", "tapeout").spec.effects[0]
+        eff.set["fab_lag_h"] = "60"
         rep = validate(pkg)
         assert any(i.code == "ACTION-DERIVED" for i in rep.issues)
 
     def test_projection_marked_property(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        prj = pkg.find("Projection", "production-graph")
-        prj.spec.include.objects["material"].properties.append("unit_cost")
+        prj = pkg.find("Projection", "production-lifecycle-graph")
+        prj.spec.include.objects["tapeout-version"].properties.append("mask_cost")
         rep = validate(pkg)
         assert any(i.code == "PROJ-MARKING" for i in rep.issues)
 
     def test_projection_link_endpoint_missing(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        prj = pkg.find("Projection", "production-graph")
-        del prj.spec.include.objects["operation"]
+        prj = pkg.find("Projection", "production-lifecycle-graph")
+        del prj.spec.include.objects["process-step"]
         rep = validate(pkg)
         assert any(i.code == "PROJ-LINK-ENDPOINT" for i in rep.issues)
 
     def test_missing_default_policy(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        # every golden action declares `policy: production`; strip one so it
+        # every golden action declares `policy: lifecycle`; strip one so it
         # falls back to the package default, then remove that default -- the
         # safety net that keeps undeclared actions denied must be required
-        pkg.find("Action", "record-inspection").spec.policy = None
+        pkg.find("Action", "record-wafer-test").spec.policy = None
         pkg.resources = [r for r in pkg.resources if not (r.kind == "PolicySet" and r.metadata.name == "default")]
         rep = validate(pkg)
         assert any(i.code == "ACTION-POLICY" for i in rep.issues)
 
     def test_bad_rule_expression_path(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        pkg.find("Action", "release-production-order").spec.rules[0].expr = "target.nonexistent == 1"
+        pkg.find("Action", "tapeout").spec.rules[0].expr = "target.nonexistent == 1"
         rep = validate(pkg)
         assert any(i.code == "EXPR-PATH" for i in rep.issues)
 
     def test_create_missing_pk(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        eff = pkg.find("Action", "create-production-order").spec.effects[0]
-        del eff.properties["order_id"]
+        eff = pkg.find("Action", "start-lot").spec.effects[0]
+        del eff.properties["lot_id"]
         rep = validate(pkg)
         assert any(i.code == "ACTION-PK" for i in rep.issues)
 
     def test_watermark_without_column(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        po = pkg.find("ObjectType", "production-order")
+        po = pkg.find("ObjectType", "wafer-lot")
         po.spec.backing.sync.watermark = None
         rep = validate(pkg)
         assert any(i.code == "SYNC-WATERMARK" for i in rep.issues)
 
     def test_unknown_backing_store(self, golden_pkg):
         pkg = self._mutated(golden_pkg)
-        pkg.find("ObjectType", "production-order").spec.backing.store = "ghost"
+        pkg.find("ObjectType", "wafer-lot").spec.backing.store = "ghost"
         rep = validate(pkg)
         assert any(i.code == "BACKING-STORE" for i in rep.issues)
 

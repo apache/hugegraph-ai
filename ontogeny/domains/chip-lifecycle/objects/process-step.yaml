@@ -1,0 +1,64 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: process-step
+  display: Process step
+  description: One routing step a lot went through, with the equipment that ran it
+spec:
+  primaryKey:
+  - step_id
+  properties:
+    step_id:
+      type: string
+      display: Step ID
+      required: true
+    lot_id:
+      type: string
+      display: Wafer lot
+      required: true
+    seq:
+      type: integer
+      display: Sequence
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    equipment:
+      type: string
+      display: Equipment
+    status:
+      type: enum[QUEUED, RUNNING, COMPLETED]
+      display: Status
+      owner: ontology
+    completed_at:
+      type: timestamp
+      display: Completed at
+      owner: ontology
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: process_steps
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

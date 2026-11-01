@@ -32,6 +32,7 @@ from pathlib import Path
 import yaml
 
 from ..errors import DSLValidationError
+from .kinds import DIR_KINDS, FLAT_FILE_KINDS
 from .models import (
     RESOURCE_BY_KIND,
     ActionResource,
@@ -49,18 +50,6 @@ from .models import (
 )
 
 _SIDECAR_DIRS = {"PolicySet": "policies", "Function": "functions"}
-
-_DIR_KINDS = {
-    "stores": "Store",
-    "objects": "ObjectType",
-    "links": "LinkType",
-    "actions": "Action",
-    "functions": "Function",
-    "projections": "Projection",
-    "evals": "EvalSuite",
-    "agents": "AgentPlugin",
-    "policies": "PolicySet",
-}
 
 
 @dataclass
@@ -173,7 +162,7 @@ def load_package(root: str | Path) -> OntologyPackage:
     resources: list[AnyResource] = []
     files: dict[tuple[str, str], Path] = {}
 
-    for dirname, kind in _DIR_KINDS.items():
+    for dirname, kind in DIR_KINDS.items():
         d = root / dirname
         if not d.is_dir():
             continue
@@ -182,10 +171,14 @@ def load_package(root: str | Path) -> OntologyPackage:
             resources.append(res)
             files[(res.kind, res.metadata.name)] = f
 
-    evo_path = root / "evolution.yaml"
-    if evo_path.is_file():
-        res = _parse_file(evo_path, expected_kind="EvolutionPolicy")
+    # Flat, manifest-style resources (evolution.yaml today; ontology.yaml is
+    # loaded above as the package manifest and skipped here).
+    for filename, kind in FLAT_FILE_KINDS.items():
+        path = root / filename
+        if filename == "ontology.yaml" or not path.is_file():
+            continue
+        res = _parse_file(path, expected_kind=kind)
         resources.append(res)
-        files[(res.kind, res.metadata.name)] = evo_path
+        files[(res.kind, res.metadata.name)] = path
 
     return OntologyPackage(root=root, manifest=manifest, resources=resources, files=files)

@@ -15,9 +15,9 @@
 # specific language governing permissions and
 # limitations under the License.
 
-"""Promoter: tier classification, budgets, constitution enforcement, apply.
+"""Promoter: tier classification, budgets, governance baseline enforcement, apply.
 
-The constitution (evolution-loop §6) is enforced HERE and in validate():
+The governance baseline (evolution-loop §6) is enforced HERE and in validate():
 policy-loosen / marking-change / ownership-change / eval-passbar-change /
 destructive-migration are never automatable -- the proposal becomes
 ``awaiting_human`` and the audit trail says why.
@@ -39,11 +39,11 @@ from ..core.expr import ExprContext
 from ..core.loader import OntologyPackage, load_package
 from ..core.models import PropertyDef
 from ..core.validator import validate
-from ..errors import BudgetExceededError, ConstitutionViolationError, DSLValidationError
+from ..errors import BaselineViolationError, BudgetExceededError, DSLValidationError
 from ..registry.store import RegistryService
 from .models import BudgetRow, ProposalRow
 
-CONSTITUTION_MUTATIONS = {
+BASELINE_MUTATIONS = {
     "policy-loosen",
     "marking-change",
     "ownership-change",
@@ -66,7 +66,7 @@ class Promoter:
 
     def classify(self, mutations: list[dict], evolution_policy) -> str:
         kinds = {m.get("mutation") for m in mutations}
-        if kinds & CONSTITUTION_MUTATIONS:
+        if kinds & BASELINE_MUTATIONS:
             return "t3-human-only"
         tiers = (evolution_policy.spec.tiers if evolution_policy else {}) or {}
         t0_cfg = tiers.get("t0-auto-merge")
@@ -133,8 +133,8 @@ class Promoter:
         if tier == "t3-human-only":
             proposal.status = "awaiting_human"
             proposal.eval_report = eval_report
-            raise ConstitutionViolationError(
-                "proposal touches the constitution surface; human review is mandatory (T3)",
+            raise BaselineViolationError(
+                "proposal touches the governance-baseline surface; human review is mandatory (T3)",
                 details={"proposal_id": proposal.id, "mutations": [m.get("mutation") for m in proposal.diff]},
             )
 
@@ -142,7 +142,7 @@ class Promoter:
             # Fail closed: an AUTO-merge must present a green eval report.
             # `None` used to pass silently, which made the EvalSuite gate
             # skippable by promoting a fresh proposal before running /eval --
-            # the constitution's "validate + eval green + budget" reduced to
+            # the governance baseline's "validate + eval green + budget" reduced to
             # two of three with no trace.
             if eval_report is None:
                 proposal.status = "proposed"
@@ -429,7 +429,7 @@ def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPack
             # direction-only by construction: this mutation can only APPEND a
             # rule, and every rule must pass, so any applier-reachable change
             # is a tightening. Editing/removing rules is not expressible here
-            # and stays where the constitution puts it (human, T3).
+            # and stays where the governance baseline puts it (human, T3).
             from ..core.models import Rule
 
             act = pkg.find("Action", m["action"])
@@ -443,7 +443,7 @@ def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPack
             act.spec.rules = [*act.spec.rules, Rule(expr=expr, message=m.get("message"))]
         elif kind == "eval-case-synth":
             # adding cases makes the selection function STRICTER, which the
-            # constitution explicitly allows (only lowering the pass bar is
+            # governance baseline explicitly allows (only lowering the pass bar is
             # forbidden); still not T0: eval assets are owned, human-reviewed
             suite = pkg.find("EvalSuite", m["suite"])
             if suite is None:

@@ -27,58 +27,61 @@ from ontogeny.errors import DSLValidationError
 
 approval_client = _approval_client
 link_fixture = _link_env
+# start-lot is the fab role's create action (id allocation + per-object outbox
+# events); the plan-validation tests target the product role's tapeout on TO-A1
+FAB = {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
 
 
 @pytest.mark.parametrize(
     ("invalid_effect", "expected_code"),
     [
-        ({"kind": "modify-target", "set": {"qty": 1}}, "ACTION-OWNER"),
-        ({"kind": "modify-target", "set": {"release_lag_h": 1}}, "ACTION-DERIVED"),
+        ({"kind": "modify-target", "set": {"notes": "n"}}, "ACTION-OWNER"),
+        ({"kind": "modify-target", "set": {"fab_lag_h": 1}}, "ACTION-DERIVED"),
         ({"kind": "modify-target", "set": {"unknown_property": 1}}, "ACTION-PROP"),
         ({"kind": "modify-target", "set": {"status": {"$expr": "target.missing_property"}}}, "EXPR-PATH"),
-        ({"kind": "create-object", "properties": {"product_id": "P-101", "qty": 1}}, "ACTION-PK"),
-        ({"kind": "set-link", "link": "bom-product", "add": []}, "ACTION-LINK-TARGET"),
-        ({"kind": "modify-linked", "link": "bom-product", "set": {}}, "ACTION-LINK-TARGET"),
+        ({"kind": "create-object", "properties": {"project": "X1", "notes": "n"}}, "ACTION-PK"),
+        ({"kind": "set-link", "link": "requirement-modules", "add": []}, "ACTION-LINK-TARGET"),
+        ({"kind": "modify-linked", "link": "requirement-modules", "set": {}}, "ACTION-LINK-TARGET"),
         ({"kind": "webhook", "url": "bad-url"}, "ACTION-WEBHOOK-URL"),
     ],
 )
 async def test_function_plan_is_validated_before_any_effect(approval_client, invalid_effect, expected_code):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     action.spec.execution = FunctionExecution(kind="function", entry="plan.py:main")
 
     async def run_plan(*args):
-        return [{"kind": "modify-target", "set": {"status": "RELEASED"}}, invalid_effect]
+        return [{"kind": "modify-target", "set": {"status": "FAB"}}, invalid_effect]
 
     sc.runtime.function_runner = run_plan
     async with sc.sessionmaker() as session:
-        before = await sc.repo.get(session, "production-order", "PO-1002")
+        before = await sc.repo.get(session, "tapeout-version", "TO-A1")
         old_revisions = (await session.execute(select(func.count()).select_from(RevisionRow))).scalar_one()
         old_outbox = (await session.execute(select(func.count()).select_from(OutboxRow))).scalar_one()
         with pytest.raises(DSLValidationError) as error:
-            await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "PO-1002")
+            await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "TO-A1")
         assert expected_code in {issue["code"] for issue in error.value.details["issues"]}
         # Even committing a session after the rejection cannot persist the
         # first, otherwise-valid effect or any action audit/outbox row.
         await session.commit()
-        assert await sc.repo.get(session, "production-order", "PO-1002") == before
+        assert await sc.repo.get(session, "tapeout-version", "TO-A1") == before
         assert (await session.execute(select(func.count()).select_from(RevisionRow))).scalar_one() == old_revisions
         assert (await session.execute(select(func.count()).select_from(OutboxRow))).scalar_one() == old_outbox
 
 
 async def test_function_plan_values_are_data_and_valid_effects_still_run(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     action.spec.execution = FunctionExecution(kind="function", entry="plan.py:main")
 
     async def run_plan(*args):
-        return [{"kind": "modify-target", "set": {"status": "RELEASED"}}]
+        return [{"kind": "modify-target", "set": {"status": "FAB"}}]
 
     sc.runtime.function_runner = run_plan
     async with sc.sessionmaker() as session:
-        rev = await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "PO-1002")
+        rev = await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "TO-A1")
         await session.commit()
-        assert rev.after["status"] == "RELEASED"
+        assert rev.after["status"] == "FAB"
 
 
 async def test_join_table_link_add_and_remove_from_target_side(link_fixture):
@@ -101,14 +104,14 @@ async def test_join_table_link_add_and_remove_from_target_side(link_fixture):
 
 async def test_each_created_object_gets_its_own_outbox_event(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["create-production-order"]
+    action = sc.compiled.actions["start-lot"]
     action.spec.effects.append(action.spec.effects[0].model_copy(deep=True))
     async with sc.sessionmaker() as session:
         rev = await sc.runtime.execute(
             session,
             action.metadata.name,
-            PLANNER,
-            {"product_id": "P-101", "qty": 5},
+            FAB,
+            {"version_id": "TO-A1", "qty_wafers": 5, "site": "fab-site-a"},
         )
         await session.commit()
         events = (
@@ -117,7 +120,7 @@ async def test_each_created_object_gets_its_own_outbox_event(approval_client):
             .all()
         )
         ids = {event.object_id for event in events}
-        assert ids == {"PO-000001", "PO-000002"}
-        assert rev.object_id == "PO-000002"  # preserve the response contract
+        assert ids == {"LOT-000001", "LOT-000002"}
+        assert rev.object_id == "LOT-000002"  # preserve the response contract
         for object_id in ids:
-            assert await sc.repo.get(session, "production-order", object_id) is not None
+            assert await sc.repo.get(session, "wafer-lot", object_id) is not None

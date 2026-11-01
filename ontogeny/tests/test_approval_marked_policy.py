@@ -31,15 +31,15 @@ from ontogeny.stores.repo import utcnow
 approval_client = _approval_client
 REVIEWER = {"id": "human-reviewer", "Role": ["reviewer"]}
 POLICY = """
-permit(principal in Role::"planner", action == Action::"release-production-order", resource);
-permit(principal in Role::"reviewer", action == Action::"release-production-order", resource)
-when { resource.priority != "HIGH" };
+permit(principal in Role::"product", action == Action::"tapeout", resource);
+permit(principal in Role::"reviewer", action == Action::"tapeout", resource)
+when { resource.project != "X2" };
 """
 
 
 def _policy(sc, text=POLICY):
-    sc.compiled.objects["production-order"].spec.properties["priority"].marking = "internal"
-    sc.compiled.cedar_texts["production"] = text
+    sc.compiled.objects["tapeout-version"].spec.properties["project"].marking = "internal"
+    sc.compiled.cedar_texts["lifecycle"] = text
     sc.policy = PolicyEngine(sc.compiled)
     sc.runtime.policy = sc.policy
 
@@ -48,32 +48,32 @@ def _policy(sc, text=POLICY):
 async def test_masked_restricted_value_cannot_authorize_approval_or_rejection(approval_client, decision):
     client, sc = approval_client
     async with sc.sessionmaker() as db:
-        await sc.repo.action_update(db, "production-order", "PO-1002", {"priority": "HIGH"}, utcnow())
+        await sc.repo.action_update(db, "tapeout-version", "TO-A1", {"project": "X2"}, utcnow())
         await db.commit()
     _policy(sc)
     pending = await _pending_approval(client)
-    visible = await client.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(REVIEWER))
-    assert visible.json()["priority"] == "__masked__"
+    visible = await client.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(REVIEWER))
+    assert visible.json()["project"] == "__masked__"
     response = await client.post(
         f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
         json={"decision": decision},
         headers=_hdr(REVIEWER),
     )
     assert response.status_code == 403, response.text
-    assert response.json()["code"] == "POLICY_DENIED" and "HIGH" not in response.text
+    assert response.json()["code"] == "POLICY_DENIED" and "X2" not in response.text
     async with sc.sessionmaker() as db:
         approval = await db.get(AgentApprovalRow, pending["approval_id"])
-        order = await sc.repo.get(db, "production-order", "PO-1002")
+        version = await sc.repo.get(db, "tapeout-version", "TO-A1")
         assert approval.status == "pending" and approval.decided_by is None
-        assert order["status"] == "PLANNED" and order["priority"] == "HIGH"
+        assert version["status"] == "PLANNED" and version["project"] == "X2"
 
 
 async def test_allowed_reviewer_does_not_need_marking_and_plugin_is_execution_identity(approval_client):
     client, sc = approval_client
     _policy(sc)
     pending = await _pending_approval(client)
-    visible = await client.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(REVIEWER))
-    assert visible.json()["priority"] == "__masked__"
+    visible = await client.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(REVIEWER))
+    assert visible.json()["project"] == "__masked__"
     response = await client.post(
         f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
         json={"decision": "approved"},
@@ -83,9 +83,9 @@ async def test_allowed_reviewer_does_not_need_marking_and_plugin_is_execution_id
     assert response.json()["decided_by"] == REVIEWER["id"]
     async with sc.sessionmaker() as db:
         revision = await db.get(RevisionRow, response.json()["revision_id"])
-        assert revision.principal == "agent:planning-copilot"
-    visible = await client.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(REVIEWER))
-    assert visible.json()["priority"] == "__masked__" and visible.json()["status"] == "RELEASED"
+        assert revision.principal == "agent:product-copilot"
+    visible = await client.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(REVIEWER))
+    assert visible.json()["project"] == "__masked__" and visible.json()["status"] == "FAB"
 
 
 async def test_human_permit_does_not_replace_plugin_execution_policy(approval_client):
@@ -93,8 +93,8 @@ async def test_human_permit_does_not_replace_plugin_execution_policy(approval_cl
     pending = await _pending_approval(client)
     _policy(
         sc,
-        'permit(principal in Role::"reviewer", action == Action::"release-production-order", resource) '
-        'when { resource.priority != "HIGH" };',
+        'permit(principal in Role::"reviewer", action == Action::"tapeout", resource) '
+        'when { resource.project != "X2" };',
     )
     response = await client.post(
         f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
@@ -103,26 +103,26 @@ async def test_human_permit_does_not_replace_plugin_execution_policy(approval_cl
     )
     assert response.status_code == 200 and response.json()["status"] == "failed"
     async with sc.sessionmaker() as db:
-        order = await sc.repo.get(db, "production-order", "PO-1002")
+        version = await sc.repo.get(db, "tapeout-version", "TO-A1")
         approval = (
             await db.execute(select(AgentApprovalRow).where(AgentApprovalRow.id == pending["approval_id"]))
         ).scalar_one()
-        assert order["status"] == "PLANNED" and approval.status == "failed"
+        assert version["status"] == "PLANNED" and approval.status == "failed"
 
 
 @pytest.mark.parametrize("decision", ["approved", "rejected"])
 async def test_marked_expression_derived_field_uses_real_value_for_approval(approval_client, decision):
     client, sc = approval_client
     async with sc.sessionmaker() as db:
-        await sc.repo.action_update(db, "production-order", "PO-1002", {"priority": "HIGH"}, utcnow())
+        await sc.repo.action_update(db, "tapeout-version", "TO-A1", {"project": "X2"}, utcnow())
         await db.commit()
-    sc.compiled.objects["production-order"].spec.properties["priority_copy"] = PropertyDef(
-        type="string", marking="internal", derived="target.priority"
+    sc.compiled.objects["tapeout-version"].spec.properties["project_copy"] = PropertyDef(
+        type="string", marking="internal", derived="target.project"
     )
-    _policy(sc, POLICY.replace("resource.priority !=", "resource.priority_copy !="))
+    _policy(sc, POLICY.replace("resource.project !=", "resource.project_copy !="))
     pending = await _pending_approval(client)
-    visible = await client.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(REVIEWER))
-    assert visible.json()["priority_copy"] == "__masked__"
+    visible = await client.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(REVIEWER))
+    assert visible.json()["project_copy"] == "__masked__"
     response = await client.post(
         f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
         json={"decision": decision},
@@ -136,13 +136,13 @@ async def test_marked_expression_derived_field_uses_real_value_for_approval(appr
 
 async def test_unmasked_expression_derived_value_can_authorize_reviewer(approval_client):
     client, sc = approval_client
-    sc.compiled.objects["production-order"].spec.properties["priority_copy"] = PropertyDef(
-        type="string", marking="internal", derived="target.priority"
+    sc.compiled.objects["tapeout-version"].spec.properties["project_copy"] = PropertyDef(
+        type="string", marking="internal", derived="target.project"
     )
-    _policy(sc, POLICY.replace("resource.priority !=", "resource.priority_copy !="))
+    _policy(sc, POLICY.replace("resource.project !=", "resource.project_copy !="))
     pending = await _pending_approval(client)
-    visible = await client.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(REVIEWER))
-    assert visible.json()["priority_copy"] == "__masked__"
+    visible = await client.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(REVIEWER))
+    assert visible.json()["project_copy"] == "__masked__"
     response = await client.post(
         f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
         json={"decision": "approved"},

@@ -19,7 +19,7 @@
 
 Each error carries a stable machine code, an HTTP status for the API shell and
 a human message. Governance paths (rules, policy, optimistic locking,
-idempotency, budgets, constitution) raise dedicated subclasses so callers can
+idempotency, budgets, governance baseline) raise dedicated subclasses so callers can
 react precisely instead of string-matching.
 """
 
@@ -128,10 +128,10 @@ class BudgetExceededError(OOError):
     http_status = 429
 
 
-class ConstitutionViolationError(OOError):
-    """Proposal touches the constitution surface; never automatable (T3)."""
+class BaselineViolationError(OOError):
+    """Proposal touches the governance-baseline surface; never automatable (T3)."""
 
-    code = "CONSTITUTION_VIOLATION"
+    code = "BASELINE_VIOLATION"
     http_status = 403
 
 

@@ -91,8 +91,8 @@ async def test_large_invocation_input_can_return_a_small_result(client, tmp_path
 
 async def test_oversized_child_rpc_frame_is_rejected_and_reaped(client, tmp_path, spawned):
     _, sc = client
-    source = f'def probe():\n    return ontogeny.query("work-center", filter={{"name": "x" * {FRAME_LIMIT}}})\n'
-    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["work-center"])
+    source = f'def probe():\n    return ontogeny.query("equipment", filter={{"name": "x" * {FRAME_LIMIT}}})\n'
+    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["equipment"])
     async with sc.sessionmaker() as session:
         with pytest.raises(SandboxError, match=r"frame.*limit"):
             await sandbox.run(session, fn, {})
@@ -108,9 +108,9 @@ async def seed(sc, object_type, rows):
 
 async def test_large_query_rpc_reply_supports_more_than_64k(client, tmp_path):
     _, sc = client
-    await seed(sc, "work-center", [{"work_center_id": f"WC-{number:03d}", "name": "x" * 1000} for number in range(100)])
-    source = 'def probe():\n    return ontogeny.query("work-center", limit=100)\n'
-    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["work-center"])
+    await seed(sc, "equipment", [{"equipment_id": f"EQ-{number:03d}", "name": "x" * 1000} for number in range(100)])
+    source = 'def probe():\n    return ontogeny.query("equipment", limit=100)\n'
+    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["equipment"])
     async with sc.sessionmaker() as session:
         values = await sandbox.run(session, fn, {})
     assert len(values) == 100 and all(len(value["name"]) == 1000 for value in values)
@@ -118,9 +118,9 @@ async def test_large_query_rpc_reply_supports_more_than_64k(client, tmp_path):
 
 async def test_oversized_child_result_after_large_query_reply_is_rejected_and_reaped(client, tmp_path, spawned):
     _, sc = client
-    await seed(sc, "work-center", [{"work_center_id": f"WC-{number}", "name": "x" * 100000} for number in range(3)])
-    source = 'def probe():\n    return ontogeny.query("work-center")\n'
-    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["work-center"])
+    await seed(sc, "equipment", [{"equipment_id": f"EQ-{number}", "name": "x" * 100000} for number in range(3)])
+    source = 'def probe():\n    return ontogeny.query("equipment")\n'
+    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["equipment"])
     async with sc.sessionmaker() as session:
         with pytest.raises(SandboxError, match=r"frame.*limit"):
             await sandbox.run(session, fn, {})
@@ -131,27 +131,27 @@ async def test_child_query_sort_applies_before_limit_one(client, tmp_path):
     _, sc = client
     await seed(
         sc,
-        "work-center",
+        "wafer-lot",
         [
-            {"work_center_id": "WC-HIGH", "name": "High", "capacity_per_shift": 200},
-            {"work_center_id": "WC-LOW", "name": "Low", "capacity_per_shift": 1},
+            {"lot_id": "LOT-HIGH", "version_id": "TO-A0", "qty_wafers": 200},
+            {"lot_id": "LOT-LOW", "version_id": "TO-A0", "qty_wafers": 1},
         ],
     )
     source = """def probe():
-    return ontogeny.query("work-center", sort=[["capacity_per_shift", "asc"]], limit=1)[0]["work_center_id"]
+    return ontogeny.query("wafer-lot", sort=[["qty_wafers", "asc"]], limit=1)[0]["lot_id"]
 """
-    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["work-center"])
+    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["wafer-lot"])
     async with sc.sessionmaker() as session:
-        assert await sandbox.run(session, fn, {}) == "WC-LOW"
+        assert await sandbox.run(session, fn, {}) == "LOT-LOW"
 
 
 async def test_forwarded_sort_keeps_repository_marking_guard(client, tmp_path, spawned):
     _, sc = client
-    await seed(sc, "material", [{"material_id": "M-1", "name": "Material", "unit_cost": 10}])
+    await seed(sc, "tapeout-version", [{"version_id": "TO-M1", "project": "X1", "mask_cost": 10}])
     source = """def probe():
-    return ontogeny.query("material", sort=[["unit_cost", "asc"]], limit=1)
+    return ontogeny.query("tapeout-version", sort=[["mask_cost", "asc"]], limit=1)
 """
-    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["material"])
+    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["tapeout-version"])
     async with sc.sessionmaker() as session:
         with pytest.raises(PolicyDeniedError, match="marked property"):
             await sandbox.run(session, fn, {})
@@ -170,9 +170,9 @@ async def test_large_map_input_can_return_one_hundred_small_values(client, tmp_p
 
 async def test_large_query_reply_can_be_aggregated_to_a_small_result(client, tmp_path, spawned):
     _, sc = client
-    await seed(sc, "work-center", [{"work_center_id": f"WC-{number}", "name": "x" * 100000} for number in range(3)])
-    source = 'def probe():\n    return sum(len(row["name"]) for row in ontogeny.query("work-center"))\n'
-    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["work-center"])
+    await seed(sc, "equipment", [{"equipment_id": f"EQ-{number}", "name": "x" * 100000} for number in range(3)])
+    source = 'def probe():\n    return sum(len(row["name"]) for row in ontogeny.query("equipment"))\n'
+    sandbox, fn = sandbox_for(sc, tmp_path, source, allowed=["equipment"])
     async with sc.sessionmaker() as session:
         assert await sandbox.run(session, fn, {}) == 300000
     assert spawned and all(process.returncode is not None for process in spawned)

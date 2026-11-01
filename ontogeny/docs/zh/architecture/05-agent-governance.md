@@ -5,7 +5,7 @@
 **中文** | [English](../../en/architecture/05-agent-governance.md)
 
 
-Agent 是 **DSL 里声明的一等资源**：插件自带冻结身份（权限面）、工具白名单、审批模式与预算。
+Agent 是 **DSL 里声明的平台资源**：插件自带冻结身份（权限面）、工具白名单、审批模式与预算。
 MCP 工具面随服务启动**挂载在 `/mcp`**（streamable HTTP · JSON 模式）。每个工具带保留参数
 `plugin` + `session_id`——带会话的调用汇入 **broker.call_tool 唯一门**，
 在插件身份、该会话预算与工具目录内执行并落轨迹；不带会话则**只读**（写入返回

@@ -24,62 +24,62 @@ import httpx
 
 async def test_marked_filters_require_claims_for_all_query_shapes(client):
     admin, sc = client
-    assert (await admin.post("/api/v1/admin/sync/material")).status_code == 200
+    assert (await admin.post("/api/v1/admin/sync/tapeout-version")).status_code == 200
     filters = [
-        {"unit_cost": 210},
-        {"field": "unit-cost", "op": "gt", "value": 0},  # normalized SQL name
-        {"and": [{"unit": "kg"}, {"or": [{"not": {"unit_cost": 210}}, {"unit": "kg"}]}]},
+        {"mask_cost": 1850000.0},
+        {"field": "mask-cost", "op": "gt", "value": 0},  # normalized SQL name
+        {"and": [{"project": "X1"}, {"or": [{"not": {"mask_cost": 1850000.0}}, {"project": "X1"}]}]},
     ]
     ordinary = {"X-Ontogeny-Principal": json.dumps({"id": "visitor"})}
-    authorized = {"X-Ontogeny-Principal": json.dumps({"id": "buyer", "markings": ["internal"]})}
+    authorized = {"X-Ontogeny-Principal": json.dumps({"id": "cost-controller", "markings": ["internal"]})}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=admin._transport.app), base_url="http://anon") as c:
         for filt in filters:
             for headers in ({}, ordinary):
-                response = await c.post("/api/v1/objects/material/query", json={"filter": filt}, headers=headers)
+                response = await c.post("/api/v1/objects/tapeout-version/query", json={"filter": filt}, headers=headers)
                 assert response.status_code == 403
                 assert response.json()["code"] == "POLICY_DENIED"
                 response = await c.post(
-                    "/api/v1/objects/material/aggregate",
+                    "/api/v1/objects/tapeout-version/aggregate",
                     json={"fn": "count", "filter": filt},
                     headers=headers,
                 )
                 assert response.status_code == 403
                 assert response.json()["code"] == "POLICY_DENIED"
 
-            response = await c.post("/api/v1/objects/material/query", json={"filter": filt}, headers=authorized)
+            response = await c.post("/api/v1/objects/tapeout-version/query", json={"filter": filt}, headers=authorized)
             assert response.status_code == 200
             response = await c.post(
-                "/api/v1/objects/material/aggregate", json={"fn": "count", "filter": filt}, headers=authorized
+                "/api/v1/objects/tapeout-version/aggregate", json={"fn": "count", "filter": filt}, headers=authorized
             )
             assert response.status_code == 200
 
         response = await c.post(
-            "/api/v1/objects/material/query", json={"filter": {"field": "material_id", "op": "ne", "value": ""}}
+            "/api/v1/objects/tapeout-version/query", json={"filter": {"field": "version_id", "op": "ne", "value": ""}}
         )
         assert response.status_code == 200 and response.json()["total"] > 0
 
-        filt = {"field": "unit-cost", "op": "gt", "value": 0}
-        response = await c.post("/api/v1/objects/material/query", json={"filter": filt}, headers=authorized)
+        filt = {"field": "mask-cost", "op": "gt", "value": 0}
+        response = await c.post("/api/v1/objects/tapeout-version/query", json={"filter": filt}, headers=authorized)
         assert response.status_code == 200
         assert response.json()["total"] > 0
-        assert all(obj["unit_cost"] != "__masked__" for obj in response.json()["objects"])
+        assert all(obj["mask_cost"] != "__masked__" for obj in response.json()["objects"])
         response = await c.post(
-            "/api/v1/objects/material/aggregate", json={"fn": "count", "filter": filt}, headers=authorized
+            "/api/v1/objects/tapeout-version/aggregate", json={"fn": "count", "filter": filt}, headers=authorized
         )
         assert response.status_code == 200
         assert response.json()["value"] > 0
 
         response = await c.post(
-            "/api/v1/objects/material/query", json={"sort": [["unit-cost", "asc"]]}, headers=ordinary
+            "/api/v1/objects/tapeout-version/query", json={"sort": [["mask-cost", "asc"]]}, headers=ordinary
         )
         assert response.status_code == 403
         response = await c.post(
-            "/api/v1/objects/material/aggregate", json={"fn": "avg", "field": "unit-cost"}, headers=ordinary
+            "/api/v1/objects/tapeout-version/aggregate", json={"fn": "avg", "field": "mask-cost"}, headers=ordinary
         )
         assert response.status_code == 403
 
     # Internal repository callers intentionally omit a principal and can read
     # real values for projection/function execution.
     async with sc.sessionmaker() as session:
-        rows, total = await sc.repo.query(session, "material", filt=filt)
-        assert total > 0 and rows[0]["unit_cost"] is not None
+        rows, total = await sc.repo.query(session, "tapeout-version", filt=filt)
+        assert total > 0 and rows[0]["mask_cost"] is not None

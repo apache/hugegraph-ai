@@ -22,4 +22,4 @@ Only functions with a **python** runtime show the "Run code" section (declarativ
 
 ![The test-run result](../img/fn-test.png)
 
-**The test-run result** — the return value is immediately visible; the input panel labels each parameter's source (e.g. `work_center_id = "WC-01" (real id from work-center)`), so results are trustworthy and explainable.
+**The test-run result** — the return value is immediately visible; the input panel labels each parameter's source (e.g. `equipment_id = "EQ-07" (real id from equipment)`), so results are trustworthy and explainable.

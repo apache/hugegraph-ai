@@ -25,6 +25,7 @@ from dataclasses import replace
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+from test_function_ecosystem import PRODUCT
 
 from ontogeny.action.runtime import ActionRuntime
 from ontogeny.config import Settings
@@ -61,7 +62,7 @@ async def test_typed_nested_json_roundtrips_sync_and_action(golden_pkg_path, tmp
         engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'target.db'}")
 
     compiled = compile_package(load_package(golden_pkg_path))
-    obj = compiled.objects["material"].model_copy(deep=True)
+    obj = compiled.objects["tapeout-version"].model_copy(deep=True)
     obj.metadata.name = "typed-record"
     obj.spec.properties["dates"] = PropertyDef(type="array(date)")
     obj.spec.properties["meta"] = PropertyDef(
@@ -71,9 +72,9 @@ async def test_typed_nested_json_roundtrips_sync_and_action(golden_pkg_path, tmp
     obj.spec.backing.source = SourceRef(table="typed_source")
     obj.spec.backing.mapping = {}
     obj.spec.backing.sync = SyncCfg(strategy="snapshot")
-    action = compiled.actions["receive-material"].model_copy(deep=True)
+    action = compiled.actions["change-requirement"].model_copy(deep=True)
     action.spec.target = "typed-record"
-    template = action.spec.parameters["note"]
+    template = action.spec.parameters["reason"]
     action.spec.parameters = {
         name: template.model_copy(update={"type": prop.type, "required": True})
         for name, prop in obj.spec.properties.items()
@@ -85,10 +86,10 @@ async def test_typed_nested_json_roundtrips_sync_and_action(golden_pkg_path, tmp
         compiled,
         content_hash=uuid.uuid4().hex,
         objects={**compiled.objects, "typed-record": obj},
-        actions={**compiled.actions, "receive-material": action},
+        actions={**compiled.actions, "change-requirement": action},
     )
     repo = ObjectRepository(compiled)
-    source = SqlSource(compiled.stores["mes"], dsn)
+    source = SqlSource(compiled.stores["fab"], dsn)
     source.engine = source_engine
     maker = make_sessionmaker(engine)
     values = {
@@ -111,7 +112,7 @@ async def test_typed_nested_json_roundtrips_sync_and_action(golden_pkg_path, tmp
             column_type = "JSON" if dialect == "postgres" else "ONTOJSON"
             await connection.execute(
                 text(
-                    f"CREATE TABLE typed_source (material_id TEXT PRIMARY KEY, name TEXT, "
+                    f"CREATE TABLE typed_source (version_id TEXT PRIMARY KEY, project TEXT, "
                     f"dates {column_type}, meta {column_type}, entries {column_type})"
                 )
             )
@@ -131,7 +132,7 @@ async def test_typed_nested_json_roundtrips_sync_and_action(golden_pkg_path, tmp
             assert (await sync.sync(session, "typed-record"))["inserted"] == 1
             await session.commit()
         async with maker() as session:
-            row = await query.get(session, "typed-record", "key", {"id": "planner", "Role": ["planner"]})
+            row = await query.get(session, "typed-record", "key", PRODUCT)
             assert row["dates"] == [dt.date(2026, 1, 3), dt.date(2026, 1, 4)]
             assert row["meta"]["at"] == dt.datetime(2026, 1, 3, 12, 30, tzinfo=dt.UTC)
             assert row["meta"]["nested"]["day"] == dt.date(2026, 3, 6)
@@ -149,7 +150,7 @@ async def test_typed_nested_json_roundtrips_sync_and_action(golden_pkg_path, tmp
                 "entries": [{"at": "2030-01-05T00:00:00+00:00", "day": "2030-01-06"}],
             }
             await ActionRuntime(compiled, repo, policy, Settings()).execute(
-                session, "receive-material", {"id": "planner", "Role": ["planner"]}, changed, "key"
+                session, "change-requirement", PRODUCT, changed, "key"
             )
             await session.commit()
         async with maker() as session:

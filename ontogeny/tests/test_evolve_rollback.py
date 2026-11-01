@@ -47,8 +47,8 @@ async def _evaluated_proposal(sc, *, drift=True):
         "spec": {
             "queries": [
                 {
-                    "name": "products-must-exist",
-                    "query": {"object": "product"},
+                    "name": "requirements-must-exist",
+                    "query": {"object": "requirement"},
                     "expect": {"min_rows": 1},
                 }
             ]
@@ -56,7 +56,7 @@ async def _evaluated_proposal(sc, *, drift=True):
     }
     (root / "evals/rollback-probe.yaml").write_text(yaml.safe_dump(suite))
     await sc.publish(str(root))
-    await sc.sync("product")
+    await sc.sync("requirement")
     suite = sc.compiled.eval_suites["rollback-probe"]
     async with sc.sessionmaker() as session:
         report = await sc.eval_runner.run(session, suite)
@@ -65,12 +65,12 @@ async def _evaluated_proposal(sc, *, drift=True):
     # real post-merge evaluator detects this and must undo the T0 mutation.
     async with sc.sessionmaker() as session:
         if drift:
-            await session.execute(sc.repo._table("product").delete())
+            await session.execute(sc.repo._table("requirement").delete())
         proposal = ProposalRow(
             gap_kind="add-optional-property",
             rationale="rollback regression",
             status="evaluated",
-            diff=[{"mutation": "add-optional-property", "object": "product", "prop": PROPERTY, "type": "string"}],
+            diff=[{"mutation": "add-optional-property", "object": "requirement", "prop": PROPERTY, "type": "string"}],
             eval_report={"passed": True, "suites": {"rollback-probe": report}},
         )
         session.add(proposal)
@@ -101,14 +101,14 @@ async def test_red_postmerge_eval_restores_committed_registry_runtime_and_files(
     assert result["rollback"]["content_hash"] == content_hash
     assert _tree(root) == before
     assert sc.compiled.content_hash == content_hash
-    assert PROPERTY not in sc.compiled.objects["product"].spec.properties
+    assert PROPERTY not in sc.compiled.objects["requirement"].spec.properties
     assert len(backup_at_reload) == 2
     assert not Path(result["original"]["rollback_dir"]).exists()
     async with sc.sessionmaker() as session:
         persisted = await sc.registry.load_latest(session)
         proposal = await session.get(ProposalRow, pid)
     assert persisted.content_hash == content_hash
-    assert PROPERTY not in persisted.objects["product"].spec.properties
+    assert PROPERTY not in persisted.objects["requirement"].spec.properties
     assert proposal.status == "rolled_back"
 
 
@@ -137,14 +137,14 @@ async def test_rollback_commit_failure_keeps_promoted_state_and_recovery_backup(
     assert injected
     backups = list(root.parent.glob(f"{root.name}.evolve-backup-*"))
     assert len(backups) == 1
-    assert PROPERTY not in load_package(backups[0]).find("ObjectType", "product").spec.properties
-    assert PROPERTY in load_package(root).find("ObjectType", "product").spec.properties
-    assert PROPERTY in sc.compiled.objects["product"].spec.properties
+    assert PROPERTY not in load_package(backups[0]).find("ObjectType", "requirement").spec.properties
+    assert PROPERTY in load_package(root).find("ObjectType", "requirement").spec.properties
+    assert PROPERTY in sc.compiled.objects["requirement"].spec.properties
     async with sc.sessionmaker() as session:
         persisted = await sc.registry.load_latest(session)
         proposal = await session.get(ProposalRow, pid)
     assert persisted.content_hash == sc.compiled.content_hash
-    assert PROPERTY in persisted.objects["product"].spec.properties
+    assert PROPERTY in persisted.objects["requirement"].spec.properties
     assert proposal.status == "promoted"
 
 
@@ -157,6 +157,6 @@ async def test_successful_postmerge_eval_cleans_only_its_own_backup(client):
     (previous_backup / "recovery.txt").write_text("keep for another pending recovery")
     result = await sc.evolve_promote(pid)
     assert result["status"] == "promoted"
-    assert PROPERTY in sc.compiled.objects["product"].spec.properties
+    assert PROPERTY in sc.compiled.objects["requirement"].spec.properties
     assert not Path(result["rollback_dir"]).exists()
     assert (previous_backup / "recovery.txt").read_text() == "keep for another pending recovery"

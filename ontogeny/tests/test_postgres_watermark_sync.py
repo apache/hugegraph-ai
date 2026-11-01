@@ -40,15 +40,15 @@ async def test_postgres_repeated_watermark_sync_includes_late_equal_rows(env, ki
         first = dt.datetime(2026, 10, 30, tzinfo=dt.UTC if kind == "timestamptz" else None)
         second, third = first + dt.timedelta(seconds=1), first + dt.timedelta(seconds=2)
 
-    source = SqlSource(env["compiled"].stores["mes"], dsn)
+    source = SqlSource(env["compiled"].stores["fab"], dsn)
     engine = await source._eng()
     async with engine.begin() as conn:
         await conn.execute(
-            text(f"CREATE TABLE {table} (work_center_id TEXT PRIMARY KEY, name TEXT NOT NULL, mark {sql_type})")
+            text(f"CREATE TABLE {table} (equipment_id TEXT PRIMARY KEY, name TEXT NOT NULL, mark {sql_type})")
         )
         await conn.execute(text(f"INSERT INTO {table} VALUES ('a', 'First', :wm)"), {"wm": first})
 
-    backing = env["compiled"].objects["work-center"].spec.backing
+    backing = env["compiled"].objects["equipment"].spec.backing
     backing.source = SourceRef(table=table)
     backing.sync = SyncCfg(strategy="watermark", watermark=WatermarkCfg(column="mark"))
     env["sync"].source_factory = lambda _: source
@@ -56,7 +56,7 @@ async def test_postgres_repeated_watermark_sync_includes_late_equal_rows(env, ki
 
         async def sync():
             async with env["maker"]() as s:
-                result = await env["sync"].sync(s, "work-center")
+                result = await env["sync"].sync(s, "equipment")
                 await s.commit()
                 return result
 
@@ -66,15 +66,15 @@ async def test_postgres_repeated_watermark_sync_includes_late_equal_rows(env, ki
             await conn.execute(text(f"INSERT INTO {table} VALUES ('c', 'New high', :wm)"), {"wm": second})
         assert (await sync())["inserted"] == 2
         async with env["maker"]() as s:
-            state = await s.get(SyncStateRow, {"store": "mes", "object_type": "work-center"})
+            state = await s.get(SyncStateRow, {"store": "fab", "object_type": "equipment"})
             assert state.watermark == str(second)
         async with engine.begin() as conn:
             await conn.execute(text(f"INSERT INTO {table} VALUES ('d', 'Late second', :wm)"), {"wm": second})
             await conn.execute(text(f"INSERT INTO {table} VALUES ('e', 'Next high', :wm)"), {"wm": third})
         assert (await sync())["inserted"] == 2
         async with env["maker"]() as s:
-            assert await env["repo"].alive_ids(s, "work-center") == {"a", "b", "c", "d", "e"}
-            state = await s.get(SyncStateRow, {"store": "mes", "object_type": "work-center"})
+            assert await env["repo"].alive_ids(s, "equipment") == {"a", "b", "c", "d", "e"}
+            state = await s.get(SyncStateRow, {"store": "fab", "object_type": "equipment"})
             assert state.watermark == str(third)
     finally:
         async with engine.begin() as conn:
@@ -86,7 +86,7 @@ async def test_postgres_repeated_watermark_sync_includes_late_equal_rows(env, ki
 async def test_postgres_watermark_stream_keeps_one_snapshot(env):
     dsn = os.environ["ONTOGENY_PG_DSN"]
     table = f"watermark_{uuid.uuid4().hex}"
-    source = SqlSource(env["compiled"].stores["mes"], dsn)
+    source = SqlSource(env["compiled"].stores["fab"], dsn)
     engine = await source._eng()
     async with engine.begin() as conn:
         await conn.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, mark INTEGER NOT NULL)"))

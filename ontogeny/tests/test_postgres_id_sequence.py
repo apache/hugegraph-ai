@@ -34,17 +34,17 @@ async def test_concurrent_independent_runtimes_get_distinct_ids(golden_pkg_path,
         # A unique prefix makes the test repeatable without deleting data from
         # a database the operator supplied for integration testing.
         prefix = f"T{uuid.uuid4().hex}"
-        action = sc.compiled.actions["create-production-order"]
-        action.spec.effects[0].properties["order_id"] = f"newId('{prefix}')"
+        action = sc.compiled.actions["start-lot"]
+        action.spec.effects[0].properties["lot_id"] = f"newId('{prefix}')"
         workers = [ActionRuntime(sc.compiled, sc.repo, sc.policy, sc.settings) for _ in range(8)]
 
         async def create(runtime):
             async with sc.sessionmaker() as session:
                 revision = await runtime.execute(
                     session,
-                    "create-production-order",
-                    {"id": "planner", "Role": ["planner"], "site": "plant-north"},
-                    {"product_id": "P-101", "qty": 5},
+                    "start-lot",
+                    {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"},
+                    {"version_id": "TO-A1", "qty_wafers": 5, "site": "fab-site-a"},
                 )
                 await session.commit()
                 return revision.object_id

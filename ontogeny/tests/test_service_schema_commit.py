@@ -61,7 +61,7 @@ async def database(request, tmp_path, monkeypatch):
         )
     else:
         dsn = f"sqlite+aiosqlite:///{tmp_path / 'main.db'}"
-    root = package(tmp_path / "source", "source-domain", ["product"])
+    root = package(tmp_path / "source", "source-domain", ["component"])
     settings = Settings(db_dsn=dsn, data_dir=str(tmp_path / "credentials"))
 
     async def context(path=root):
@@ -95,7 +95,7 @@ async def tables(sc):
 
 async def test_reload_commits_new_optional_column(database):
     sc, root = database["sc"], database["root"]
-    path = root / "objects/product.yaml"
+    path = root / "objects/component.yaml"
     document = yaml.safe_load(path.read_text())
     document["spec"]["properties"]["extra"] = {"type": "string"}
     path.write_text(yaml.safe_dump(document))
@@ -105,12 +105,12 @@ async def test_reload_commits_new_optional_column(database):
         await sc.registry.publish(session, load_package(root))
         await session.commit()
     await sc.reload()
-    assert "extra" in await columns(sc, sc.compiled.table_name("product"))
+    assert "extra" in await columns(sc, sc.compiled.table_name("component"))
     async with sc.sessionmaker() as session:
-        await sc.repo.action_insert(session, "product", {"id": "P-1", "name": "product", "extra": "new"}, utcnow())
+        await sc.repo.action_insert(session, "component", {"id": "C-1", "name": "component", "extra": "new"}, utcnow())
         await session.commit()
     async with sc.sessionmaker() as session:
-        assert (await sc.repo.get(session, "product", "P-1"))["extra"] == "new"
+        assert (await sc.repo.get(session, "component", "C-1"))["extra"] == "new"
 
 
 async def test_activate_commits_new_object_table_and_survives_restart(database):
@@ -129,17 +129,17 @@ async def test_activate_commits_new_object_table_and_survives_restart(database):
 
 async def test_existing_registry_initialization_commits_missing_tables(database):
     sc = database["sc"]
-    table = object_table(sc.compiled, "product")
+    table = object_table(sc.compiled, "component")
     async with sc.engine.begin() as connection:
         await connection.run_sync(lambda c: table.drop(c))
     assert table.name not in await tables(sc)
     restarted = await database["context"]()
     assert table.name in await tables(restarted)
     async with restarted.sessionmaker() as session:
-        await restarted.repo.action_insert(session, "product", {"id": "P-1", "name": "restored"}, utcnow())
+        await restarted.repo.action_insert(session, "component", {"id": "C-1", "name": "restored"}, utcnow())
         await session.commit()
     async with restarted.sessionmaker() as session:
-        assert (await restarted.repo.get(session, "product", "P-1"))["name"] == "restored"
+        assert (await restarted.repo.get(session, "component", "C-1"))["name"] == "restored"
 
 
 @pytest.mark.parametrize("operation", ["reload", "activate"])
@@ -149,14 +149,14 @@ async def test_snapshot_runtime_and_mcp_remain_committed_until_schema_commit(
 ):
     sc, root = database["sc"], database["root"]
     async with sc.sessionmaker() as session:
-        await sc.repo.action_insert(session, "product", {"id": "P-1", "name": "old runtime"}, utcnow())
+        await sc.repo.action_insert(session, "component", {"id": "C-1", "name": "old runtime"}, utcnow())
         await session.commit()
     surface = sc.mcp_surface = McpSurface(sc)
     surface.build()
     assert surface.server is not None
     manager, runtime, original_path = surface.server._tool_manager, sc.compiled, sc.package_root
     if operation == "reload":
-        package(root, "source-domain", ["product", "shipment"])
+        package(root, "source-domain", ["component", "shipment"])
         async with sc.sessionmaker() as session:
             await sc.registry.publish(session, load_package(root))
             await session.commit()
@@ -185,7 +185,7 @@ async def test_snapshot_runtime_and_mcp_remain_committed_until_schema_commit(
         assert surface.server._tool_manager is manager
         assert "search_shipment" not in {tool.name for tool in await surface.server.list_tools()}
         async with sc.sessionmaker() as session:
-            row = await sc.query.get(session, "product", "P-1", {"id": "reader"})
+            row = await sc.query.get(session, "component", "C-1", {"id": "reader"})
         assert row["name"] == "old runtime"
     finally:
         release.set()

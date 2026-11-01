@@ -51,11 +51,9 @@ class TestSandboxEnv:
         """The golden package's sandboxed functions must keep working under the
         narrowed environment (they need nothing beyond PATH/PYTHONPATH)."""
         c, _sc = client
-        await c.post("/api/v1/admin/sync/work-center")
-        await c.post("/api/v1/admin/sync/production-order")
-        r = await c.post(
-            "/api/v1/functions/capacity-check/invoke", json={"parameters": {"work_center_id": "WC-01", "qty": 10}}
-        )
+        await c.post("/api/v1/admin/sync/wafer-lot")
+        await c.post("/api/v1/admin/sync/wafer-test")
+        r = await c.post("/api/v1/functions/analyze-yield-loss/invoke", json={"parameters": {"test_id": "WT-501"}})
         assert r.status_code == 200, r.text
 
 
@@ -71,18 +69,18 @@ class TestReadOnlyConvergence:
         from ontogeny.telemetry.service import TelemetryQueryRow
 
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
-        out = await sc.agents.read_only_tool("search_work_center", None, {"limit": 5})
+        await c.post("/api/v1/admin/sync/wafer-lot")
+        out = await sc.agents.read_only_tool("search_wafer_lot", None, {"limit": 5})
         assert out["outcome"] == "ok"
         async with sc.sessionmaker() as s:
             rows = (await s.execute(select(TelemetryQueryRow))).scalars().all()
-        assert any(r.object_type == "work-center" for r in rows), (
+        assert any(r.object_type == "wafer-lot" for r in rows), (
             "sessionless MCP search used to be invisible to the evolution loop"
         )
 
     async def test_sessionless_write_still_refused(self, client):
         _c, sc = client
-        out = await sc.agents.read_only_tool("act_release_production_order", None, {})
+        out = await sc.agents.read_only_tool("act_tapeout", None, {})
         assert out["outcome"] == "WRITE_REQUIRES_SESSION"
 
     async def test_missing_required_argument_is_structured(self, client):
@@ -103,9 +101,9 @@ class TestMigratePlanner:
         from ontogeny.stores.migrate import plan_migration
 
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
+        await c.post("/api/v1/admin/sync/equipment")
         async with sc.sessionmaker() as s:
-            await s.execute(text("ALTER TABLE ontogeny_obj_work_center ADD COLUMN ghost TEXT"))
+            await s.execute(text("ALTER TABLE ontogeny_obj_equipment ADD COLUMN ghost TEXT"))
             await s.commit()
             conn = await s.connection()  # re-acquired: commit released the prior one
             plan = await conn.run_sync(lambda cc: plan_migration(cc, sc.compiled))
@@ -120,9 +118,9 @@ class TestMigratePlanner:
         from ontogeny.stores.migrate import apply_safe, plan_migration
 
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
+        await c.post("/api/v1/admin/sync/equipment")
         async with sc.sessionmaker() as s:
-            await s.execute(text("ALTER TABLE ontogeny_obj_work_center DROP COLUMN site"))
+            await s.execute(text("ALTER TABLE ontogeny_obj_equipment DROP COLUMN site"))
             await s.commit()
             conn = await s.connection()  # re-acquired: commit released the prior one
             plan = await conn.run_sync(lambda cc: plan_migration(cc, sc.compiled))
@@ -131,14 +129,14 @@ class TestMigratePlanner:
             await s.commit()
             assert n >= 1
         # the platform's own read path works again
-        r = await c.post("/api/v1/objects/work-center/query", json={"limit": 1})
+        r = await c.post("/api/v1/objects/equipment/query", json={"limit": 1})
         assert r.status_code == 200
 
     async def test_in_sync_report_is_clean(self, client):
         from ontogeny.stores.migrate import plan_migration
 
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
+        await c.post("/api/v1/admin/sync/equipment")
         async with sc.sessionmaker() as s:
             conn = await s.connection()
             plan = await conn.run_sync(lambda cc: plan_migration(cc, sc.compiled))
@@ -148,7 +146,7 @@ class TestMigratePlanner:
         from ontogeny.stores.migrate import plan_migration, summary_payload
 
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
+        await c.post("/api/v1/admin/sync/equipment")
         async with sc.sessionmaker() as s:
             conn = await s.connection()
             plan = await conn.run_sync(lambda cc: plan_migration(cc, sc.compiled))

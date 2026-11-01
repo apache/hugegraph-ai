@@ -18,7 +18,7 @@
 """Opt-in smoke test against a disposable HugeGraph default graph.
 
 Set ONTOGENY_TEST_HUGEGRAPH_URL to an isolated server: this test creates the
-manufacturing projection's schema and writes then removes its own test data.
+chip lifecycle projection's schema and writes then removes its own test data.
 """
 
 import os
@@ -32,11 +32,11 @@ from ontogeny.registry import compile_package
 
 
 @pytest.mark.skipif(not os.environ.get("ONTOGENY_TEST_HUGEGRAPH_URL"), reason="requires a disposable HugeGraph server")
-async def test_live_manufacturing_schema_vertices_and_edge(golden_pkg):
+async def test_live_lifecycle_schema_vertices_and_edge(golden_pkg):
     compiled = compile_package(golden_pkg)
-    schema = compile_projection(compiled, compiled.projections["production-graph"])
+    schema = compile_projection(compiled, compiled.projections["production-lifecycle-graph"])
     token = uuid.uuid4().hex
-    product, bom = f"smoke-product-{token}", f"smoke-bom-{token}"
+    requirement, module = f"smoke-requirement-{token}", f"smoke-module-{token}"
     client = HugeGraphClient(os.environ["ONTOGENY_TEST_HUGEGRAPH_URL"], "hugegraph")
     try:
         assert await client.dialect() == "1.7"
@@ -44,32 +44,34 @@ async def test_live_manufacturing_schema_vertices_and_edge(golden_pkg):
         await client.ensure_schema(schema)
         # Outbox delivery is at least once: deleting an object that never
         # existed, or replaying a successful delete, must both succeed.
-        await client.delete_vertex("product", product)
-        product_created = bom_created = False
+        await client.delete_vertex("requirement", requirement)
+        requirement_created = module_created = False
         try:
-            await client.upsert_vertices("product", "product_id", [{"product_id": product, "name": "Smoke"}])
-            product_created = True
-            await client.upsert_vertices("bom", "bom_id", [{"bom_id": bom}])
-            bom_created = True
-            assert await client.get_vertex("product", product) is not None
-            assert await client.get_vertex("bom", bom) is not None
-            await client.upsert_edges("bom-product", "product", "bom", [(product, bom)])
-            edges = await client.sample_edges("bom-product")
-            product_id = await client.vertex_id("product", product)
-            bom_id = await client.vertex_id("bom", bom)
-            assert any(edge["outV"] == product_id and edge["inV"] == bom_id for edge in edges)
-            await client.delete_vertex("product", product)
-            product_created = False
-            assert await client.get_vertex("product", product) is None
-            await client.delete_vertex("product", product)
-            assert all(edge["outV"] != product_id for edge in await client.sample_edges("bom-product"))
-            await client.delete_vertex("bom", bom)
-            bom_created = False
-            assert await client.get_vertex("bom", bom) is None
+            await client.upsert_vertices(
+                "requirement", "requirement_id", [{"requirement_id": requirement, "name": "Smoke"}]
+            )
+            requirement_created = True
+            await client.upsert_vertices("design-module", "module_id", [{"module_id": module}])
+            module_created = True
+            assert await client.get_vertex("requirement", requirement) is not None
+            assert await client.get_vertex("design-module", module) is not None
+            await client.upsert_edges("requirement-modules", "requirement", "design-module", [(requirement, module)])
+            edges = await client.sample_edges("requirement-modules")
+            requirement_id = await client.vertex_id("requirement", requirement)
+            module_id = await client.vertex_id("design-module", module)
+            assert any(edge["outV"] == requirement_id and edge["inV"] == module_id for edge in edges)
+            await client.delete_vertex("requirement", requirement)
+            requirement_created = False
+            assert await client.get_vertex("requirement", requirement) is None
+            await client.delete_vertex("requirement", requirement)
+            assert all(edge["outV"] != requirement_id for edge in await client.sample_edges("requirement-modules"))
+            await client.delete_vertex("design-module", module)
+            module_created = False
+            assert await client.get_vertex("design-module", module) is None
         finally:
-            if product_created:
-                await client.delete_vertex("product", product)
-            if bom_created:
-                await client.delete_vertex("bom", bom)
+            if requirement_created:
+                await client.delete_vertex("requirement", requirement)
+            if module_created:
+                await client.delete_vertex("design-module", module)
     finally:
         await client.aclose()

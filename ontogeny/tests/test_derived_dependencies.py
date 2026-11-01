@@ -22,41 +22,44 @@ from pathlib import Path
 from ontogeny.core.models import Capability, FunctionResource, FunctionSpec, PropertyDef, ResourceMeta
 from ontogeny.engine.service import assemble_row
 
+# LOT-2417 carries 25 wafers: double 50, quadruple 100, octuple 200
+LOT = "LOT-2417"
+
 
 def add_chain(sc):
-    props = sc.compiled.objects["work-center"].spec.properties
+    props = sc.compiled.objects["wafer-lot"].spec.properties
     # Reverse dependency order exercises both explicit target and bare-name
     # references. Each result has a marking; query masks after assembly.
     props["octuple"] = PropertyDef(type="integer", derived="target.quadruple * 2", marking="internal")
     props["quadruple"] = PropertyDef(type="integer", derived="double * 2", marking="internal")
-    props["double"] = PropertyDef(type="integer", derived="target.capacity_per_shift * 2", marking="internal")
+    props["double"] = PropertyDef(type="integer", derived="target.qty_wafers * 2", marking="internal")
 
 
 async def test_query_and_get_follow_dependency_order_and_mask_at_end(client):
     _, sc = client
-    await sc.sync("work-center")
+    await sc.sync("wafer-lot")
     add_chain(sc)
     async with sc.sessionmaker() as session:
-        public = await sc.query.get(session, "work-center", "WC-01", {"id": "public"})
-        visible = await sc.query.get(session, "work-center", "WC-01", {"id": "internal", "markings": ["internal"]})
+        public = await sc.query.get(session, "wafer-lot", LOT, {"id": "public"})
+        visible = await sc.query.get(session, "wafer-lot", LOT, {"id": "internal", "markings": ["internal"]})
         result = await sc.query.query(
             session,
-            "work-center",
+            "wafer-lot",
             {"id": "internal", "markings": ["internal"]},
-            filt={"work_center_id": "WC-01"},
+            filt={"lot_id": LOT},
         )
-    assert (visible["double"], visible["quadruple"], visible["octuple"]) == (800, 1600, 3200)
-    assert result["objects"][0]["octuple"] == 3200
+    assert (visible["double"], visible["quadruple"], visible["octuple"]) == (50, 100, 200)
+    assert result["objects"][0]["octuple"] == 200
     assert all(public[name] == "__masked__" for name in ("double", "quadruple", "octuple"))
 
 
 async def test_function_sandbox_reads_the_assembled_dependency_chain(client):
     _, sc = client
-    await sc.sync("work-center")
+    await sc.sync("wafer-lot")
     add_chain(sc)
     src = Path(sc.package_root) / "functions" / "read_derived_chain.py"
     src.write_text(
-        "def main():\n    return ontogeny.query('work-center', filter={'work_center_id': 'WC-01'}, limit=1)[0]\n",
+        "def main():\n    return ontogeny.query('wafer-lot', filter={'lot_id': 'LOT-2417'}, limit=1)[0]\n",
         encoding="utf-8",
     )
     fn = FunctionResource(
@@ -66,25 +69,25 @@ async def test_function_sandbox_reads_the_assembled_dependency_chain(client):
         spec=FunctionSpec(
             runtime="python",
             entry="read_derived_chain.py:main",
-            capabilities=[Capability(**{"read-objects": ["work-center"]})],
+            capabilities=[Capability(**{"read-objects": ["wafer-lot"]})],
         ),
     )
     async with sc.sessionmaker() as session:
         row = await sc.functions.run(session, fn, {})
-    assert (row["double"], row["quadruple"], row["octuple"]) == (800, 1600, 3200)
+    assert (row["double"], row["quadruple"], row["octuple"]) == (50, 100, 200)
 
 
 def test_cycle_and_its_dependants_fail_closed_but_independent_values_work(client, caplog):
     _, sc = client
-    props = sc.compiled.objects["work-center"].spec.properties
+    props = sc.compiled.objects["wafer-lot"].spec.properties
     props["cyclic_a"] = PropertyDef(type="integer", derived="target.cyclic_b + 1")
     props["cyclic_b"] = PropertyDef(type="integer", derived="target.cyclic_a + 1")
     props["blocked"] = PropertyDef(type="integer", derived="target.cyclic_a * 2")
-    props["independent"] = PropertyDef(type="integer", derived="target.capacity_per_shift * 2")
+    props["independent"] = PropertyDef(type="integer", derived="target.qty_wafers * 2")
     result = assemble_row(
         sc.compiled,
-        "work-center",
-        {"capacity_per_shift": 5, "cyclic_a": 999, "cyclic_b": 999, "blocked": 999},
+        "wafer-lot",
+        {"qty_wafers": 5, "cyclic_a": 999, "cyclic_b": 999, "blocked": 999},
     )
     assert [result[key] for key in ("cyclic_a", "cyclic_b", "blocked")] == [None, None, None]
     assert result["independent"] == 10
@@ -93,8 +96,8 @@ def test_cycle_and_its_dependants_fail_closed_but_independent_values_work(client
 
 def test_expression_can_read_materialized_function_value(client):
     _, sc = client
-    props = sc.compiled.objects["work-center"].spec.properties
+    props = sc.compiled.objects["wafer-lot"].spec.properties
     props["derived_from_materialized"] = PropertyDef(type="integer", derived="target.materialized * 2")
     props["materialized"] = PropertyDef(type="integer", derived={"kind": "function", "entry": "x.py:f"})
-    result = assemble_row(sc.compiled, "work-center", {"materialized": 7})
+    result = assemble_row(sc.compiled, "wafer-lot", {"materialized": 7})
     assert result["derived_from_materialized"] == 14

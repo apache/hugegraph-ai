@@ -33,19 +33,19 @@ from ontogeny.errors import OOError
 
 
 def _fail_second_effect(sc):
-    action = sc.compiled.actions["release-production-order"]
-    action.spec.effects.append(ModifyTargetEffect(kind="modify-target", set={"qty": "invalid_quantity"}))
+    action = sc.compiled.actions["tapeout"]
+    action.spec.effects.append(ModifyTargetEffect(kind="modify-target", set={"mask_cost": "invalid_mask_cost"}))
 
 
-async def _order(sc):
+async def _version(sc):
     async with sc.sessionmaker() as db:
-        return await sc.repo.get(db, "production-order", "PO-1002")
+        return await sc.repo.get(db, "tapeout-version", "TO-A1")
 
 
 @pytest.mark.parametrize("approval", [False, True])
 async def test_failed_second_effect_rolls_back_first_but_records_outcome(client, approval):
     c, sc = client
-    before = await _order(sc)
+    before = await _version(sc)
     if approval:
         pending = await _pending_approval(c)
         sid = pending["session"]["id"]
@@ -55,20 +55,18 @@ async def test_failed_second_effect_rolls_back_first_but_records_outcome(client,
         listed = (await c.get("/api/v1/agent/approvals?status=decided")).json()["approvals"]
         assert listed[0]["failure_reason"] == result["error"]
     else:
-        plugin = sc.compiled.agent_plugins["planning-copilot"]
+        plugin = sc.compiled.agent_plugins["product-copilot"]
         plugin.spec.approval.writes = "auto"
-        plugin.spec.approval.auto_actions = ["act_release_production_order"]
-        session = await sc.agents.open_session("planning-copilot", "release")
+        plugin.spec.approval.auto_actions = ["act_tapeout"]
+        session = await sc.agents.open_session("product-copilot", "tapeout")
         sid = session["id"]
         _fail_second_effect(sc)
-        result = await sc.agents.call_tool(
-            sid, "act_release_production_order", {"parameters": {}, "target_id": "PO-1002"}
-        )
+        result = await sc.agents.call_tool(sid, "act_tapeout", {"parameters": {}, "target_id": "TO-A1"})
         assert result["outcome"] != "ok"
-    after = await _order(sc)
+    after = await _version(sc)
     assert after == before
     async with sc.sessionmaker() as db:
-        revisions = (await db.execute(select(RevisionRow).where(RevisionRow.object_id == "PO-1002"))).scalars().all()
+        revisions = (await db.execute(select(RevisionRow).where(RevisionRow.object_id == "TO-A1"))).scalars().all()
         assert not any(r.outcome == "executed" for r in revisions)
     session = await sc.agents.get_session(sid)
     if not approval:
@@ -80,7 +78,7 @@ async def test_failed_second_effect_rolls_back_first_but_records_outcome(client,
 async def test_nonpositive_session_override_cannot_remove_plugin_limits(client, override):
     _, sc = client
     result = await sc.agents.open_session(
-        "planning-copilot", "", budget={"steps": override, "wall_ms": override, "writes_per_session": override}
+        "product-copilot", "", budget={"steps": override, "wall_ms": override, "writes_per_session": override}
     )
     assert result["budget"]["steps"] > 0
     assert result["budget"]["wall_ms"] > 0
@@ -90,7 +88,7 @@ async def test_nonpositive_session_override_cannot_remove_plugin_limits(client, 
 async def test_positive_session_override_tightens_plugin_limits(client):
     _, sc = client
     result = await sc.agents.open_session(
-        "planning-copilot", "", budget={"steps": 2, "wall_ms": 100, "writes_per_session": 1}
+        "product-copilot", "", budget={"steps": 2, "wall_ms": 100, "writes_per_session": 1}
     )
     assert (result["budget"]["steps"], result["budget"]["wall_ms"], result["budget"]["writes"]) == (2, 100, 1)
 
@@ -124,7 +122,7 @@ async def test_two_simultaneous_decisions_consume_intent_once(client, monkeypatc
     assert sum(isinstance(r, OOError) for r in results) == 1, results
     async with sc.sessionmaker() as db:
         approval = await db.get(AgentApprovalRow, pending["approval_id"])
-        revisions = (await db.execute(select(RevisionRow).where(RevisionRow.object_id == "PO-1002"))).scalars().all()
+        revisions = (await db.execute(select(RevisionRow).where(RevisionRow.object_id == "TO-A1"))).scalars().all()
     assert approval.status in ("executed", "rejected")
     assert sum(r.outcome == "executed" for r in revisions) == int(approval.status == "executed")
     if approval.status == "rejected":
@@ -136,22 +134,22 @@ async def test_approval_preserves_expected_revision(client):
     from ontogeny.stores.repo import utcnow
 
     _, sc = client
-    session = await sc.agents.open_session("planning-copilot", "release")
-    before = await _order(sc)
+    session = await sc.agents.open_session("product-copilot", "tapeout")
+    before = await _version(sc)
     pending = await sc.agents.call_tool(
         session["id"],
-        "act_release_production_order",
-        {"parameters": {}, "target_id": "PO-1002", "expected_revision": before["_rev"]},
+        "act_tapeout",
+        {"parameters": {}, "target_id": "TO-A1", "expected_revision": before["_rev"]},
     )
     assert pending["outcome"] == "pending_approval"
     async with sc.sessionmaker() as db:
-        await sc.repo.action_update(db, "production-order", "PO-1002", {"qty": before["qty"] + 1}, utcnow())
+        await sc.repo.action_update(db, "tapeout-version", "TO-A1", {"notes": "changed while pending"}, utcnow())
         await db.commit()
     result = await sc.agents.decide(pending["approval_id"], "approved", PLANNER)
     assert result["status"] == "failed"
-    after = await _order(sc)
+    after = await _version(sc)
     assert after["status"] == "PLANNED"
-    assert after["qty"] == before["qty"] + 1
+    assert after["notes"] == "changed while pending"
 
 
 async def test_existing_approval_table_gets_nullable_revision_column(tmp_path):
@@ -175,8 +173,8 @@ async def test_existing_approval_table_gets_nullable_revision_column(tmp_path):
 @pytest.mark.parametrize(
     "policy",
     [
-        'permit(principal in Role::"other", action == Action::"invoke-order-yield", resource);',
-        'forbid(principal, action == Action::"invoke-order-yield", resource);',
+        'permit(principal in Role::"other", action == Action::"invoke-analyze-yield-loss", resource);',
+        'forbid(principal, action == Action::"invoke-analyze-yield-loss", resource);',
     ],
 )
 async def test_function_invoke_policy_applies_to_rest_and_agent_tools(client, policy):
@@ -188,22 +186,24 @@ async def test_function_invoke_policy_applies_to_rest_and_agent_tools(client, po
     c, sc = client
     sc.compiled.cedar_texts["function-guard"] = policy
     sc.policy = PolicyEngine(sc.compiled)
-    sc.compiled.agent_plugins["planning-copilot"].spec.tools.allow.append("call_order_yield")
-    params = {"order_id": "PO-1002"}
-    rest = await c.post("/api/v1/functions/order-yield/invoke", json={"parameters": params}, headers=_hdr(PLANNER))
+    sc.compiled.agent_plugins["product-copilot"].spec.tools.allow.append("call_analyze_yield_loss")
+    params = {"test_id": "WT-501"}
+    rest = await c.post(
+        "/api/v1/functions/analyze-yield-loss/invoke", json={"parameters": params}, headers=_hdr(PLANNER)
+    )
     assert rest.status_code == 403
-    agent = await sc.agents.open_session("planning-copilot", "")
-    governed = await sc.agents.call_tool(agent["id"], "call_order_yield", {"parameters": params})
+    agent = await sc.agents.open_session("product-copilot", "")
+    governed = await sc.agents.call_tool(agent["id"], "call_analyze_yield_loss", {"parameters": params})
     assert governed["outcome"] == "POLICY_DENIED"
-    sessionless = await sc.agents.read_only_tool("call_order_yield", "planning-copilot", {"parameters": params})
+    sessionless = await sc.agents.read_only_tool("call_analyze_yield_loss", "product-copilot", {"parameters": params})
     assert sessionless["outcome"] == "POLICY_DENIED"
     async with in_process_mcp_session(sc, engine_mode=False) as mcp:
-        result = await mcp.call_tool("call_order_yield", {"plugin": "planning-copilot", "parameters": params})
+        result = await mcp.call_tool("call_analyze_yield_loss", {"plugin": "product-copilot", "parameters": params})
         assert result["outcome"] == "POLICY_DENIED"
 
 
 @pytest.mark.parametrize(
-    "policy", ["", 'permit(principal in Role::"planner", action == Action::"invoke-order-yield", resource);']
+    "policy", ["", 'permit(principal in Role::"product", action == Action::"invoke-analyze-yield-loss", resource);']
 )
 async def test_function_without_restrictive_invoke_policy_stays_available(client, policy):
     from test_agent_approval import _hdr
@@ -213,12 +213,14 @@ async def test_function_without_restrictive_invoke_policy_stays_available(client
     c, sc = client
     sc.compiled.cedar_texts["function-guard"] = policy
     sc.policy = PolicyEngine(sc.compiled)
-    sc.compiled.agent_plugins["planning-copilot"].spec.tools.allow.append("call_order_yield")
-    params = {"order_id": "PO-1002"}
-    rest = await c.post("/api/v1/functions/order-yield/invoke", json={"parameters": params}, headers=_hdr(PLANNER))
+    sc.compiled.agent_plugins["product-copilot"].spec.tools.allow.append("call_analyze_yield_loss")
+    params = {"test_id": "WT-501"}
+    rest = await c.post(
+        "/api/v1/functions/analyze-yield-loss/invoke", json={"parameters": params}, headers=_hdr(PLANNER)
+    )
     assert rest.status_code == 200
-    agent = await sc.agents.open_session("planning-copilot", "")
-    governed = await sc.agents.call_tool(agent["id"], "call_order_yield", {"parameters": params})
+    agent = await sc.agents.open_session("product-copilot", "")
+    governed = await sc.agents.call_tool(agent["id"], "call_analyze_yield_loss", {"parameters": params})
     assert governed["outcome"] == "ok"
-    sessionless = await sc.agents.read_only_tool("call_order_yield", "planning-copilot", {"parameters": params})
+    sessionless = await sc.agents.read_only_tool("call_analyze_yield_loss", "product-copilot", {"parameters": params})
     assert sessionless["outcome"] == "ok"

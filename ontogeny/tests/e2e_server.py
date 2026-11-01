@@ -46,7 +46,7 @@ def main() -> None:
     from ontogeny.demo import prepare_demo
 
     tmp = Path(tempfile.mkdtemp(prefix="ontogeny-e2e-"))
-    paths = prepare_demo(tmp / "demo", package=REPO / "domains" / "product-manufacturing")
+    paths = prepare_demo(tmp / "demo", package=REPO / "domains" / "chip-lifecycle")
     os.environ.update(paths.as_env())
     os.environ.update(
         {

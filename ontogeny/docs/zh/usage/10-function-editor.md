@@ -23,4 +23,4 @@ Runtime 为 **python** 的函数才显示「运行代码」区（declarative 函
 
 ![试运行结果](../img/fn-test.png)
 
-**试运行结果** —— 返回值即时可见；参数面板标注每个输入的来源（如 `work_center_id = "WC-01"（来自 work-center 的真实主键）`），结果可信可解释。
+**试运行结果** —— 返回值即时可见；参数面板标注每个输入的来源（如 `equipment_id = "EQ-07"（来自 equipment 的真实主键）`），结果可信可解释。

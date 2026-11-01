@@ -86,22 +86,22 @@ async def test_native_decimal_bad_row_is_quarantined_while_good_rows_commit(env)
     sqlite3.register_converter(decimal_type, lambda raw: Decimal(raw.decode()))
     precise = "12345678901234567890.1234567890123456789"
     with sqlite3.connect(env["src"]) as db:
-        db.execute(f"ALTER TABLE work_centers ADD COLUMN native_amount {decimal_type}")
-        db.execute("UPDATE work_centers SET native_amount=?, status='INVALID' WHERE work_center_id='WC-01'", (precise,))
+        db.execute(f"ALTER TABLE equipment ADD COLUMN native_amount {decimal_type}")
+        db.execute("UPDATE equipment SET native_amount=?, status='INVALID' WHERE equipment_id='EQ-01'", (precise,))
     dsn = f"sqlite+aiosqlite:///{env['src']}"
-    source = SqlSource(env["compiled"].stores["mes"], dsn)
+    source = SqlSource(env["compiled"].stores["fab"], dsn)
     source.engine = create_async_engine(dsn, connect_args={"detect_types": sqlite3.PARSE_DECLTYPES})
     env["sync"].source_factory = lambda _: source
     try:
         async with env["maker"]() as session:
-            summary = await env["sync"].sync(session, "work-center")
+            summary = await env["sync"].sync(session, "equipment")
             await session.commit()
             quarantine = (await session.execute(select(QuarantineRow))).scalar_one()
-            alive = await env["repo"].alive_ids(session, "work-center")
+            alive = await env["repo"].alive_ids(session, "equipment")
         assert summary["quarantined"] == 1 and summary["inserted"] == 2
-        assert alive == {"WC-02", "WC-03"}
+        assert alive == {"EQ-02", "EQ-03"}
         assert quarantine.row["native_amount"] == precise
-        assert quarantine.source_pk == "WC-01"
+        assert quarantine.source_pk == "EQ-01"
     finally:
         await source.dispose()
         if previous_converter is None:
@@ -164,18 +164,18 @@ async def test_postgres_numeric_array_json_and_uuid_bad_row_is_quarantined(env):
     table = "native_source_" + uuid.uuid4().hex
     precise = Decimal("12345678901234567890.1234567890123456789")
     identifier = uuid.uuid4()
-    source = SqlSource(env["compiled"].stores["mes"], dsn)
+    source = SqlSource(env["compiled"].stores["fab"], dsn)
     engine = await source._eng()
     async with engine.begin() as connection:
         await connection.execute(
             text(f"""CREATE TABLE {table} (
-            work_center_id TEXT PRIMARY KEY, name TEXT, status TEXT,
+            equipment_id TEXT PRIMARY KEY, name TEXT, status TEXT,
             native_amount NUMERIC, native_array NUMERIC[], native_payload JSON, native_uuid UUID
         )""")
         )
         await connection.execute(
             text(f"""INSERT INTO {table} VALUES (
-            'WC-01', 'Bad row', 'INVALID', :amount, :amounts, CAST(:payload AS JSON), :identifier
+            'EQ-01', 'Bad row', 'INVALID', :amount, :amounts, CAST(:payload AS JSON), :identifier
         )"""),
             {
                 "amount": precise,
@@ -185,18 +185,18 @@ async def test_postgres_numeric_array_json_and_uuid_bad_row_is_quarantined(env):
             },
         )
         await connection.execute(
-            text(f"INSERT INTO {table} (work_center_id, name, status) VALUES ('WC-02', 'Good row', 'ACTIVE')")
+            text(f"INSERT INTO {table} (equipment_id, name, status) VALUES ('EQ-02', 'Good row', 'ACTIVE')")
         )
-    env["compiled"].objects["work-center"].spec.backing.source = SourceRef(table=table)
+    env["compiled"].objects["equipment"].spec.backing.source = SourceRef(table=table)
     env["sync"].source_factory = lambda _: source
     try:
         async with env["maker"]() as session:
-            summary = await env["sync"].sync(session, "work-center")
+            summary = await env["sync"].sync(session, "equipment")
             await session.commit()
             quarantine = (await session.execute(select(QuarantineRow))).scalar_one()
-            alive = await env["repo"].alive_ids(session, "work-center")
+            alive = await env["repo"].alive_ids(session, "equipment")
         assert summary["inserted"] == 1 and summary["quarantined"] == 1
-        assert alive == {"WC-02"}
+        assert alive == {"EQ-02"}
         assert quarantine.row["native_amount"] == str(precise)
         assert quarantine.row["native_array"] == [str(precise), "0.01"]
         assert quarantine.row["native_uuid"] == str(identifier)

@@ -1,0 +1,61 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: wafer-lot
+  display: Wafer lot
+  description: A batch of wafers of one tapeout version, the unit of quality traceability
+spec:
+  primaryKey:
+  - lot_id
+  properties:
+    lot_id:
+      type: string
+      display: Lot ID
+      required: true
+    version_id:
+      type: string
+      display: Tapeout version
+      required: true
+    qty_wafers:
+      type: integer
+      display: Wafers
+    status:
+      type: enum[RUNNING, COMPLETE, ON_HOLD]
+      display: Status
+      owner: ontology
+    site:
+      type: string
+      display: Fab site
+    started_at:
+      type: timestamp
+      display: Started at
+    created_at:
+      type: timestamp
+      display: Created at
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: wafer_lots
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

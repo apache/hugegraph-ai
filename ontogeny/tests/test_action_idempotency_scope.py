@@ -27,7 +27,10 @@ from ontogeny.action.models import OutboxRow, RevisionRow
 from ontogeny.db import init_schema, make_engine, make_sessionmaker
 
 approval_client = _approval_client
-ORDER = {"product_id": "P-101", "qty": 5}
+# start-lot is the fab role's create action; create-requirement is the product
+# role's, so the two idempotency scopes exercise two actions AND two principals
+FAB = {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
+LOT = {"version_id": "TO-A1", "qty_wafers": 5, "site": "fab-site-a"}
 
 
 async def execute(sc, action, principal, params, key):
@@ -39,11 +42,11 @@ async def execute(sc, action, principal, params, key):
 
 async def test_same_key_is_scoped_to_action_and_principal_and_replays(approval_client):
     _, sc = approval_client
-    first = await execute(sc, "create-production-order", PLANNER, ORDER, "request-1")
-    replay = await execute(sc, "create-production-order", PLANNER, ORDER, "request-1")
-    other_principal = PLANNER | {"id": "another-planner"}
-    second = await execute(sc, "create-production-order", other_principal, ORDER, "request-1")
-    third = await execute(sc, "introduce-product", PLANNER, {"name": "New product"}, "request-1")
+    first = await execute(sc, "start-lot", FAB, LOT, "request-1")
+    replay = await execute(sc, "start-lot", FAB, LOT, "request-1")
+    other_principal = FAB | {"id": "another-fab"}
+    second = await execute(sc, "start-lot", other_principal, LOT, "request-1")
+    third = await execute(sc, "create-requirement", PLANNER, {"title": "IO slew rate control"}, "request-1")
     assert replay == first
     assert len({first[0], second[0], third[0]}) == 3
     async with sc.sessionmaker() as session:
@@ -60,8 +63,8 @@ async def test_same_key_is_scoped_to_action_and_principal_and_replays(approval_c
 
 async def test_empty_key_is_not_an_idempotency_scope(approval_client):
     _, sc = approval_client
-    first = await execute(sc, "create-production-order", PLANNER, ORDER, "")
-    second = await execute(sc, "create-production-order", PLANNER, ORDER, "")
+    first = await execute(sc, "start-lot", FAB, LOT, "")
+    second = await execute(sc, "start-lot", FAB, LOT, "")
     assert first != second
     async with sc.sessionmaker() as session:
         rows = (await session.execute(select(RevisionRow).where(RevisionRow.id.in_([first[0], second[0]])))).scalars()
@@ -176,7 +179,7 @@ async def test_postgres_same_scope_concurrent_replay_executes_once(approval_clie
 
     async def call():
         await gate.wait()
-        return await execute(sc, "create-production-order", PLANNER, ORDER, "concurrent-request")
+        return await execute(sc, "start-lot", FAB, LOT, "concurrent-request")
 
     tasks = [asyncio.create_task(call()) for _ in range(8)]
     gate.set()

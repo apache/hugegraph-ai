@@ -45,15 +45,15 @@ PLUGIN = """\
 apiVersion: ontogeny/v1
 kind: AgentPlugin
 metadata:
-  name: planning-copilot
+  name: fab-copilot
 spec:
   engine: { kind: builtin-llm }
   principal:
-    id: "agent:planning-copilot"
-    Role: [planner]
-    site: plant-north
+    id: "agent:fab-copilot"
+    Role: [fab]
+    site: fab-site-a
   tools:
-    allow: [describe_ontology, search_work_center]
+    allow: [describe_ontology, search_equipment, search_wafer_lot]
   approval: { writes: confirm }
   budget: { steps: 6, wall_ms: 60000, writes_per_session: 3 }
 """
@@ -63,7 +63,7 @@ def _settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
 
 
@@ -106,12 +106,12 @@ class TestPluginScopedListTools:
                         await sess.initialize()
                         full = await sess.list_tools()
                         full_names = {t.name for t in full.tools}
-                        assert "search_material" in full_names  # whole catalog by default
+                        assert "search_wafer_lot" in full_names  # whole catalog by default
 
                         scoped = httpx.AsyncClient(
                             transport=transport,
                             base_url="http://test",
-                            headers={"X-ONTOGENY-Plugin": "planning-copilot"},
+                            headers={"X-ONTOGENY-Plugin": "fab-copilot"},
                         )
                         async with streamable_http_client("http://test/mcp", http_client=scoped) as streams2:  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
                             async with ClientSession(streams2[0], streams2[1]) as sess2:
@@ -121,7 +121,8 @@ class TestPluginScopedListTools:
                                 # the plugin's effective tools + session tools
                                 assert names == {
                                     "describe_ontology",
-                                    "search_work_center",
+                                    "search_equipment",
+                                    "search_wafer_lot",
                                     "agent_open_session",
                                     "agent_get_session",
                                     "agent_list_sessions",
@@ -131,9 +132,7 @@ class TestPluginScopedListTools:
                                 # broker still enforces the plugin's real
                                 # catalog (narrowed per the plugin, not the
                                 # header-less anonymous exploration path)
-                                res = await sess2.call_tool(
-                                    "search_material", {"limit": 1, "plugin": "planning-copilot"}
-                                )
+                                res = await sess2.call_tool("search_requirement", {"limit": 1, "plugin": "fab-copilot"})
                                 assert res.is_error is False
                                 assert res.structured_content["outcome"] == "AGENT_TOOL_NOT_ALLOWED"
 
@@ -212,31 +211,31 @@ class TestEngineContextAndProtocol:
             supports_tools=True,
             replies=[
                 {
-                    "content": "checking the active set first",
+                    "content": "checking the running lots first",
                     "tool_calls": [
                         {
                             "function": {
-                                "name": "search_work_center",
+                                "name": "search_wafer_lot",
                                 "arguments": json.dumps(
-                                    {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 5}
+                                    {"filter": {"field": "status", "op": "eq", "value": "RUNNING"}, "limit": 5}
                                 ),
                             }
                         }
                     ],
                 },
-                {"content": json.dumps({"final": "two active centres"})},
+                {"content": json.dumps({"final": "two running lots"})},
             ],
         )
         engine = BuiltinLlmEngine(sc, llm)
-        sid = (await sc.agents.open_session("planning-copilot", "native"))["id"]
+        sid = (await sc.agents.open_session("fab-copilot", "native"))["id"]
         result = await engine.drive(sid)
         assert result.status == "finished"
         assert engine.last_transport == "mcp"
         assert llm.saw_tools_param, "provider must receive tool schemas"
         assert llm.saw_tools_param[0]["function"]["name"] == "describe_ontology"
         sess = await sc.agents.get_session(sid)
-        assert [s["tool"] for s in sess["steps"]] == ["search_work_center"]
-        assert sess["steps"][0]["thought"] == "checking the active set first"
+        assert [s["tool"] for s in sess["steps"]] == ["search_wafer_lot"]
+        assert sess["steps"][0]["thought"] == "checking the running lots first"
         assert sess["steps"][0]["detail"]["total"] == 2
 
     async def test_native_final_answer_without_tool_call(self, sc):
@@ -244,7 +243,7 @@ class TestEngineContextAndProtocol:
 
         llm = _RecordingLLM(supports_tools=True, replies=[{"content": "nothing to do"}])
         engine = BuiltinLlmEngine(sc, llm)
-        sid = (await sc.agents.open_session("planning-copilot", "native-final"))["id"]
+        sid = (await sc.agents.open_session("fab-copilot", "native-final"))["id"]
         result = await engine.drive(sid)
         assert result.status == "finished"
         assert result.result["final"] == "nothing to do"
@@ -256,7 +255,7 @@ class TestEngineContextAndProtocol:
 class TestFilterDslTeaching:
     def test_search_descriptions_teach_the_dsl(self, sc):
         catalog = build_catalog(sc.compiled)
-        tdef = catalog["search_work_center"]
+        tdef = catalog["search_wafer_lot"]
         assert "eq" in tdef.description and "and" in tdef.description
         assert "field" in tdef.description
         # the schema's filter property carries it too (MCP clients see it)
@@ -278,13 +277,13 @@ class TestMetricsEndpoint:
         ) as c:
             # generate some traffic (query telemetry rides the POST search path)
             await c.post(
-                "/api/v1/objects/work-center/query",
+                "/api/v1/objects/equipment/query",
                 json={"limit": 3},
                 headers={"X-Ontogeny-Principal": json.dumps({"id": "u", "Role": ["auditor"]})},
             )
-            sid = (
-                await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "metrics"})
-            ).json()["id"]
+            sid = (await c.post("/api/v1/agent/sessions", json={"plugin": "fab-copilot", "task": "metrics"})).json()[
+                "id"
+            ]
             await c.post(f"/api/v1/agent/sessions/{sid}/tools/describe_ontology", json={})
 
             r = await c.get("/api/v1/admin/metrics")

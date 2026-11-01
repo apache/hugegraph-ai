@@ -44,7 +44,7 @@ async def test_lifespan_dispatches_and_releases_resources_after_rebuild(tmp_path
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("ONTOGENY_DEMO_POPULATE", "1")
     monkeypatch.setenv("ONTOGENY_ADMIN_PASSWORD", "lifespan-test-password")
-    monkeypatch.setenv("ONTOGENY_WEBHOOK_ALLOWLIST", "wms.example.test")
+    monkeypatch.setenv("ONTOGENY_WEBHOOK_ALLOWLIST", "fab-portal.example.test")
     app = create_app_factory()
     sc = app.state.sc
     deliveries = []
@@ -55,7 +55,7 @@ async def test_lifespan_dispatches_and_releases_resources_after_rebuild(tmp_path
         # function-derived value to appear.
         async def initial_derived():
             async with sc.sessionmaker() as s:
-                return (await sc.repo.get(s, "product", "P-200"))["open_order_count"] == 1
+                return (await sc.repo.get(s, "tapeout-version", "TO-A0"))["open_lot_count"] == 1
 
         await _eventually(initial_derived)
         old_dispatcher = sc.outbox
@@ -64,21 +64,19 @@ async def test_lifespan_dispatches_and_releases_resources_after_rebuild(tmp_path
         assert old_dispatcher._dispatch_lock is sc.outbox._dispatch_lock
         sc.outbox.http = http
         queue = sc.sse.subscribe()
-        headers = {"X-Ontogeny-Principal": json.dumps({"id": "planner", "Role": ["planner"], "site": "plant-north"})}
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test", headers=headers
-        ) as c:
+        fab = {"X-Ontogeny-Principal": json.dumps({"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"})}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test", headers=fab) as c:
             response = await c.post(
-                "/api/v1/actions/release-production-order/execute",
-                json={"target_id": "PO-1002", "parameters": {}},
+                "/api/v1/actions/hold-lot/execute",
+                json={"target_id": "LOT-2419", "parameters": {"reason": "lifespan test"}},
             )
             assert response.status_code == 200, response.text
         async with sc.sessionmaker() as session:
             event = OutboxRow(
-                object_type="product",
-                object_id="P-200",
+                object_type="tapeout-version",
+                object_id="TO-A0",
                 op="event",
-                payload={"kind": "webhook", "url_template": "${WMS_WEBHOOK}"},
+                payload={"kind": "webhook", "url_template": "${FAB_WEBHOOK}"},
             )
             session.add(event)
             await session.commit()
@@ -86,7 +84,7 @@ async def test_lifespan_dispatches_and_releases_resources_after_rebuild(tmp_path
 
         async def delivered_and_derived():
             async with sc.sessionmaker() as session:
-                count = (await sc.repo.get(session, "product", "P-200"))["open_order_count"]
+                count = (await sc.repo.get(session, "tapeout-version", "TO-A0"))["open_lot_count"]
             return bool(deliveries) and count == 0
 
         await _eventually(delivered_and_derived)
@@ -95,7 +93,7 @@ async def test_lifespan_dispatches_and_releases_resources_after_rebuild(tmp_path
             while event_id not in [item["id"] for item in received]:
                 received.append(await queue.get())
         sc.sse.unsubscribe(queue)
-        assert deliveries[0].url.host == "wms.example.test"
+        assert deliveries[0].url.host == "fab-portal.example.test"
         task = app.state.outbox_task
 
     assert task.done() and task.cancelled()
@@ -105,7 +103,7 @@ async def test_lifespan_dispatches_and_releases_resources_after_rebuild(tmp_path
 async def test_rebuilt_dispatchers_serialize_concurrent_delivery(sc):
     await sc.outbox.dispatch_pending()
     async with sc.sessionmaker() as session:
-        event = OutboxRow(object_type="product", object_id="P-200", op="upsert", payload={})
+        event = OutboxRow(object_type="tapeout-version", object_id="TO-A0", op="upsert", payload={})
         session.add(event)
         await session.commit()
         event_id = event.id

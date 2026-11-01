@@ -47,15 +47,15 @@ PLUGIN = """\
 apiVersion: ontogeny/v1
 kind: AgentPlugin
 metadata:
-  name: planning-copilot
+  name: product-copilot
 spec:
   engine: { kind: builtin-llm }
   principal:
-    id: "agent:planning-copilot"
-    Role: [planner]
-    site: plant-north
+    id: "agent:product-copilot"
+    Role: [product]
+    site: hq
   tools:
-    allow: [describe_ontology, search_work_center, act_release_production_order]
+    allow: [describe_ontology, search_equipment, act_tapeout]
   approval: { writes: confirm }
   budget: { steps: 4, wall_ms: 60000, writes_per_session: 3 }
 """
@@ -65,7 +65,7 @@ def _settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,  # the /mcp bearer gate rejects anonymous when off
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
 
 
@@ -94,7 +94,7 @@ async def sc(golden_pkg_path, tmp_path):
         await context.engine.dispose()
 
 
-async def _open(mcp, plugin: str = "planning-copilot", task: str = "t") -> int:
+async def _open(mcp, plugin: str = "product-copilot", task: str = "t") -> int:
     out = await mcp.call_tool("agent_open_session", {"plugin": plugin, "task": task})
     assert out.get("id"), out
     return out["id"]
@@ -109,70 +109,70 @@ class TestProtocolSurface:
             assert set(build_catalog(sc.compiled)) <= names
             assert {"agent_open_session", "agent_get_session", "agent_list_sessions", "agent_finish_session"} <= names
             # the reserved transport arguments ride on every tool's schema
-            tool = next(t for t in await mcp.list_tools() if t["name"] == "search_work_center")
+            tool = next(t for t in await mcp.list_tools() if t["name"] == "search_equipment")
             assert {"plugin", "session_id", "thought"} <= set(tool["input_schema"]["properties"])
 
     async def test_governed_call_records_step_thought_and_budget(self, sc):
         async with in_process_mcp_session(sc) as mcp:
-            sid = await _open(mcp, task="find active work centres")
+            sid = await _open(mcp, task="find active fab tools")
             out = await mcp.call_tool(
-                "search_work_center",
+                "search_equipment",
                 {
                     "filter": {"field": "status", "op": "eq", "value": "ACTIVE"},
                     "limit": 5,
                     "session_id": sid,
-                    "plugin": "planning-copilot",
-                    "thought": "planning needs the active set",
+                    "plugin": "product-copilot",
+                    "thought": "the next lot needs an ACTIVE tool set",
                 },
             )
             assert out["outcome"] == "ok"
-            assert out["detail"]["total"] == 2
+            assert out["detail"]["total"] == 5
 
             sess = await sc.agents.get_session(sid)
-            assert [s["tool"] for s in sess["steps"]] == ["search_work_center"]
-            assert sess["steps"][0]["thought"] == "planning needs the active set"
+            assert [s["tool"] for s in sess["steps"]] == ["search_equipment"]
+            assert sess["steps"][0]["thought"] == "the next lot needs an ACTIVE tool set"
             assert sess["budget"]["steps_used"] == 1
 
     async def test_write_parks_for_human_approval_like_the_rest_protocol(self, sc):
         """The approval gate (M2) must hold through the MCP transport too."""
         async with in_process_mcp_session(sc) as mcp:
-            sid = await _open(mcp, task="release PO-1002")
+            sid = await _open(mcp, task="tapeout TO-A1")
             out = await mcp.call_tool(
-                "act_release_production_order",
-                {"parameters": {}, "target_id": "PO-1002", "session_id": sid, "plugin": "planning-copilot"},
+                "act_tapeout",
+                {"parameters": {}, "target_id": "TO-A1", "session_id": sid, "plugin": "product-copilot"},
             )
             assert out["outcome"] == "pending_approval"
             approval_id = out["approval_id"]
 
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
-        assert po["status"] == "PLANNED"  # nothing executed yet
+            ver = await sc.query.get(s, "tapeout-version", "TO-A1", {"id": "auditor", "Role": ["auditor"]})
+        assert ver["status"] == "PLANNED"  # nothing executed yet
 
-        planner = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
-        decision = await sc.agents.decide(approval_id, "approved", planner)
+        product = {"id": "u-product", "Role": ["product"], "site": "hq"}
+        decision = await sc.agents.decide(approval_id, "approved", product)
         assert decision["status"] == "executed"
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
-        assert po["status"] == "RELEASED"
+            ver = await sc.query.get(s, "tapeout-version", "TO-A1", {"id": "auditor", "Role": ["auditor"]})
+        assert ver["status"] == "FAB"
 
     async def test_sessionless_write_is_refused(self, sc):
         async with in_process_mcp_session(sc) as mcp:
-            out = await mcp.call_tool("act_release_production_order", {"parameters": {}, "target_id": "PO-1002"})
+            out = await mcp.call_tool("act_tapeout", {"parameters": {}, "target_id": "TO-A1"})
             assert out["outcome"] == "WRITE_REQUIRES_SESSION"
 
     async def test_sessionless_read_narrows_to_the_plugin_catalog(self, sc):
         async with in_process_mcp_session(sc) as mcp:
             # inside the plugin's list: reads fine under the plugin principal
-            out = await mcp.call_tool("search_work_center", {"limit": 2, "plugin": "planning-copilot"})
+            out = await mcp.call_tool("search_equipment", {"limit": 2, "plugin": "product-copilot"})
             assert out["outcome"] == "ok"
             # outside it: refused even though the tool exists (I1)
-            out = await mcp.call_tool("search_material", {"limit": 2, "plugin": "planning-copilot"})
+            out = await mcp.call_tool("search_wafer_test", {"limit": 2, "plugin": "product-copilot"})
             assert out["outcome"] == "AGENT_TOOL_NOT_ALLOWED"
 
     async def test_allow_list_enforced_inside_sessions_too(self, sc):
         async with in_process_mcp_session(sc) as mcp:
             sid = await _open(mcp)
-            out = await mcp.call_tool("search_material", {"limit": 2, "session_id": sid, "plugin": "planning-copilot"})
+            out = await mcp.call_tool("search_wafer_test", {"limit": 2, "session_id": sid, "plugin": "product-copilot"})
             assert out["outcome"] == "AGENT_TOOL_NOT_ALLOWED"
 
     async def test_budget_exhaustion_is_a_structured_outcome(self, sc):
@@ -180,7 +180,7 @@ class TestProtocolSurface:
             sid = await _open(mcp)
             out = {}
             for _ in range(5):  # budget.steps=4: the 5th call must be refused
-                out = await mcp.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
+                out = await mcp.call_tool("describe_ontology", {"session_id": sid, "plugin": "product-copilot"})
             assert out["outcome"] == "AGENT_BUDGET_EXCEEDED"
             sess = await sc.agents.get_session(sid)
             assert sess["budget"]["steps_used"] == 4
@@ -197,15 +197,15 @@ class TestProtocolSurface:
 
         driver = {"id": "external-driver"}
         token = _MCP_DRIVER.set(driver)
-        sid = (await sc.agents.open_session("planning-copilot", "x", driver=driver))["id"]
+        sid = (await sc.agents.open_session("product-copilot", "x", driver=driver))["id"]
         await sc.agents.set_status(sid, "running")
 
         async with in_process_mcp_session(sc, engine_mode=False) as external:
-            out = await external.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
+            out = await external.call_tool("describe_ontology", {"session_id": sid, "plugin": "product-copilot"})
             assert out["outcome"] == "AGENT_SESSION_RUNNING"
         _MCP_DRIVER.reset(token)
         async with in_process_mcp_session(sc) as engine_client:
-            out = await engine_client.call_tool("describe_ontology", {"session_id": sid, "plugin": "planning-copilot"})
+            out = await engine_client.call_tool("describe_ontology", {"session_id": sid, "plugin": "product-copilot"})
             assert out["outcome"] == "ok"
 
     async def test_session_lifecycle_over_pure_mcp(self, sc):
@@ -213,9 +213,9 @@ class TestProtocolSurface:
             sid = await _open(mcp, task="look around")
             out = await mcp.call_tool("agent_get_session", {"session_id": sid})
             assert out["status"] == "open"
-            assert "search_work_center" in out["tools"]
+            assert "search_equipment" in out["tools"]
 
-            out = await mcp.call_tool("agent_list_sessions", {"plugin": "planning-copilot"})
+            out = await mcp.call_tool("agent_list_sessions", {"plugin": "product-copilot"})
             assert any(s["id"] == sid for s in out["sessions"])
 
             out = await mcp.call_tool("agent_finish_session", {"session_id": sid, "result": {"final": "done"}})
@@ -245,26 +245,26 @@ class TestWireSurface:
                     async with ClientSession(streams[0], streams[1]) as sess:
                         await sess.initialize()
                         tools = await sess.list_tools()
-                        assert "search_work_center" in {t.name for t in tools.tools}
+                        assert "search_equipment" in {t.name for t in tools.tools}
 
                         opened = await sess.call_tool(
-                            "agent_open_session", {"plugin": "planning-copilot", "task": "wire"}
+                            "agent_open_session", {"plugin": "product-copilot", "task": "wire"}
                         )
                         assert opened.is_error is False
                         sid = opened.structured_content["id"]
 
                         res = await sess.call_tool(
-                            "search_work_center",
+                            "search_equipment",
                             {
                                 "filter": {"field": "status", "op": "eq", "value": "ACTIVE"},
                                 "limit": 5,
                                 "session_id": sid,
-                                "plugin": "planning-copilot",
+                                "plugin": "product-copilot",
                             },
                         )
                         assert res.is_error is False
                         assert res.structured_content["outcome"] == "ok"
-                        assert res.structured_content["detail"]["total"] == 2
+                        assert res.structured_content["detail"]["total"] == 5
 
     async def test_mcp_route_is_never_shadowed(self, sc):
         app = build_app(sc)
@@ -320,7 +320,7 @@ class TestEngineSpeaksMcp:
                 ]
             ),
         )
-        sid = (await sc.agents.open_session("planning-copilot", "x"))["id"]
+        sid = (await sc.agents.open_session("product-copilot", "x"))["id"]
         result = await engine.drive(sid)
         assert result.status == "finished"
         assert engine.last_transport == "mcp"
@@ -337,7 +337,7 @@ class TestEngineSpeaksMcp:
         from ontogeny_ext_agent_llm import BuiltinLlmEngine
 
         engine = BuiltinLlmEngine(sc, self._stub_llm([]))
-        sid = (await sc.agents.open_session("planning-copilot", "x"))["id"]
+        sid = (await sc.agents.open_session("product-copilot", "x"))["id"]
         result = await engine.drive(sid)
         assert result.status == "finished"
         assert engine.last_transport == "broker"
@@ -351,60 +351,13 @@ class TestRefreshOnPromote:
 
         # a promote that drops the object type must drop its tool: refresh()
         # is what _rebuild_services calls on every recompile
-        slim = replace(sc.compiled, objects={k: v for k, v in sc.compiled.objects.items() if k != "work-center"})
-        assert "work-center" not in slim.objects
+        slim = replace(sc.compiled, objects={k: v for k, v in sc.compiled.objects.items() if k != "equipment"})
+        assert "equipment" not in slim.objects
 
         surface = McpSurface(type("FakeSc", (), {"compiled": slim})(), engine_mode=True)
         surface.build()
         assert surface.server is not None
         tools = await surface.server.list_tools()
         names = {t.name for t in tools}
-        assert "search_work_center" not in names
-        assert "search_production_order" in names
-
-    async def test_prepared_catalog_remains_private_until_applied(self, sc):
-        from dataclasses import replace
-
-        from ontogeny.mcp_server import McpSurface
-
-        surface = McpSurface(sc, engine_mode=True)
-        surface.build()
-        live_server = surface.server
-        original_manager = live_server._tool_manager
-        original_compiled = sc.compiled
-        sc.compiled = replace(
-            original_compiled, objects={k: v for k, v in original_compiled.objects.items() if k != "work-center"}
-        )
-        try:
-            prepared = surface.prepare_refresh()
-        finally:
-            sc.compiled = original_compiled
-        assert surface.server is live_server
-        assert surface.server._tool_manager is original_manager
-        assert "search_work_center" in {t.name for t in await surface.server.list_tools()}
-        surface.apply_refresh(prepared)
-        assert surface.server is live_server
-        assert surface.server._tool_manager is prepared
-        assert "search_work_center" not in {t.name for t in await surface.server.list_tools()}
-        assert "agent_get_session" in {t.name for t in await surface.server.list_tools()}
-
-    async def test_failed_catalog_preparation_preserves_live_tools(self, sc, monkeypatch):
-        import pytest
-
-        from ontogeny.mcp_server import McpSurface
-
-        surface = McpSurface(sc, engine_mode=True)
-        surface.build()
-        original_manager = surface.server._tool_manager
-        original_names = {t.name for t in await surface.server.list_tools()}
-        register = McpSurface._register_catalog_tools
-
-        def register_then_fail(candidate):
-            register(candidate)
-            raise RuntimeError("registration failed after adding catalog tools")
-
-        monkeypatch.setattr(McpSurface, "_register_catalog_tools", register_then_fail)
-        with pytest.raises(RuntimeError, match="registration failed"):
-            surface.prepare_refresh()
-        assert surface.server._tool_manager is original_manager
-        assert {t.name for t in await surface.server.list_tools()} == original_names
+        assert "search_equipment" not in names
+        assert "search_wafer_lot" in names

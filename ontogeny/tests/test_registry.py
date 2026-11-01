@@ -31,8 +31,8 @@ from ontogeny.errors import DSLValidationError, OOError
 from ontogeny.registry import RegistryService, compile_package, snake
 
 # the golden package: it is the one that declares a derived property in the
-# wild (production-order.release_lag_h, an expression over two timestamps)
-_GOLDEN_EXAMPLE = Path(__file__).resolve().parent.parent / "domains" / "product-manufacturing"
+# wild (tapeout-version.fab_lag_h, an expression over two timestamps)
+_GOLDEN_EXAMPLE = Path(__file__).resolve().parent.parent / "domains" / "chip-lifecycle"
 
 
 @pytest_asyncio.fixture()
@@ -48,21 +48,24 @@ async def session():
 class TestCompile:
     def test_compile_golden(self, golden_pkg):
         compiled = compile_package(golden_pkg)
-        assert compiled.package_name == "product-manufacturing"
+        assert compiled.package_name == "chip-lifecycle"
         assert set(compiled.objects) == {
-            "product",
-            "bom",
-            "material",
-            "work-center",
-            "production-order",
-            "operation",
-            "quality-inspection",
+            "requirement",
+            "design-module",
+            "tapeout-version",
+            "equipment",
+            "wafer-lot",
+            "process-step",
+            "wafer-test",
+            "customer",
+            "field-failure",
+            "fmea-note",
         }
-        assert compiled.table_name("production-order") == "ontogeny_obj_production_order"
-        assert compiled.owner("production-order", "product_id") == "source"
-        assert compiled.owner("production-order", "status") == "ontology"
-        assert compiled.owner("production-order", "released_at") == "ontology"
-        assert compiled.owner("work-center", "name") == "source"  # empty mapping -> direct mode
+        assert compiled.table_name("wafer-lot") == "ontogeny_obj_wafer_lot"
+        assert compiled.owner("wafer-lot", "version_id") == "source"
+        assert compiled.owner("wafer-lot", "status") == "ontology"
+        assert compiled.owner("tapeout-version", "taped_out_at") == "ontology"
+        assert compiled.owner("equipment", "name") == "source"  # empty mapping -> direct mode
 
     def test_join_table_link_gets_a_link_table(self, tmp_path):
         """The golden package is all foreign-key links; the join-table shape
@@ -106,16 +109,16 @@ class TestCompile:
 
     def test_cedar_texts_loaded(self, golden_pkg):
         compiled = compile_package(golden_pkg)
-        assert "planner" in compiled.cedar_texts["production"]
+        assert "fab" in compiled.cedar_texts["lifecycle"]
 
     def test_meta_export(self, golden_pkg):
         meta = compile_package(golden_pkg).to_meta()
-        assert meta["objects"]["production-order"]["primaryKey"] == ["order_id"]
-        assert "release-production-order" in meta["actions"]
-        assert list(meta["objects"]["production-order"]["links"]) == [
-            "production-order-inspections",
-            "production-order-operations",
-            "production-order-product",
+        assert meta["objects"]["wafer-lot"]["primaryKey"] == ["lot_id"]
+        assert "tapeout" in meta["actions"]
+        assert list(meta["objects"]["wafer-lot"]["links"]) == [
+            "lot-steps",
+            "lot-tests",
+            "version-lots",
         ]
 
     def test_meta_export_carries_every_property_fact(self, golden_pkg):
@@ -124,14 +127,15 @@ class TestCompile:
         (`decimal(14,2)`) -- the display name, the business description
         and the field's owner were unreachable even though the model states
         them, and the i18n keys written for them stayed dead."""
-        props = compile_package(golden_pkg).to_meta()["objects"]["production-order"]["properties"]
+        props = compile_package(golden_pkg).to_meta()["objects"]["wafer-lot"]["properties"]
 
-        assert props["order_id"]["display"] == "Order ID"
+        assert props["lot_id"]["display"] == "Lot ID"
         assert props["status"]["owner"] == "ontology"
-        # a fact the package does state survives the round trip: the material's
-        # internal marking is what hides unit cost from unmarked principals
+        # a fact the package does state survives the round trip: the tapeout
+        # version's internal marking is what hides mask cost from unmarked
+        # principals
         assert (
-            compile_package(golden_pkg).to_meta()["objects"]["material"]["properties"]["unit_cost"]["marking"]
+            compile_package(golden_pkg).to_meta()["objects"]["tapeout-version"]["properties"]["mask_cost"]["marking"]
             == "internal"
         )
         # every property states all facts, even when the value is null --
@@ -139,36 +143,37 @@ class TestCompile:
         for name, p in props.items():
             assert set(p) >= {"type", "required", "marking", "display", "description", "owner", "derived"}, name
         # a stored property says so with a null, rather than omitting the key
-        assert props["order_id"]["derived"] is None
-        assert props["priority"]["derived"] is None
+        assert props["lot_id"]["derived"] is None
+        assert props["qty_wafers"]["derived"] is None
         # ...and a derived one carries its definition
-        assert props["release_lag_h"]["derived"]["kind"] == "expr"
+        tapeout_props = compile_package(golden_pkg).to_meta()["objects"]["tapeout-version"]["properties"]
+        assert tapeout_props["fab_lag_h"]["derived"]["kind"] == "expr"
 
     def test_meta_export_describes_derivation(self):
         """A derived property reports *how* it is derived, not merely that it is."""
         meta = compile_package(load_package(_GOLDEN_EXAMPLE)).to_meta()
 
-        lag = meta["objects"]["production-order"]["properties"]["release_lag_h"]
+        lag = meta["objects"]["tapeout-version"]["properties"]["fab_lag_h"]
         assert lag["derived"]["kind"] == "expr"
-        assert lag["derived"]["expr"] == "(released_at - created_at) / 3600000"
+        assert lag["derived"]["expr"] == "(taped_out_at - created_at) / 3600000"
 
         # a cross-object count: which *other* type's changes must recompute it.
         # The golden package has no function-derived property, so declare one on
-        # a copy -- same shape the demo uses for its open-order counters.
+        # a copy -- same shape the demo uses for its open-step counters.
         import copy
 
         pkg = copy.deepcopy(load_package(_GOLDEN_EXAMPLE))
-        obj = pkg.find("ObjectType", "work-center")
-        obj.spec.properties["open_order_count"] = obj.spec.properties["work_center_id"].model_copy(
-            update={"derived": {"kind": "function", "entry": "count.py:main", "triggers": ["production-order"]}},
+        obj = pkg.find("ObjectType", "equipment")
+        obj.spec.properties["open_step_count"] = obj.spec.properties["equipment_id"].model_copy(
+            update={"derived": {"kind": "function", "entry": "count.py:main", "triggers": ["process-step"]}},
         )
-        count = compile_package(pkg).to_meta()["objects"]["work-center"]["properties"]["open_order_count"]
+        count = compile_package(pkg).to_meta()["objects"]["equipment"]["properties"]["open_step_count"]
         assert count["derived"]["kind"] == "function"
         assert count["derived"]["entry"]
-        assert count["derived"]["triggers"] == ["production-order"]
+        assert count["derived"]["triggers"] == ["process-step"]
 
     def test_snake(self):
-        assert snake("production-order") == "production_order"
+        assert snake("wafer-lot") == "wafer_lot"
         assert snake("Weird--Name.x") == "weird_name_x"
 
 
@@ -176,7 +181,7 @@ class TestPublish:
     async def test_publish_and_load(self, session: AsyncSession, golden_pkg):
         reg = RegistryService()
         compiled = await reg.publish(session, golden_pkg, created_by="ci")
-        assert compiled.package_name == "product-manufacturing"
+        assert compiled.package_name == "chip-lifecycle"
         await session.commit()
 
         # rebuild from DB only (restart path)
@@ -199,7 +204,7 @@ class TestPublish:
         rows = (
             (
                 await session.execute(
-                    select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "work-center")
+                    select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "equipment")
                 )
             )
             .scalars()
@@ -212,7 +217,7 @@ class TestPublish:
 
         reg = RegistryService()
         pkg = copy.deepcopy(golden_pkg)
-        pkg.find("LinkType", "operation-work-center").spec.target = "ghost"
+        pkg.find("LinkType", "lot-steps").spec.target = "ghost"
         with pytest.raises(DSLValidationError) as ei:
             await reg.publish(session, pkg)
         assert any(i["code"] == "LINK-ENDPOINT" for i in ei.value.details.get("issues", []))
@@ -224,19 +229,19 @@ class TestPublish:
         await reg.publish(session, golden_pkg)
         await session.commit()
         pkg2 = copy.deepcopy(golden_pkg)
-        pkg2.resources = [r for r in pkg2.resources if not (r.kind == "ObjectType" and r.metadata.name == "material")]
-        # force: dangling references (links/projection still mention material) would be
+        pkg2.resources = [r for r in pkg2.resources if not (r.kind == "ObjectType" and r.metadata.name == "equipment")]
+        # force: dangling references (links/projection still mention equipment) would be
         # rejected by the validator; here we only exercise the soft-delete mechanics
         compiled = await reg.publish(session, pkg2, force=True)
         await session.commit()
-        assert "material" not in compiled.objects
+        assert "equipment" not in compiled.objects
         from sqlalchemy import select
 
         from ontogeny.registry.store import ResourceRow
 
         row = (
             await session.execute(
-                select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "material")
+                select(ResourceRow).where(ResourceRow.kind == "ObjectType", ResourceRow.api_name == "equipment")
             )
         ).scalar_one()
         assert row.deleted_at is not None
@@ -248,10 +253,10 @@ class TestPublish:
         edges = await reg.lineage(session)
         pairs = {(e["src"], e["dst"]) for e in edges}
         assert (
-            "Store/mes",
-            "ObjectType/production-order",
-        ) in pairs or any(e["src"] == "Store/mes" for e in edges)
-        assert any(e["dst"] == "Projection/production-graph" for e in edges)
+            "Store/fab",
+            "ObjectType/wafer-lot",
+        ) in pairs or any(e["src"] == "Store/fab" for e in edges)
+        assert any(e["dst"] == "Projection/production-lifecycle-graph" for e in edges)
 
 
 class TestSnapshotEvolution:

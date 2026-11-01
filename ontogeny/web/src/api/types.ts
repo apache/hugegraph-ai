@@ -53,7 +53,7 @@ export interface PropertyMeta {
   /** Business meaning of the field (DSL `description:`). */
   description?: string | null
   /** `source` = maintained by sync; `ontology` = action-layer owned. */
-  owner?: 'source' | 'ontology' | null
+  owner?: 'source' | 'ontology' | 'document' | null
   derived?: PropertyDerivation | null
 }
 
@@ -97,9 +97,25 @@ export interface LinkTypeMeta {
   cardinality: Cardinality
 }
 
+export type KindGroup = 'core' | 'extension' | 'adapter' | 'baseline' | 'manifest'
+
+/** One row of the DSL taxonomy, as published by `/meta/ontology.kinds`.
+ *  `platform` is true for the nine platform resources; the two manifest
+ *  resources (Store, Ontology) travel with the package but are not platform
+ *  resources. */
+export interface KindMeta {
+  kind: string
+  group: KindGroup
+  layer: string
+  core: boolean
+  platform: boolean
+}
+
 export interface OntologyMeta {
   package: string
   content_hash: string
+  /** The kind taxonomy — the board and docs read this rather than a local list. */
+  kinds?: KindMeta[]
   objects: Record<string, ObjectMeta>
   actions: Record<string, ActionMeta>
   functions: Record<string, FunctionMeta>
@@ -429,3 +445,237 @@ export interface ExtensionsInventory {
   dirs: string[]
 }
 
+
+/* --------------------------------------------------------------- documents */
+
+export interface ExtractRun {
+  id: number
+  store: string
+  status: string
+  schema_hash: string | null
+  prompt_hash: string | null
+  model: string | null
+  documents: number
+  chunks: number
+  objects: number
+  inserted: number
+  updated: number
+  noop: number
+  links: number
+  candidates: number
+  quarantined: number
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface DocumentStoresResponse {
+  stores: DocumentStoreSummary[]
+  extractor: string
+}
+
+export interface DocumentStoreSummary {
+  name: string
+  display: string
+  description: string | null
+  connection: string
+  documents: number
+  removed: number
+  object_types: string[]
+  pending: number
+  last_run: ExtractRun | null
+}
+
+export interface CorpusDocument {
+  id: string
+  path: string
+  name: string
+  media_type: string | null
+  size: number
+  status: 'active' | 'removed' | string
+  chunk_count: number
+  error: string | null
+  first_seen_at: string | null
+  last_seen_at: string | null
+  extracted_at: string | null
+}
+
+export interface ExtractedGraph {
+  vertices?: Array<{ id?: string | number; label?: string; properties?: Record<string, unknown> }>
+  edges?: Array<{
+    label?: string
+    outV?: string | number
+    outVLabel?: string
+    inV?: string | number
+    inVLabel?: string
+    properties?: Record<string, unknown>
+  }>
+}
+
+export interface ExtractPacket {
+  index: number
+  text: string
+  graph: ExtractedGraph
+  issues: Array<{ path?: string; message?: string; evidence?: string | null }>
+  status: string
+}
+
+export interface ExtractedDocument {
+  doc_id: string
+  path: string | null
+  name: string
+  chunks: ExtractPacket[]
+}
+
+export interface ExtractCandidate {
+  id: number
+  run_id: number
+  doc_id: string
+  chunk_index: number
+  kind: 'object' | 'link' | string
+  object_type: string | null
+  link: string | null
+  object_id: string | null
+  reason: string
+  payload: Record<string, unknown>
+  status: 'pending' | 'accepted' | 'rejected' | string
+  note: string | null
+  decided_by: string | null
+  decided_at: string | null
+  created_at: string | null
+  document?: { id: string; name: string; path: string | null }
+}
+
+export interface CandidateDetail {
+  candidate: ExtractCandidate
+  document: { id: string; name: string; path: string | null }
+  chunk: { index: number; text: string; issues: Array<Record<string, unknown>>; graph: ExtractedGraph }
+  current: Record<string, unknown> | null
+}
+
+export interface DocumentRunDetail {
+  run: ExtractRun
+  documents: ExtractedDocument[]
+  candidates: ExtractCandidate[]
+}
+
+// --------------------------------------------------------------- document tasks
+
+export interface DocumentScope {
+  objects: Record<string, string[]>
+  links?: string[] | null
+}
+
+export interface DocumentSkillInput {
+  id: string
+  addendum: string
+  examples: Array<Record<string, unknown>>
+  language?: string | null
+}
+
+export interface DocumentSkillOption {
+  id: string
+  name: string
+  display: string
+  version: number
+  description?: string | null
+  body: string
+  examples: Array<Record<string, unknown>>
+}
+
+export interface DocumentScopeProperty {
+  name: string
+  display: string | null
+  type: string
+  required: boolean
+  identity: boolean
+  owner: string
+}
+
+export interface DocumentScopeObject {
+  name: string
+  display: string
+  description: string | null
+  identity: string[]
+  properties: DocumentScopeProperty[]
+}
+
+export interface DocumentScopeLink {
+  name: string
+  display: string
+  source: string
+  target: string
+  source_is_reference: boolean
+}
+
+export interface DocumentSchemaOptions {
+  store: string
+  objects: DocumentScopeObject[]
+  links: DocumentScopeLink[]
+}
+
+export interface DocumentValidationItem {
+  reason: string
+  kind?: string
+  object_type?: string | null
+  link?: string | null
+  message?: string
+  payload?: Record<string, unknown>
+}
+
+export interface DocumentTaskSummary {
+  id: number
+  store: string
+  doc_id: string
+  name: string
+  path: string | null
+  status: 'draft' | 'running' | 'review' | 'confirmed' | 'superseded' | 'failed' | string
+  revision: number
+  supersedes_task_id: number | null
+  scope: DocumentScope | null
+  schema_hash: string | null
+  skill: Record<string, unknown> | null
+  skill_hash: string | null
+  current_attempt_id: number | null
+  confirmed_attempt_id: number | null
+  created_by: string
+  created_at: string | null
+  confirmed_by: string | null
+  confirmed_at: string | null
+  graph_sync_status: string
+  confirm_summary: Record<string, unknown> | null
+  error: string | null
+}
+
+export interface DocumentTaskAttempt {
+  id: number
+  task_id: number
+  attempt_no: number
+  status: string
+  agent_run_id: number | null
+  provider: string | null
+  model: string | null
+  schema_hash: string | null
+  prompt_hash: string | null
+  chunks: ExtractPacket[]
+  issues: Array<Record<string, unknown>>
+  validation: {
+    blockers: DocumentValidationItem[]
+    warnings: DocumentValidationItem[]
+    objects: number
+    links: number
+    references: Array<[string, string]>
+    gaps: string[]
+  }
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
+  graph?: ExtractedGraph
+  raw_graph?: ExtractedGraph
+}
+
+export interface DocumentTaskDetail extends DocumentTaskSummary {
+  chunks: ExtractPacket[]
+  attempt: DocumentTaskAttempt | null
+  attempts: DocumentTaskAttempt[]
+}

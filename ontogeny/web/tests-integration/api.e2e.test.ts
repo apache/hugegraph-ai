@@ -40,12 +40,12 @@ const BASE = `http://127.0.0.1:${PORT}`
 
 // admin/evolve planes are admin-gated now; the dev-header simulation may
 // claim it explicitly (dev_auth is enabled for this e2e server).
-const PLANNER = { id: 'e2e-planner', Role: ['planner'], site: 'plant-north', is_admin: true }
+const PRODUCT = { id: 'e2e-product', Role: ['product'], site: 'hq', is_admin: true }
 const VISITOR = { id: 'e2e-visitor' }
 
 async function api<T = any>(
   p: string,
-  { method = 'GET', body, principal = PLANNER }: { method?: string; body?: unknown; principal?: object } = {},
+  { method = 'GET', body, principal = PRODUCT }: { method?: string; body?: unknown; principal?: object } = {},
 ): Promise<{ status: number; json: T }> {
   const resp = await fetch(`${BASE}${p}`, {
     method,
@@ -67,14 +67,19 @@ describe('e2e: real backend', () => {
   it('serves the compiled ontology meta', async () => {
     const { status, json } = await api('/api/v1/meta/ontology')
     expect(status).toBe(200)
-    expect(json.package).toBe('product-manufacturing')
-    expect(Object.keys(json.objects).sort()).toEqual(
-      ['bom', 'material', 'operation', 'product', 'production-order', 'quality-inspection', 'work-center'],
-    )
+    expect(json.package).toBe('chip-lifecycle')
+    expect(Object.keys(json.objects).sort()).toEqual([
+      'customer', 'design-module', 'equipment', 'field-failure', 'fmea-note',
+      'process-step', 'requirement', 'tapeout-version', 'wafer-lot', 'wafer-test',
+    ])
   })
 
-  it('syncs all object types from the source database', async () => {
-    for (const t of ['product', 'bom', 'material', 'work-center', 'production-order', 'operation', 'quality-inspection']) {
+  it('syncs all source-backed object types from the source database', async () => {
+    // fmea-note is document-extracted, not synced
+    for (const t of [
+      'requirement', 'design-module', 'tapeout-version', 'equipment', 'wafer-lot',
+      'process-step', 'wafer-test', 'customer', 'field-failure',
+    ]) {
       const { status, json } = await api(`/api/v1/admin/sync/${t}`, { method: 'POST' })
       expect(status).toBe(200)
       expect((json.inserted ?? 0) + (json.updated ?? 0)).toBeGreaterThan(0)
@@ -82,62 +87,62 @@ describe('e2e: real backend', () => {
   })
 
   it('queries objects with row results and marking masks', async () => {
-    const { status, json } = await api('/api/v1/objects/production-order/query', {
+    const { status, json } = await api('/api/v1/objects/wafer-lot/query', {
       method: 'POST',
-      body: { filter: { status: 'PLANNED' }, sort: [['order_id', 'asc']] },
+      body: { filter: { status: 'RUNNING' }, sort: [['lot_id', 'asc']] },
     })
     expect(status).toBe(200)
-    expect(json.total).toBeGreaterThanOrEqual(1) // PO-1002 ships PLANNED
+    expect(json.total).toBeGreaterThanOrEqual(1) // LOT-2419 / LOT-2501 ship RUNNING
 
-    const mat = await api('/api/v1/objects/material/M-104')
-    expect(mat.json.unit_cost).toBe('__masked__')
-    const marked = await api('/api/v1/objects/material/M-104', {
-      principal: { ...PLANNER, markings: ['internal'] },
+    const version = await api('/api/v1/objects/tapeout-version/TO-A0')
+    expect(version.json.mask_cost).toBe('__masked__')
+    const marked = await api('/api/v1/objects/tapeout-version/TO-A0', {
+      principal: { ...PRODUCT, markings: ['internal'] },
     })
-    expect(marked.json.unit_cost).toBe(320) // decimals sync as numbers
+    expect(marked.json.mask_cost).toBe(1850000) // decimals sync as numbers
   })
 
   it('executes the full action cycle: validate → execute → rule guard → policy deny → audit', async () => {
-    // release the one PLANNED order: planner passes Cedar, rule sees PLANNED
-    const v = await api('/api/v1/actions/release-production-order/validate', {
+    // tape out the one PLANNED version: product passes Cedar, rule sees PLANNED
+    const v = await api('/api/v1/actions/tapeout/validate', {
       method: 'POST',
-      body: { parameters: {}, target_id: 'PO-1002' },
+      body: { parameters: {}, target_id: 'TO-A1' },
     })
     expect(v.status).toBe(200)
     expect(v.json.policy.allow).toBe(true)
 
-    const x = await api('/api/v1/actions/release-production-order/execute', {
+    const x = await api('/api/v1/actions/tapeout/execute', {
       method: 'POST',
-      body: { parameters: {}, target_id: 'PO-1002', idempotency_key: 'e2e-release' },
+      body: { parameters: {}, target_id: 'TO-A1', idempotency_key: 'e2e-tapeout' },
     })
     expect(x.status).toBe(200)
     expect(x.json.outcome).toBe('executed')
-    expect(x.json.after.status).toBe('RELEASED')
+    expect(x.json.after.status).toBe('FAB')
 
-    const replay = await api('/api/v1/actions/release-production-order/execute', {
+    const replay = await api('/api/v1/actions/tapeout/execute', {
       method: 'POST',
-      body: { parameters: {}, target_id: 'PO-1002', idempotency_key: 'e2e-release' },
+      body: { parameters: {}, target_id: 'TO-A1', idempotency_key: 'e2e-tapeout' },
     })
     expect(replay.json.revision_id).toBe(x.json.revision_id) // idempotent
 
-    // releasing again trips the rule before policy even runs
-    const dbl = await api('/api/v1/actions/release-production-order/execute', {
+    // taping out again trips the rule before policy even runs
+    const dbl = await api('/api/v1/actions/tapeout/execute', {
       method: 'POST',
-      body: { parameters: {}, target_id: 'PO-1002' },
+      body: { parameters: {}, target_id: 'TO-A1' },
     })
     expect(dbl.status).toBe(422)
     expect(dbl.json.code).toBe('RULE_REJECTED')
 
-    // a fresh PLANNED order: the rule passes for anyone, so a roleless
+    // a fresh PLANNED version: the rule passes for anyone, so a roleless
     // principal is denied by Cedar (default deny), not by the rule
-    const created = await api('/api/v1/actions/create-production-order/execute', {
+    const created = await api('/api/v1/actions/create-tapeout-version/execute', {
       method: 'POST',
-      body: { parameters: { product_id: 'P-200', qty: 5 } },
+      body: { parameters: { project: 'X3', notes: 'e2e probe' } },
     })
     expect(created.status).toBe(200)
-    const newId = created.json.object_id ?? created.json.after?.order_id
+    const newId = created.json.object_id ?? created.json.after?.version_id
 
-    const deny = await api('/api/v1/actions/release-production-order/execute', {
+    const deny = await api('/api/v1/actions/tapeout/execute', {
       method: 'POST',
       body: { parameters: {}, target_id: newId },
       principal: VISITOR,
@@ -145,7 +150,7 @@ describe('e2e: real backend', () => {
     expect(deny.status).toBe(403)
     expect(deny.json.code).toBe('POLICY_DENIED')
 
-    const audit = await api('/api/v1/audit/revisions?object_id=PO-1002')
+    const audit = await api('/api/v1/audit/revisions?object_id=TO-A1')
     const outcomes = audit.json.revisions.map((r: any) => r.outcome)
     expect(outcomes).toContain('executed')
     expect(outcomes).toContain('rejected_rule')
@@ -157,26 +162,27 @@ describe('e2e: real backend', () => {
     const { status, json } = await api('/api/v1/graph/traverse', {
       method: 'POST',
       body: {
-        start_type: 'work-center',
-        start_ids: ['WC-01'],
+        start_type: 'equipment',
+        start_ids: ['EQ-07'],
         path: [
-          { link: 'operation-work-center', direction: 'out' },
-          { link: 'production-order-operations', direction: 'in' },
+          { link: 'step-equipment', direction: 'out' },
+          { link: 'lot-steps', direction: 'in' },
         ],
       },
     })
     expect(status).toBe(200)
-    expect(json.steps.at(-1).type).toBe('production-order')
-    // WC-01 runs OP-2001 + OP-2002 (PO-1001) and OP-2301 (PO-1004)
-    expect([...json.final_ids].sort()).toEqual(['PO-1001', 'PO-1004'])
+    expect(json.steps.at(-1).type).toBe('wafer-lot')
+    // EQ-07 etched PS-7112 (LOT-2417) and PS-7132 (LOT-2419)
+    expect([...json.final_ids].sort()).toEqual(['LOT-2417', 'LOT-2419'])
   })
 
   it('runs the RSI loop end-to-end: signal → proposal → eval → T0 promote → live schema', async () => {
-    // generate the fitness signal: unmapped filter field, 6 failed queries
+    // the intentional demo gap: field_failures carries lot_id in the source
+    // but the model does not declare it. Six failed filters raise the signal.
     for (let i = 0; i < 6; i++) {
-      await api('/api/v1/objects/production-order/query', {
+      await api('/api/v1/objects/field-failure/query', {
         method: 'POST',
-        body: { filter: { field: 'expedite', op: 'eq', value: 'Y' } },
+        body: { filter: { field: 'lot_id', op: 'eq', value: 'LOT-2417' } },
       })
     }
     const agg = await api('/api/v1/evolve/aggregate', { method: 'POST' })
@@ -185,7 +191,7 @@ describe('e2e: real backend', () => {
     const diag = await api('/api/v1/evolve/diagnose', { method: 'POST' })
     const proposal = diag.json.proposals.find((p: any) => p.gap_kind === 'add-optional-property')
     expect(proposal).toBeTruthy()
-    expect(proposal.diff[0].prop).toBe('expedite')
+    expect(proposal.diff[0].prop).toBe('lot_id')
 
     const ev = await api(`/api/v1/evolve/proposals/${proposal.id}/eval`, { method: 'POST' })
     expect(ev.status).toBe(200)
@@ -196,9 +202,10 @@ describe('e2e: real backend', () => {
     expect(pr.json.status).toBe('promoted')
     expect(pr.json.tier).toBe('t0-auto-merge')
 
-    // the mutation is LIVE in the registry (hot-swapped snapshot)
+    // the mutation is LIVE in the registry (hot-swapped snapshot): the
+    // customer-return → wafer-lot trace chain is now closed
     const meta = await api('/api/v1/meta/ontology')
-    expect(Object.keys(meta.json.objects['production-order'].properties)).toContain('expedite')
+    expect(Object.keys(meta.json.objects['field-failure'].properties)).toContain('lot_id')
   })
 
   it('serves the ontology assistant through the live Ollama endpoint', { timeout: 180_000 }, async (ctx) => {
@@ -206,7 +213,7 @@ describe('e2e: real backend', () => {
     const { status, json } = await api('/api/v1/assistant/chat', {
       method: 'POST',
       body: {
-        messages: [{ role: 'user', content: 'In one sentence, how does production-order relate to work-center?' }],
+        messages: [{ role: 'user', content: 'In one sentence, how does wafer-lot relate to equipment?' }],
       },
     })
     expect(status).toBe(200)
@@ -220,7 +227,7 @@ describe('e2e: real backend', () => {
       method: 'POST',
       body: {
         messages: [
-          { role: 'user', content: 'Planners keep filtering production orders by expedite flag, but the ontology has no such property. Propose one add-optional-property mutation.' },
+          { role: 'user', content: 'Quality engineers keep filtering field failures by lot_id, but the ontology has no such property. Propose one add-optional-property mutation.' },
         ],
         propose: true,
       },

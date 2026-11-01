@@ -40,7 +40,7 @@ limitations under the License.
  * (icon · bold title · badge · lede · content):
  *
  *   §1 ONTOGENY 介绍       what the platform is + the condensed architecture
- *                      board (ArchBoard): citizens / pipeline × RSI loop /
+ *                      board (ArchBoard): platform resources / pipeline × RSI loop /
  *                      supporting + mechanisms;
  *   §2 本体模型        resource-mix donut, then the model grouped by layer
  *                      (semantic / kinetic / governance) as accent panels;
@@ -289,8 +289,9 @@ export function Dashboard() {
           <RichText text={t('dashboard.overview.desc')} />
         </p>
 
-        {/* the condensed architecture board from docs/architecture/01-overall-architecture.md */}
-        <ArchBoard />
+        {/* the condensed architecture board from docs/architecture/01-overall-architecture.md;
+            the kind strip is driven by the same taxonomy the kernel validates */}
+        <ArchBoard kinds={meta.data?.kinds} />
       </section>
 
       {/* ----------------------------- §2 本体模型: mix + layered groups ---- */}

@@ -76,14 +76,14 @@ const MODES: Mode[] = ['agent', 'qa', 'propose']
 
 /** direction 4: agent-mode starter questions. Every one is answerable by the
  *  shipped plugins' own catalogue (search / call functions) -- verified live
- *  against the manufacturing domain, not aspirational copy. */
+ *  against the chip-lifecycle domain, not aspirational copy. */
 const AGENT_SUGGESTIONS: { zh: string; en: string }[] = [
-  { zh: '盘点当前的生产订单，并给出一句优先级建议',
-    en: 'Inventory production orders and give a one-line priority recommendation' },
-  { zh: '检查产品 P-100、数量 5 的物料可用性',
-    en: 'Check material availability for product P-100, qty 5' },
-  { zh: '列出所有 ACTIVE 状态的工作中心及其产能',
-    en: 'List all ACTIVE work centres and their capacity' },
+  { zh: '盘点当前在制的晶圆批次，并给出一句优先级建议',
+    en: 'Inventory the running wafer lots and give a one-line priority recommendation' },
+  { zh: '分析 CP 测试 WT-501 的良率损失，给出根因候选',
+    en: 'Analyze the yield loss of CP test WT-501 and list the root-cause candidates' },
+  { zh: '评估需求 REQ-101 变更的影响面：模块、版本、在制批次',
+    en: 'Assess the impact of changing requirement REQ-101: modules, versions, running lots' },
 ]
 
 interface ChatItem {

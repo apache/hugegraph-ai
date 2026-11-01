@@ -372,7 +372,7 @@ describe('Identity simulation', () => {
     fireEvent.click(screen.getByTestId('tab-identity'))
 
     expect(screen.getByTestId('identity-via')).toHaveTextContent('Sign-in session')
-    expect(screen.getByTestId('sim-preset-planner')).toBeInTheDocument()
+    expect(screen.getByTestId('sim-preset-product')).toBeInTheDocument()
     expect(screen.getByTestId('sim-preset-visitor')).toBeInTheDocument()
     // no override chosen -> nothing to clear, nothing shadowed
     expect(screen.getByTestId('sim-clear')).toBeDisabled()

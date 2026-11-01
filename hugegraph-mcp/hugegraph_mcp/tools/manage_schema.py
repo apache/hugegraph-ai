@@ -1362,17 +1362,17 @@ def _apply_one_operation(manager, operation: dict[str, Any]) -> None:
     if not field_specs or any(field not in apply_fields for field in operation):
         raise ValueError(f"Unsupported or non-forwardable schema field(s) for {op_type}")
     if op_type == "create_property_key":
-        builder = manager.propertyKey(operation["name"])
+        builder = manager.property_key(operation["name"])
         _apply_property_key_options(builder, operation)
         builder.create()
         return
     if op_type == "create_vertex_label":
-        builder = manager.vertexLabel(operation["name"])
+        builder = manager.vertex_label(operation["name"])
         _apply_vertex_label_options(builder, operation)
         builder.create()
         return
     if op_type == "create_edge_label":
-        builder = manager.edgeLabel(operation["name"])
+        builder = manager.edge_label(operation["name"])
         _apply_edge_label_options(builder, operation)
         builder.create()
         return
@@ -1456,9 +1456,9 @@ def _apply_vertex_label_options(builder, operation: dict[str, Any]) -> None:
     if operation.get("properties") is not None:
         builder.properties(*operation["properties"])
     if operation.get("primary_keys") is not None:
-        builder.primaryKeys(*operation["primary_keys"])
+        builder.primary_keys(*operation["primary_keys"])
     if operation.get("nullable_keys") is not None:
-        builder.nullableKeys(*operation["nullable_keys"])
+        builder.nullable_keys(*operation["nullable_keys"])
     if "enable_label_index" in operation:
         method = getattr(builder, "enableLabelIndex", None)
         if not callable(method):
@@ -1472,9 +1472,9 @@ def _apply_edge_label_options(builder, operation: dict[str, Any]) -> None:
     if operation.get("properties") is not None:
         builder.properties(*operation["properties"])
     if operation.get("nullable_keys") is not None:
-        builder.nullableKeys(*operation["nullable_keys"])
+        builder.nullable_keys(*operation["nullable_keys"])
     if operation.get("sort_keys") is not None:
-        builder.sortKeys(*operation["sort_keys"])
+        builder.sort_keys(*operation["sort_keys"])
 
     frequency = operation.get("frequency")
     if frequency:

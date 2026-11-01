@@ -346,11 +346,11 @@ def _execute_vertex_query(
     page: str | None,
 ) -> tuple[Any, str | None]:
     if operation == "get_by_id":
-        return manager.getVertexById(id), None
+        return manager.get_vertex_by_id(id), None
     if operation == "get_by_ids":
-        return manager.getVerticesById(ids), None
+        return manager.get_vertices_by_id(ids), None
     if operation == "page":
-        items, next_page = manager.getVertexByPage(
+        items, next_page = manager.get_vertex_by_page(
             label=label,
             limit=limit,
             page=page,
@@ -359,7 +359,7 @@ def _execute_vertex_query(
         return items, next_page
     get_by_condition = getattr(manager, "getVertexByConditionWithPage", None)
     if get_by_condition is None:
-        get_by_condition = manager.getVertexByCondition
+        get_by_condition = manager.get_vertex_by_condition
     result = get_by_condition(
         label=label or "",
         limit=limit,
@@ -387,10 +387,10 @@ def _execute_edge_query(
     direction: str | None,
 ) -> tuple[Any, str | None]:
     if operation == "get_by_id":
-        return manager.getEdgeById(id), None
+        return manager.get_edge_by_id(id), None
     if operation == "get_by_ids":
-        return manager.getEdgesById(ids), None
-    items, next_page = manager.getEdgeByPage(
+        return manager.get_edges_by_id(ids), None
+    items, next_page = manager.get_edge_by_page(
         label=label,
         vertex_id=vertex_id,
         direction=direction,

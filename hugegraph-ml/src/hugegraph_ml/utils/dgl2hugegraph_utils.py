@@ -79,11 +79,11 @@ def import_graph_from_dgl(
     client_schema: SchemaManager = client.schema()
     client_graph: GraphManager = client.graph()
     # create property schema
-    client_schema.propertyKey("feat").asDouble().valueList().ifNotExist().create()
-    client_schema.propertyKey("label").asLong().ifNotExist().create()
-    client_schema.propertyKey("train_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("val_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_mask").asInt().ifNotExist().create()
+    client_schema.property_key("feat").as_double().value_list().if_not_exist().create()
+    client_schema.property_key("label").as_long().if_not_exist().create()
+    client_schema.property_key("train_mask").as_int().if_not_exist().create()
+    client_schema.property_key("val_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_mask").as_int().if_not_exist().create()
     # check props and create vertex label
     vertex_label = f"{dataset_name}_vertex"
     all_props = ["feat", "label", "train_mask", "val_mask", "test_mask"]
@@ -91,7 +91,7 @@ def import_graph_from_dgl(
     props_value = {}
     for p in props:
         props_value[p] = graph_dgl.ndata[p].tolist()
-    client_schema.vertexLabel(vertex_label).useAutomaticId().properties(*props).ifNotExist().create()
+    client_schema.vertex_label(vertex_label).use_automatic_id().properties(*props).if_not_exist().create()
     # add vertices for batch (note MAX_BATCH_NUM)
     idx_to_vertex_id = {}
     vdatas = []
@@ -114,7 +114,7 @@ def import_graph_from_dgl(
 
     # add edges for batch
     edge_label = f"{dataset_name}_edge"
-    client_schema.edgeLabel(edge_label).sourceLabel(vertex_label).targetLabel(vertex_label).ifNotExist().create()
+    client_schema.edge_label(edge_label).source_label(vertex_label).target_label(vertex_label).if_not_exist().create()
     edges_src, edges_dst = graph_dgl.edges()
     edatas = []
     for src, dst in zip(edges_src.numpy(), edges_dst.numpy(), strict=False):
@@ -152,19 +152,21 @@ def import_graphs_from_dgl(
     vertex_label = f"{dataset_name}_vertex"
     edge_label = f"{dataset_name}_edge"
     # create schema
-    client_schema.propertyKey("label").asLong().ifNotExist().create()
-    client_schema.propertyKey("feat").asDouble().valueList().ifNotExist().create()
-    client_schema.propertyKey("graph_id").asLong().ifNotExist().create()
-    client_schema.vertexLabel(graph_vertex_label).useAutomaticId().properties("label").ifNotExist().create()
-    client_schema.vertexLabel(vertex_label).useAutomaticId().properties("feat", "graph_id").ifNotExist().create()
-    client_schema.edgeLabel(edge_label).sourceLabel(vertex_label).targetLabel(vertex_label).properties(
+    client_schema.property_key("label").as_long().if_not_exist().create()
+    client_schema.property_key("feat").as_double().value_list().if_not_exist().create()
+    client_schema.property_key("graph_id").as_long().if_not_exist().create()
+    client_schema.vertex_label(graph_vertex_label).use_automatic_id().properties("label").if_not_exist().create()
+    client_schema.vertex_label(vertex_label).use_automatic_id().properties("feat", "graph_id").if_not_exist().create()
+    client_schema.edge_label(edge_label).source_label(vertex_label).target_label(vertex_label).properties(
         "graph_id"
-    ).ifNotExist().create()
-    client_schema.indexLabel("vertex_by_graph_id").onV(vertex_label).by("graph_id").secondary().ifNotExist().create()
-    client_schema.indexLabel("edge_by_graph_id").onE(edge_label).by("graph_id").secondary().ifNotExist().create()
+    ).if_not_exist().create()
+    client_schema.index_label("vertex_by_graph_id").on_v(vertex_label).by(
+        "graph_id"
+    ).secondary().if_not_exist().create()
+    client_schema.index_label("edge_by_graph_id").on_e(edge_label).by("graph_id").secondary().if_not_exist().create()
     # import to hugegraph
     for graph_dgl, label in dataset_dgl:
-        graph_vertex = client_graph.addVertex(label=graph_vertex_label, properties={"label": int(label)})
+        graph_vertex = client_graph.add_vertex(label=graph_vertex_label, properties={"label": int(label)})
         # refine feat prop
         if "feat" in graph_dgl.ndata:
             node_feats = graph_dgl.ndata["feat"]
@@ -225,11 +227,11 @@ def import_hetero_graph_from_dgl(
     client_schema: SchemaManager = client.schema()
     client_graph: GraphManager = client.graph()
 
-    client_schema.propertyKey("feat").asDouble().valueList().ifNotExist().create()
-    client_schema.propertyKey("label").asLong().ifNotExist().create()
-    client_schema.propertyKey("train_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("val_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_mask").asInt().ifNotExist().create()
+    client_schema.property_key("feat").as_double().value_list().if_not_exist().create()
+    client_schema.property_key("label").as_long().if_not_exist().create()
+    client_schema.property_key("train_mask").as_int().if_not_exist().create()
+    client_schema.property_key("val_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_mask").as_int().if_not_exist().create()
 
     ntype_to_vertex_label = {}
     ntype_idx_to_vertex_id = {}
@@ -240,7 +242,7 @@ def import_hetero_graph_from_dgl(
         all_props = ["feat", "label", "train_mask", "val_mask", "test_mask"]
         # check properties
         props = [p for p in all_props if p in hetero_graph.nodes[ntype].data]
-        client_schema.vertexLabel(vertex_label).useAutomaticId().properties(*props).ifNotExist().create()
+        client_schema.vertex_label(vertex_label).use_automatic_id().properties(*props).if_not_exist().create()
         props_value = {}
         for p in props:
             props_value[p] = hetero_graph.nodes[ntype].data[p].tolist()
@@ -270,9 +272,9 @@ def import_hetero_graph_from_dgl(
         # create edge schema
         src_type, etype, dst_type = canonical_etype
         edge_label = f"{dataset_name}_{etype}_e"
-        client_schema.edgeLabel(edge_label).sourceLabel(ntype_to_vertex_label[src_type]).targetLabel(
+        client_schema.edge_label(edge_label).source_label(ntype_to_vertex_label[src_type]).target_label(
             ntype_to_vertex_label[dst_type]
-        ).ifNotExist().create()
+        ).if_not_exist().create()
         # add edges for batch of canonical_etype
         srcs, dsts = hetero_graph.edges(etype=canonical_etype)
         for src, dst in zip(srcs.numpy(), dsts.numpy(), strict=False):
@@ -317,7 +319,7 @@ def import_hetero_graph_from_dgl_no_feat(
         # create vertex schema
         vertex_label = f"{dataset_name}_{ntype}_v"
         ntype_to_vertex_label[ntype] = vertex_label
-        client_schema.vertexLabel(vertex_label).useAutomaticId().ifNotExist().create()
+        client_schema.vertex_label(vertex_label).use_automatic_id().if_not_exist().create()
         # add vertices for batch of ntype
         idx_to_vertex_id = {}
         vdatas = []
@@ -341,9 +343,9 @@ def import_hetero_graph_from_dgl_no_feat(
         # create edge schema
         src_type, etype, dst_type = canonical_etype
         edge_label = f"{dataset_name}_{etype}_e"
-        client_schema.edgeLabel(edge_label).sourceLabel(ntype_to_vertex_label[src_type]).targetLabel(
+        client_schema.edge_label(edge_label).source_label(ntype_to_vertex_label[src_type]).target_label(
             ntype_to_vertex_label[dst_type]
-        ).ifNotExist().create()
+        ).if_not_exist().create()
         # add edges for batch of canonical_etype
         srcs, dsts = hetero_graph.edges(etype=canonical_etype)
         for src, dst in zip(srcs.numpy(), dsts.numpy(), strict=False):
@@ -383,7 +385,7 @@ def import_graph_from_nx(
     # create property schema
     # check props and create vertex label
     vertex_label = f"{dataset_name}_vertex"
-    client_schema.vertexLabel(vertex_label).useAutomaticId().ifNotExist().create()
+    client_schema.vertex_label(vertex_label).use_automatic_id().if_not_exist().create()
     # add vertices for batch (note MAX_BATCH_NUM)
     idx_to_vertex_id = {}
     vdatas = []
@@ -402,7 +404,7 @@ def import_graph_from_nx(
 
     # add edges for batch
     edge_label = f"{dataset_name}_edge"
-    client_schema.edgeLabel(edge_label).sourceLabel(vertex_label).targetLabel(vertex_label).ifNotExist().create()
+    client_schema.edge_label(edge_label).source_label(vertex_label).target_label(vertex_label).if_not_exist().create()
     edatas = []
     for edge in dataset.edges:
         edata = [
@@ -444,12 +446,12 @@ def import_graph_from_dgl_with_edge_feat(
     client_schema: SchemaManager = client.schema()
     client_graph: GraphManager = client.graph()
     # create property schema
-    client_schema.propertyKey("feat").asDouble().valueList().ifNotExist().create()  # node features
-    client_schema.propertyKey("edge_feat").asDouble().valueList().ifNotExist().create()
-    client_schema.propertyKey("label").asLong().ifNotExist().create()
-    client_schema.propertyKey("train_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("val_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_mask").asInt().ifNotExist().create()
+    client_schema.property_key("feat").as_double().value_list().if_not_exist().create()  # node features
+    client_schema.property_key("edge_feat").as_double().value_list().if_not_exist().create()
+    client_schema.property_key("label").as_long().if_not_exist().create()
+    client_schema.property_key("train_mask").as_int().if_not_exist().create()
+    client_schema.property_key("val_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_mask").as_int().if_not_exist().create()
     # check props and create vertex label
     vertex_label = f"{dataset_name}_edge_feat_vertex"
     node_all_props = ["feat", "label", "train_mask", "val_mask", "test_mask"]
@@ -457,7 +459,7 @@ def import_graph_from_dgl_with_edge_feat(
     node_props_value = {}
     for p in node_props:
         node_props_value[p] = graph_dgl.ndata[p].tolist()
-    client_schema.vertexLabel(vertex_label).useAutomaticId().properties(*node_props).ifNotExist().create()
+    client_schema.vertex_label(vertex_label).use_automatic_id().properties(*node_props).if_not_exist().create()
     # add vertices for batch (note MAX_BATCH_NUM)
     idx_to_vertex_id = {}
     vdatas = []
@@ -487,9 +489,9 @@ def import_graph_from_dgl_with_edge_feat(
     edge_label = f"{dataset_name}_edge_feat_edge"
     edge_all_props = ["edge_feat"]
 
-    client_schema.edgeLabel(edge_label).sourceLabel(vertex_label).targetLabel(vertex_label).properties(
+    client_schema.edge_label(edge_label).source_label(vertex_label).target_label(vertex_label).properties(
         *edge_all_props
-    ).ifNotExist().create()
+    ).if_not_exist().create()
     edges_src, edges_dst = graph_dgl.edges()
     edatas = []
     for src, dst in zip(edges_src.numpy(), edges_dst.numpy(), strict=False):
@@ -528,9 +530,9 @@ def import_graph_from_ogb(
     client_schema: SchemaManager = client.schema()
     client_graph: GraphManager = client.graph()
     # create property schema
-    client_schema.propertyKey("feat").asDouble().valueList().ifNotExist().create()  # node features
-    client_schema.propertyKey("year").asDouble().valueList().ifNotExist().create()
-    client_schema.propertyKey("weight").asDouble().valueList().ifNotExist().create()
+    client_schema.property_key("feat").as_double().value_list().if_not_exist().create()  # node features
+    client_schema.property_key("year").as_double().value_list().if_not_exist().create()
+    client_schema.property_key("weight").as_double().value_list().if_not_exist().create()
 
     # check props and create vertex label
     vertex_label = f"{dataset_name}_vertex"
@@ -539,7 +541,7 @@ def import_graph_from_ogb(
     node_props_value = {}
     for p in node_props:
         node_props_value[p] = graph_dgl.ndata[p].tolist()
-    client_schema.vertexLabel(vertex_label).useAutomaticId().properties(*node_props).ifNotExist().create()
+    client_schema.vertex_label(vertex_label).use_automatic_id().properties(*node_props).if_not_exist().create()
 
     # add vertices for batch (note MAX_BATCH_NUM)
     idx_to_vertex_id = {}
@@ -574,9 +576,9 @@ def import_graph_from_ogb(
     edge_props_value = {}
     for p in edge_all_props:
         edge_props_value[p] = graph_dgl.edata[p].tolist()
-    client_schema.edgeLabel(edge_label).sourceLabel(vertex_label).targetLabel(vertex_label).properties(
+    client_schema.edge_label(edge_label).source_label(vertex_label).target_label(vertex_label).properties(
         *edge_all_props
-    ).ifNotExist().create()
+    ).if_not_exist().create()
     edges_src, edges_dst = graph_dgl.edges()
     edatas = []
     for src, dst in zip(edges_src.numpy(), edges_dst.numpy(), strict=False):
@@ -630,17 +632,17 @@ def import_split_edge_from_ogb(
     client_schema: SchemaManager = client.schema()
     client_graph: GraphManager = client.graph()
     # create property schema
-    client_schema.propertyKey("train_edge_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("train_year_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("train_weight_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("valid_edge_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("valid_weight_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("valid_year_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("valid_edge_neg_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_edge_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_weight_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_year_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_edge_neg_mask").asInt().ifNotExist().create()
+    client_schema.property_key("train_edge_mask").as_int().if_not_exist().create()
+    client_schema.property_key("train_year_mask").as_int().if_not_exist().create()
+    client_schema.property_key("train_weight_mask").as_int().if_not_exist().create()
+    client_schema.property_key("valid_edge_mask").as_int().if_not_exist().create()
+    client_schema.property_key("valid_weight_mask").as_int().if_not_exist().create()
+    client_schema.property_key("valid_year_mask").as_int().if_not_exist().create()
+    client_schema.property_key("valid_edge_neg_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_edge_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_weight_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_year_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_edge_neg_mask").as_int().if_not_exist().create()
     edge_all_props = [
         "train_edge_mask",
         "train_year_mask",
@@ -664,9 +666,9 @@ def import_split_edge_from_ogb(
     # add edges for batch
     vertex_label = f"{dataset_name}_vertex"
     edge_label = f"{dataset_name}_split_edge"
-    client_schema.edgeLabel(edge_label).sourceLabel(vertex_label).targetLabel(vertex_label).properties(
+    client_schema.edge_label(edge_label).source_label(vertex_label).target_label(vertex_label).properties(
         *edge_all_props
-    ).ifNotExist().create()
+    ).if_not_exist().create()
     edges = {}
     edges["train_edge_mask"] = split_edges["train"]["edge"]
     edges["train_year_mask"] = split_edges["train"]["year"]
@@ -765,12 +767,12 @@ def import_hetero_graph_from_dgl_bgnn(
     client_schema: SchemaManager = client.schema()
     client_graph: GraphManager = client.graph()
 
-    client_schema.propertyKey("feat").asInt().valueList().ifNotExist().create()
-    client_schema.propertyKey("class").asDouble().valueList().ifNotExist().create()
-    client_schema.propertyKey("cat_features").asInt().valueList().ifNotExist().create()
-    client_schema.propertyKey("train_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("val_mask").asInt().ifNotExist().create()
-    client_schema.propertyKey("test_mask").asInt().ifNotExist().create()
+    client_schema.property_key("feat").as_int().value_list().if_not_exist().create()
+    client_schema.property_key("class").as_double().value_list().if_not_exist().create()
+    client_schema.property_key("cat_features").as_int().value_list().if_not_exist().create()
+    client_schema.property_key("train_mask").as_int().if_not_exist().create()
+    client_schema.property_key("val_mask").as_int().if_not_exist().create()
+    client_schema.property_key("test_mask").as_int().if_not_exist().create()
 
     ntype_to_vertex_label = {}
     ntype_idx_to_vertex_id = {}
@@ -788,7 +790,7 @@ def import_hetero_graph_from_dgl_bgnn(
         ]
         # check properties
         props = [p for p in all_props if p in hetero_graph.nodes[ntype].data]
-        client_schema.vertexLabel(vertex_label).useAutomaticId().properties(*props).ifNotExist().create()
+        client_schema.vertex_label(vertex_label).use_automatic_id().properties(*props).if_not_exist().create()
         props_value = {}
         for p in props:
             props_value[p] = hetero_graph.nodes[ntype].data[p].tolist()
@@ -818,9 +820,9 @@ def import_hetero_graph_from_dgl_bgnn(
         # create edge schema
         src_type, etype, dst_type = canonical_etype
         edge_label = f"{dataset_name}_{etype}_e"
-        client_schema.edgeLabel(edge_label).sourceLabel(ntype_to_vertex_label[src_type]).targetLabel(
+        client_schema.edge_label(edge_label).source_label(ntype_to_vertex_label[src_type]).target_label(
             ntype_to_vertex_label[dst_type]
-        ).ifNotExist().create()
+        ).if_not_exist().create()
         # add edges for batch of canonical_etype
         srcs, dsts = hetero_graph.edges(etype=canonical_etype)
         for src, dst in zip(srcs.numpy(), dsts.numpy(), strict=False):
@@ -897,7 +899,7 @@ def init_ogb_split_edge(
 
 
 def _add_batch_vertices(client_graph, vdatas, vidxs):
-    vertices = client_graph.addVertices(vdatas)
+    vertices = client_graph.add_vertices(vdatas)
     assert len(vertices) == len(vidxs)
     idx_to_vertex_id = {}
     for i, idx in enumerate(vidxs):
@@ -906,7 +908,7 @@ def _add_batch_vertices(client_graph, vdatas, vidxs):
 
 
 def _add_batch_edges(client_graph, edatas):
-    client_graph.addEdges(edatas)
+    client_graph.add_edges(edatas)
 
 
 def load_acm_raw():

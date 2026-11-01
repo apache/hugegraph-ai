@@ -43,16 +43,20 @@ permissions:
 
 jobs:
   tests:
-    name: client / Python ${{ matrix.python-version }}
+    name: client / Python ${{ matrix.python-version }} / ${{ matrix.server-profile }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python-version: ${{ fromJSON(inputs.python-versions) }}
+        server-profile: [latest]
+        include:
+          - python-version: ${{ inputs.integration-python }}
+            server-profile: compatibility
     services:
       hugegraph:
-        image: ${{ matrix.python-version == inputs.integration-python && inputs.server-image || '' }}
+        image: ${{ matrix.python-version == inputs.integration-python && (matrix.server-profile == 'compatibility' && 'hugegraph/hugegraph:1.7.0' || inputs.server-image) || '' }}
         env:
           PASSWORD: admin
         options: >-
@@ -93,6 +97,8 @@ jobs:
         if: matrix.python-version == inputs.integration-python
         continue-on-error: true
         run: uv run --no-sync ty check hugegraph-python-client/src/pyhugegraph
+      - name: Check REST contract synchronization
+        run: python3 scripts/client_api.py --check
       - name: Run unit and contract tests
         run: >-
           uv run --no-sync pytest hugegraph-python-client/src/tests -m "unit or contract"
@@ -101,7 +107,7 @@ jobs:
       - name: Verify HugeGraph image and version
         if: matrix.python-version == inputs.integration-python
         env:
-          EXPECTED_SERVER_VERSION: ${{ inputs.version }}
+          EXPECTED_SERVER_VERSION: ${{ matrix.server-profile == 'compatibility' && '1.7.0' || inputs.version }}
           HUGEGRAPH_CONTAINER_ID: ${{ job.services.hugegraph.id }}
         run: bash scripts/check_hugegraph.sh "$EXPECTED_SERVER_VERSION" "$HUGEGRAPH_CONTAINER_ID"
       - name: Run HugeGraph integration tests
@@ -109,7 +115,7 @@ jobs:
         run: uv run --no-sync pytest hugegraph-python-client/src/tests -m "integration and hugegraph" -v --tb=short
       - uses: actions/upload-artifact@v7
         with:
-          name: client-unit-contract-coverage-${{ matrix.python-version }}
+          name: client-unit-contract-coverage-${{ matrix.python-version }}-${{ matrix.server-profile }}
           path: client-unit-contract.xml
           retention-days: 7
           if-no-files-found: error

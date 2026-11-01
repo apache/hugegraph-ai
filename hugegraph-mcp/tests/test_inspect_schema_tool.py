@@ -40,10 +40,10 @@ def _raw_schema():
 
 
 class FakeSchemaManager:
-    def getSchema(self):
+    def get_schema(self):
         return _raw_schema()
 
-    def getRelations(self):
+    def get_relations(self):
         return ["person--knows-->person"]
 
 
@@ -131,7 +131,7 @@ def test_inspect_schema_not_found(monkeypatch):
 
 def test_inspect_schema_connection_error(monkeypatch):
     class BrokenManager:
-        def getSchema(self):
+        def get_schema(self):
             raise ConnectionError("down")
 
     monkeypatch.setattr(

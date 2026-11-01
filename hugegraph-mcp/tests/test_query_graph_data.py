@@ -17,7 +17,7 @@ from hugegraph_mcp.tools.query_graph_data import _execute_vertex_query
 
 
 class _PagedConditionManager:
-    def getVertexByConditionWithPage(self, *, label, limit, page, properties):
+    def get_vertex_by_condition_with_page(self, *, label, limit, page, properties):
         return [{"id": "v1"}], "next"
 
 

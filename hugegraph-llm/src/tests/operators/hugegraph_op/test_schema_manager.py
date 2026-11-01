@@ -206,7 +206,7 @@ class TestSchemaManager(unittest.TestCase):
     def test_run_with_valid_schema(self):
         """Test run method with a valid schema."""
         # Setup mock to return the sample schema
-        self.mock_schema.getSchema.return_value = self.sample_schema
+        self.mock_schema.get_schema.return_value = self.sample_schema
 
         # Call the run method
         context = {}
@@ -221,7 +221,7 @@ class TestSchemaManager(unittest.TestCase):
         """Test run method with an empty schema."""
         # Setup mock to return empty schema
         empty_schema = {"vertexlabels": [], "edgelabels": []}
-        self.mock_schema.getSchema.return_value = empty_schema
+        self.mock_schema.get_schema.return_value = empty_schema
 
         # Call the run method and expect an exception
         with self.assertRaises(Exception) as cm:
@@ -232,7 +232,7 @@ class TestSchemaManager(unittest.TestCase):
 
     def test_run_with_none_schema(self):
         """Test run method when HugeGraph returns an invalid schema payload."""
-        self.mock_schema.getSchema.return_value = None
+        self.mock_schema.get_schema.return_value = None
 
         with self.assertRaises(ValueError) as cm:
             self.schema_manager.run({})
@@ -242,7 +242,7 @@ class TestSchemaManager(unittest.TestCase):
     def test_run_with_existing_context(self):
         """Test run method with an existing context."""
         # Setup mock to return the sample schema
-        self.mock_schema.getSchema.return_value = self.sample_schema
+        self.mock_schema.get_schema.return_value = self.sample_schema
 
         # Call the run method with an existing context
         existing_context = {"existing_key": "existing_value"}
@@ -257,7 +257,7 @@ class TestSchemaManager(unittest.TestCase):
     def test_run_with_none_context(self):
         """Test run method with None context."""
         # Setup mock to return the sample schema
-        self.mock_schema.getSchema.return_value = self.sample_schema
+        self.mock_schema.get_schema.return_value = self.sample_schema
 
         # Call the run method with None context
         result = self.schema_manager.run(None)

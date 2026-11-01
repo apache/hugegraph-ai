@@ -38,9 +38,9 @@ __all__ = ["hugegraph_client", "hugegraph_service"]
 def _clear_quality_schema(client):
     schema = client.schema()
     for remove in (
-        lambda: schema.edgeLabel("quality_created").remove(),
-        lambda: schema.vertexLabel("quality_software").remove(),
-        lambda: schema.vertexLabel("quality_person").remove(),
+        lambda: schema.edge_label("quality_created").remove(),
+        lambda: schema.vertex_label("quality_software").remove(),
+        lambda: schema.vertex_label("quality_person").remove(),
     ):
         with suppress(Exception):
             remove()

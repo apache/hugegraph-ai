@@ -273,7 +273,7 @@ def _read_schema_and_target(
 
     try:
         manager = _graph_manager()
-        raw_item = manager.getVertexById(id) if target == "vertex" else manager.getEdgeById(id)
+        raw_item = manager.get_vertex_by_id(id) if target == "vertex" else manager.get_edge_by_id(id)
     except Exception as exc:
         classification = classify_hugegraph_exception(exc)
         return (

@@ -56,7 +56,7 @@ class BuildSemanticIndex:
         return embeddings
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        vertexlabels = self.sm.schema.getSchema()["vertexlabels"]
+        vertexlabels = self.sm.schema.get_schema()["vertexlabels"]
         all_pk_flag = bool(vertexlabels) and all(data.get("id_strategy") == "PRIMARY_KEY" for data in vertexlabels)
 
         past_vids = self.vid_index.get_all_properties()

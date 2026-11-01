@@ -71,7 +71,7 @@ class SchemaManager:
         if context is None:
             context = {}
         try:
-            schema = self.schema.getSchema()
+            schema = self.schema.get_schema()
         except RequestException as e:
             raise ValueError(f"Failed to connect to HugeGraph to get schema '{self.graph_name}': {e}") from e
         if not isinstance(schema, dict):

@@ -59,13 +59,13 @@ class FakeGraphManager:
         self.append_calls = []
         self.eliminate_calls = []
 
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         self.read_count += 1
         if self.changed_vertex is not None and self.read_count >= 2:
             return self.changed_vertex
         return self.vertex
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         return {
             "id": edge_id,
             "label": "knows",
@@ -73,7 +73,7 @@ class FakeGraphManager:
             "properties": {"age": 1},
         }
 
-    def appendVertex(self, vertex_id, properties):
+    def append_vertex(self, vertex_id, properties):
         self.append_calls.append((vertex_id, properties))
         self.vertex = {
             **self.vertex,
@@ -81,7 +81,7 @@ class FakeGraphManager:
         }
         return self.vertex
 
-    def eliminateVertex(self, vertex_id, properties):
+    def eliminate_vertex(self, vertex_id, properties):
         self.eliminate_calls.append((vertex_id, properties))
         self.vertex = {
             **self.vertex,
@@ -91,10 +91,10 @@ class FakeGraphManager:
 
 
 class MissingTargetManager:
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         raise RuntimeError("404 Not Found: vertex does not exist")
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         raise RuntimeError("404 Not Found: edge does not exist")
 
 
@@ -105,31 +105,31 @@ class PostReadFailureManager(FakeGraphManager):
             "post read failed: Authorization: Bearer abc123 token=xyz http://user:pass@example.com"
         )
 
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         if self.append_calls:
             raise self.post_read_error
-        return super().getVertexById(vertex_id)
+        return super().get_vertex_by_id(vertex_id)
 
 
 class PostReadMissingManager(FakeGraphManager):
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         if self.append_calls:
             return None
-        return super().getVertexById(vertex_id)
+        return super().get_vertex_by_id(vertex_id)
 
 
 class PostReadMismatchManager(FakeGraphManager):
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         if self.append_calls:
             return {
                 **self.vertex,
                 "properties": {"name": "Alice", "age": 31},
             }
-        return super().getVertexById(vertex_id)
+        return super().get_vertex_by_id(vertex_id)
 
 
 class ExecutionFailureManager(FakeGraphManager):
-    def appendVertex(self, vertex_id, properties):
+    def append_vertex(self, vertex_id, properties):
         self.append_calls.append((vertex_id, properties))
         raise RuntimeError("404 Not Found: vertex does not exist")
 
@@ -153,15 +153,15 @@ class CollectionGraphManager(FakeGraphManager):
             "properties": {property_name: list(values or [])},
         }
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         return self.edge
 
-    def appendVertex(self, vertex_id, properties):
+    def append_vertex(self, vertex_id, properties):
         self.append_calls.append((vertex_id, properties))
         self.vertex = self._append(self.vertex, properties)
         return self.vertex
 
-    def appendEdge(self, edge_id, properties):
+    def append_edge(self, edge_id, properties):
         self.append_calls.append((edge_id, properties))
         self.edge = self._append(self.edge, properties)
         return self.edge
@@ -177,8 +177,8 @@ class CollectionGraphManager(FakeGraphManager):
 
 
 class ReorderedSetGraphManager(CollectionGraphManager):
-    def getVertexById(self, vertex_id):
-        item = super().getVertexById(vertex_id)
+    def get_vertex_by_id(self, vertex_id):
+        item = super().get_vertex_by_id(vertex_id)
         if self.append_calls:
             return {
                 **item,

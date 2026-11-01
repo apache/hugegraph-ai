@@ -93,36 +93,36 @@ def init_hg_test_data():
     client = get_hg_client()
     client.graphs().clear_graph_all_data()
     schema = client.schema()
-    schema.propertyKey("name").asText().ifNotExist().create()
-    schema.propertyKey("birthDate").asText().ifNotExist().create()
-    schema.vertexLabel("Person").properties("name", "birthDate").useCustomizeStringId().ifNotExist().create()
-    schema.vertexLabel("Movie").properties("name").useCustomizeStringId().ifNotExist().create()
-    schema.edgeLabel("ActedIn").sourceLabel("Person").targetLabel("Movie").ifNotExist().create()
+    schema.property_key("name").as_text().if_not_exist().create()
+    schema.property_key("birthDate").as_text().if_not_exist().create()
+    schema.vertex_label("Person").properties("name", "birthDate").use_customize_string_id().if_not_exist().create()
+    schema.vertex_label("Movie").properties("name").use_customize_string_id().if_not_exist().create()
+    schema.edge_label("ActedIn").source_label("Person").target_label("Movie").if_not_exist().create()
 
-    schema.indexLabel("PersonByName").onV("Person").by("name").secondary().ifNotExist().create()
-    schema.indexLabel("MovieByName").onV("Movie").by("name").secondary().ifNotExist().create()
+    schema.index_label("PersonByName").on_v("Person").by("name").secondary().if_not_exist().create()
+    schema.index_label("MovieByName").on_v("Movie").by("name").secondary().if_not_exist().create()
 
     graph = client.graph()
-    graph.addVertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"}, id="Al Pacino")
-    graph.addVertex(
+    graph.add_vertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"}, id="Al Pacino")
+    graph.add_vertex(
         "Person",
         {"name": "Robert De Niro", "birthDate": "1943-08-17"},
         id="Robert De Niro",
     )
-    graph.addVertex("Movie", {"name": "The Godfather"}, id="The Godfather")
-    graph.addVertex("Movie", {"name": "The Godfather Part II"}, id="The Godfather Part II")
-    graph.addVertex(
+    graph.add_vertex("Movie", {"name": "The Godfather"}, id="The Godfather")
+    graph.add_vertex("Movie", {"name": "The Godfather Part II"}, id="The Godfather Part II")
+    graph.add_vertex(
         "Movie",
         {"name": "The Godfather Coda The Death of Michael Corleone"},
         id="The Godfather Coda The Death of Michael Corleone",
     )
 
-    graph.addEdge("ActedIn", "Al Pacino", "The Godfather", {})
-    graph.addEdge("ActedIn", "Al Pacino", "The Godfather Part II", {})
-    graph.addEdge("ActedIn", "Al Pacino", "The Godfather Coda The Death of Michael Corleone", {})
-    graph.addEdge("ActedIn", "Robert De Niro", "The Godfather Part II", {})
-    schema.getSchema()
-    graph.close()
+    graph.add_edge("ActedIn", "Al Pacino", "The Godfather", {})
+    graph.add_edge("ActedIn", "Al Pacino", "The Godfather Part II", {})
+    graph.add_edge("ActedIn", "Al Pacino", "The Godfather Coda The Death of Michael Corleone", {})
+    graph.add_edge("ActedIn", "Robert De Niro", "The Godfather Part II", {})
+    schema.get_schema()
+    client.close()
     return {
         "vertex": ["Person", "Movie"],
         "edge": ["ActedIn"],
@@ -154,10 +154,10 @@ def backup_data():
             "vertices.json": f"g.V().limit({MAX_VERTICES})"
             f".aggregate('vertices').count().as('count').select('count','vertices')",
             "edges.json": f"g.E().limit({MAX_EDGES}).aggregate('edges').count().as('count').select('count','edges')",
-            "schema.json": client.schema().getSchema(_format="groovy"),
+            "schema.json": client.schema().get_schema(),
         }
 
-        vertexlabels = client.schema().getSchema()["vertexlabels"]
+        vertexlabels = client.schema().get_schema()["vertexlabels"]
         all_pk_flag = all(data.get("id_strategy") == "PRIMARY_KEY" for data in vertexlabels)
 
         for filename, query in files.items():

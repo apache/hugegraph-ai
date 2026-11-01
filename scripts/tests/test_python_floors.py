@@ -34,9 +34,13 @@ class PythonFloorContractTest(unittest.TestCase):
         self.assertNotIn("per-file-target-version", root_config["tool"]["ruff"])
         dockerfile = (ROOT / "ontogeny" / "deploy" / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("FROM python:3.12-slim", dockerfile)
-        workflow = (ROOT / ".github" / "workflows" / "ontogeny-ci.yml").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github" / "workflows" / "ontogeny.yml").read_text(encoding="utf-8")
+        # the reusable workflow is parameterized: runtimes come from ci.py's
+        # FULL_PYTHONS (pinned 3.12-3.14 by test_ci), so assert the wiring
+        # instead of hardcoded versions
+        self.assertIn("matrix.python-version", workflow)
+        self.assertIn("inputs.primary-python", workflow)
         versions = re.findall(r'python-version: ["\']?(\d+\.\d+)', workflow)
-        self.assertIn("3.12", versions)
         for version in versions:
             self.assertGreaterEqual(tuple(map(int, version.split("."))), (3, 12))
 

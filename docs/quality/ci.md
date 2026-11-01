@@ -14,7 +14,8 @@ diff or preflight fails CI rather than skipping tests.
 | Standalone LLM SDK | SDK plus downstream LLM compatibility tests |
 | LLM | LLM |
 | MCP | MCP |
-| Root dependency/release configuration or shared CI setup | Client, SDK, LLM and MCP |
+| Ontogeny | Ontogeny backend, frontend, PostgreSQL and integration checks |
+| Root dependency/release configuration or shared CI setup | Client, SDK, LLM, MCP and Ontogeny |
 | Module CI workflow | That module and its downstream consumers |
 | Dockerfile, `.dockerignore` or LLM image build script | Targeted BuildKit/shell validation in preflight; no full LLM runner |
 | Docker Compose or environment template | Compose config validation in preflight |
@@ -88,6 +89,8 @@ Release/CI scripts have a clean ty baseline and are checked as a blocking step
 in the existing quality runner, using their Python 3.12+ target.
 
 ## Full and optional checks
+
+Ontogeny uses a separate workflow. Ordinary runs test the primary Python version and full runs use the configured matrix. The backend checks that Ontogeny remains independent of the upstream workspace modules.
 
 - Weekly on ASF main (Monday 06:00 Asia/Taipei), release-branch pushes, and manual
   **full** runs validate the client, LLM, MCP and SDK on Python 3.12–3.14,

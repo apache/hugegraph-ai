@@ -4,6 +4,7 @@ Repository guidance for coding agents. Keep product usage in README files and us
 
 ## Module ownership
 
+- `ontogeny/` owns the standalone operational ontology platform, its runtime, console and DSL. Keep it independent of the other workspace modules.
 - `hugegraph-llm-sdk/` owns reusable schema design, validation and reviewed graph-extraction contracts. Keep its base installation independent of application and provider dependencies.
 - `hugegraph-llm/` owns GraphRAG, knowledge-graph construction, prompts, model integration, vector indexes, API/UI and application orchestration. Read its local guidance before editing it.
 - `hugegraph-python-client/` owns the HugeGraph Python protocol and public client APIs. Change it only when the client contract itself must change, then verify application callers.
@@ -19,11 +20,13 @@ Repository guidance for coding agents. Keep product usage in README files and us
 | Standalone SDK | [`hugegraph-llm-sdk/`](hugegraph-llm-sdk/) and [SDK architecture](docs/sdk/architecture.md) |
 | Python client | [`hugegraph-python-client/`](hugegraph-python-client/) |
 | MCP | [`hugegraph-mcp/`](hugegraph-mcp/) |
+| Ontogeny | [Module guide](ontogeny/README.md) |
 | CI and test selection | [docs/quality/ci.md](docs/quality/ci.md) and [test taxonomy](docs/quality/test-taxonomy.md) |
 | Complex multi-file or API-contract work | [rules/README.md](rules/README.md) |
 
 ## Repository constraints
 
+- For an Ontogeny DSL kind change, update the [registry](ontogeny/server/ontogeny/core/kinds.py), [registry tests](ontogeny/tests/test_kind_registry.py) and [English](ontogeny/docs/en/architecture/00-kind-taxonomy.md) and [Chinese](ontogeny/docs/zh/architecture/00-kind-taxonomy.md) taxonomy guides together. The API and console read from the registry.
 - Keep a change in the package that owns the behavior. Update callers deliberately rather than moving shared behavior into the application for convenience.
 - A shared SDK or Python-client change requires downstream `hugegraph-llm` validation, not only package-local tests.
 - Keep root and module READMEs as entry points. Put detailed cross-module policy in `docs/` and link every durable page from `docs/README.md` or a module-local index.

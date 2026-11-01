@@ -37,8 +37,8 @@ class TestValidate:
 
         broken = tmp_path / "broken"
         shutil.copytree(golden_pkg_path, broken)
-        link = broken / "links" / "bom-material.yaml"
-        text = link.read_text(encoding="utf-8").replace("target: bom", "target: ghost")
+        link = broken / "links" / "lot-tests.yaml"
+        text = link.read_text(encoding="utf-8").replace("target: wafer-test", "target: ghost")
         link.write_text(text, encoding="utf-8")
         result = runner.invoke(app, ["validate", str(broken)])
         assert result.exit_code == 1
@@ -51,16 +51,16 @@ class TestDocsAndDiff:
         result = runner.invoke(app, ["docs", str(golden_pkg_path), "--out", str(out)])
         assert result.exit_code == 0
         content = (out / "ontology.md").read_text(encoding="utf-8")
-        assert "ObjectType: production-order" in content
+        assert "ObjectType: wafer-lot" in content
 
     def test_diff_detects_change(self, golden_pkg_path, tmp_path):
         import shutil
 
         other = tmp_path / "other"
         shutil.copytree(golden_pkg_path, other)
-        obj = other / "objects" / "material.yaml"
+        obj = other / "objects" / "equipment.yaml"
         obj.write_text(
-            obj.read_text(encoding="utf-8").replace("display: Material", "display: Raw material"), encoding="utf-8"
+            obj.read_text(encoding="utf-8").replace("display: Equipment", "display: Fab equipment"), encoding="utf-8"
         )
         result = runner.invoke(app, ["diff", str(golden_pkg_path), str(other)])
-        assert "~ ObjectType/material" in result.output
+        assert "~ ObjectType/equipment" in result.output

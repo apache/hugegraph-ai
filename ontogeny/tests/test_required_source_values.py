@@ -28,39 +28,39 @@ from ontogeny.stores.sync import QuarantineRow
 
 @pytest.mark.parametrize("mapped_name", [False, True])
 async def test_required_null_preserves_previous_object_and_commits_valid_rows(env, mapped_name):
-    env["compiled"].objects["work-center"].spec.properties["process"].owner = "source"
+    env["compiled"].objects["equipment"].spec.properties["process"].owner = "source"
     async with env["maker"]() as session:
-        await env["sync"].sync(session, "work-center")
+        await env["sync"].sync(session, "equipment")
         await session.commit()
-        original = await env["repo"].get(session, "work-center", "WC-01")
+        original = await env["repo"].get(session, "equipment", "EQ-01")
     with sqlite3.connect(env["src"]) as source:
         if mapped_name:
-            source.execute("ALTER TABLE work_centers ADD COLUMN source_name TEXT")
-            source.execute("UPDATE work_centers SET source_name=name")
-            env["compiled"].objects["work-center"].spec.backing.mapping["name"] = "source_name"
+            source.execute("ALTER TABLE equipment ADD COLUMN source_name TEXT")
+            source.execute("UPDATE equipment SET source_name=name")
+            env["compiled"].objects["equipment"].spec.backing.mapping["name"] = "source_name"
         field = "source_name" if mapped_name else "name"
-        source.execute(f"UPDATE work_centers SET {field}=NULL WHERE work_center_id='WC-01'")
-        source.execute(f"UPDATE work_centers SET {field}='valid change', process=NULL WHERE work_center_id='WC-02'")
+        source.execute(f"UPDATE equipment SET {field}=NULL WHERE equipment_id='EQ-01'")
+        source.execute(f"UPDATE equipment SET {field}='valid change', process=NULL WHERE equipment_id='EQ-02'")
     async with env["maker"]() as session:
-        result = await env["sync"].sync(session, "work-center")
+        result = await env["sync"].sync(session, "equipment")
         await session.commit()
-        unchanged = await env["repo"].get(session, "work-center", "WC-01")
-        changed = await env["repo"].get(session, "work-center", "WC-02")
+        unchanged = await env["repo"].get(session, "equipment", "EQ-01")
+        changed = await env["repo"].get(session, "equipment", "EQ-02")
         quarantined = (await session.execute(select(QuarantineRow))).scalars().all()
     assert result["quarantined"] == 1 and result["updated"] == 1 and result["archived"] == 0
     assert unchanged == original
     assert changed["name"] == "valid change" and changed["process"] is None
     assert quarantined[0].code == "REQUIRED_PROPERTY"
-    assert quarantined[0].source_pk == "WC-01"
+    assert quarantined[0].source_pk == "EQ-01"
     assert "name" in quarantined[0].reason
 
 
 async def test_unmapped_required_property_is_quarantined_before_insert(env):
-    env["compiled"].objects["work-center"].spec.backing.mapping["name"] = "missing_source_column"
+    env["compiled"].objects["equipment"].spec.backing.mapping["name"] = "missing_source_column"
     async with env["maker"]() as session:
-        result = await env["sync"].sync(session, "work-center")
+        result = await env["sync"].sync(session, "equipment")
         await session.commit()
-        assert await env["repo"].alive_ids(session, "work-center") == set()
+        assert await env["repo"].alive_ids(session, "equipment") == set()
         errors = (await session.execute(select(QuarantineRow))).scalars().all()
     assert result["quarantined"] == 3 and result["inserted"] == 0
     assert all(row.code == "REQUIRED_PROPERTY" for row in errors)

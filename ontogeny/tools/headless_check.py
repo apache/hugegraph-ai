@@ -275,9 +275,9 @@ ROUTES = [
     "/ontology",
     "/builder",
     "/data",
-    "/objects/sales-order",
-    "/actions/confirm-sales-order",
-    "/functions/capacity-check",
+    "/objects/requirement",
+    "/actions/tapeout",
+    "/functions/analyze-yield-loss",
     "/graph",
     "/agent",
     "/agent/manage",
@@ -285,7 +285,7 @@ ROUTES = [
     "/evolve",
     "/audit",
     "/admin",
-    "/ontology/sales-order",
+    "/ontology/requirement",
     "/access",
     "/login",
     "/knowledge",
@@ -405,7 +405,7 @@ async def audit(base: str, only: str | None = None, user: str = "admin", passwor
         await ch.goto(f"{base}/graph")
         drawer = await ch.eval("!!document.querySelector('[data-testid=\"node-info-drawer\"]')")
         report["keyboard"]["drawerPresentOnGraph"] = drawer
-        await ch.goto(f"{base}/objects/sales-order/SO-2026-0001")
+        await ch.goto(f"{base}/objects/tapeout-version/TO-A0")
         drawer2 = await ch.eval("!!document.querySelector('[data-testid=\"node-info-drawer\"]')")
         report["keyboard"]["drawerPresentOnObject"] = drawer2
 

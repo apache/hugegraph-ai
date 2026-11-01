@@ -26,12 +26,12 @@ derivation_sc = _derivation_sc
 
 async def test_batch_user_prints_do_not_corrupt_protocol_or_query_rpc(client):
     _, sc = client
-    await sc.sync("work-center")
+    await sc.sync("equipment")
     source = Path(sc.package_root) / "functions" / "printing_batch.py"
     source.write_text(
         "def compute(obj):\n"
         "    print('working on', obj['name'])\n"
-        "    rows = ontogeny.query('work-center', filter={'work_center_id': 'WC-01'})\n"
+        "    rows = ontogeny.query('equipment', filter={'equipment_id': 'EQ-02'})\n"
         "    print('query complete')\n"
         "    return {'name': obj['name'], 'found': len(rows)}\n",
         encoding="utf-8",
@@ -43,7 +43,7 @@ async def test_batch_user_prints_do_not_corrupt_protocol_or_query_rpc(client):
         spec=FunctionSpec(
             runtime="python",
             entry="printing_batch.py:compute",
-            capabilities=[Capability(**{"read-objects": ["work-center"]})],
+            capabilities=[Capability(**{"read-objects": ["equipment"]})],
         ),
     )
     async with sc.sessionmaker() as session:
@@ -53,16 +53,16 @@ async def test_batch_user_prints_do_not_corrupt_protocol_or_query_rpc(client):
 
 async def test_derivation_batch_function_may_print_while_reading_objects(derivation_sc):
     sc = derivation_sc
-    source = Path(sc.package_root) / "functions" / "order_count.py"
+    source = Path(sc.package_root) / "functions" / "lot_count.py"
     text = source.read_text(encoding="utf-8")
     source.write_text(
         text.replace(
-            "def open_order_count(obj: dict) -> int:\n",
-            "def open_order_count(obj: dict) -> int:\n    print('deriving')\n",
+            "def open_lot_count(obj: dict) -> int:\n",
+            "def open_lot_count(obj: dict) -> int:\n    print('deriving')\n",
         ),
         encoding="utf-8",
     )
     await sc.outbox.dispatch_pending()
     async with sc.sessionmaker() as session:
-        product = await sc.repo.get(session, "product", "P-200")
-    assert product["open_order_count"] == 1
+        tapeout = await sc.repo.get(session, "tapeout-version", "TO-A0")
+    assert tapeout["open_lot_count"] == 1

@@ -33,24 +33,27 @@ from ontogeny.core.models import (
 from ontogeny.errors import TypeMismatchError
 
 approval_client = _approval_client
+# reassign-step is the fab role's set-link action; the other tests use the
+# product role's tapeout on the PLANNED version TO-A1
+FAB = {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
 
 
 async def test_two_target_modifications_create_ordered_versions(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     action.spec.effects = [
-        ModifyTargetEffect(kind="modify-target", set={"status": "RELEASED"}),
-        ModifyTargetEffect(kind="modify-target", set={"priority": "HIGH"}),
+        ModifyTargetEffect(kind="modify-target", set={"status": "FAB"}),
+        ModifyTargetEffect(kind="modify-target", set={"project": "X2"}),
     ]
     async with sc.sessionmaker() as session:
-        before = await sc.repo.get(session, "production-order", "PO-1002")
+        before = await sc.repo.get(session, "tapeout-version", "TO-A1")
         revision = await sc.runtime.execute(
-            session, action.metadata.name, PLANNER, {}, "PO-1002", expected_revision=before["_rev"]
+            session, action.metadata.name, PLANNER, {}, "TO-A1", expected_revision=before["_rev"]
         )
         await session.commit()
-        assert revision.after["status"] == "RELEASED"
-        assert revision.after["priority"] == "HIGH"
-        history = await sc.repo.history(session, "production-order", "PO-1002")
+        assert revision.after["status"] == "FAB"
+        assert revision.after["project"] == "X2"
+        history = await sc.repo.history(session, "tapeout-version", "TO-A1")
     assert [row["_rev"] for row in history[-3:]] == [before["_rev"], before["_rev"] + 1, before["_rev"] + 2]
     assert len({row["_valid_from"] for row in history[-3:]}) == 3
     assert all(row["_valid_from"] < row["_valid_to"] for row in history[-3:-1])
@@ -58,67 +61,67 @@ async def test_two_target_modifications_create_ordered_versions(approval_client)
 
 async def test_modify_then_foreign_key_link_updates_context_for_next_effect(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["assign-operation"]
+    action = sc.compiled.actions["reassign-step"]
     link = action.spec.effects[0]
     action.spec.effects = [
         ModifyTargetEffect(kind="modify-target", set={"status": "RUNNING"}),
         link,
-        ModifyTargetEffect(kind="modify-target", when="target.work_center_id == 'WC-03'", set={"status": "COMPLETED"}),
+        ModifyTargetEffect(kind="modify-target", when="target.equipment == 'EQ-09'", set={"status": "COMPLETED"}),
     ]
     async with sc.sessionmaker() as session:
-        before = await sc.repo.get(session, "operation", "OP-2002")
+        before = await sc.repo.get(session, "process-step", "PS-7133")
         rev = await sc.runtime.execute(
             session,
             action.metadata.name,
-            PLANNER,
-            {"work_center_id": "WC-03"},
-            "OP-2002",
+            FAB,
+            {"equipment_id": "EQ-09"},
+            "PS-7133",
             expected_revision=before["_rev"],
         )
         await session.commit()
-        assert rev.after["work_center_id"] == "WC-03"
+        assert rev.after["equipment"] == "EQ-09"
         assert rev.after["status"] == "COMPLETED"
-        history = await sc.repo.history(session, "operation", "OP-2002")
+        history = await sc.repo.history(session, "process-step", "PS-7133")
     assert [row["_rev"] for row in history[-4:]] == list(range(before["_rev"], before["_rev"] + 4))
     assert len({row["_valid_from"] for row in history[-4:]}) == 4
 
 
 async def test_archive_after_multiple_modifications_closes_the_last_version_in_order(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     action.spec.effects = [
-        ModifyTargetEffect(kind="modify-target", set={"status": "RELEASED"}),
-        ModifyTargetEffect(kind="modify-target", set={"priority": "HIGH"}),
+        ModifyTargetEffect(kind="modify-target", set={"status": "FAB"}),
+        ModifyTargetEffect(kind="modify-target", set={"project": "X2"}),
         ArchiveObjectEffect(kind="archive-object"),
     ]
     async with sc.sessionmaker() as session:
-        await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "PO-1002")
+        await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "TO-A1")
         await session.commit()
-        assert await sc.repo.get(session, "production-order", "PO-1002") is None
-        history = await sc.repo.history(session, "production-order", "PO-1002")
+        assert await sc.repo.get(session, "tapeout-version", "TO-A1") is None
+        history = await sc.repo.history(session, "tapeout-version", "TO-A1")
     assert all(row["_valid_to"] is not None and row["_valid_from"] < row["_valid_to"] for row in history)
 
 
 async def test_archive_then_recreate_same_key_in_one_action(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     action.spec.effects = [
         ArchiveObjectEffect(kind="archive-object"),
         CreateObjectEffect(
             kind="create-object",
             properties={
-                "order_id": "target.order_id",
-                "product_id": "target.product_id",
-                "qty": "target.qty",
-                "status": "RELEASED",
+                "version_id": "target.version_id",
+                "project": "target.project",
+                "notes": "target.notes",
+                "status": "FAB",
             },
         ),
     ]
     async with sc.sessionmaker() as session:
-        rev = await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "PO-1002")
+        rev = await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "TO-A1")
         await session.commit()
-        assert rev.after["status"] == "RELEASED"
-        history = await sc.repo.history(session, "production-order", "PO-1002")
+        assert rev.after["status"] == "FAB"
+        history = await sc.repo.history(session, "tapeout-version", "TO-A1")
     assert len(history) == 2
     assert history[0]["_valid_from"] < history[0]["_valid_to"] < history[1]["_valid_from"]
     assert history[1]["_valid_to"] is None
@@ -126,18 +129,18 @@ async def test_archive_then_recreate_same_key_in_one_action(approval_client):
 
 async def test_event_gates_use_state_at_their_position_in_the_action(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     planned = "target.status == 'PLANNED'"
-    released = "target.status == 'RELEASED'"
+    in_fab = "target.status == 'FAB'"
     action.spec.effects = [
         WebhookEffect(kind="webhook", when=planned, url="https://example.test/accepted"),
         EmitEventEffect(kind="emit-event", when=planned, payload={"case": "accepted"}),
-        WebhookEffect(kind="webhook", when=released, url="https://example.test/rejected"),
-        EmitEventEffect(kind="emit-event", when=released, payload={"case": "rejected"}),
-        ModifyTargetEffect(kind="modify-target", set={"status": "RELEASED"}),
+        WebhookEffect(kind="webhook", when=in_fab, url="https://example.test/rejected"),
+        EmitEventEffect(kind="emit-event", when=in_fab, payload={"case": "rejected"}),
+        ModifyTargetEffect(kind="modify-target", set={"status": "FAB"}),
     ]
     async with sc.sessionmaker() as session:
-        rev = await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "PO-1002")
+        rev = await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "TO-A1")
         await session.commit()
         rows = (
             (await session.execute(select(OutboxRow).where(OutboxRow.revision_id == rev.id, OutboxRow.op == "event")))
@@ -151,23 +154,23 @@ async def test_event_gates_use_state_at_their_position_in_the_action(approval_cl
 
 async def test_failed_later_effect_rolls_back_earlier_effect_and_events(approval_client):
     _, sc = approval_client
-    action = sc.compiled.actions["release-production-order"]
+    action = sc.compiled.actions["tapeout"]
     action.spec.effects = [
         EmitEventEffect(kind="emit-event", payload={"case": "must roll back"}),
-        ModifyTargetEffect(kind="modify-target", set={"status": "RELEASED"}),
-        ModifyTargetEffect(kind="modify-target", set={"qty": "invalid_integer"}),
+        ModifyTargetEffect(kind="modify-target", set={"status": "FAB"}),
+        ModifyTargetEffect(kind="modify-target", set={"mask_cost": "invalid_mask_cost"}),
     ]
     async with sc.sessionmaker() as session:
-        before = await sc.repo.get(session, "production-order", "PO-1002")
-        history = await sc.repo.history(session, "production-order", "PO-1002")
+        before = await sc.repo.get(session, "tapeout-version", "TO-A1")
+        history = await sc.repo.history(session, "tapeout-version", "TO-A1")
         audit_count = (await session.execute(select(func.count()).select_from(RevisionRow))).scalar_one()
         outbox_count = (await session.execute(select(func.count()).select_from(OutboxRow))).scalar_one()
     with pytest.raises(TypeMismatchError):
         async with sc.sessionmaker() as session:
-            await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "PO-1002")
+            await sc.runtime.execute(session, action.metadata.name, PLANNER, {}, "TO-A1")
             await session.commit()
     async with sc.sessionmaker() as session:
-        assert await sc.repo.get(session, "production-order", "PO-1002") == before
-        assert await sc.repo.history(session, "production-order", "PO-1002") == history
+        assert await sc.repo.get(session, "tapeout-version", "TO-A1") == before
+        assert await sc.repo.history(session, "tapeout-version", "TO-A1") == history
         assert (await session.execute(select(func.count()).select_from(RevisionRow))).scalar_one() == audit_count
         assert (await session.execute(select(func.count()).select_from(OutboxRow))).scalar_one() == outbox_count

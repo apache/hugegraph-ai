@@ -38,7 +38,7 @@ from pathlib import Path
 import yaml
 
 DEFAULT_DEMO_DIR = ".ontogeny-demo"
-DEFAULT_PACKAGE = "domains/product-manufacturing"
+DEFAULT_PACKAGE = "domains/chip-lifecycle"
 
 # Source rows for the demo: 2 pieces of equipment, 3 work orders, 2 spare parts.
 EQUIPMENT = [
@@ -107,7 +107,7 @@ class DemoPaths:
             "ONTOGENY_PACKAGE_ROOT": str(self.package_root),
             "ONTOGENY_PRISTINE_PKG_ROOT": str(self.pristine_pkg_root),
             "ERP_DSN": self.erp_dsn,
-            "WMS_WEBHOOK": "https://wms.example.test/hook",
+            "FAB_WEBHOOK": "https://fab-portal.example.test/hook",
         }
         # A demo is an explicitly local, throwaway context: keep the identity
         # simulation available so the console works out of the box, unless the
@@ -212,7 +212,7 @@ def prepare_demo(
 ) -> DemoPaths:
     """Materialize (or reuse) the demo data directory.
 
-    With ``direct`` (used when the package is a first-class domain under a
+    With ``direct`` (used when the package is an in-tree domain under a
     ``domains/`` root), the source directory IS the served package: console
     saves — model edits and the canvas ``layout.yaml`` — land in the repo's
     ``domains/<name>/`` instead of a throwaway copy. No ``pkg/`` or

@@ -26,6 +26,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
+from test_function_ecosystem import PRODUCT
 
 from ontogeny.action.models import OutboxRow
 from ontogeny.api import build_app
@@ -54,90 +55,91 @@ async def test_postgres_numeric_and_string_keys_across_api_action_and_repository
     try:
         await sc.initialize()
         compiled = sc.compiled
-        numeric = compiled.objects["material"].model_copy(deep=True)
-        numeric.metadata.name = "int-material"
-        numeric.spec.properties["material_id"].type = "integer"
+        numeric = compiled.objects["tapeout-version"].model_copy(deep=True)
+        numeric.metadata.name = "int-version"
+        numeric.spec.properties["version_id"].type = "integer"
         numeric.spec.properties["derived_count"] = PropertyDef(
-            type="integer", derived={"kind": "function", "entry": "unused.py:count", "triggers": ["int-bom"]}
+            type="integer", derived={"kind": "function", "entry": "unused.py:count", "triggers": ["int-lot"]}
         )
         composite = numeric.model_copy(deep=True)
-        composite.metadata.name = "composite-material"
-        composite.spec.primaryKey = ["material_id", "name"]
+        composite.metadata.name = "composite-version"
+        composite.spec.primaryKey = ["version_id", "project"]
         composite.spec.properties.pop("derived_count")
-        bom = compiled.objects["bom"].model_copy(deep=True)
-        bom.metadata.name = "int-bom"
-        bom.spec.properties["material_id"].type = "integer"
-        link = compiled.links["bom-material"].model_copy(deep=True)
-        link.metadata.name = "int-bom-material"
-        link.spec.source = "int-material"
-        link.spec.target = "int-bom"
-        link.spec.join.keys = {"int-bom.material_id": "int-material.material_id"}
-        action = compiled.actions["receive-material"].model_copy(deep=True)
-        action.spec.target = "int-material"
+        lot = compiled.objects["wafer-lot"].model_copy(deep=True)
+        lot.metadata.name = "int-lot"
+        lot.spec.properties["version_id"].type = "integer"
+        link = compiled.links["version-lots"].model_copy(deep=True)
+        link.metadata.name = "int-version-lots"
+        link.spec.source = "int-version"
+        link.spec.target = "int-lot"
+        link.spec.join.keys = {"int-lot.version_id": "int-version.version_id"}
+        action = compiled.actions["tapeout"].model_copy(deep=True)
+        action.spec.target = "int-version"
         sc._rebuild_services(
             replace(
                 compiled,
                 content_hash=uuid.uuid4().hex,
-                objects={**compiled.objects, "int-material": numeric, "composite-material": composite, "int-bom": bom},
-                actions={**compiled.actions, "receive-material": action},
-                links={**compiled.links, "int-bom-material": link},
+                objects={**compiled.objects, "int-version": numeric, "composite-version": composite, "int-lot": lot},
+                actions={**compiled.actions, "tapeout": action},
+                links={**compiled.links, "int-version-lots": link},
             )
         )
         async with sc.sessionmaker() as s:
             await sc.repo.ensure(s)
             await sc.repo.action_insert(
-                s, "int-material", {"material_id": "42", "name": "numeric", "stock_qty": 1}, utcnow()
+                s,
+                "int-version",
+                {"version_id": "42", "project": "numeric", "status": "PLANNED", "notes": "one"},
+                utcnow(),
             )
-            await sc.repo.action_insert(s, "material", {"material_id": "0042", "name": "leading"}, utcnow())
-            await sc.repo.action_insert(s, "material", {"material_id": "42", "name": "plain"}, utcnow())
-            await sc.repo.action_insert(s, "composite-material", {"material_id": 42, "name": "a"}, utcnow())
-            await sc.repo.action_insert(s, "composite-material", {"material_id": 42, "name": "b"}, utcnow())
+            await sc.repo.action_insert(s, "tapeout-version", {"version_id": "0042", "project": "leading"}, utcnow())
+            await sc.repo.action_insert(s, "tapeout-version", {"version_id": "42", "project": "plain"}, utcnow())
+            await sc.repo.action_insert(s, "composite-version", {"version_id": 42, "project": "a"}, utcnow())
+            await sc.repo.action_insert(s, "composite-version", {"version_id": 42, "project": "b"}, utcnow())
             await sc.repo.action_insert(
-                s, "int-bom", {"bom_id": "line", "material_id": 42, "product_id": "p"}, utcnow()
+                s, "int-lot", {"lot_id": "line", "version_id": 42, "site": "fab-site-a"}, utcnow()
             )
             await s.commit()
 
-        await sc.derivation.handle_event(OutboxRow(object_type="int-bom", object_id="line", op="upsert"))
+        await sc.derivation.handle_event(OutboxRow(object_type="int-lot", object_id="line", op="upsert"))
         async with sc.sessionmaker() as s:
-            assert await s.get(DerivationPendingRow, {"object_type": "int-material", "object_id": "42"}) is not None
+            assert await s.get(DerivationPendingRow, {"object_type": "int-version", "object_id": "42"}) is not None
 
-        headers = {"X-Ontogeny-Principal": json.dumps({"id": "planner", "Role": ["planner"]})}
+        headers = {"X-Ontogeny-Principal": json.dumps(PRODUCT)}
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=build_app(sc)), base_url="http://test", headers=headers
         ) as client:
-            response = await client.get("/api/v1/objects/int-material/42")
-            assert response.status_code == 200 and response.json()["material_id"] == 42
-            response = await client.get("/api/v1/objects/material/0042")
-            assert response.status_code == 200 and response.json()["name"] == "leading"
-            response = await client.get("/api/v1/objects/int-material/42/links/int-bom-material")
+            response = await client.get("/api/v1/objects/int-version/42")
+            assert response.status_code == 200 and response.json()["version_id"] == 42
+            response = await client.get("/api/v1/objects/tapeout-version/0042")
+            assert response.status_code == 200 and response.json()["project"] == "leading"
+            response = await client.get("/api/v1/objects/int-version/42/links/int-version-lots")
             assert response.status_code == 200, response.text
-            assert response.json()[0]["bom_id"] == "line"
-            response = await client.post(
-                "/api/v1/actions/receive-material/execute", json={"target_id": "42", "parameters": {"counted_qty": 12}}
-            )
+            assert response.json()[0]["lot_id"] == "line"
+            response = await client.post("/api/v1/actions/tapeout/execute", json={"target_id": "42", "parameters": {}})
             assert response.status_code == 200, response.text
-            assert response.json()["after"]["stock_qty"] == 12
-            response = await client.get("/api/v1/objects/int-material/42/history")
+            assert response.json()["after"]["status"] == "FAB"
+            response = await client.get("/api/v1/objects/int-version/42/history")
             assert response.status_code == 200 and len(response.json()["versions"]) == 2
-            assert (await client.get("/api/v1/objects/int-material/not-an-integer")).status_code == 422
+            assert (await client.get("/api/v1/objects/int-version/not-an-integer")).status_code == 422
 
         async with sc.sessionmaker() as s:
-            assert (await sc.repo.get_many(s, "int-material", ["42"]))[0]["material_id"] == 42
-            assert (await sc.repo.get(s, "material", "42"))["name"] == "plain"
-            await sc.repo.set_derived_value(s, "int-material", "42", "stock_qty", 15, utcnow())
-            assert (await sc.repo.get(s, "int-material", "42"))["stock_qty"] == 15
+            assert (await sc.repo.get_many(s, "int-version", ["42"]))[0]["version_id"] == 42
+            assert (await sc.repo.get(s, "tapeout-version", "42"))["project"] == "plain"
+            await sc.repo.set_derived_value(s, "int-version", "42", "notes", "fifteen", utcnow())
+            assert (await sc.repo.get(s, "int-version", "42"))["notes"] == "fifteen"
             assert (
-                await sc.repo.sync_upsert(s, "int-material", {"material_id": "43", "name": "source"}, utcnow())
+                await sc.repo.sync_upsert(s, "int-version", {"version_id": "43", "project": "source"}, utcnow())
                 == "inserted"
             )
-            assert (await sc.repo.get(s, "int-material", "43"))["material_id"] == 43
-            assert await sc.repo.alive_keys(s, "composite-material") == {(42, "a"), (42, "b")}
-            assert len(await sc.repo.get_many(s, "composite-material", [("42", "a"), ("42", "b")])) == 2
-            await sc.repo.action_update(s, "composite-material", ("42", "a"), {"stock_qty": 8}, utcnow())
-            assert len(await sc.repo.history(s, "composite-material", ("42", "a"))) == 2
-            await sc.repo.archive(s, "composite-material", ("42", "a"), utcnow())
-            assert await sc.repo.get(s, "composite-material", ("42", "a")) is None
-            assert (await sc.repo.get(s, "composite-material", ("42", "b")))["name"] == "b"
+            assert (await sc.repo.get(s, "int-version", "43"))["version_id"] == 43
+            assert await sc.repo.alive_keys(s, "composite-version") == {(42, "a"), (42, "b")}
+            assert len(await sc.repo.get_many(s, "composite-version", [("42", "a"), ("42", "b")])) == 2
+            await sc.repo.action_update(s, "composite-version", ("42", "a"), {"notes": "eight"}, utcnow())
+            assert len(await sc.repo.history(s, "composite-version", ("42", "a"))) == 2
+            await sc.repo.archive(s, "composite-version", ("42", "a"), utcnow())
+            assert await sc.repo.get(s, "composite-version", ("42", "a")) is None
+            assert (await sc.repo.get(s, "composite-version", ("42", "b")))["project"] == "b"
             await s.commit()
     finally:
         await engine.dispose()

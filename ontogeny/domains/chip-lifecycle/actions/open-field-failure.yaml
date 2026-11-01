@@ -1,0 +1,52 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: open-field-failure
+  display: Open field failure
+  description: Register a failed chip returned by a customer
+spec:
+  target: field-failure
+  parameters:
+    customer_id:
+      type: string
+      display: Customer
+      required: true
+    symptom:
+      type: string
+      display: Symptom
+      required: true
+    failure_mode:
+      type: enum[FUNCTIONAL, PARAMETRIC, VISUAL]
+      display: Failure mode
+  rules:
+  - expr: parameters.symptom != ''
+    message: Symptom must not be empty
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      failure_id: newId('FF')
+      customer_id: parameters.customer_id
+      symptom: parameters.symptom
+      failure_mode: parameters.failure_mode
+      status: OPEN
+      reported_at: now()
+  audit:
+    fields:
+    - target.failure_id
+    - parameters

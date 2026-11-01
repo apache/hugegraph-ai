@@ -34,8 +34,8 @@ def _tree(root):
     return {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
 
 
-def _product(sc):
-    return yaml.safe_load((Path(sc.package_root) / "objects/product.yaml").read_text())
+def _requirement(sc):
+    return yaml.safe_load((Path(sc.package_root) / "objects/requirement.yaml").read_text())
 
 
 async def test_invalid_rename_restores_deletes_sidecars_and_layout(client):
@@ -43,8 +43,8 @@ async def test_invalid_rename_restores_deletes_sidecars_and_layout(client):
     root = Path(sc.package_root)
     before = _tree(root)
     compiled = sc.compiled
-    renamed = _product(sc)
-    renamed["metadata"]["name"] = "renamed-product"
+    renamed = _requirement(sc)
+    renamed["metadata"]["name"] = "renamed-requirement"
     renamed["spec"]["backing"]["store"] = "builder-store"
     renamed["spec"]["backing"]["store_spec"] = {"kind": "sqlite", "connection": "${ERP_DSN}"}
     policy = {
@@ -58,8 +58,8 @@ async def test_invalid_rename_restores_deletes_sidecars_and_layout(client):
         await builder_save(
             sc,
             request,
-            deletes=["ObjectType/product", "PolicySet/default"],
-            layout={"renamed-product": {"x": 10, "y": 20}},
+            deletes=["ObjectType/requirement", "PolicySet/default"],
+            layout={"renamed-requirement": {"x": 10, "y": 20}},
         )
     assert _tree(root) == before
     assert sc.compiled is compiled
@@ -72,8 +72,8 @@ async def test_publish_failure_restores_all_changed_files(client, monkeypatch, f
     _c, sc = client
     root = Path(sc.package_root)
     before = _tree(root)
-    product = _product(sc)
-    product["metadata"]["description"] = "changed"
+    requirement = _requirement(sc)
+    requirement["metadata"]["description"] = "changed"
     policy = {
         "apiVersion": "ontogeny/v1",
         "kind": "PolicySet",
@@ -88,7 +88,9 @@ async def test_publish_failure_restores_all_changed_files(client, monkeypatch, f
 
     monkeypatch.setattr(sc, "publish", fail)
     with pytest.raises(failure, match="injected publish failure"):
-        await builder_save(sc, [product, policy], deletes=["PolicySet/default"], layout={"product": {"x": 1, "y": 2}})
+        await builder_save(
+            sc, [requirement, policy], deletes=["PolicySet/default"], layout={"requirement": {"x": 1, "y": 2}}
+        )
     assert _tree(root) == before
 
 
@@ -98,8 +100,8 @@ async def test_publish_failure_rolls_back_registry_runtime_and_files(client, mon
     root = Path(sc.package_root)
     before = _tree(root)
     compiled, repo, query = sc.compiled, sc.repo, sc.query
-    product = _product(sc)
-    product["metadata"]["description"] = "candidate that cannot become active"
+    requirement = _requirement(sc)
+    requirement["metadata"]["description"] = "candidate that cannot become active"
     rebuild = sc._rebuild_services
 
     def fail(candidate, **kwargs):
@@ -122,7 +124,7 @@ async def test_publish_failure_rolls_back_registry_runtime_and_files(client, mon
 
             monkeypatch.setattr(AsyncSession, "commit", async_fail)
     with pytest.raises(RuntimeError, match=r"injected .* failure"):
-        await builder_save(sc, [product])
+        await builder_save(sc, [requirement])
     assert _tree(root) == before
     assert sc.compiled is compiled and sc.repo is repo and sc.query is query
     async with sc.sessionmaker() as session:
@@ -146,7 +148,7 @@ async def test_concurrent_failure_cannot_undo_a_successful_save(client, monkeypa
         return await publish(*args, **kwargs)
 
     monkeypatch.setattr(sc, "publish", fail_first)
-    first, second = _product(sc), _product(sc)
+    first, second = _requirement(sc), _requirement(sc)
     first["metadata"]["description"] = "first"
     second["metadata"]["description"] = "second"
     failing = asyncio.create_task(builder_save(sc, [first]))
@@ -158,8 +160,8 @@ async def test_concurrent_failure_cannot_undo_a_successful_save(client, monkeypa
     results = await asyncio.gather(failing, succeeding, return_exceptions=True)
     assert isinstance(results[0], RuntimeError)
     assert results[1]["published"] is True
-    assert _product(sc)["metadata"]["description"] == "second"
-    assert sc.compiled.objects["product"].metadata.description == "second"
+    assert _requirement(sc)["metadata"]["description"] == "second"
+    assert sc.compiled.objects["requirement"].metadata.description == "second"
 
 
 async def test_manifest_symlink_is_rejected_before_writing(client):
@@ -207,26 +209,26 @@ async def test_candidate_runtime_and_tools_remain_hidden_until_commit(client, mo
         await commit(session)
 
     monkeypatch.setattr(AsyncSession, "commit", blocked_commit)
-    added = _product(sc)
-    added["metadata"]["name"] = "builder-product"
+    added = _requirement(sc)
+    added["metadata"]["name"] = "builder-requirement"
     save = asyncio.create_task(builder_save(sc, [added]))
     try:
         await asyncio.wait_for(entered.wait(), timeout=10)
         assert sc.compiled is original_runtime
         assert surface.server is server
         assert server._tool_manager is original_manager
-        assert "search_builder_product" not in {tool.name for tool in await server.list_tools()}
+        assert "search_builder_requirement" not in {tool.name for tool in await server.list_tools()}
     finally:
         release.set()
     if commit_succeeds:
         await save
-        assert "builder-product" in sc.compiled.objects
+        assert "builder-requirement" in sc.compiled.objects
         assert surface.server is server
         assert server._tool_manager is not original_manager
-        assert "search_builder_product" in {tool.name for tool in await server.list_tools()}
+        assert "search_builder_requirement" in {tool.name for tool in await server.list_tools()}
     else:
         with pytest.raises(RuntimeError, match="commit rejected"):
             await save
         assert sc.compiled is original_runtime
         assert server._tool_manager is original_manager
-        assert not (Path(sc.package_root) / "objects/builder-product.yaml").exists()
+        assert not (Path(sc.package_root) / "objects/builder-requirement.yaml").exists()

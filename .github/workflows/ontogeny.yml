@@ -1,19 +1,20 @@
 # Ontogeny module gate: backend tests, frontend suite, full-stack integration,
 # plus the stage-1 zero-coupling invariant (this module must not import
 # upstream hugegraph-llm/hugegraph-ml until the step-2 feature merge lands).
+# Reusable: selected by scripts/ci.py from changed paths.
 name: "Ontogeny CI"
 
 on:
-  push:
-    branches:
-      - "main"
-    paths:
-      - "ontogeny/**"
-      - ".github/workflows/ontogeny-ci.yml"
-  pull_request:
-    paths:
-      - "ontogeny/**"
-      - ".github/workflows/ontogeny-ci.yml"
+  workflow_call:
+    inputs:
+      python-versions:
+        description: JSON list of Python runtimes for the backend matrix
+        required: true
+        type: string
+      primary-python:
+        description: Primary runtime for the integration job
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
@@ -25,11 +26,15 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install
         working-directory: ontogeny
         run: |
@@ -48,7 +53,7 @@ jobs:
         working-directory: ontogeny
         run: |
           # Belt to the repository-wide licenserc check: fail when any module
-          # source file lacks the ASF header. Written with an explicit loop so
+          # source file lacks the ASF license header. Written with an explicit loop so
           # no `|| true` / `!` can mask the exit status (grep -L inverts it).
           failed=0
           while IFS= read -r f; do
@@ -93,7 +98,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ inputs.primary-python }}
       - name: Install backend with PostgreSQL support
         working-directory: ontogeny
         run: |
@@ -152,7 +157,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ inputs.primary-python }}
       - name: Install backend
         working-directory: ontogeny
         run: |

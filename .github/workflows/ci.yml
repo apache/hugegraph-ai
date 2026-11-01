@@ -42,6 +42,7 @@ jobs:
       sdk: ${{ steps.select.outputs.sdk }}
       llm: ${{ steps.select.outputs.llm }}
       mcp: ${{ steps.select.outputs.mcp }}
+      ontogeny: ${{ steps.select.outputs.ontogeny }}
       quality: ${{ steps.select.outputs.quality }}
       dependencies: ${{ steps.select.outputs.dependencies }}
       codeql: ${{ steps.select.outputs.codeql }}
@@ -55,6 +56,7 @@ jobs:
       sdk-pythons: ${{ steps.select.outputs.sdk-pythons }}
       llm-pythons: ${{ steps.select.outputs.llm-pythons }}
       mcp-pythons: ${{ steps.select.outputs.mcp-pythons }}
+      ontogeny-pythons: ${{ steps.select.outputs.ontogeny-pythons }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -133,6 +135,14 @@ jobs:
       server-image: ${{ needs.preflight.outputs.server-image }}
       version: ${{ needs.preflight.outputs.version }}
 
+  ontogeny:
+    needs: preflight
+    if: needs.preflight.outputs.ontogeny == 'true'
+    uses: ./.github/workflows/ontogeny.yml
+    with:
+      python-versions: ${{ needs.preflight.outputs.ontogeny-pythons }}
+      primary-python: ${{ needs.preflight.outputs.python-version }}
+
   dependencies:
     needs: preflight
     if: >-
@@ -159,7 +169,7 @@ jobs:
   result:
     name: CI Result
     if: always() && (github.event_name != 'schedule' || github.repository == 'apache/hugegraph-ai')
-    needs: [preflight, quality, client, sdk, llm, mcp, dependencies, codeql]
+    needs: [preflight, quality, client, sdk, llm, mcp, ontogeny, dependencies, codeql]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

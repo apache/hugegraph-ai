@@ -29,12 +29,14 @@ MODULES = {
     "sdk": "hugegraph-llm-sdk",
     "llm": "hugegraph-llm",
     "mcp": "hugegraph-mcp",
+    "ontogeny": "ontogeny",
 }
 FULL_PYTHONS = {
     "client": ["3.12", "3.13", "3.14"],
     "sdk": ["3.12", "3.13", "3.14"],
     "llm": ["3.12", "3.13", "3.14"],
     "mcp": ["3.12", "3.13", "3.14"],
+    "ontogeny": ["3.12", "3.13", "3.14"],
 }
 SHARED = {
     "pyproject.toml",

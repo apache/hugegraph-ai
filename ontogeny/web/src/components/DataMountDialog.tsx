@@ -47,6 +47,7 @@ limitations under the License.
  */
 import { useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { useFocusTrap } from '../lib/focus'
 import { useI18n } from '../i18n'
 import { apiClient, ApiError } from '../api/client'
@@ -95,6 +96,7 @@ export function DataMountDialog({
   onMounted?: (result: MountResult) => void
 }) {
   const { t } = useI18n()
+  const navigate = useNavigate()
   const trapRef = useFocusTrap<HTMLDivElement>(open)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -114,6 +116,7 @@ export function DataMountDialog({
    *  store kind (csv / sqlite / postgres / …), source, materialized rows. */
   const storage = useQuery(storageQuery())
   const stInfo = storage.data?.objects?.[objectName]
+  const isDocumentBacked = stInfo?.store_type === 'document'
   const syncSummary = stInfo
     ? (stInfo.sync === 'watermark' && stInfo.sync_watermark
         ? `${t('storage.syncWatermark')} ${stInfo.sync_watermark}${stInfo.sync_schedule ? ` · ${stInfo.sync_schedule}` : ''}`
@@ -241,6 +244,20 @@ export function DataMountDialog({
             <p className="text-[12px] muted" data-testid="mount-none">{t('mount.none')}</p>
           )}
 
+          {isDocumentBacked ? (
+            <Alert tone="info" testId="mount-document-backed">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12.5px] font-medium">{t('mount.document.title')}</div>
+                  <div className="mt-0.5 text-[11.5px] muted">{t('mount.document.body')}</div>
+                </div>
+                <Button size="sm" onClick={() => { onClose(); navigate('/documents') }} data-testid="mount-document-open">
+                  {t('mount.document.open')}
+                </Button>
+              </div>
+            </Alert>
+          ) : (
+          <>
           {/* source kind */}
           <div>
             <span className="ontogeny-label">{t('mount.source')}</span>
@@ -318,6 +335,9 @@ export function DataMountDialog({
               ) : null}
             </div>
           ) : null}
+
+          </>
+          )}
 
           {error ? <Alert tone="danger" testId="mount-error">{error}</Alert> : null}
 

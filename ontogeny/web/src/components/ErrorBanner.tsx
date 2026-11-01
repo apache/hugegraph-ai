@@ -45,7 +45,7 @@ export function ErrorBanner({ error, hint }: { error: unknown; hint?: ReactNode 
   const code = e?.code ?? 'ERROR'
   const localized = code ? t(`error.${code}`) : ''
   const message = e?.message ?? String(error)
-  const tone = code === 'POLICY_DENIED' || code === 'CONSTITUTION_VIOLATION' ? 'danger'
+  const tone = code === 'POLICY_DENIED' || code === 'BASELINE_VIOLATION' ? 'danger'
     : code === 'RULE_REJECTED' ? 'warning'
     : code === 'REVISION_CONFLICT' ? 'warning'
     : 'info'

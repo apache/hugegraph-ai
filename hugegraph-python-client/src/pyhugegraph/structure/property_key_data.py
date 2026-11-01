@@ -54,7 +54,7 @@ class PropertyKeyData:
         return self.__name
 
     @property
-    def dataType(self):
+    def data_type(self):
         return self.__data_type
 
     @property

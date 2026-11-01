@@ -27,89 +27,89 @@ from pyhugegraph.utils.util import ResponseValidation
 class PropertyKey(HugeParamsBase):
     # Data Type: [OBJECT, BOOLEAN, BYTE, INT, LONG, FLOAT, DOUBLE, TEXT, BLOB, DATE]
     @decorator_params
-    def asObject(self) -> "PropertyKey":
+    def as_object(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "OBJECT")
         return self
 
     @decorator_params
-    def asBool(self) -> "PropertyKey":
+    def as_bool(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "BOOLEAN")
         return self
 
     @decorator_params
-    def asByte(self) -> "PropertyKey":
+    def as_byte(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "BYTE")
         return self
 
     @decorator_params
-    def asInt(self) -> "PropertyKey":
+    def as_int(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "INT")
         return self
 
     @decorator_params
-    def asLong(self) -> "PropertyKey":
+    def as_long(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "LONG")
         return self
 
     @decorator_params
-    def asFloat(self) -> "PropertyKey":
+    def as_float(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "FLOAT")
         return self
 
     @decorator_params
-    def asDouble(self) -> "PropertyKey":
+    def as_double(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "DOUBLE")
         return self
 
     @decorator_params
-    def asText(self) -> "PropertyKey":
+    def as_text(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "TEXT")
         return self
 
     @decorator_params
-    def asBlob(self) -> "PropertyKey":
+    def as_blob(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "BLOB")
         return self
 
     @decorator_params
-    def asDate(self) -> "PropertyKey":
+    def as_date(self) -> "PropertyKey":
         self._parameter_holder.set("data_type", "DATE")
         return self
 
     #  Cardinality Type [SINGLE, LIST, SET]
     @decorator_params
-    def valueSingle(self) -> "PropertyKey":
+    def value_single(self) -> "PropertyKey":
         self._parameter_holder.set("cardinality", "SINGLE")
         return self
 
     @decorator_params
-    def valueList(self) -> "PropertyKey":
+    def value_list(self) -> "PropertyKey":
         self._parameter_holder.set("cardinality", "LIST")
         return self
 
     @decorator_params
-    def valueSet(self) -> "PropertyKey":
+    def value_set(self) -> "PropertyKey":
         self._parameter_holder.set("cardinality", "SET")
         return self
 
     #  Aggregate Type [NONE, MAX, MIN, SUM, OLD]
     @decorator_params
-    def calcMax(self) -> "PropertyKey":
+    def calc_max(self) -> "PropertyKey":
         self._parameter_holder.set("aggregate_type", "MAX")
         return self
 
     @decorator_params
-    def calcMin(self) -> "PropertyKey":
+    def calc_min(self) -> "PropertyKey":
         self._parameter_holder.set("aggregate_type", "MIN")
         return self
 
     @decorator_params
-    def calcSum(self) -> "PropertyKey":
+    def calc_sum(self) -> "PropertyKey":
         self._parameter_holder.set("aggregate_type", "SUM")
         return self
 
     @decorator_params
-    def calcOld(self) -> "PropertyKey":
+    def calc_old(self) -> "PropertyKey":
         self._parameter_holder.set("aggregate_type", "OLD")
         return self
 
@@ -125,7 +125,7 @@ class PropertyKey(HugeParamsBase):
             i += 2
         return self
 
-    def ifNotExist(self) -> "PropertyKey":
+    def if_not_exist(self) -> "PropertyKey":
         path = f"schema/propertykeys/{self._parameter_holder.get_value('name')}"
         if _ := self._sess.request(path, validator=ResponseValidation(strict=False)):
             self._parameter_holder.set("not_exist", False)

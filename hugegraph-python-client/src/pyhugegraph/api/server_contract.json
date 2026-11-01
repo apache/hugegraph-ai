@@ -1,0 +1,2572 @@
+{
+  "server_repository": "hugegraph/hugegraph",
+  "server_ref": "8e327b8f3d3ffcf61547be7fea1a15d3af2de8b4",
+  "algorithms": {
+    "count_edge": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/CountEdgeAlgorithm.java"
+    },
+    "count_vertex": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/CountVertexAlgorithm.java"
+    },
+    "subgraph_stat": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/SubgraphStatAlgorithm.java"
+    },
+    "betweenness_centrality": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/cent/BetweennessCentralityAlgorithmV2.java"
+    },
+    "closeness_centrality": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/cent/ClosenessCentralityAlgorithmV2.java"
+    },
+    "degree_centrality": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/cent/DegreeCentralityAlgorithm.java"
+    },
+    "eigenvector_centrality": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/cent/EigenvectorCentralityAlgorithm.java"
+    },
+    "stress_centrality": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/cent/StressCentralityAlgorithmV2.java"
+    },
+    "cluster_coefficient": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/comm/ClusterCoefficientAlgorithm.java"
+    },
+    "k_core": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/comm/KCoreAlgorithm.java"
+    },
+    "louvain": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/comm/LouvainAlgorithm.java"
+    },
+    "lpa": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/comm/LpaAlgorithm.java"
+    },
+    "triangle_count": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/comm/TriangleCountAlgorithm.java"
+    },
+    "weak_connected_component": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/comm/WeakConnectedComponent.java"
+    },
+    "rings": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/path/RingsDetectAlgorithm.java"
+    },
+    "page_rank": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/rank/PageRankAlgorithm.java"
+    },
+    "fusiform_similarity": {
+      "source": "hugegraph-server/hugegraph-core/src/main/java/org/apache/hugegraph/job/algorithm/similarity/FusiformSimilarityAlgorithm.java"
+    }
+  },
+  "operations": {
+    "arthas.start_arthas": {
+      "method": "PUT",
+      "path": "arthas",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/arthas/ArthasAPI.java"
+    },
+    "access.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/accesses",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/AccessAPI.java"
+    },
+    "access.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/auth/accesses/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/AccessAPI.java"
+    },
+    "access.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/accesses",
+      "query": [
+        "group",
+        "target",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/AccessAPI.java"
+    },
+    "access.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/accesses/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/AccessAPI.java"
+    },
+    "access.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/accesses/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/AccessAPI.java"
+    },
+    "belong.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/belongs",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/BelongAPI.java"
+    },
+    "belong.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/auth/belongs/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/BelongAPI.java"
+    },
+    "belong.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/belongs",
+      "query": [
+        "user",
+        "group",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/BelongAPI.java"
+    },
+    "belong.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/belongs/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/BelongAPI.java"
+    },
+    "belong.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/belongs/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/BelongAPI.java"
+    },
+    "graph_space_group.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/groups",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GraphSpaceGroupAPI.java",
+      "requires_graphspace": true
+    },
+    "graph_space_group.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/auth/groups/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GraphSpaceGroupAPI.java",
+      "requires_graphspace": true
+    },
+    "graph_space_group.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/groups",
+      "query": [
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GraphSpaceGroupAPI.java",
+      "requires_graphspace": true
+    },
+    "graph_space_group.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/groups/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GraphSpaceGroupAPI.java",
+      "requires_graphspace": true
+    },
+    "graph_space_group.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/groups/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GraphSpaceGroupAPI.java",
+      "requires_graphspace": true
+    },
+    "group.create": {
+      "method": "POST",
+      "path": "auth/groups",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GroupAPI.java"
+    },
+    "group.update": {
+      "method": "PUT",
+      "path": "auth/groups/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GroupAPI.java"
+    },
+    "group.list": {
+      "method": "GET",
+      "path": "auth/groups",
+      "query": [
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GroupAPI.java"
+    },
+    "group.get": {
+      "method": "GET",
+      "path": "auth/groups/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GroupAPI.java"
+    },
+    "group.delete": {
+      "method": "DELETE",
+      "path": "auth/groups/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/GroupAPI.java"
+    },
+    "login.login": {
+      "method": "POST",
+      "path": "auth/login",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/LoginAPI.java"
+    },
+    "login.logout": {
+      "method": "DELETE",
+      "path": "auth/logout",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [
+        "Authorization"
+      ],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/LoginAPI.java"
+    },
+    "login.verify_token": {
+      "method": "GET",
+      "path": "auth/verify",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [
+        "Authorization"
+      ],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/LoginAPI.java"
+    },
+    "manager.create_manager": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/managers",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ManagerAPI.java",
+      "requires_graphspace": true
+    },
+    "manager.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/managers",
+      "query": [
+        "user",
+        "type"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ManagerAPI.java",
+      "requires_graphspace": true
+    },
+    "manager.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/managers",
+      "query": [
+        "type"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ManagerAPI.java",
+      "requires_graphspace": true
+    },
+    "manager.check_role": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/managers/check",
+      "query": [
+        "type"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ManagerAPI.java",
+      "requires_graphspace": true
+    },
+    "manager.get_roles_in_gs": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/managers/role",
+      "query": [
+        "user"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ManagerAPI.java",
+      "requires_graphspace": true
+    },
+    "manager.check_default_role": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/managers/default",
+      "query": [
+        "role",
+        "graph"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ManagerAPI.java",
+      "requires_graphspace": true
+    },
+    "project.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/projects",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ProjectAPI.java"
+    },
+    "project.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/auth/projects/{id}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ProjectAPI.java"
+    },
+    "project.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/projects",
+      "query": [
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ProjectAPI.java"
+    },
+    "project.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/projects/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ProjectAPI.java"
+    },
+    "project.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/projects/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/ProjectAPI.java"
+    },
+    "target.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/targets",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/TargetAPI.java"
+    },
+    "target.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/auth/targets/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/TargetAPI.java"
+    },
+    "target.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/targets",
+      "query": [
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/TargetAPI.java"
+    },
+    "target.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/targets/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/TargetAPI.java"
+    },
+    "target.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/targets/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/TargetAPI.java"
+    },
+    "user.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/auth/users",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/UserAPI.java"
+    },
+    "user.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/auth/users/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/UserAPI.java"
+    },
+    "user.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/users",
+      "query": [
+        "name",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/UserAPI.java"
+    },
+    "user.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/users/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/UserAPI.java"
+    },
+    "user.role": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/auth/users/{id}/role",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/UserAPI.java"
+    },
+    "user.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/auth/users/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/auth/UserAPI.java"
+    },
+    "cypher.query": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/cypher",
+      "query": [
+        "cypher"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/cypher/CypherAPI.java"
+    },
+    "cypher.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/cypher",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/cypher/CypherAPI.java"
+    },
+    "edge.create_batch": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges/batch",
+      "query": [
+        "check_vertex"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "edge.update_batch": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges/batch",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "edge.update_by_id": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges/{id}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "edge.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges",
+      "query": [
+        "vertex_id",
+        "direction",
+        "label",
+        "properties",
+        "keep_start_p",
+        "offset",
+        "page",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "vertex_id"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "edge.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "edge.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges/{id}",
+      "query": [
+        "label"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "vertex.create_batch": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices/batch",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "vertex.update_batch": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices/batch",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "vertex.update_by_id": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices/{id}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [
+        "id"
+      ],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "vertex.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices",
+      "query": [
+        "label",
+        "properties",
+        "keep_start_p",
+        "offset",
+        "page",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "vertex.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices/{id}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [
+        "id"
+      ],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "vertex.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices/{id}",
+      "query": [
+        "label"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [
+        "id"
+      ],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "gremlin.post": {
+      "method": "POST",
+      "path": "gremlin",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/gremlin/GremlinAPI.java"
+    },
+    "gremlin.get": {
+      "method": "GET",
+      "path": "gremlin",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/gremlin/GremlinAPI.java"
+    },
+    "algorithm.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/jobs/algorithm/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/AlgorithmAPI.java"
+    },
+    "computer.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/jobs/computer/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/ComputerAPI.java"
+    },
+    "gremlin_job.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/jobs/gremlin",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/GremlinAPI.java"
+    },
+    "rebuild.vertex_label_rebuild": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/jobs/rebuild/vertexlabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/RebuildAPI.java"
+    },
+    "rebuild.edge_label_rebuild": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/jobs/rebuild/edgelabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/RebuildAPI.java"
+    },
+    "rebuild.index_label_rebuild": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/jobs/rebuild/indexlabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/RebuildAPI.java"
+    },
+    "task.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/tasks",
+      "query": [
+        "status",
+        "ids",
+        "limit",
+        "page"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/TaskAPI.java"
+    },
+    "task.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/tasks/{id}",
+      "query": [
+        "with_result"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/TaskAPI.java"
+    },
+    "task.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/tasks/{id}",
+      "query": [
+        "force"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/TaskAPI.java"
+    },
+    "task.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/tasks/{id}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/job/TaskAPI.java"
+    },
+    "metrics.system": {
+      "method": "GET",
+      "path": "metrics/system",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.backend": {
+      "method": "GET",
+      "path": "metrics/backend",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.gauges": {
+      "method": "GET",
+      "path": "metrics/gauges",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.counters": {
+      "method": "GET",
+      "path": "metrics/counters",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.histograms": {
+      "method": "GET",
+      "path": "metrics/histograms",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.meters": {
+      "method": "GET",
+      "path": "metrics/meters",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.timers": {
+      "method": "GET",
+      "path": "metrics/timers",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java"
+    },
+    "metrics.all": {
+      "method": "GET",
+      "path": "metrics",
+      "query": [
+        "type"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java",
+      "response_type": "text",
+      "json_when": {
+        "type": "json"
+      }
+    },
+    "metrics.statistics": {
+      "method": "GET",
+      "path": "metrics/statistics",
+      "query": [
+        "type"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/metrics/MetricsAPI.java",
+      "response_type": "text",
+      "json_when": {
+        "type": "json"
+      }
+    },
+    "graphs.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.list_profile": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/profile",
+      "query": [
+        "prefix"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.set_default": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{name}/default",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.unset_default": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{name}/default",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.get_default": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/default",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.drop": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{name}",
+      "query": [
+        "confirm_message"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.manage": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.reload": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/manage",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{name}",
+      "query": [
+        "clone_graph_name"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.clone_schema": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{name}/schema-clone",
+      "query": [
+        "source"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.create_by_text": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{name}",
+      "query": [
+        "clone_graph_name"
+      ],
+      "content_type": "text/plain",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.get_conf": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{name}/conf",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java",
+      "response_type": "text"
+    },
+    "graphs.clear": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{name}/clear",
+      "query": [
+        "confirm_message"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.create_snapshot": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}/snapshot_create",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.resume_snapshot": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}/snapshot_resume",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.compact": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}/compact",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.mode_set": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}/mode",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.mode_get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{name}/mode",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.loading_mode_get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{name}/mode/owners",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.loading_mode_set": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}/mode/owners",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.graph_read_mode_set": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{name}/graph_read_mode",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "graphs.graph_read_mode_get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{name}/graph_read_mode",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+    },
+    "profile.get_profile": {
+      "method": "GET",
+      "path": "",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/ProfileAPI.java"
+    },
+    "profile.show_all_ap_is": {
+      "method": "GET",
+      "path": "apis",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/ProfileAPI.java"
+    },
+    "version.list": {
+      "method": "GET",
+      "path": "versions",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/VersionAPI.java"
+    },
+    "white_ip_list.list": {
+      "method": "GET",
+      "path": "whiteiplist",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/WhiteIpListAPI.java"
+    },
+    "white_ip_list.update_white_i_ps": {
+      "method": "POST",
+      "path": "whiteiplist",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/WhiteIpListAPI.java"
+    },
+    "white_ip_list.update_status": {
+      "method": "PUT",
+      "path": "whiteiplist",
+      "query": [
+        "status"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/WhiteIpListAPI.java"
+    },
+    "raft.list_peers": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/raft/list_peers",
+      "query": [
+        "group"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/raft/RaftAPI.java"
+    },
+    "raft.get_leader": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/raft/get_leader",
+      "query": [
+        "group"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/raft/RaftAPI.java"
+    },
+    "raft.transfer_leader": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/raft/transfer_leader",
+      "query": [
+        "group",
+        "endpoint"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/raft/RaftAPI.java"
+    },
+    "raft.set_leader": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/raft/set_leader",
+      "query": [
+        "group",
+        "endpoint"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/raft/RaftAPI.java"
+    },
+    "raft.add_peer": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/raft/add_peer",
+      "query": [
+        "group",
+        "endpoint"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/raft/RaftAPI.java"
+    },
+    "raft.remove_peer": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/raft/remove_peer",
+      "query": [
+        "group",
+        "endpoint"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/raft/RaftAPI.java"
+    },
+    "edge_label.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/EdgeLabelAPI.java"
+    },
+    "edge_label.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels/{name}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/EdgeLabelAPI.java"
+    },
+    "edge_label.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels",
+      "query": [
+        "names"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/EdgeLabelAPI.java"
+    },
+    "edge_label.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/EdgeLabelAPI.java"
+    },
+    "edge_label.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/EdgeLabelAPI.java"
+    },
+    "index_label.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/IndexLabelAPI.java"
+    },
+    "index_label.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels/{name}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/IndexLabelAPI.java"
+    },
+    "index_label.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels",
+      "query": [
+        "names"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/IndexLabelAPI.java"
+    },
+    "index_label.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/IndexLabelAPI.java"
+    },
+    "index_label.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/IndexLabelAPI.java"
+    },
+    "property_key.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/PropertyKeyAPI.java"
+    },
+    "property_key.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys/{name}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/PropertyKeyAPI.java"
+    },
+    "property_key.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys",
+      "query": [
+        "names"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/PropertyKeyAPI.java"
+    },
+    "property_key.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/PropertyKeyAPI.java"
+    },
+    "property_key.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/PropertyKeyAPI.java"
+    },
+    "schema.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/SchemaAPI.java"
+    },
+    "vertex_label.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/VertexLabelAPI.java"
+    },
+    "vertex_label.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels/{name}",
+      "query": [
+        "action"
+      ],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/VertexLabelAPI.java"
+    },
+    "vertex_label.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels",
+      "query": [
+        "names"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/VertexLabelAPI.java"
+    },
+    "vertex_label.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/VertexLabelAPI.java"
+    },
+    "vertex_label.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/schema/VertexLabelAPI.java"
+    },
+    "graph_space.list": {
+      "method": "GET",
+      "path": "graphspaces",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.set_default_role": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/role",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.check_default_role": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/role",
+      "query": [
+        "user",
+        "role",
+        "graph"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.delete_default_role": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/role",
+      "query": [
+        "user",
+        "role",
+        "graph"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.list_profile": {
+      "method": "GET",
+      "path": "graphspaces/profile",
+      "query": [
+        "prefix"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.create": {
+      "method": "POST",
+      "path": "graphspaces",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.manage": {
+      "method": "PUT",
+      "path": "graphspaces/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "graph_space.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/GraphSpaceAPI.java"
+    },
+    "schema_template.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/schematemplates",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/SchemaTemplateAPI.java"
+    },
+    "schema_template.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/schematemplates/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/SchemaTemplateAPI.java"
+    },
+    "schema_template.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/schematemplates",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/SchemaTemplateAPI.java"
+    },
+    "schema_template.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/schematemplates/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/SchemaTemplateAPI.java"
+    },
+    "schema_template.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/schematemplates/{name}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/space/SchemaTemplateAPI.java"
+    },
+    "adamic_adar.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/adamicadar",
+      "query": [
+        "vertex",
+        "other",
+        "direction",
+        "label",
+        "max_degree",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "vertex",
+        "other"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/AdamicAdarAPI.java"
+    },
+    "all_shortest_paths.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/allshortestpaths",
+      "query": [
+        "source",
+        "target",
+        "direction",
+        "label",
+        "max_depth",
+        "max_degree",
+        "skip_degree",
+        "with_vertex",
+        "with_edge",
+        "capacity"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source",
+        "target"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/AllShortestPathsAPI.java"
+    },
+    "count.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/count",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/CountAPI.java"
+    },
+    "crosspoints.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/crosspoints",
+      "query": [
+        "source",
+        "target",
+        "direction",
+        "label",
+        "max_depth",
+        "max_degree",
+        "capacity",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source",
+        "target"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/CrosspointsAPI.java"
+    },
+    "customized_crosspoints.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/customizedcrosspoints",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/CustomizedCrosspointsAPI.java"
+    },
+    "customized_paths.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/customizedpaths",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/CustomizedPathsAPI.java"
+    },
+    "edge_existence.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/edgeexist",
+      "query": [
+        "source",
+        "target",
+        "label",
+        "sort_values",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source",
+        "target"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/EdgeExistenceAPI.java"
+    },
+    "edges.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/edges",
+      "query": [
+        "ids"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/EdgesAPI.java"
+    },
+    "edges.shards": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/edges/shards",
+      "query": [
+        "split_size"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/EdgesAPI.java"
+    },
+    "edges.scan": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/edges/scan",
+      "query": [
+        "start",
+        "end",
+        "page",
+        "page_limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/EdgesAPI.java"
+    },
+    "fusiform_similarity.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/fusiformsimilarity",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/FusiformSimilarityAPI.java"
+    },
+    "jaccard_similarity.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/jaccardsimilarity",
+      "query": [
+        "vertex",
+        "other",
+        "direction",
+        "label",
+        "max_degree"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "vertex",
+        "other"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/JaccardSimilarityAPI.java"
+    },
+    "jaccard_similarity.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/jaccardsimilarity",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/JaccardSimilarityAPI.java"
+    },
+    "kneighbor.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/kneighbor",
+      "query": [
+        "source",
+        "direction",
+        "label",
+        "max_depth",
+        "count_only",
+        "max_degree",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/KneighborAPI.java"
+    },
+    "kneighbor.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/kneighbor",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/KneighborAPI.java"
+    },
+    "kout.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/kout",
+      "query": [
+        "source",
+        "direction",
+        "label",
+        "max_depth",
+        "nearest",
+        "count_only",
+        "max_degree",
+        "capacity",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/KoutAPI.java"
+    },
+    "kout.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/kout",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/KoutAPI.java"
+    },
+    "multi_node_shortest_path.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/multinodeshortestpath",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/MultiNodeShortestPathAPI.java"
+    },
+    "neighbor_rank.neighbor_rank": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/neighborrank",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/NeighborRankAPI.java"
+    },
+    "paths.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/paths",
+      "query": [
+        "source",
+        "target",
+        "direction",
+        "label",
+        "max_depth",
+        "max_degree",
+        "capacity",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source",
+        "target"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/PathsAPI.java"
+    },
+    "paths.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/paths",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/PathsAPI.java"
+    },
+    "personal_rank.personal_rank": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/personalrank",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/PersonalRankAPI.java"
+    },
+    "rays.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/rays",
+      "query": [
+        "source",
+        "direction",
+        "label",
+        "max_depth",
+        "max_degree",
+        "capacity",
+        "limit",
+        "with_vertex",
+        "with_edge"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/RaysAPI.java"
+    },
+    "resource_allocation.create": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/resourceallocation",
+      "query": [
+        "vertex",
+        "other",
+        "direction",
+        "label",
+        "max_degree",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "vertex",
+        "other"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/ResourceAllocationAPI.java"
+    },
+    "rings.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/rings",
+      "query": [
+        "source",
+        "direction",
+        "label",
+        "max_depth",
+        "source_in_ring",
+        "max_degree",
+        "capacity",
+        "limit",
+        "with_vertex",
+        "with_edge"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/RingsAPI.java"
+    },
+    "same_neighbors.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/sameneighbors",
+      "query": [
+        "vertex",
+        "other",
+        "direction",
+        "label",
+        "max_degree",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "vertex",
+        "other"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/SameNeighborsAPI.java"
+    },
+    "same_neighbors.same_neighbors": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/sameneighbors",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/SameNeighborsAPI.java"
+    },
+    "same_neighbors_batch.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/sameneighborsbatch",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/SameNeighborsBatchAPI.java"
+    },
+    "shortest_path.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/shortestpath",
+      "query": [
+        "source",
+        "target",
+        "direction",
+        "label",
+        "max_depth",
+        "max_degree",
+        "skip_degree",
+        "with_vertex",
+        "with_edge",
+        "capacity"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source",
+        "target"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/ShortestPathAPI.java"
+    },
+    "single_source_shortest_path.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/singlesourceshortestpath",
+      "query": [
+        "source",
+        "direction",
+        "label",
+        "weight",
+        "max_degree",
+        "skip_degree",
+        "with_vertex",
+        "with_edge",
+        "capacity",
+        "limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/SingleSourceShortestPathAPI.java"
+    },
+    "template_paths.post": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/templatepaths",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/TemplatePathsAPI.java"
+    },
+    "vertices.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/vertices",
+      "query": [
+        "ids"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "ids"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/VerticesAPI.java"
+    },
+    "vertices.shards": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/vertices/shards",
+      "query": [
+        "split_size"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/VerticesAPI.java"
+    },
+    "vertices.scan": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/vertices/scan",
+      "query": [
+        "start",
+        "end",
+        "page",
+        "page_limit"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/VerticesAPI.java"
+    },
+    "weighted_shortest_path.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/traversers/weightedshortestpath",
+      "query": [
+        "source",
+        "target",
+        "direction",
+        "label",
+        "weight",
+        "max_degree",
+        "skip_degree",
+        "with_vertex",
+        "with_edge",
+        "capacity"
+      ],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [
+        "source",
+        "target"
+      ],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/WeightedShortestPathAPI.java"
+    },
+    "variables.update": {
+      "method": "PUT",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/variables/{key}",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/variables/VariablesAPI.java"
+    },
+    "variables.list": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/variables",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/variables/VariablesAPI.java"
+    },
+    "variables.get": {
+      "method": "GET",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/variables/{key}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/variables/VariablesAPI.java"
+    },
+    "variables.delete": {
+      "method": "DELETE",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/variables/{key}",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/variables/VariablesAPI.java"
+    },
+    "vertex.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/vertices",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/VertexAPI.java"
+    },
+    "edge.create": {
+      "method": "POST",
+      "path": "graphspaces/{graphspace}/graphs/{graph}/graph/edges",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/graph/EdgeAPI.java"
+    },
+    "exception_trace.get": {
+      "method": "GET",
+      "path": "exception/trace",
+      "query": [],
+      "content_type": "application/json",
+      "body": false,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/filter/ExceptionFilter.java"
+    },
+    "exception_trace.trace": {
+      "method": "PUT",
+      "path": "exception/trace",
+      "query": [],
+      "content_type": "application/json",
+      "body": true,
+      "headers": [],
+      "vertex_query": [],
+      "vertex_path": [],
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/filter/ExceptionFilter.java"
+    }
+  },
+  "extensions": [
+    "arthas",
+    "raft",
+    "white_ip_list",
+    "computer"
+  ],
+  "unavailable": {
+    "services": "No public ServicesAPI at the pinned server revision."
+  },
+  "platform_operations": [
+    {
+      "method": "GET",
+      "path": "application.wadl",
+      "reason": "Jersey-generated WADL metadata, outside the HugeGraph client API."
+    },
+    {
+      "method": "GET",
+      "path": "application.wadl/{path}",
+      "reason": "Jersey-generated WADL metadata, outside the HugeGraph client API."
+    }
+  ]
+}

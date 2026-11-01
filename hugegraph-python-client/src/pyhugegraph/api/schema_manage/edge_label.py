@@ -33,12 +33,12 @@ class EdgeLabel(HugeParamsBase):
         return self
 
     @decorator_params
-    def sourceLabel(self, source_label) -> "EdgeLabel":
+    def source_label(self, source_label) -> "EdgeLabel":
         self._parameter_holder.set("source_label", source_label)
         return self
 
     @decorator_params
-    def targetLabel(self, target_label) -> "EdgeLabel":
+    def target_label(self, target_label) -> "EdgeLabel":
         self._parameter_holder.set("target_label", target_label)
         return self
 
@@ -59,35 +59,35 @@ class EdgeLabel(HugeParamsBase):
         return self
 
     @decorator_params
-    def singleTime(self) -> "EdgeLabel":
+    def single_time(self) -> "EdgeLabel":
         self._parameter_holder.set("frequency", "SINGLE")
         return self
 
     @decorator_params
-    def multiTimes(self) -> "EdgeLabel":
+    def multi_times(self) -> "EdgeLabel":
         self._parameter_holder.set("frequency", "MULTIPLE")
         return self
 
     @decorator_params
-    def sortKeys(self, *args) -> "EdgeLabel":
+    def sort_keys(self, *args) -> "EdgeLabel":
         self._parameter_holder.set("sort_keys", list(args))
         return self
 
     @decorator_params
-    def nullableKeys(self, *args) -> "EdgeLabel":
+    def nullable_keys(self, *args) -> "EdgeLabel":
         nullable_keys = set(args)
         self._parameter_holder.set("nullable_keys", list(nullable_keys))
         return self
 
     @decorator_params
-    def ifNotExist(self) -> "EdgeLabel":
+    def if_not_exist(self) -> "EdgeLabel":
         path = f"schema/edgelabels/{self._parameter_holder.get_value('name')}"
         if _ := self._sess.request(path, validator=ResponseValidation(strict=False)):
             self._parameter_holder.set("not_exist", False)
         return self
 
     @decorator_params
-    def enableLabelIndex(self, flag) -> "EdgeLabel":
+    def enable_label_index(self, flag) -> "EdgeLabel":
         """
         Set whether to enable label indexing. If enabled, you can use `edge_labels[label]` to access the edge's label.
         Default is False.

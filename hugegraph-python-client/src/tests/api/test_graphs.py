@@ -51,7 +51,7 @@ class TestGraphsManager(unittest.TestCase):
 
     def test_get_all_graphs(self):
         all_graphs = self.graphs.get_all_graphs()
-        self.assertTrue("hugegraph" in all_graphs)
+        self.assertIn("hugegraph", all_graphs["graphs"])
 
     def test_get_version(self):
         version = self.graphs.get_version()

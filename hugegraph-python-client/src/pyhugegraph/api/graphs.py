@@ -15,48 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import json
+"""Graph lifecycle and administration; inherited methods expose the full REST API."""
 
-from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
+from pyhugegraph.api.rest import GraphsAPI
 from pyhugegraph.utils.util import ResponseValidation
 
 
-class GraphsManager(HugeParamsBase):
-    @router.http("GET", "/graphs")
+class GraphsManager(GraphsAPI):
     def get_all_graphs(self) -> dict:
-        return self._invoke_request(validator=ResponseValidation("text"))
+        return self.list()
 
-    @router.http("GET", "/versions")
     def get_version(self) -> dict:
-        return self._invoke_request(validator=ResponseValidation("text"))
+        return self.request("version.list")
 
-    @router.http("GET", "")
     def get_graph_info(self) -> dict:
-        return self._invoke_request(validator=ResponseValidation("text"))
+        return self.get(self.session.cfg.graph_name)
 
-    def clear_graph_all_data(self) -> dict:
-        # Use PUT with an action body for HugeGraph 3.x+ (graph clear API)
-        # For HugeGraph 1.7.0 and other 1.x versions, the clear endpoint uses
-        # DELETE .../clear?confirm_message=... even when graphspace prefixes
-        # are enabled. Only use the PUT behavior when the server version is
-        # >= 3.0.0.
-        version_tuple = tuple(self._sess.cfg.version) if self._sess.cfg.version else (0, 0, 0)
-        if self._sess.cfg.gs_supported and version_tuple >= (3, 0, 0):
-            response = self._sess.request(
-                "",
-                "PUT",
-                validator=ResponseValidation("text"),
-                data=json.dumps({"action": "clear", "clear_schema": True}),
-            )
-        else:
-            response = self._sess.request(
-                "clear?confirm_message=I%27m+sure+to+delete+all+data",
-                "DELETE",
-                validator=ResponseValidation("text"),
-            )
-        return response
+    def clear_graph_all_data(self):
+        return self.clear(self.session.cfg.graph_name, confirm_message="I'm sure to delete all data")
 
-    @router.http("GET", "conf")
-    def get_graph_config(self) -> dict:
-        return self._invoke_request(validator=ResponseValidation("text"))
+    def get_graph_config(self) -> str:
+        return self.request(
+            "graphs.get_conf",
+            path_params={"name": self.session.cfg.graph_name},
+            validator=ResponseValidation(content_type="text"),
+        )

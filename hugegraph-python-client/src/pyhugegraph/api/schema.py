@@ -25,7 +25,6 @@ from pyhugegraph.structure.edge_label_data import EdgeLabelData
 from pyhugegraph.structure.index_label_data import IndexLabelData
 from pyhugegraph.structure.property_key_data import PropertyKeyData
 from pyhugegraph.structure.vertex_label_data import VertexLabelData
-from pyhugegraph.utils import huge_router as router
 from pyhugegraph.utils.log import log
 
 
@@ -34,14 +33,14 @@ class SchemaManager(HugeParamsBase):
     create schemas, including propertyKey/vertexLabel/edgeLabel/indexLabel
     """
 
-    def propertyKey(self, property_name) -> PropertyKey:
+    def property_key(self, property_name) -> PropertyKey:
         property_key = PropertyKey(self._sess)
         property_key.create_parameter_holder()
         property_key.add_parameter("name", property_name)
         property_key.add_parameter("not_exist", True)
         return property_key
 
-    def vertexLabel(self, vertex_name):
+    def vertex_label(self, vertex_name):
         vertex_label = VertexLabel(self._sess)
         vertex_label.create_parameter_holder()
         vertex_label.add_parameter("name", vertex_name)
@@ -49,63 +48,55 @@ class SchemaManager(HugeParamsBase):
         vertex_label.add_parameter("not_exist", True)
         return vertex_label
 
-    def edgeLabel(self, name):
+    def edge_label(self, name):
         edge_label = EdgeLabel(self._sess)
         edge_label.create_parameter_holder()
         edge_label.add_parameter("name", name)
         edge_label.add_parameter("not_exist", True)
         return edge_label
 
-    def indexLabel(self, name):
+    def index_label(self, name):
         index_label = IndexLabel(self._sess)
         index_label.create_parameter_holder()
         index_label.add_parameter("name", name)
         return index_label
 
-    @router.http("GET", "schema?format={_format}")
-    def getSchema(self, _format: str = "json") -> dict | None:  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def get_schema(self) -> dict | None:
+        return self.request("schema.list")
 
-    @router.http("GET", "schema/propertykeys/{property_name}")
-    def getPropertyKey(self, property_name) -> PropertyKeyData | None:  # pylint: disable=unused-argument
-        if response := self._invoke_request():
+    def get_property_key(self, property_name) -> PropertyKeyData | None:
+        if response := self.request("property_key.get", path_params={"name": property_name}):
             return PropertyKeyData(response)
         return None
 
-    @router.http("GET", "schema/propertykeys")
-    def getPropertyKeys(self) -> list[PropertyKeyData] | None:
-        if response := self._invoke_request():
+    def get_property_keys(self, *, names=None) -> list[PropertyKeyData] | None:
+        if response := self.request("property_key.list", params={"names": names}):
             return [PropertyKeyData(item) for item in response["propertykeys"]]
         return None
 
-    @router.http("GET", "schema/vertexlabels/{name}")
-    def getVertexLabel(self, name) -> VertexLabelData | None:  # pylint: disable=unused-argument
-        if response := self._invoke_request():
+    def get_vertex_label(self, name) -> VertexLabelData | None:
+        if response := self.request("vertex_label.get", path_params={"name": name}):
             return VertexLabelData(response)
         log.error("VertexLabel not found: %s", str(response))
         return None
 
-    @router.http("GET", "schema/vertexlabels")
-    def getVertexLabels(self) -> list[VertexLabelData] | None:
-        if response := self._invoke_request():
+    def get_vertex_labels(self, *, names=None) -> list[VertexLabelData] | None:
+        if response := self.request("vertex_label.list", params={"names": names}):
             return [VertexLabelData(item) for item in response["vertexlabels"]]
         return None
 
-    @router.http("GET", "schema/edgelabels/{label_name}")
-    def getEdgeLabel(self, label_name: str) -> EdgeLabelData | None:  # pylint: disable=unused-argument
-        if response := self._invoke_request():
+    def get_edge_label(self, label_name: str) -> EdgeLabelData | None:
+        if response := self.request("edge_label.get", path_params={"name": label_name}):
             return EdgeLabelData(response)
         log.error("EdgeLabel not found: %s", str(response))
         return None
 
-    @router.http("GET", "schema/edgelabels")
-    def getEdgeLabels(self) -> list[EdgeLabelData] | None:
-        if response := self._invoke_request():
+    def get_edge_labels(self, *, names=None) -> list[EdgeLabelData] | None:
+        if response := self.request("edge_label.list", params={"names": names}):
             return [EdgeLabelData(item) for item in response["edgelabels"]]
         return None
 
-    @router.http("GET", "schema/edgelabels")
-    def getRelations(self) -> list[str] | None:
+    def get_relations(self, *, names=None) -> list[str] | None:
         """
         Retrieve all edge_label links/paths from the graph-sever.
 
@@ -114,19 +105,17 @@ class SchemaManager(HugeParamsBase):
 
         :return: A list of relationship links/paths for all edge_labels, or None if not found.
         """
-        if response := self._invoke_request():
+        if response := self.request("edge_label.list", params={"names": names}):
             return [EdgeLabelData(item).relations() for item in response["edgelabels"]]
         return None
 
-    @router.http("GET", "schema/indexlabels/{name}")
-    def getIndexLabel(self, name) -> IndexLabelData | None:  # pylint: disable=unused-argument
-        if response := self._invoke_request():
+    def get_index_label(self, name) -> IndexLabelData | None:
+        if response := self.request("index_label.get", path_params={"name": name}):
             return IndexLabelData(response)
         log.error("IndexLabel not found: %s", str(response))
         return None
 
-    @router.http("GET", "schema/indexlabels")
-    def getIndexLabels(self) -> list[IndexLabelData] | None:
-        if response := self._invoke_request():
+    def get_index_labels(self, *, names=None) -> list[IndexLabelData] | None:
+        if response := self.request("index_label.list", params={"names": names}):
             return [IndexLabelData(item) for item in response["indexlabels"]]
         return None

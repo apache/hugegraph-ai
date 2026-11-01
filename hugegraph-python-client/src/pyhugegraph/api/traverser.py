@@ -14,81 +14,351 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+"""OLTP: immediate neighbourhood, path and recommendation queries.
+
+Use client.olap() for asynchronous full-graph computations.
+"""
+
 import json
-from urllib.parse import urlencode
 
 from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
-from pyhugegraph.utils.id_format import format_vertex_id
 
 
 class TraverserManager(HugeParamsBase):
-    def _get_with_vertex_ids(self, endpoint, vertex_params, query_params):
-        params = [(name, format_vertex_id(value)) for name, value in vertex_params]
-        params.extend(query_params)
-        return self._sess.request(f"{endpoint}?{urlencode(params)}")
-
-    def k_out(self, source_id, max_depth):
-        return self._get_with_vertex_ids("traversers/kout", [("source", source_id)], [("max_depth", max_depth)])
-
-    def k_neighbor(self, source_id, max_depth):
-        return self._get_with_vertex_ids("traversers/kneighbor", [("source", source_id)], [("max_depth", max_depth)])
-
-    def same_neighbors(self, vertex_id, other_id):
-        return self._get_with_vertex_ids(
-            "traversers/sameneighbors",
-            [("vertex", vertex_id), ("other", other_id)],
-            [],
-        )
-
-    def jaccard_similarity(self, vertex_id, other_id):
-        return self._get_with_vertex_ids(
-            "traversers/jaccardsimilarity",
-            [("vertex", vertex_id), ("other", other_id)],
-            [],
-        )
-
-    def shortest_path(self, source_id, target_id, max_depth):
-        return self._get_with_vertex_ids(
-            "traversers/shortestpath",
-            [("source", source_id), ("target", target_id)],
-            [("max_depth", max_depth)],
-        )
-
-    def all_shortest_paths(self, source_id, target_id, max_depth):
-        return self._get_with_vertex_ids(
-            "traversers/allshortestpaths",
-            [("source", source_id), ("target", target_id)],
-            [("max_depth", max_depth)],
-        )
-
-    def weighted_shortest_path(self, source_id, target_id, weight, max_depth):
-        return self._get_with_vertex_ids(
-            "traversers/weightedshortestpath",
-            [("source", source_id), ("target", target_id)],
-            [("weight", weight), ("max_depth", max_depth)],
-        )
-
-    def single_source_shortest_path(self, source_id, max_depth):
-        return self._get_with_vertex_ids(
-            "traversers/singlesourceshortestpath",
-            [("source", source_id)],
-            [("max_depth", max_depth)],
-        )
-
-    @router.http("POST", "traversers/multinodeshortestpath")
-    def multi_node_shortest_path(
+    def k_out(
         self,
-        vertices,
-        direction="BOTH",
-        properties=None,
-        max_depth=10,
-        capacity=100000000,
-        with_vertex=True,
+        source_id,
+        max_depth,
+        *,
+        direction=None,
+        label=None,
+        nearest=None,
+        count_only=None,
+        max_degree=None,
+        capacity=None,
+        limit=None,
+    ) -> dict:
+        return self.request(
+            "kout.get",
+            params={
+                "source": source_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "nearest": nearest,
+                "count_only": count_only,
+                "max_degree": max_degree,
+                "capacity": capacity,
+                "limit": limit,
+            },
+        )
+
+    def k_neighbor(
+        self, source_id, max_depth, *, direction=None, label=None, count_only=None, max_degree=None, limit=None
+    ) -> dict:
+        return self.request(
+            "kneighbor.get",
+            params={
+                "source": source_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "count_only": count_only,
+                "max_degree": max_degree,
+                "limit": limit,
+            },
+        )
+
+    def same_neighbors(self, vertex_id, other_id, *, direction=None, label=None, max_degree=None, limit=None) -> dict:
+        return self.request(
+            "same_neighbors.get",
+            params={
+                "vertex": vertex_id,
+                "other": other_id,
+                "direction": direction,
+                "label": label,
+                "max_degree": max_degree,
+                "limit": limit,
+            },
+        )
+
+    def jaccard_similarity(self, vertex_id, other_id, *, direction=None, label=None, max_degree=None) -> dict:
+        return self.request(
+            "jaccard_similarity.get",
+            params={
+                "vertex": vertex_id,
+                "other": other_id,
+                "direction": direction,
+                "label": label,
+                "max_degree": max_degree,
+            },
+        )
+
+    def shortest_path(
+        self,
+        source_id,
+        target_id,
+        max_depth,
+        *,
+        direction=None,
+        label=None,
+        max_degree=None,
+        skip_degree=None,
+        with_vertex=None,
+        with_edge=None,
+        capacity=None,
+    ) -> dict:
+        return self.request(
+            "shortest_path.get",
+            params={
+                "source": source_id,
+                "target": target_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "max_degree": max_degree,
+                "skip_degree": skip_degree,
+                "with_vertex": with_vertex,
+                "with_edge": with_edge,
+                "capacity": capacity,
+            },
+        )
+
+    def all_shortest_paths(
+        self,
+        source_id,
+        target_id,
+        max_depth,
+        *,
+        direction=None,
+        label=None,
+        max_degree=None,
+        skip_degree=None,
+        with_vertex=None,
+        with_edge=None,
+        capacity=None,
+    ) -> dict:
+        return self.request(
+            "all_shortest_paths.get",
+            params={
+                "source": source_id,
+                "target": target_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "max_degree": max_degree,
+                "skip_degree": skip_degree,
+                "with_vertex": with_vertex,
+                "with_edge": with_edge,
+                "capacity": capacity,
+            },
+        )
+
+    def weighted_shortest_path(
+        self,
+        source_id,
+        target_id,
+        weight,
+        *,
+        direction=None,
+        label=None,
+        max_degree=None,
+        skip_degree=None,
+        with_vertex=None,
+        with_edge=None,
+        capacity=None,
+    ) -> dict:
+        return self.request(
+            "weighted_shortest_path.get",
+            params={
+                "source": source_id,
+                "target": target_id,
+                "direction": direction,
+                "label": label,
+                "weight": weight,
+                "max_degree": max_degree,
+                "skip_degree": skip_degree,
+                "with_vertex": with_vertex,
+                "with_edge": with_edge,
+                "capacity": capacity,
+            },
+        )
+
+    def single_source_shortest_path(
+        self,
+        source_id,
+        *,
+        direction=None,
+        label=None,
+        weight=None,
+        max_degree=None,
+        skip_degree=None,
+        with_vertex=None,
+        with_edge=None,
+        capacity=None,
+        limit=None,
+    ) -> dict:
+        return self.request(
+            "single_source_shortest_path.get",
+            params={
+                "source": source_id,
+                "direction": direction,
+                "label": label,
+                "weight": weight,
+                "max_degree": max_degree,
+                "skip_degree": skip_degree,
+                "with_vertex": with_vertex,
+                "with_edge": with_edge,
+                "capacity": capacity,
+                "limit": limit,
+            },
+        )
+
+    def paths(
+        self, source_id, target_id, max_depth, *, direction=None, label=None, max_degree=None, capacity=None, limit=None
+    ) -> dict:
+        return self.request(
+            "paths.get",
+            params={
+                "source": source_id,
+                "target": target_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "max_degree": max_degree,
+                "capacity": capacity,
+                "limit": limit,
+            },
+        )
+
+    def crosspoints(
+        self, source_id, target_id, max_depth, *, direction=None, label=None, max_degree=None, capacity=None, limit=None
+    ) -> dict:
+        return self.request(
+            "crosspoints.get",
+            params={
+                "source": source_id,
+                "target": target_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "max_degree": max_degree,
+                "capacity": capacity,
+                "limit": limit,
+            },
+        )
+
+    def rings(
+        self,
+        source_id,
+        max_depth,
+        *,
+        direction=None,
+        label=None,
+        source_in_ring=None,
+        max_degree=None,
+        capacity=None,
+        limit=None,
+        with_vertex=None,
+        with_edge=None,
+    ) -> dict:
+        return self.request(
+            "rings.get",
+            params={
+                "source": source_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "source_in_ring": source_in_ring,
+                "max_degree": max_degree,
+                "capacity": capacity,
+                "limit": limit,
+                "with_vertex": with_vertex,
+                "with_edge": with_edge,
+            },
+        )
+
+    def rays(
+        self,
+        source_id,
+        max_depth,
+        *,
+        direction=None,
+        label=None,
+        max_degree=None,
+        capacity=None,
+        limit=None,
+        with_vertex=None,
+        with_edge=None,
+    ) -> dict:
+        return self.request(
+            "rays.get",
+            params={
+                "source": source_id,
+                "direction": direction,
+                "label": label,
+                "max_depth": max_depth,
+                "max_degree": max_degree,
+                "capacity": capacity,
+                "limit": limit,
+                "with_vertex": with_vertex,
+                "with_edge": with_edge,
+            },
+        )
+
+    def adamic_adar(self, vertex_id, other_id, *, direction=None, label=None, max_degree=None, limit=None) -> dict:
+        return self.request(
+            "adamic_adar.get",
+            params={
+                "vertex": vertex_id,
+                "other": other_id,
+                "direction": direction,
+                "label": label,
+                "max_degree": max_degree,
+                "limit": limit,
+            },
+        )
+
+    def resource_allocation(
+        self, vertex_id, other_id, *, direction=None, label=None, max_degree=None, limit=None
+    ) -> dict:
+        return self.request(
+            "resource_allocation.create",
+            params={
+                "vertex": vertex_id,
+                "other": other_id,
+                "direction": direction,
+                "label": label,
+                "max_degree": max_degree,
+                "limit": limit,
+            },
+        )
+
+    def edge_exist(self, source_id, target_id, label, *, sort_values=None, limit=None) -> dict:
+        return self.request(
+            "edge_existence.get",
+            params={
+                "source": source_id,
+                "target": target_id,
+                "label": label,
+                "sort_values": sort_values,
+                "limit": limit,
+            },
+        )
+
+    def vertices(self, ids) -> dict:
+        return self.request("vertices.list", params={"ids": ids})
+
+    def edges(self, ids) -> dict:
+        return self.request("edges.list", params={"ids": ids})
+
+    def multi_node_shortest_path(
+        self, vertices, direction="BOTH", properties=None, max_depth=10, capacity=100000000, with_vertex=True
     ):
         if properties is None:
             properties = {}
-        return self._invoke_request(
+        return self.request(
+            "multi_node_shortest_path.post",
             data=json.dumps(
                 {
                     "vertices": {"ids": vertices},
@@ -97,29 +367,14 @@ class TraverserManager(HugeParamsBase):
                     "capacity": capacity,
                     "with_vertex": with_vertex,
                 }
-            )
+            ),
         )
 
-    def paths(self, source_id, target_id, max_depth):
-        return self._get_with_vertex_ids(
-            "traversers/paths",
-            [("source", source_id), ("target", target_id)],
-            [("max_depth", max_depth)],
-        )
-
-    @router.http("POST", "traversers/paths")
     def advanced_paths(
-        self,
-        sources,
-        targets,
-        step,
-        max_depth,
-        nearest=True,
-        capacity=10000000,
-        limit=10,
-        with_vertex=False,
+        self, sources, targets, step, max_depth, nearest=True, capacity=10000000, limit=10, with_vertex=False
     ):
-        return self._invoke_request(
+        return self.request(
+            "paths.post",
             data=json.dumps(
                 {
                     "sources": sources,
@@ -131,12 +386,12 @@ class TraverserManager(HugeParamsBase):
                     "limit": limit,
                     "with_vertex": with_vertex,
                 }
-            )
+            ),
         )
 
-    @router.http("POST", "traversers/customizedpaths")
     def customized_paths(self, sources, steps, sort_by="INCR", with_vertex=True, capacity=-1, limit=-1):
-        return self._invoke_request(
+        return self.request(
+            "customized_paths.post",
             data=json.dumps(
                 {
                     "sources": sources,
@@ -146,12 +401,12 @@ class TraverserManager(HugeParamsBase):
                     "capacity": capacity,
                     "limit": limit,
                 }
-            )
+            ),
         )
 
-    @router.http("POST", "traversers/templatepaths")
     def template_paths(self, sources, targets, steps, capacity=10000, limit=10, with_vertex=True):
-        return self._invoke_request(
+        return self.request(
+            "template_paths.post",
             data=json.dumps(
                 {
                     "sources": sources,
@@ -161,27 +416,12 @@ class TraverserManager(HugeParamsBase):
                     "limit": limit,
                     "with_vertex": with_vertex,
                 }
-            )
+            ),
         )
 
-    def crosspoints(self, source_id, target_id, max_depth):
-        return self._get_with_vertex_ids(
-            "traversers/crosspoints",
-            [("source", source_id), ("target", target_id)],
-            [("max_depth", max_depth)],
-        )
-
-    @router.http("POST", "traversers/customizedcrosspoints")
-    def customized_crosspoints(
-        self,
-        sources,
-        path_patterns,
-        with_path=True,
-        with_vertex=True,
-        capacity=-1,
-        limit=-1,
-    ):
-        return self._invoke_request(
+    def customized_crosspoints(self, sources, path_patterns, with_path=True, with_vertex=True, capacity=-1, limit=-1):
+        return self.request(
+            "customized_crosspoints.post",
             data=json.dumps(
                 {
                     "sources": sources,
@@ -191,16 +431,9 @@ class TraverserManager(HugeParamsBase):
                     "capacity": capacity,
                     "limit": limit,
                 }
-            )
+            ),
         )
 
-    def rings(self, source_id, max_depth):
-        return self._get_with_vertex_ids("traversers/rings", [("source", source_id)], [("max_depth", max_depth)])
-
-    def rays(self, source_id, max_depth):
-        return self._get_with_vertex_ids("traversers/rays", [("source", source_id)], [("max_depth", max_depth)])
-
-    @router.http("POST", "traversers/fusiformsimilarity")
     def fusiform_similarity(
         self,
         sources,
@@ -218,7 +451,8 @@ class TraverserManager(HugeParamsBase):
         with_intermediary=False,
         with_vertex=True,
     ):
-        return self._invoke_request(
+        return self.request(
+            "fusiform_similarity.post",
             data=json.dumps(
                 {
                     "sources": sources,
@@ -236,15 +470,23 @@ class TraverserManager(HugeParamsBase):
                     "with_intermediary": with_intermediary,
                     "with_vertex": with_vertex,
                 }
-            )
+            ),
         )
 
-    @router.http("GET", "traversers/vertices")
-    def vertices(self, ids):
-        params = {"ids": format_vertex_id(ids)}
-        return self._invoke_request(params=params)
+    def advanced_k_neighbor(self, body: dict) -> dict:
+        return self.request("kneighbor.post", body=body)
 
-    @router.http("GET", "traversers/edges")
-    def edges(self, ids):
-        params = {"ids": ids}
-        return self._invoke_request(params=params)
+    def advanced_k_out(self, body: dict) -> dict:
+        return self.request("kout.post", body=body)
+
+    def advanced_jaccard_similarity(self, body: dict) -> dict:
+        return self.request("jaccard_similarity.post", body=body)
+
+    def advanced_same_neighbors(self, body: dict) -> dict:
+        return self.request("same_neighbors.same_neighbors", body=body)
+
+    def same_neighbors_batch(self, body: dict) -> dict:
+        return self.request("same_neighbors_batch.post", body=body)
+
+    def count(self, body: dict) -> dict:
+        return self.request("count.post", body=body)

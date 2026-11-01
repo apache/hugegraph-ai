@@ -51,6 +51,8 @@ packages = ["src/pyhugegraph"]
 include = [
     "src/pyhugegraph",
     "README.md",
+    "API_COVERAGE.md",
+    "MIGRATION.md",
     "LICENSE",
     "NOTICE",
 ]

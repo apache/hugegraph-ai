@@ -28,6 +28,7 @@ class NeighborRankStep:
     direction: str = "BOTH"
     labels: list[str] = field(default_factory=list)
     max_degree: int = 10000
+    skip_degree: int = 0
     top: int = 100
 
     def dumps(self):
@@ -41,7 +42,6 @@ class NeighborRankParameters:
     """
 
     source: str | int
-    label: str
     alpha: float = 0.85
     capacity: int = 10000000
     steps: list[NeighborRankStep] = field(default_factory=list)

@@ -37,11 +37,11 @@ class VertexLabelData:
         return self.__name
 
     @property
-    def primaryKeys(self):
+    def primary_keys(self):
         return self.__primary_keys
 
     @property
-    def idStrategy(self):
+    def id_strategy(self):
         return self.__id_strategy
 
     @property
@@ -49,7 +49,7 @@ class VertexLabelData:
         return self.__properties
 
     @property
-    def nullableKeys(self):
+    def nullable_keys(self):
         return self.__nullable_keys
 
     @property
@@ -57,11 +57,11 @@ class VertexLabelData:
         return self.__user_data
 
     @property
-    def indexLabels(self):
+    def index_labels(self):
         return self.__index_labels
 
     @property
-    def enableLabelIndex(self):
+    def enable_label_index(self):
         return self.__enable_label_index
 
     def __repr__(self):

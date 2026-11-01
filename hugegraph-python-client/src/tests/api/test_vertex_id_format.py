@@ -15,14 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 from decimal import Decimal
 from fractions import Fraction
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+import requests
 from pyhugegraph.api.graph import GraphManager
 from pyhugegraph.api.traverser import TraverserManager
+from pyhugegraph.utils.huge_requests import HGraphSession
 from pyhugegraph.utils.id_format import (
     format_edge_id_path,
     format_vertex_id,
@@ -32,17 +35,41 @@ from pyhugegraph.utils.id_format import (
 pytestmark = [pytest.mark.unit]
 
 
-class FakeSession:
-    def __init__(self, responses=None):
-        self.cfg = SimpleNamespace(graphspace=None, gs_supported=False)
-        self.calls = []
-        self.responses = list(responses or [])
+class RecordingHTTP(requests.Session):
+    def __init__(self, responses):
+        super().__init__()
+        self.responses = list(responses)
+        self.requests = []
 
-    def request(self, path, method="GET", **kwargs):
-        self.calls.append((path, method, kwargs))
-        if self.responses:
-            return self.responses.pop(0)
-        return {}
+    def send(self, request, **kwargs):
+        self.requests.append(request)
+        response = requests.Response()
+        response.status_code = 200
+        response.request = request
+        response._content = json.dumps(self.responses.pop(0) if self.responses else {}).encode()
+        response.headers["Content-Type"] = "application/json"
+        return response
+
+
+class FakeSession(HGraphSession):
+    """Run the production serializer, URL resolver and requests preparation."""
+
+    def __init__(self, responses=None):
+        self.http = RecordingHTTP(responses or [])
+        cfg = SimpleNamespace(
+            url="http://localhost",
+            graph_name="g",
+            graphspace=None,
+            gs_supported=False,
+            username="admin",
+            password="pwd",
+            timeout=(0.5, 15),
+        )
+        super().__init__(cfg, session=self.http)
+
+    @property
+    def calls(self):
+        return [(request.url.split("/graphs/g/", 1)[1], request.method, {}) for request in self.http.requests]
 
 
 @pytest.mark.parametrize(
@@ -100,9 +127,9 @@ def test_graph_vertex_path_formats_json_literal_ids():
     )
     graph = GraphManager(session)
 
-    graph.getVertexById("person:marko")
-    graph.getVertexById(123)
-    graph.getVertexById("a/b?c#d&e")
+    graph.get_vertex_by_id("person:marko")
+    graph.get_vertex_by_id(123)
+    graph.get_vertex_by_id("a/b?c#d&e")
 
     assert session.calls[0][0] == "graph/vertices/%22person%3Amarko%22"
     assert session.calls[1][0] == "graph/vertices/123"
@@ -121,10 +148,10 @@ def test_graph_edge_id_paths_encode_reserved_characters():
     )
     graph = GraphManager(session)
 
-    graph.getEdgeById(edge_id)
-    graph.appendEdge(edge_id, {"city": "Beijing"})
-    graph.eliminateEdge(edge_id, {"city": "Beijing"})
-    graph.removeEdgeById(edge_id)
+    graph.get_edge_by_id(edge_id)
+    graph.append_edge(edge_id, {"city": "Beijing"})
+    graph.eliminate_edge(edge_id, {"city": "Beijing"})
+    graph.remove_edge_by_id(edge_id)
 
     encoded = "S1%3Aalice%3E11%3Eknows%3ES2%3Abob"
     assert session.calls[0][0] == f"graph/edges/{encoded}"
@@ -145,11 +172,11 @@ def test_graph_edge_page_formats_and_encodes_vertex_id_query():
     )
     graph = GraphManager(session)
 
-    graph.getEdgeByPage("knows", "person:marko", "OUT")
-    graph.getEdgeByPage("knows", 123, "OUT")
+    graph.get_edge_by_page("knows", "person:marko", "OUT")
+    graph.get_edge_by_page("knows", 123, "OUT")
 
-    assert session.calls[0][0] == "graph/edges?vertex_id=%22person%3Amarko%22&direction=OUT&label=knows&page"
-    assert session.calls[1][0] == "graph/edges?vertex_id=123&direction=OUT&label=knows&page"
+    assert session.calls[0][0] == "graph/edges?vertex_id=%22person%3Amarko%22&direction=OUT&label=knows&page="
+    assert session.calls[1][0] == "graph/edges?vertex_id=123&direction=OUT&label=knows&page="
 
 
 def test_graph_page_queries_urlencode_reserved_query_values():
@@ -163,19 +190,19 @@ def test_graph_page_queries_urlencode_reserved_query_values():
     )
     graph = GraphManager(session)
 
-    _, vertex_page = graph.getVertexByPage(
+    _, vertex_page = graph.get_vertex_by_page(
         label="person/team",
         limit=10,
         page="page/1?cursor=a&b",
         properties=properties,
     )
-    _, condition_page = graph.getVertexByConditionWithPage(
+    _, condition_page = graph.get_vertex_by_condition_with_page(
         label="person/team",
         limit=5,
         page="page/2?cursor=c&d",
         properties=properties,
     )
-    graph.getEdgeByPage(
+    graph.get_edge_by_page(
         label="knows/team",
         vertex_id="person:alice/bob",
         direction="OUT/IN",
@@ -194,7 +221,7 @@ def test_graph_page_queries_urlencode_reserved_query_values():
         "graph/vertices?"
         "label=person%2Fteam&"
         "properties=%7B%22name%22%3A+%22Alice+%26+Bob%22%2C+%22city%22%3A+%22A%2FB%3FC%23D%22%7D&"
-        "limit=5&page=page%2F2%3Fcursor%3Dc%26d"
+        "page=page%2F2%3Fcursor%3Dc%26d&limit=5"
     )
     assert session.calls[2][0] == (
         "graph/edges?"
@@ -211,7 +238,7 @@ def test_graph_edges_by_id_encodes_repeated_edge_id_query_params():
     session = FakeSession(responses=[{"edges": [{"id": edge_id}]}])
     graph = GraphManager(session)
 
-    edges = graph.getEdgesById([edge_id])
+    edges = graph.get_edges_by_id([edge_id])
 
     assert [edge.id for edge in edges] == [edge_id]
     assert session.calls[0][0] == "traversers/edges?ids=S1%3Aalice%3E11%3Eknows%3ES2%3Abob"
@@ -231,7 +258,7 @@ def test_graph_vertices_by_id_formats_repeated_json_literal_query_params():
     )
     graph = GraphManager(session)
 
-    vertices = graph.getVerticesById([123, "person:marko", "a&b"])
+    vertices = graph.get_vertices_by_id([123, "person:marko", "a&b"])
 
     assert [vertex.id for vertex in vertices] == [123, "person:marko", "a&b"]
     assert session.calls[0][0] == "traversers/vertices?ids=123&ids=%22person%3Amarko%22&ids=%22a%26b%22"

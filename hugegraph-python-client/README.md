@@ -1,191 +1,169 @@
-# hugegraph-python-client
+# HugeGraph Python Client
 
-Python client for Apache HugeGraph, distributed as `hugegraph-python` and imported as `pyhugegraph`.
+`hugegraph-python` is the Python SDK for Apache HugeGraph; its import name is `pyhugegraph`.
+Use `client.traverser()` for immediate OLTP neighbourhood/path queries and `client.olap()` for asynchronous full-graph computation.
 
-It is used to define graph structures, perform CRUD operations on graph data, manage schemas, and execute Gremlin queries. Both the `hugegraph-llm` and `hugegraph-ml` modules depend on this foundational library.
+## Install and connect
 
-## Installation
-
-### Install the released package (Stable)
-
-To install the released `hugegraph-python` distribution (Python 3.12+):
+Requires Python 3.12+ and HugeGraph Server 1.5+. New endpoints require a server that implements them.
+The APIs below describe the current source tree; released-package availability follows the corresponding release.
 
 ```bash
-# uv is optional, you can use pip directly
 uv pip install hugegraph-python
+# From the HugeGraph-AI workspace, to use current source:
+uv sync --extra python-client
 ```
-
-### Install from Source (Latest Code)
-
-To install from the source, clone the repository and install the required dependencies:
-
-```bash
-git clone https://github.com/apache/hugegraph-ai.git
-cd hugegraph-ai
-
-# Use uv sync to install dependencies (workspace member)
-uv sync --extra python-client  # Installs hugegraph-python from hugegraph-python-client/
-source .venv/bin/activate  # Activate once - all commands below assume this environment
-```
-
-> [!NOTE]
-> All usage examples below assume you're in the activated virtual environment
-
-## Usage
-
-### Defining Graph Structures
-
-You can use the `hugegraph-python-client` to define graph structures. Below is an example of how to define a graph:
 
 ```python
 from pyhugegraph.client import PyHugeClient
 
-# Initialize the client
-# For HugeGraph API version ≥ v3: (Or enable graphspace function)
-# - The 'graphspace' parameter becomes relevant if graphspaces are enabled.(default name is 'DEFAULT')
-# - Otherwise, the graphspace parameter is optional and can be ignored.
-client = PyHugeClient("127.0.0.1", "8080", user="admin", pwd="admin", graph="hugegraph", graphspace="DEFAULT")
+with PyHugeClient("http://127.0.0.1:8080", "hugegraph", "admin", "admin") as client:
+    print(client.graphs().get_all_graphs())
+    print(client.olap().run("count_vertex", timeout=60))
+```
 
-""""
-Note:
-Could refer to the official REST-API doc of your HugeGraph version for accurate details.
-If some API is not as expected, please submit a issue or contact us.
-"""
+The client probes `/versions` once when no graphspace is supplied. Server 1.7+ selects `DEFAULT`;
+1.5/1.6 use legacy graph/auth routes. An explicit `graphspace` selects the graphspace profile without probing.
+A failed probe raises an error instead of guessing a profile. URLs may include a reverse-proxy prefix.
+The default HTTP `(connect, read)` timeout is `(0.5, 15.0)` seconds; set `timeout=(2, 30)` when needed.
+One client owns one session, shared by all managers. Close the client or use a `with` block.
+
+Subsequent snippets assume `client` is open, for example inside the `with` block above.
+
+## Choose an API
+
+| Need | Entry | Result |
+| --- | --- | --- |
+| Schema definitions | `client.schema()` | Fluent builders and schema objects |
+| Read/write graph data | `client.graph()` | Vertex/edge objects or REST envelopes |
+| Immediate neighbourhood/path queries (OLTP) | `client.traverser()` | JSON result |
+| Personal/neighbor rank (OLTP) | `client.rank()` | JSON result |
+| Whole-graph computation (OLAP) | `client.olap()` | Task receipt, or decoded result with `run()` |
+| Task status, waiting, cancellation | `client.task()` | Native task information |
+| Index/label rebuild jobs | `client.rebuild()` | Task receipt |
+| Graph lifecycle / graphspaces / templates | `client.graphs()`, `client.graphspaces()`, `client.schema_templates()` | JSON or text |
+| Queries | `client.gremlin()`, `client.cypher()` | Query response |
+| Auth / variables / metrics | `client.auth()`, `client.variable()`, `client.metrics()` | JSON or text |
+| Full REST and deployment-specific extensions | `client.rest()` | Native REST response |
+
+## OLTP: schema, data and traversal
+
+```python
 schema = client.schema()
-schema.propertyKey("name").asText().ifNotExist().create()
-schema.propertyKey("birthDate").asText().ifNotExist().create()
-schema.vertexLabel("Person").properties("name", "birthDate").usePrimaryKeyId().primaryKeys("name").ifNotExist().create()
-schema.vertexLabel("Movie").properties("name").usePrimaryKeyId().primaryKeys("name").ifNotExist().create()
-schema.edgeLabel("ActedIn").sourceLabel("Person").targetLabel("Movie").ifNotExist().create()
+schema.property_key("name").as_text().if_not_exist().create()
+schema.vertex_label("person").properties("name").primary_keys("name").if_not_exist().create()
+schema.edge_label("knows").link("person", "person").if_not_exist().create()
 
-print(schema.getVertexLabels())
-print(schema.getEdgeLabels())
-print(schema.getRelations())
-
-# Init Graph
-g = client.graph()
-v_al_pacino = g.addVertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"})
-v_robert = g.addVertex("Person", {"name": "Robert De Niro", "birthDate": "1943-08-17"})
-v_godfather = g.addVertex("Movie", {"name": "The Godfather"})
-v_godfather2 = g.addVertex("Movie", {"name": "The Godfather Part II"})
-v_godfather3 = g.addVertex("Movie", {"name": "The Godfather Coda The Death of Michael Corleone"})
-
-g.addEdge("ActedIn", v_al_pacino.id, v_godfather.id, {})
-g.addEdge("ActedIn", v_al_pacino.id, v_godfather2.id, {})
-g.addEdge("ActedIn", v_al_pacino.id, v_godfather3.id, {})
-g.addEdge("ActedIn", v_robert.id, v_godfather2.id, {})
-
-res = g.getVertexById(v_al_pacino.id).label
-print(res)
-g.close()
+graph = client.graph()
+alice = graph.add_vertex("person", {"name": "Alice"})
+bob = graph.add_vertex("person", {"name": "Bob"})
+graph.add_edge("knows", alice.id, bob.id, {})
+print(client.traverser().k_out(alice.id, 2, direction="OUT", limit=100))
 ```
 
-### Graph Configuration Export
+Vertex IDs preserve their type: `123` is a numeric ID, `"123"` is a string ID. UUIDs are supported.
+List methods such as `graph.list_vertices(page="", limit=100)` return the REST envelope;
+`get_vertex_by_page(...)` returns `(vertices, next_page)`. Pass the returned token to continue.
+Batch creation accepts complete entity dictionaries, including IDs; batch updates accept server update strategies.
+Use `client.rest()` for full Schema payloads, including fields not represented by the fluent builders.
 
-`client.graphs().get_graph_config()` returns the graph's local source configuration file as text.
-Graphs loaded without a local file origin (for example from metadata) return HTTP 415 with
-`Can't access the api in a node which started with non local file config.`; the client raises `ServerError`.
-
-### Schema Management
-
-The `hugegraph-python-client` provides comprehensive schema management capabilities.
-
-#### Define Property Keys
+## OLAP: submit, wait and read a result
 
 ```python
-# Define a property key
-client.schema().propertyKey("name").dataType("STRING").cardinality("SINGLE").create()
+receipt = client.olap().count_vertex()
+task = client.task().wait(receipt["task_id"], timeout=300, poll_interval=1)
+print(client.task().result(task))
+
+# The same submit/wait/result workflow in one call:
+result = client.olap().run("count_vertex", timeout=300)
+
+# On a graph prepared for PageRank write-back:
+result = client.olap().run("page_rank", {"times": 10, "top": 10}, timeout=300)
 ```
 
-#### Define Vertex Labels
+Named methods submit asynchronously and return `{"task_id": ...}`. `submit(name, parameters)` also accepts
+server-added/custom algorithm names. Parameters are forwarded to the server; full-graph results retain the server's shape.
+PageRank writes computed properties back to the graph. Before importing vertices for that workflow,
+declare nullable DOUBLE property `r_rank` on their vertex labels. The live tests prepare this schema explicitly.
+
+Supported named algorithms:
+
+- `count_edge`
+- `count_vertex`
+- `subgraph_stat`
+- `betweenness_centrality`
+- `closeness_centrality`
+- `degree_centrality`
+- `eigenvector_centrality`
+- `stress_centrality`
+- `cluster_coefficient`
+- `k_core`
+- `louvain`
+- `lpa`
+- `triangle_count`
+- `weak_connected_component`
+- `rings`
+- `page_rank`
+- `fusiform_similarity`
+
+Older servers may ignore `with_result=false` and still return a task result during polling.
+
+`wait()` polls with `with_result=false` and loads the result on completion. It returns the full task record;
+`result(task)` decodes its serialized JSON result once and preserves plain text. `run()` returns that decoded value.
+Failed/cancelled jobs raise `TaskFailedError`/`TaskCancelledError`, with `.task` and `.task_id` for inspection.
+`TaskTimeoutError` means waiting ended; it does not cancel the server job. HTTP and waiting timeouts are distinct.
+Cancel explicitly with `cancel_task(id)`; delete task records with `delete_task(id, force=False)`.
+`list_tasks(ids=[...])` cannot combine IDs with status or page filters.
+
+## Complete REST surface
 
 ```python
-# Define a vertex label
-client.schema().vertexLabel("person").properties("name", "age").primaryKeys("name").create()
+rest = client.rest()
+print(rest.vertex.list(label="person", offset=0, limit=20))
+print(rest.kout.post(body={"source": alice.id, "steps": {"direction": "OUT"}, "max_depth": 2}))
+# Requires a deployment with graphspace management enabled:
+# print(client.graphspaces().list())
+print(client.cypher().post(body={"cypher": "MATCH (n) RETURN n LIMIT 5"}))
 ```
 
-#### Define Edge Labels
+See [all REST operations and query parameters](API_COVERAGE.md).
+`client.rest()` exposes explicit resource methods, accepts complete request bodies, and shares authentication and transport.
+Operations preserve JSON/text responses; HTTP 204 returns an empty dictionary. Server errors are surfaced through
+the existing exception types. A configured Bearer token (`client.use_token(token)`) takes precedence over Basic auth;
+`client.use_token(None)` restores Basic. Login/verify/logout are explicit and never silently change credentials.
 
-```python
-# Define an edge label
-client.schema().edgeLabel("knows").sourceLabel("person").targetLabel("person").properties("since").create()
+Raft, Arthas, IP whitelist, Computer submission and exception tracing are available through their separate REST resources.
+They require the relevant server configuration and privileges; a REST wrapper does not provision those services.
+The older standalone Services manager targets custom deployments and is not exposed as a standard master capability.
+Property CAS remains a protocol boundary, not a claimed server REST feature.
+Graph configuration export returns source text and can be unavailable on graphs without a local configuration file.
+
+## Migration and server synchronization
+
+Public methods and object properties now use `snake_case`; CamelCase aliases and manager-level `close()` are removed.
+Close the owning client. See [the migration table](MIGRATION.md), including the corrected shortest-path signatures.
+
+The checked-in contract pins server commit `8e327b8f3d3ffcf61547be7fea1a15d3af2de8b4`.
+Static REST resources and coverage tables are generated from that contract:
+
+```bash
+python scripts/client_api.py --check
+python scripts/client_api.py --write
+# Export /openapi.json from the target server, then inspect differences:
+python scripts/client_api.py --openapi server-openapi.json
 ```
 
-#### Define Index Labels
+Review changes to the contract, then regenerate and format. Algorithm names come from the server algorithm registry;
+OpenAPI alone does not enumerate them. Jersey-generated WADL metadata is explicitly excluded from SDK operations.
 
-```python
-# Define an index label
-client.schema().indexLabel("personByName").onV("person").by("name").secondary().create()
+## Development checks
+
+```bash
+uv run --extra python-client --extra dev pytest hugegraph-python-client/src/tests -m "unit or contract"
+HUGEGRAPH_REQUIRED=true uv run --extra python-client --extra dev pytest hugegraph-python-client/src/tests -m "integration and hugegraph"
+uv run --extra dev ruff check hugegraph-python-client
+uv run --extra dev ty check hugegraph-python-client/src/pyhugegraph
 ```
 
-### CRUD Operations
-
-The client allows you to perform CRUD operations on the graph data. Below are examples of how to create, read, update, and delete vertices and edges:
-
-#### Create Vertices and Edges
-
-```python
-# Create vertices
-v1 = client.graph().addVertex("person").property("name", "John").property("age", 29).create()
-v2 = client.graph().addVertex("person").property("name", "Jane").property("age", 25).create()
-
-# Create an edge
-client.graph().addEdge(v1, "knows", v2).property("since", "2020").create()
-```
-
-#### Read Vertices and Edges
-
-```python
-# Get a vertex by ID
-vertex = client.graph().getVertexById(v1.id)
-print(vertex)
-
-# Get an edge by ID
-edge = client.graph().getEdgeById(edge.id)
-print(edge)
-```
-
-#### Update Vertices and Edges
-
-```python
-# Update a vertex
-client.graph().updateVertex(v1.id).property("age", 30).update()
-
-# Update an edge
-client.graph().updateEdge(edge.id).property("since", "2021").update()
-```
-
-#### Delete Vertices and Edges
-
-```python
-# Delete a vertex
-client.graph().deleteVertex(v1.id)
-
-# Delete an edge
-client.graph().deleteEdge(edge.id)
-```
-
-### Execute Gremlin Queries
-
-The client also supports executing Gremlin queries:
-
-```python
-# Execute a Gremlin query
-g = client.gremlin()
-res = g.exec("g.V().limit(5)")
-print(res)
-```
-
-Other info is under 🚧 (Welcome to add more docs for it, users could refer [java-client-doc]([url](https://hugegraph.apache.org/docs/clients/hugegraph-client/)) for similar usage)
-
-## Contributing
-
-* Welcome to contribute to `hugegraph-python-client`. Please see the [Guidelines](https://hugegraph.apache.org/docs/contribution-guidelines/) for more information.
-* Code format: Please run `./style/code_format_and_analysis.sh` to format your code before submitting a PR.
-
-Thank you to all the people who already contributed to `hugegraph-python-client`!
-
-## Contact Us
-
-* [GitHub Issues](https://github.com/apache/hugegraph-ai/issues): Feedback on usage issues and functional requirements (quick response)
-* Feedback Email: [dev@hugegraph.apache.org](mailto:dev@hugegraph.apache.org) (subscriber only)
+Use the upstream `hugegraph/hugegraph:latest` image for primary integration tests and 1.7 for compatibility regression.
+Record each tested image's actual version and digest. Deployment-specific extensions need their own integration environment.

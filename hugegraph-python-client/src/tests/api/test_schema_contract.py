@@ -39,7 +39,7 @@ def test_property_key_create_includes_aggregate_type_in_payload():
 
     property_key.create_parameter_holder()
     property_key.add_parameter("name", "score")
-    property_key.asInt().valueSingle().calcSum().create()
+    property_key.as_int().value_single().calc_sum().create()
 
     request = session.requests[-1]
     assert request["path"] == "schema/propertykeys"
@@ -58,7 +58,7 @@ def test_property_key_create_includes_user_data_in_payload():
 
     property_key.create_parameter_holder()
     property_key.add_parameter("name", "score")
-    property_key.asInt().valueSingle().userdata("min", 0, "max", 100).create()
+    property_key.as_int().value_single().userdata("min", 0, "max", 100).create()
 
     request = session.requests[-1]
     assert request["path"] == "schema/propertykeys"
@@ -77,7 +77,7 @@ def test_index_label_create_preserves_field_order_and_deduplicates():
 
     index_label.create_parameter_holder()
     index_label.add_parameter("name", "personByAgeCity")
-    index_label.onV("person").by("age", "city", "age").secondary().create()
+    index_label.on_v("person").by("age", "city", "age").secondary().create()
 
     request = session.requests[-1]
     assert request["path"] == "schema/indexlabels"

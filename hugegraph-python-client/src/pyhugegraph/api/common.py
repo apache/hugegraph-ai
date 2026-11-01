@@ -16,14 +16,20 @@
 # under the License.
 
 
+import json
 import re
+from collections.abc import Mapping
+from typing import Any
+from urllib.parse import quote
 
+from pyhugegraph.api.endpoints import ENDPOINTS
+from pyhugegraph.utils.compat import ServerAdapter
+from pyhugegraph.utils.exceptions import UnsupportedOperationError
 from pyhugegraph.utils.huge_requests import HGraphSession
-from pyhugegraph.utils.huge_router import RouterMixin
-from pyhugegraph.utils.log import log
+from pyhugegraph.utils.id_format import format_vertex_id
+from pyhugegraph.utils.util import ResponseValidation
 
 
-# todo: rename -> HGraphMetaData or delete
 class ParameterHolder:
     def __init__(self):
         self._dic = {}
@@ -46,29 +52,82 @@ class ParameterHolder:
 class HGraphContext:
     def __init__(self, sess: HGraphSession) -> None:
         self._sess = sess
-        self._cache = {}  # todo: move parameter_holder to cache
-
-    def close(self):
-        self._sess.close()
 
     @property
-    def session(self):
-        """
-        Get session.
-
-        Returns:
-        -------
-            HGraphSession: session
-        """
+    def session(self) -> HGraphSession:
         return self._sess
 
 
-# todo: rename -> HGraphModule | HGraphRouterable | HGraphModel
-class HugeParamsBase(HGraphContext, RouterMixin):
+_UNSET = object()
+
+
+class RestResource(HGraphContext):
+    """Request an explicit catalog operation through the shared transport."""
+
+    def request(
+        self,
+        operation: str,
+        *,
+        path_params: Mapping[str, Any] | None = None,
+        params: Mapping[str, Any] | None = None,
+        body: Any = _UNSET,
+        headers: Mapping[str, str | None] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        endpoint = ENDPOINTS[operation]
+        cfg = self.session.cfg
+        if endpoint.get("requires_graphspace") and not cfg.gs_supported:
+            raise UnsupportedOperationError(f"{operation} requires a graphspace-enabled server")
+        values = {"graphspace": cfg.graphspace, "graph": cfg.graph_name}
+        values.update(path_params or {})
+        for key in endpoint["vertex_path"]:
+            if key in values:
+                values[key] = format_vertex_id(values[key])
+        path = ServerAdapter(cfg).adapt_path(endpoint["path"])
+        required = re.findall(r"{(\w+)}", path)
+        for key in required:
+            if values.get(key) is None:
+                raise ValueError(f"{key} is required for {operation}")
+        path = path.format(**{key: quote(str(values[key]), safe="") for key in required})
+        query = {}
+        for key, value in (params or {}).items():
+            if value is None:
+                continue
+            if key not in endpoint["query"]:
+                raise TypeError(f"Unsupported parameter {key!r} for {operation}")
+
+            def encode(item, key=key):
+                if key in endpoint["vertex_query"]:
+                    return format_vertex_id(item)
+                if isinstance(item, bool):
+                    return str(item).lower()
+                if isinstance(item, Mapping):
+                    return json.dumps(item, ensure_ascii=False)
+                return item
+
+            query[key] = [encode(item) for item in value] if isinstance(value, (list, tuple)) else encode(value)
+        if body is not _UNSET:
+            if endpoint["content_type"] == "text/plain":
+                kwargs["data"] = body
+            else:
+                kwargs["data"] = json.dumps(body, ensure_ascii=False)
+        merged_headers = {key: value for key, value in (headers or {}).items() if value is not None}
+        merged_headers.setdefault("Content-Type", endpoint["content_type"])
+        if query:
+            kwargs["params"] = query
+        content_type = endpoint.get("response_type", "json")
+        if endpoint.get("json_when") and all(query.get(key) == value for key, value in endpoint["json_when"].items()):
+            content_type = "json"
+        kwargs.setdefault("validator", ResponseValidation(content_type=content_type))
+        return self.session.request("/" + path, endpoint["method"], headers=merged_headers, **kwargs)
+
+
+class HugeParamsBase(RestResource):
+    """Resource base with state for schema builders."""
+
     def __init__(self, sess: HGraphSession) -> None:
         super().__init__(sess)
-        self._parameter_holder = None
-        self.__camel_to_snake_case()
+        self._parameter_holder = ParameterHolder()
 
     def add_parameter(self, key, value):
         self._parameter_holder.set(key, value)
@@ -80,22 +139,4 @@ class HugeParamsBase(HGraphContext, RouterMixin):
         self._parameter_holder = ParameterHolder()
 
     def clean_parameter_holder(self):
-        self._parameter_holder = None
-
-    def __camel_to_snake_case(self):
-        camel_case_pattern = re.compile(r"^[a-z]+([A-Z][a-z]*)+$")
-        attributes = dir(self)
-        for attr in attributes:
-            if attr.startswith("__"):
-                continue
-            if not callable(getattr(self, attr)):
-                continue
-            if camel_case_pattern.match(attr):
-                s = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", attr)
-                snake = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s).lower()
-                setattr(self, snake, getattr(self, attr))
-                log.debug(  # pylint: disable=logging-fstring-interpolation
-                    f"The method {self.__class__.__name__}.{attr} "
-                    f"is deprecated and will be removed in future versions. "
-                    f"Please update your code to use the new method name {self.__class__.__name__}.{snake} instead."
-                )
+        self._parameter_holder = ParameterHolder()

@@ -30,11 +30,11 @@ class IndexLabelData:
         return self.__id
 
     @property
-    def baseType(self):
+    def base_type(self):
         return self.__base_type
 
     @property
-    def baseValue(self):
+    def base_value(self):
         return self.__base_value
 
     @property
@@ -46,7 +46,7 @@ class IndexLabelData:
         return self.__fields
 
     @property
-    def indexType(self):
+    def index_type(self):
         return self.__index_type
 
     def __repr__(self):

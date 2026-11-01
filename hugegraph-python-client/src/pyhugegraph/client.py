@@ -15,14 +15,18 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeVar
 
 from pyhugegraph.api.auth import AuthManager
+from pyhugegraph.api.common import HGraphContext
 from pyhugegraph.api.graph import GraphManager
 from pyhugegraph.api.graphs import GraphsManager
 from pyhugegraph.api.gremlin import GremlinManager
 from pyhugegraph.api.metric import MetricsManager
+from pyhugegraph.api.olap import OlapManager
+from pyhugegraph.api.rank import RankManager
+from pyhugegraph.api.rebuild import RebuildManager
+from pyhugegraph.api.rest import CypherAPI, GraphSpaceAPI, RestManager, SchemaTemplateAPI
 from pyhugegraph.api.schema import SchemaManager
 from pyhugegraph.api.task import TaskManager
 from pyhugegraph.api.traverser import TraverserManager
@@ -31,20 +35,12 @@ from pyhugegraph.api.version import VersionManager
 from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.huge_requests import HGraphSession
 
-
-def manager_builder[T](fn: Callable[[Any, "HGraphSession"], T]) -> Callable[[Any], T]:
-    attr_name = "_lazy_" + fn.__name__
-
-    def wrapper(self: "PyHugeClient") -> T:
-        if not hasattr(self, attr_name):
-            session = HGraphSession(self.cfg)
-            setattr(self, attr_name, fn(self)(session))
-        return getattr(self, attr_name)
-
-    return wrapper
+T = TypeVar("T", bound=HGraphContext)
 
 
 class PyHugeClient:
+    """HugeGraph client: OLTP traversals and asynchronous OLAP full-graph jobs."""
+
     def __init__(
         self,
         url: str,
@@ -53,48 +49,83 @@ class PyHugeClient:
         pwd: str,
         graphspace: str | None = None,
         timeout: tuple[float, float] | None = None,
+        *,
+        token: str | None = None,
     ):
         self.cfg = HGraphConfig(url, user, pwd, graph, graphspace, timeout or (0.5, 15.0))
+        self._session = HGraphSession(self.cfg)
+        if token is not None:
+            self.use_token(token)
+        self._managers: dict[type, Any] = {}
 
-    @manager_builder
-    def schema(self) -> "SchemaManager":
-        return SchemaManager
+    def _manager(self, manager_type: type[T]) -> T:
+        if manager_type not in self._managers:
+            self._managers[manager_type] = manager_type(self._session)
+        return self._managers[manager_type]
 
-    @manager_builder
-    def gremlin(self) -> "GremlinManager":
-        return GremlinManager
+    def use_token(self, token: str | None) -> None:
+        """Explicitly select Bearer authentication, or restore Basic with None."""
+        self._session.use_token(token)
 
-    @manager_builder
-    def graph(self) -> "GraphManager":
-        return GraphManager
+    def schema(self) -> SchemaManager:
+        return self._manager(SchemaManager)
 
-    @manager_builder
-    def graphs(self) -> "GraphsManager":
-        return GraphsManager
+    def gremlin(self) -> GremlinManager:
+        return self._manager(GremlinManager)
 
-    @manager_builder
-    def variable(self) -> "VariableManager":
-        return VariableManager
+    def graph(self) -> GraphManager:
+        return self._manager(GraphManager)
 
-    @manager_builder
-    def auth(self) -> "AuthManager":
-        return AuthManager
+    def graphs(self) -> GraphsManager:
+        return self._manager(GraphsManager)
 
-    @manager_builder
-    def task(self) -> "TaskManager":
-        return TaskManager
+    def variable(self) -> VariableManager:
+        return self._manager(VariableManager)
 
-    @manager_builder
-    def metrics(self) -> "MetricsManager":
-        return MetricsManager
+    def auth(self) -> AuthManager:
+        return self._manager(AuthManager)
 
-    @manager_builder
-    def traverser(self) -> "TraverserManager":
-        return TraverserManager
+    def task(self) -> TaskManager:
+        return self._manager(TaskManager)
 
-    @manager_builder
-    def version(self) -> "VersionManager":
-        return VersionManager
+    def metrics(self) -> MetricsManager:
+        return self._manager(MetricsManager)
+
+    def traverser(self) -> TraverserManager:
+        return self._manager(TraverserManager)
+
+    def version(self) -> VersionManager:
+        return self._manager(VersionManager)
+
+    def olap(self) -> OlapManager:
+        return self._manager(OlapManager)
+
+    def rank(self) -> RankManager:
+        return self._manager(RankManager)
+
+    def rebuild(self) -> RebuildManager:
+        return self._manager(RebuildManager)
+
+    def rest(self) -> RestManager:
+        return self._manager(RestManager)
+
+    def graphspaces(self) -> GraphSpaceAPI:
+        return self._manager(GraphSpaceAPI)
+
+    def schema_templates(self) -> SchemaTemplateAPI:
+        return self._manager(SchemaTemplateAPI)
+
+    def cypher(self) -> CypherAPI:
+        return self._manager(CypherAPI)
+
+    def close(self) -> None:
+        self._session.close()
+
+    def __enter__(self) -> "PyHugeClient":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
 
     def __repr__(self) -> str:
-        return str(self.cfg)
+        return f"PyHugeClient(url={self.cfg.url!r}, graph={self.cfg.graph_name!r}, graphspace={self.cfg.graphspace!r})"

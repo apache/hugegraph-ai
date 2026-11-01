@@ -15,21 +15,19 @@
 # specific language governing permissions and limitations
 # under the License.
 
+"""Connection configuration and a single server-profile probe."""
+
 import re
-import sys
-import traceback
 from dataclasses import dataclass, field
 
 import requests
-
-from pyhugegraph.utils.log import log
 
 
 @dataclass
 class HGraphConfig:
     url: str
     username: str
-    password: str
+    password: str = field(repr=False)
     graph_name: str
     graphspace: str | None = None
     timeout: tuple[float, float] = (0.5, 15.0)
@@ -37,55 +35,27 @@ class HGraphConfig:
     version: list[int] = field(default_factory=list)
 
     def __post_init__(self):
-        # Add URL prefix compatibility check
-        if self.url and not self.url.startswith("http"):
+        if not self.url.startswith(("http://", "https://")):
             self.url = f"http://{self.url}"
-
+        self.url = self.url.rstrip("/")
         if self.graphspace and self.graphspace.strip():
+            # An explicit graphspace selects the graphspace profile without probing.
             self.gs_supported = True
-
-        else:
-            try:
-                response = requests.get(f"{self.url}/versions", timeout=0.5)
-                core = response.json()["versions"]["core"]
-                log.info(  # pylint: disable=logging-fstring-interpolation
-                    f"Retrieved API version information from the server: {core}."
-                )
-
-                match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?(?:\.\d+)?", core)
-                if match is None:
-                    raise RuntimeError(
-                        f"Unable to parse HugeGraph server version from response: {core!r}. "
-                        "Please verify the server is compatible with this client."
-                    )
-                major = int(match.group(1))
-                minor = int(match.group(2))
-                patch = int(match.group(3)) if match.group(3) else 0
-                self.version.extend([major, minor, patch])
-
-                # Version guard: Reject servers older than 1.5.0
-                if (major, minor, patch) < (1, 5, 0):
-                    raise RuntimeError(
-                        f"HugeGraph server version {major}.{minor}.{patch} is not supported. "
-                        "Please upgrade to HugeGraph >= 1.5.0 or use an older version of this client (v1.3.x)."
-                    )
-
-                # HugeGraph 1.7.0+ moved auth APIs to graphspaces/{graphspace}/auth/...
-                if (major, minor, patch) >= (1, 7, 0):
-                    self.graphspace = "DEFAULT"
-                    self.gs_supported = True
-                    log.warning("graph space is not set, default value 'DEFAULT' will be used.")
-
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                # Version mismatch errors must not be silently swallowed
-                if isinstance(e, RuntimeError):
-                    raise
-
-                # Handle network/parsing failures gracefully
-                try:
-                    traceback.print_exception(e)
-                    self.gs_supported = False
-                except Exception:  # pylint: disable=broad-exception-caught
-                    exc_type, exc_value, tb = sys.exc_info()
-                    traceback.print_exception(exc_type, exc_value, tb)
-                    log.warning("Failed to retrieve API version information from the server, reverting to default v1.")
+            return
+        try:
+            response = requests.get(f"{self.url}/versions", timeout=self.timeout)
+            response.raise_for_status()
+            core = response.json()["versions"]["core"]
+        except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+            raise RuntimeError(
+                "Unable to determine HugeGraph server version; check the connection or explicitly configure graphspace"
+            ) from exc
+        match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", str(core))
+        if match is None:
+            raise RuntimeError(f"Unable to parse HugeGraph server version: {core!r}")
+        self.version = [int(value or 0) for value in match.groups()]
+        if tuple(self.version) < (1, 5, 0):
+            raise RuntimeError("HugeGraph >= 1.5.0 is required; use client v1.3.x for older servers")
+        if tuple(self.version) >= (1, 7, 0):
+            self.graphspace = "DEFAULT"
+            self.gs_supported = True

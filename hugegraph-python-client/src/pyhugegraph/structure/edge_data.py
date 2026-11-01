@@ -40,19 +40,19 @@ class EdgeData:
         return self.__type
 
     @property
-    def outV(self):
+    def out_v(self):
         return self.__outV
 
     @property
-    def outVLabel(self):
+    def out_v_label(self):
         return self.__outVLabel
 
     @property
-    def inV(self):
+    def in_v(self):
         return self.__inV
 
     @property
-    def inVLabel(self):
+    def in_v_label(self):
         return self.__inVLabel
 
     @property

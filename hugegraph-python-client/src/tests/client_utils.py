@@ -63,60 +63,60 @@ class ClientUtils:
 
     def init_property_key(self):
         schema = self.schema
-        schema.propertyKey("name").asText().ifNotExist().create()
-        schema.propertyKey("age").asInt().ifNotExist().create()
-        schema.propertyKey("city").asText().ifNotExist().create()
-        schema.propertyKey("lang").asText().ifNotExist().create()
-        schema.propertyKey("date").asDate().ifNotExist().create()
-        schema.propertyKey("price").asInt().ifNotExist().create()
-        schema.propertyKey("weight").asDouble().ifNotExist().create()
-        schema.propertyKey("headcount").asInt().ifNotExist().create()
-        schema.propertyKey("floor").asInt().ifNotExist().create()
+        schema.property_key("name").as_text().if_not_exist().create()
+        schema.property_key("age").as_int().if_not_exist().create()
+        schema.property_key("city").as_text().if_not_exist().create()
+        schema.property_key("lang").as_text().if_not_exist().create()
+        schema.property_key("date").as_date().if_not_exist().create()
+        schema.property_key("price").as_int().if_not_exist().create()
+        schema.property_key("weight").as_double().if_not_exist().create()
+        schema.property_key("headcount").as_int().if_not_exist().create()
+        schema.property_key("floor").as_int().if_not_exist().create()
 
     def init_vertex_label(self):
         schema = self.schema
-        schema.vertexLabel("person").properties("name", "age", "city").primaryKeys("name").nullableKeys(
+        schema.vertex_label("person").properties("name", "age", "city").primary_keys("name").nullable_keys(
             "city"
-        ).ifNotExist().create()
-        schema.vertexLabel("software").properties("name", "lang", "price").primaryKeys("name").nullableKeys(
+        ).if_not_exist().create()
+        schema.vertex_label("software").properties("name", "lang", "price").primary_keys("name").nullable_keys(
             "price"
-        ).ifNotExist().create()
-        schema.vertexLabel("book").useCustomizeStringId().properties("name", "price").nullableKeys(
+        ).if_not_exist().create()
+        schema.vertex_label("book").use_customize_string_id().properties("name", "price").nullable_keys(
             "price"
-        ).ifNotExist().create()
-        schema.vertexLabel("department").properties("name", "headcount", "floor").nullableKeys(
+        ).if_not_exist().create()
+        schema.vertex_label("department").properties("name", "headcount", "floor").nullable_keys(
             "floor"
-        ).ifNotExist().create()
+        ).if_not_exist().create()
 
     def init_edge_label(self):
         schema = self.schema
-        schema.edgeLabel("knows").sourceLabel("person").targetLabel("person").multiTimes().properties(
+        schema.edge_label("knows").source_label("person").target_label("person").multi_times().properties(
             "date", "city"
-        ).sortKeys("date").nullableKeys("city").ifNotExist().create()
-        schema.edgeLabel("created").sourceLabel("person").targetLabel("software").properties(
+        ).sort_keys("date").nullable_keys("city").if_not_exist().create()
+        schema.edge_label("created").source_label("person").target_label("software").properties(
             "date", "city"
-        ).nullableKeys("city").ifNotExist().create()
-        schema.edgeLabel("reports_to").sourceLabel("department").targetLabel("department").properties(
+        ).nullable_keys("city").if_not_exist().create()
+        schema.edge_label("reports_to").source_label("department").target_label("department").properties(
             "date"
-        ).ifNotExist().create()
+        ).if_not_exist().create()
 
     def init_index_label(self):
         schema = self.schema
-        schema.indexLabel("personByCity").onV("person").by("city").secondary().ifNotExist().create()
-        schema.indexLabel("personByAge").onV("person").by("age").range().ifNotExist().create()
-        schema.indexLabel("softwareByPrice").onV("software").by("price").range().ifNotExist().create()
-        schema.indexLabel("softwareByLang").onV("software").by("lang").secondary().ifNotExist().create()
-        schema.indexLabel("knowsByDate").onE("knows").by("date").secondary().ifNotExist().create()
-        schema.indexLabel("createdByDate").onE("created").by("date").secondary().ifNotExist().create()
+        schema.index_label("personByCity").on_v("person").by("city").secondary().if_not_exist().create()
+        schema.index_label("personByAge").on_v("person").by("age").range().if_not_exist().create()
+        schema.index_label("softwareByPrice").on_v("software").by("price").range().if_not_exist().create()
+        schema.index_label("softwareByLang").on_v("software").by("lang").secondary().if_not_exist().create()
+        schema.index_label("knowsByDate").on_e("knows").by("date").secondary().if_not_exist().create()
+        schema.index_label("createdByDate").on_e("created").by("date").secondary().if_not_exist().create()
 
     def init_vertices(self):
         graph = self.graph
-        graph.addVertex("person", {"name": "marko", "age": 29, "city": "Beijing"})
-        graph.addVertex("person", {"name": "vadas", "age": 27, "city": "Hongkong"})
-        graph.addVertex("software", {"name": "lop", "lang": "java", "price": 328})
-        graph.addVertex("person", {"name": "josh", "age": 32, "city": "Beijing"})
-        graph.addVertex("software", {"name": "ripple", "lang": "java", "price": 199})
-        graph.addVertex("person", {"name": "peter", "age": 29, "city": "Shanghai"})
+        graph.add_vertex("person", {"name": "marko", "age": 29, "city": "Beijing"})
+        graph.add_vertex("person", {"name": "vadas", "age": 27, "city": "Hongkong"})
+        graph.add_vertex("software", {"name": "lop", "lang": "java", "price": 328})
+        graph.add_vertex("person", {"name": "josh", "age": 32, "city": "Beijing"})
+        graph.add_vertex("software", {"name": "ripple", "lang": "java", "price": 199})
+        graph.add_vertex("person", {"name": "peter", "age": 29, "city": "Shanghai"})
 
     def init_edges(self):
         marko_id = self._get_vertex_id("person", {"name": "marko"})
@@ -126,19 +126,19 @@ class ClientUtils:
         lop_id = self._get_vertex_id("software", {"name": "lop"})
         ripple_id = self._get_vertex_id("software", {"name": "ripple"})
 
-        self.graph.addEdge("knows", marko_id, vadas_id, {"date": "2012-01-10"})
-        self.graph.addEdge("knows", marko_id, josh_id, {"date": "2013-01-10"})
-        self.graph.addEdge("created", marko_id, lop_id, {"date": "2014-01-10", "city": "Shanghai"})
-        self.graph.addEdge("created", josh_id, ripple_id, {"date": "2015-01-10", "city": "Beijing"})
-        self.graph.addEdge("created", josh_id, lop_id, {"date": "2016-01-10", "city": "Beijing"})
-        self.graph.addEdge("created", peter_id, lop_id, {"date": "2017-01-10", "city": "Hongkong"})
+        self.graph.add_edge("knows", marko_id, vadas_id, {"date": "2012-01-10"})
+        self.graph.add_edge("knows", marko_id, josh_id, {"date": "2013-01-10"})
+        self.graph.add_edge("created", marko_id, lop_id, {"date": "2014-01-10", "city": "Shanghai"})
+        self.graph.add_edge("created", josh_id, ripple_id, {"date": "2015-01-10", "city": "Beijing"})
+        self.graph.add_edge("created", josh_id, lop_id, {"date": "2016-01-10", "city": "Beijing"})
+        self.graph.add_edge("created", peter_id, lop_id, {"date": "2017-01-10", "city": "Hongkong"})
 
     def _get_vertex_id(self, label, properties):
         res = self._get_vertex(label, properties)
         return res.id
 
     def _get_vertex(self, label, properties):
-        lst = self.graph.getVertexByCondition(label=label, limit=1, properties=properties)
+        lst = self.graph.get_vertex_by_condition(label=label, limit=1, properties=properties)
         assert len(lst) == 1, "Can't find vertex."
         return lst[0]
 

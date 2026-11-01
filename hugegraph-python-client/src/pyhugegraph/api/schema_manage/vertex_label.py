@@ -25,22 +25,22 @@ from pyhugegraph.utils.util import ResponseValidation
 
 class VertexLabel(HugeParamsBase):
     @decorator_params
-    def useAutomaticId(self) -> "VertexLabel":
+    def use_automatic_id(self) -> "VertexLabel":
         self._parameter_holder.set("id_strategy", "AUTOMATIC")
         return self
 
     @decorator_params
-    def useCustomizeStringId(self) -> "VertexLabel":
+    def use_customize_string_id(self) -> "VertexLabel":
         self._parameter_holder.set("id_strategy", "CUSTOMIZE_STRING")
         return self
 
     @decorator_params
-    def useCustomizeNumberId(self) -> "VertexLabel":
+    def use_customize_number_id(self) -> "VertexLabel":
         self._parameter_holder.set("id_strategy", "CUSTOMIZE_NUMBER")
         return self
 
     @decorator_params
-    def usePrimaryKeyId(self) -> "VertexLabel":
+    def use_primary_key_id(self) -> "VertexLabel":
         self._parameter_holder.set("id_strategy", "PRIMARY_KEY")
         return self
 
@@ -50,17 +50,17 @@ class VertexLabel(HugeParamsBase):
         return self
 
     @decorator_params
-    def primaryKeys(self, *args) -> "VertexLabel":
+    def primary_keys(self, *args) -> "VertexLabel":
         self._parameter_holder.set("primary_keys", list(args))
         return self
 
     @decorator_params
-    def nullableKeys(self, *args) -> "VertexLabel":
+    def nullable_keys(self, *args) -> "VertexLabel":
         self._parameter_holder.set("nullable_keys", list(args))
         return self
 
     @decorator_params
-    def enableLabelIndex(self, flag) -> "VertexLabel":
+    def enable_label_index(self, flag) -> "VertexLabel":
         self._parameter_holder.set("enable_label_index", flag)
         return self
 
@@ -75,7 +75,7 @@ class VertexLabel(HugeParamsBase):
             i += 2
         return self
 
-    def ifNotExist(self) -> "VertexLabel":
+    def if_not_exist(self) -> "VertexLabel":
         path = f"schema/vertexlabels/{self._parameter_holder.get_value('name')}"
         if _ := self._sess.request(path, validator=ResponseValidation(strict=False)):
             self._parameter_holder.set("not_exist", False)
@@ -106,7 +106,7 @@ class VertexLabel(HugeParamsBase):
         return ""
 
     @decorator_params
-    def append(self) -> None:
+    def append(self) -> str:
         dic = self._parameter_holder.get_dic()
         properties = dic.get("properties", [])
         nullable_keys = dic.get("nullable_keys", [])
@@ -125,7 +125,7 @@ class VertexLabel(HugeParamsBase):
         return ""
 
     @decorator_params
-    def remove(self) -> None:
+    def remove(self) -> str:
         name = self._parameter_holder.get_value("name")
         path = f"schema/vertexlabels/{name}"
         self.clean_parameter_holder()
@@ -135,7 +135,7 @@ class VertexLabel(HugeParamsBase):
         return ""
 
     @decorator_params
-    def eliminate(self) -> None:
+    def eliminate(self) -> str:
         name = self._parameter_holder.get_value("name")
         path = f"schema/vertexlabels/{name}/?action=eliminate"
 

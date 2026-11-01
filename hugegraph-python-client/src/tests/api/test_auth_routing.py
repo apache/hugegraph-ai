@@ -27,7 +27,6 @@ from pyhugegraph.api.services import ServicesManager
 from pyhugegraph.structure.services_data import ServiceCreateParameters
 from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.huge_requests import HGraphSession
-from pyhugegraph.utils.huge_router import http
 
 pytestmark = pytest.mark.contract
 
@@ -121,9 +120,8 @@ def test_auth_endpoints_use_legacy_paths_without_graphspace(method_call, args, e
 
 def test_legacy_auth_ignores_explicit_graphspace_placeholder_argument():
     class ExplicitGraphspaceAuth(HugeParamsBase):
-        @http("GET", "/graphspaces/{graphspace}/auth/users")
         def list_users(self, graphspace):
-            return self._invoke_request()
+            return self.request("user.list", path_params={"graphspace": graphspace})
 
     cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
     sess = DummySession(cfg)
@@ -148,7 +146,7 @@ def test_graphspace_auth_requires_graphspace_when_supported(method_call, args):
     cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=True, graph_name="g")
     sess = DummySession(cfg)
 
-    with pytest.raises(ValueError, match="graphspace is required for this endpoint"):
+    with pytest.raises(ValueError, match="graphspace is required"):
         getattr(AuthManager(sess), method_call)(*args)
 
 
@@ -190,6 +188,9 @@ class _VersionResponse:
 
     def json(self):
         return {"versions": {"core": self._core}}
+
+    def raise_for_status(self):
+        pass
 
 
 def test_hgraph_config_does_not_auto_enable_graphspace_before_1_7(monkeypatch):
@@ -242,7 +243,7 @@ def test_edge_label_parent_emits_sub_edge_payload():
     edge_label.add_parameter("name", "knows_more")
     edge_label.add_parameter("not_exist", True)
 
-    edge_label.sourceLabel("person").targetLabel("person").parent("knows").create()
+    edge_label.source_label("person").target_label("person").parent("knows").create()
 
     request = sess.requests[-1]
     assert request["path"] == "schema/edgelabels"

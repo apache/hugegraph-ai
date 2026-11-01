@@ -15,9 +15,9 @@
 # specific language governing permissions and
 # limitations under the License.
 
-"""Promoter: tier classification, budgets, constitution enforcement, apply.
+"""Promoter: tier classification, budgets, governance baseline enforcement, apply.
 
-The constitution (evolution-loop §6) is enforced HERE and in validate():
+The governance baseline (evolution-loop §6) is enforced HERE and in validate():
 policy-loosen / marking-change / ownership-change / eval-passbar-change /
 destructive-migration are never automatable -- the proposal becomes
 ``awaiting_human`` and the audit trail says why.
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -38,11 +39,11 @@ from ..core.expr import ExprContext
 from ..core.loader import OntologyPackage, load_package
 from ..core.models import PropertyDef
 from ..core.validator import validate
-from ..errors import BudgetExceededError, ConstitutionViolationError, DSLValidationError
+from ..errors import BaselineViolationError, BudgetExceededError, DSLValidationError
 from ..registry.store import RegistryService
 from .models import BudgetRow, ProposalRow
 
-CONSTITUTION_MUTATIONS = {
+BASELINE_MUTATIONS = {
     "policy-loosen",
     "marking-change",
     "ownership-change",
@@ -65,7 +66,7 @@ class Promoter:
 
     def classify(self, mutations: list[dict], evolution_policy) -> str:
         kinds = {m.get("mutation") for m in mutations}
-        if kinds & CONSTITUTION_MUTATIONS:
+        if kinds & BASELINE_MUTATIONS:
             return "t3-human-only"
         tiers = (evolution_policy.spec.tiers if evolution_policy else {}) or {}
         t0_cfg = tiers.get("t0-auto-merge")
@@ -81,7 +82,7 @@ class Promoter:
     # --------------------------------------------------------------- budget
 
     async def _budget_check_and_use(self, session, namespace: str, cap: int) -> int:
-        week = _iso_week(_dt.datetime.now(_dt.timezone.utc))
+        week = _iso_week(_dt.datetime.now(_dt.UTC))
         row = (
             await session.execute(select(BudgetRow).where(BudgetRow.namespace == namespace, BudgetRow.week == week))
         ).scalar_one_or_none()
@@ -132,8 +133,8 @@ class Promoter:
         if tier == "t3-human-only":
             proposal.status = "awaiting_human"
             proposal.eval_report = eval_report
-            raise ConstitutionViolationError(
-                "proposal touches the constitution surface; human review is mandatory (T3)",
+            raise BaselineViolationError(
+                "proposal touches the governance-baseline surface; human review is mandatory (T3)",
                 details={"proposal_id": proposal.id, "mutations": [m.get("mutation") for m in proposal.diff]},
             )
 
@@ -141,7 +142,7 @@ class Promoter:
             # Fail closed: an AUTO-merge must present a green eval report.
             # `None` used to pass silently, which made the EvalSuite gate
             # skippable by promoting a fresh proposal before running /eval --
-            # the constitution's "validate + eval green + budget" reduced to
+            # the governance baseline's "validate + eval green + budget" reduced to
             # two of three with no trace.
             if eval_report is None:
                 proposal.status = "proposed"
@@ -171,10 +172,9 @@ class Promoter:
                 }
             # direction F: a byte-identical backup, so a red post-merge eval
             # can be undone without touching git
-            backup_dir = Path(str(pkg_root) + ".evolve-backup")
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
-            shutil.copytree(pkg_root, backup_dir)
+            root = Path(pkg_root)
+            backup_dir = Path(tempfile.mkdtemp(prefix=f"{root.name}.evolve-backup-", dir=root.parent))
+            shutil.copytree(root, backup_dir, dirs_exist_ok=True, symlinks=True)
             write_package(candidate)  # merge = files on disk (revert = git checkout)
             compiled = await self.registry.publish(session, candidate, created_by=f"evolve:t0:proposal-{proposal.id}")
             proposal.status = "promoted"
@@ -270,7 +270,7 @@ class Promoter:
         from ..registry.compiled import compile_package
 
         candidate = compile_package(apply_mutations(load_package(pkg_root), diff))
-        cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=since_days)
+        cutoff = _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=since_days)
         changed = sorted({m["action"] for m in diff if m.get("mutation") == "rule-tighten" and m.get("action")})
         actions: list[dict[str, Any]] = []
         clean = True
@@ -323,22 +323,67 @@ class Promoter:
             )
         return {"clean": clean, "actions": actions}
 
-    async def rollback(self, session, pkg_root: str | Path, backup_dir: str | Path) -> dict[str, Any]:
-        """Direction F: restore the pre-merge files and republish them. The
-        loop undoing its own last merge -- never a human's (backups only exist
-        for evolve T0 merges)."""
-        backup = Path(backup_dir)
+    async def rollback(
+        self, session, pkg_root: str | Path, backup_dir: str | Path, *, commit: bool = False
+    ) -> dict[str, Any]:
+        """Restore and republish the pre-merge package.
+
+        ``commit=True`` is the service's durable rollback boundary: a failed
+        registry write/commit restores the promoted files so disk and DB keep
+        describing the same package. The recovery backup remains available
+        until the caller has reloaded the committed snapshot successfully.
+        """
+        backup, root = Path(backup_dir), Path(pkg_root)
         if not backup.is_dir():
             raise DSLValidationError(f"no evolve backup at {backup_dir!r}")
-        for f in backup.rglob("*"):
-            if f.is_file():
-                dest = Path(pkg_root) / f.relative_to(backup)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(f, dest)
-        pkg = load_package(pkg_root)
-        compiled = await self.registry.publish(session, pkg, created_by="evolve:rollback")
-        shutil.rmtree(backup, ignore_errors=True)
+        cache = self.registry._cache.copy()
+        with tempfile.TemporaryDirectory(prefix=f".{root.name}.rollback-", dir=root.parent) as tmp:
+            current = Path(tmp) / "current"
+            shutil.copytree(root, current, symlinks=True)
+            try:
+                _restore_package(backup, root)
+                pkg = load_package(root)
+                compiled = await self.registry.publish(session, pkg, created_by="evolve:rollback")
+                if commit:
+                    await session.commit()
+            except BaseException:
+                _restore_package(current, root)
+                self.registry._cache.clear()
+                self.registry._cache.update(cache)
+                raise
         return {"status": "rolled_back", "content_hash": compiled.content_hash}
+
+    @staticmethod
+    def cleanup_backup(backup_dir: str | Path) -> None:
+        """Discard recovery files only after commit and runtime reload succeed."""
+        shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+def _restore_package(source: Path, destination: Path) -> None:
+    """Restore the exact file tree, including removing post-backup additions."""
+    for path in destination.iterdir():
+        original = source / path.name
+        if not original.exists() and not original.is_symlink():
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+    for original in source.iterdir():
+        path = destination / original.name
+        if original.is_dir() and not original.is_symlink():
+            if path.is_symlink() or (path.exists() and not path.is_dir()):
+                path.unlink()
+            path.mkdir(exist_ok=True)
+            _restore_package(original, path)
+        else:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            elif path.is_symlink() or original.is_symlink():
+                path.unlink(missing_ok=True)
+            if original.is_symlink():
+                path.symlink_to(original.readlink())
+            else:
+                shutil.copy2(original, path)
 
 
 class MutationCfg:  # pragma: no cover -- retained for config defaults documentation
@@ -384,7 +429,7 @@ def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPack
             # direction-only by construction: this mutation can only APPEND a
             # rule, and every rule must pass, so any applier-reachable change
             # is a tightening. Editing/removing rules is not expressible here
-            # and stays where the constitution puts it (human, T3).
+            # and stays where the governance baseline puts it (human, T3).
             from ..core.models import Rule
 
             act = pkg.find("Action", m["action"])
@@ -398,7 +443,7 @@ def apply_mutations(pkg: OntologyPackage, mutations: list[dict]) -> OntologyPack
             act.spec.rules = [*act.spec.rules, Rule(expr=expr, message=m.get("message"))]
         elif kind == "eval-case-synth":
             # adding cases makes the selection function STRICTER, which the
-            # constitution explicitly allows (only lowering the pass bar is
+            # governance baseline explicitly allows (only lowering the pass bar is
             # forbidden); still not T0: eval assets are owned, human-reviewed
             suite = pkg.find("EvalSuite", m["suite"])
             if suite is None:

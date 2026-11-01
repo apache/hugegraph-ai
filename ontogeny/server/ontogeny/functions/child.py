@@ -119,7 +119,8 @@ def main() -> None:
             # (one spawn for the whole batch); ontogeny.query stays available per row
             object_param = init.get("object_param") or "obj"
             params = dict(init.get("params") or {})
-            values = [fn(**{**params, object_param: row}) for row in (init.get("rows") or [])]
+            with contextlib.redirect_stdout(sys.stderr):
+                values = [fn(**{**params, object_param: row}) for row in (init.get("rows") or [])]
             _emit({"type": "values", "values": values})
         else:
             _emit({"type": "error", "error": f"unknown mode {mode!r}"})

@@ -45,6 +45,7 @@ from .routes_accounts import register as register_accounts
 from .routes_admin import register as register_admin
 from .routes_agent import register as register_agent
 from .routes_data import register as register_data
+from .routes_documents import register as register_documents
 from .routes_evolve import register as register_evolve
 from .routes_objects import register as register_objects
 
@@ -84,7 +85,11 @@ def build_app(sc: ServiceContext) -> FastAPI:
             if principal is not None:
                 principal.setdefault("via", "bearer")
                 set_mcp_driver(principal)
-            elif not sc.settings.dev_auth:
+            elif sc.settings.dev_auth:
+                from .deps import get_principal
+
+                set_mcp_driver(await get_principal(request))
+            else:
                 return JSONResponse(
                     status_code=401,
                     content={
@@ -109,6 +114,7 @@ def build_app(sc: ServiceContext) -> FastAPI:
     register_data(app, r, sc)
     register_evolve(evolve_r, sc)
     register_admin(r, admin_r, sc)
+    register_documents(admin_r, sc)
 
     app.include_router(r)
     app.include_router(admin_r)

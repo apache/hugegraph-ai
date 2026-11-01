@@ -222,7 +222,9 @@ cython_debug/
 # ---- ontogeny module: runtimes & local state ----
 .venv/
 .ontogeny-*/
+admin-bootstrap-password
 .kina-*/
+ontogeny/.docs/
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -235,3 +237,8 @@ web/.e2e-port
 *.pid
 .DS_Store
 docs/pr380-reply-matrix.md
+
+# ---- local-only material (not part of the project) ----
+.zcodeignore
+wechat-assets/
+wechat-ontogeny-launch.md

@@ -19,7 +19,7 @@
 
 The zip is untrusted input: these tests pin the safety contract (traversal,
 invalid package, duplicate name -> clean refusal with no residue) and the
-happy path against the real product-manufacturing package.
+happy path against the real chip-lifecycle package.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from ontogeny.config import Settings
 from ontogeny.service import DomainError, ServiceContext
 
 REPO = Path(__file__).resolve().parent.parent
-DOMAIN = REPO / "domains" / "product-manufacturing"
+DOMAIN = REPO / "domains" / "chip-lifecycle"
 
 ADMIN = {"id": "admin", "Role": ["admin"], "is_admin": True}
 
@@ -81,26 +81,34 @@ class TestImportService:
     async def test_import_installs_and_reports_the_domain(self, rig):
         sc, _c, root = rig
         out = await sc.import_domain(zip_domain(), activate=False)
-        assert out["name"] == "product-manufacturing"
-        assert out["objects"] == 7 and out["links"] == 6 and out["actions"] == 11
-        assert (root / "product-manufacturing" / "ontology.yaml").is_file()
+        assert out["name"] == "chip-lifecycle"
+        assert out["objects"] == 10 and out["links"] == 8 and out["actions"] == 16
+        assert (root / "chip-lifecycle" / "ontology.yaml").is_file()
         assert out["active"] is False
         # it shows up in the switcher like any other domain
         names = [d["name"] for d in sc.list_domains()]
-        assert "product-manufacturing" in names
+        assert "chip-lifecycle" in names
 
     async def test_import_can_activate_and_functions_resolve(self, rig):
         sc, _c, _root = rig
         out = await sc.import_domain(zip_domain(), activate=True)
         assert out["active"] is True and out.get("content_hash")
-        assert set(sc.compiled.functions) == {"material-availability", "capacity-check", "order-yield"}
-        assert sc.compiled.package_name == "product-manufacturing"
+        assert set(sc.compiled.functions) == {
+            "requirement-impact",
+            "analyze-yield-loss",
+            "yield-pareto",
+            "analyze-field-failure",
+        }
+        assert sc.compiled.package_name == "chip-lifecycle"
+        # the canvas layout is part of the activated package, not the boot copy
+        assert sc.layout_path() is not None
+        assert sc.layout_path().resolve() == (Path(out["path"]) / "layout.yaml").resolve()
 
     async def test_zip_without_root_folder_works_too(self, rig):
         sc, _c, root = rig
         out = await sc.import_domain(zip_domain(with_root_folder=False))
-        assert (root / "product-manufacturing" / "seed" / "01_source.sql").is_file()
-        assert out["name"] == "product-manufacturing"
+        assert (root / "chip-lifecycle" / "seed" / "01_source.sql").is_file()
+        assert out["name"] == "chip-lifecycle"
 
     async def test_not_a_zip_is_refused(self, rig):
         sc, _c, root = rig
@@ -172,11 +180,11 @@ class TestImportRoute:
         r = await c.post("/api/v1/admin/domains/import?activate=false", content=zip_domain(), headers=_hdr(ADMIN))
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["name"] == "product-manufacturing" and body["objects"] == 7
+        assert body["name"] == "chip-lifecycle" and body["objects"] == 10
         # activating through the regular switch endpoint works on the import
-        r = await c.post("/api/v1/admin/domains/activate", json={"name": "product-manufacturing"}, headers=_hdr(ADMIN))
+        r = await c.post("/api/v1/admin/domains/activate", json={"name": "chip-lifecycle"}, headers=_hdr(ADMIN))
         assert r.status_code == 200 and r.json()["activated"] is True
-        assert sc.compiled.package_name == "product-manufacturing"
+        assert sc.compiled.package_name == "chip-lifecycle"
 
     async def test_http_rejects_wrong_content_type(self, rig):
         _sc, c, _root = rig
@@ -197,5 +205,5 @@ class TestImportRoute:
 
 def teardown_module(module):
     """Safety net: nothing in this module may touch the repo's domains/ tree."""
-    stray = REPO / "domains" / "product-manufacturing"
+    stray = REPO / "domains" / "chip-lifecycle"
     assert stray.is_dir(), "the checked-in package must still be there"

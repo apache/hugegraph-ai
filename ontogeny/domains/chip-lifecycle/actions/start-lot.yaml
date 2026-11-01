@@ -1,0 +1,53 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: start-lot
+  display: Start wafer lot
+  description: Start a wafer lot for a tapeout version at a fab site
+spec:
+  target: wafer-lot
+  parameters:
+    version_id:
+      type: string
+      display: Tapeout version
+      required: true
+    qty_wafers:
+      type: integer
+      display: Wafers
+      required: true
+    site:
+      type: string
+      display: Fab site
+  rules:
+  - expr: parameters.qty_wafers > 0
+    message: Wafer count must be positive
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      lot_id: newId('LOT')
+      version_id: parameters.version_id
+      qty_wafers: parameters.qty_wafers
+      site: parameters.site
+      status: RUNNING
+      started_at: now()
+      created_at: now()
+  audit:
+    fields:
+    - target.lot_id
+    - parameters

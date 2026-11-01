@@ -37,60 +37,54 @@ from ontogeny.stores.sync import QuarantineRow, SyncStateRow
 
 NOW = "2026-09-18T08:00:00+00:00"
 
-SRC_ROWS_WORK_CENTERS = [
-    ("WC-01", "CNC Machining Cell", "machining", "plant-north", 400, 2, "ACTIVE", "2023-11-01T08:00:00+00:00", NOW),
-    ("WC-02", "Final Assembly Line", "assembly", "plant-north", 300, 2, "ACTIVE", "2023-11-01T08:00:00+00:00", NOW),
-    ("WC-03", "Quality Inspection Bench", "quality", "plant-north", 200, 1, "IDLE", "2023-11-01T08:00:00+00:00", NOW),
+SRC_ROWS_EQUIPMENT = [
+    ("EQ-01", "Scanner A (193i)", "lithography", "fab-site-a", "ACTIVE", "2024-03-01T08:00:00+00:00", NOW),
+    ("EQ-02", "Etcher 1 (ICP)", "etch", "fab-site-a", "ACTIVE", "2024-05-10T08:00:00+00:00", NOW),
+    ("EQ-03", "CVD Chamber 1", "deposition", "fab-site-a", "ACTIVE", "2024-05-10T08:00:00+00:00", NOW),
 ]
 
-SRC_ROWS_PRODUCTION_ORDERS = [
-    ("PO-1", "P-100", 5, "PLANNED", "NORMAL", "2026-12-01", NOW, None, NOW),
-    ("PO-2", "P-100", 8, "RELEASED", "HIGH", "2026-11-15", NOW, NOW, NOW),
+SRC_ROWS_WAFER_LOTS = [
+    ("LOT-1", "TO-A0", 5, None, "fab-site-a", "2026-09-10T08:00:00+00:00", NOW, NOW),
+    ("LOT-2", "TO-A0", 8, None, "fab-site-b", "2026-09-11T08:00:00+00:00", NOW, NOW),
 ]
 
-SRC_ROWS_MATERIALS = [
-    ("M-1", "Steel Plate S45C", "sheet", "210.00", 48, 20, 14, "2024-01-20T08:00:00+00:00", NOW),
-    ("M-2", "Precision Bearing", "pcs", "320.00", 9, 40, 30, "2024-02-01T08:00:00+00:00", NOW),
+SRC_ROWS_TAPEOUT_VERSIONS = [
+    ("TO-A0", "X1", "FAB", "First cut", "1850000.00", "2026-06-10T08:00:00+00:00", NOW, NOW),
 ]
 
-SRC_ROWS_OPERATIONS = [
-    ("OP-1", "PO-1", 10, "Plate Cutting", "WC-01", "QUEUED", 120, None, NOW),
-    ("OP-2", "PO-2", 10, "Kitting", "WC-02", "RUNNING", 30, None, NOW),
+SRC_ROWS_PROCESS_STEPS = [
+    ("PS-1", "LOT-1", 10, "Etch", "EQ-02", "QUEUED", None, NOW),
 ]
 
 
 def _make_source_db(path) -> None:
-    """A private MES source in the shape the golden package's stores declare."""
+    """A private fab source in the shape the golden package's stores declare."""
     con = sqlite3.connect(path)
     con.executescript(
         """
-        CREATE TABLE work_centers (
-            work_center_id TEXT PRIMARY KEY, name TEXT, process TEXT, site TEXT,
-            capacity_per_shift INTEGER, shifts_per_day INTEGER, status TEXT,
-            created_at TEXT, updated_at TEXT
+        CREATE TABLE equipment (
+            equipment_id TEXT PRIMARY KEY, name TEXT, process TEXT, site TEXT,
+            status TEXT, created_at TEXT, updated_at TEXT
         );
-        CREATE TABLE production_orders (
-            order_id TEXT PRIMARY KEY, product_id TEXT NOT NULL, qty INTEGER,
-            status TEXT, priority TEXT, due_date TEXT, created_at TEXT,
-            released_at TEXT, updated_at TEXT
+        CREATE TABLE wafer_lots (
+            lot_id TEXT PRIMARY KEY, version_id TEXT NOT NULL, qty_wafers INTEGER,
+            status TEXT, site TEXT, started_at TEXT, created_at TEXT, updated_at TEXT
         );
-        CREATE TABLE materials (
-            material_id TEXT PRIMARY KEY, name TEXT NOT NULL, unit TEXT,
-            unit_cost TEXT, stock_qty INTEGER, safety_stock INTEGER,
-            lead_time_days INTEGER, created_at TEXT, updated_at TEXT
+        CREATE TABLE tapeout_versions (
+            version_id TEXT PRIMARY KEY, project TEXT NOT NULL, status TEXT, notes TEXT,
+            mask_cost TEXT, taped_out_at TEXT, created_at TEXT, updated_at TEXT
         );
-        CREATE TABLE operations (
-            operation_id TEXT PRIMARY KEY, order_id TEXT NOT NULL, seq INTEGER,
-            name TEXT NOT NULL, work_center_id TEXT, status TEXT,
-            standard_minutes INTEGER, completed_at TEXT, updated_at TEXT
+        CREATE TABLE process_steps (
+            step_id TEXT PRIMARY KEY, lot_id TEXT NOT NULL, seq INTEGER,
+            name TEXT NOT NULL, equipment TEXT, status TEXT, completed_at TEXT, updated_at TEXT
         );
-        CREATE TABLE work_center_materials (wc_id TEXT, material_id TEXT);
+        CREATE TABLE equipment_lots (equipment_id TEXT, lot_id TEXT);
         """
     )
-    con.executemany("INSERT INTO work_centers VALUES (?,?,?,?,?,?,?,?,?)", SRC_ROWS_WORK_CENTERS)
-    con.executemany("INSERT INTO production_orders VALUES (?,?,?,?,?,?,?,?,?)", SRC_ROWS_PRODUCTION_ORDERS)
-    con.executemany("INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)", SRC_ROWS_MATERIALS)
-    con.executemany("INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?)", SRC_ROWS_OPERATIONS)
+    con.executemany("INSERT INTO equipment VALUES (?,?,?,?,?,?,?)", SRC_ROWS_EQUIPMENT)
+    con.executemany("INSERT INTO wafer_lots VALUES (?,?,?,?,?,?,?,?)", SRC_ROWS_WAFER_LOTS)
+    con.executemany("INSERT INTO tapeout_versions VALUES (?,?,?,?,?,?,?,?)", SRC_ROWS_TAPEOUT_VERSIONS)
+    con.executemany("INSERT INTO process_steps VALUES (?,?,?,?,?,?,?,?)", SRC_ROWS_PROCESS_STEPS)
     con.commit()
     con.close()
 
@@ -98,42 +92,42 @@ def _make_source_db(path) -> None:
 def _package_copy(golden_pkg_path, root) -> object:
     """The golden package on a temp dir, with two test-only shapes:
 
-    - work-center reverts to snapshot sync (the seeded package watermarks every
+    - equipment reverts to snapshot sync (the seeded package watermarks every
       object, and absent-means-archive is a snapshot-strategy semantic);
-    - a many-to-many work-center-materials link joins the two via a relation
+    - a many-to-many equipment-lots link joins the two via a relation
       table, the join-table shape the domain otherwise expresses through the
-      bridging `bom` object.
+      bridging `design-module` object.
     """
     import shutil
 
     shutil.rmtree(root, ignore_errors=True)
     shutil.copytree(golden_pkg_path, root)
 
-    wc_file = root / "objects" / "work-center.yaml"
-    doc = yaml.safe_load(wc_file.read_text(encoding="utf-8"))
+    eq_file = root / "objects" / "equipment.yaml"
+    doc = yaml.safe_load(eq_file.read_text(encoding="utf-8"))
     doc["spec"]["backing"].pop("sync", None)
-    wc_file.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    eq_file.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
-    (root / "links" / "work-center-materials.yaml").write_text(
+    (root / "links" / "equipment-lots.yaml").write_text(
         "apiVersion: ontogeny/v1\n"
         "kind: LinkType\n"
         "metadata:\n"
-        "  name: work-center-materials\n"
+        "  name: equipment-lots\n"
         "spec:\n"
-        "  source: work-center\n"
-        "  target: material\n"
+        "  source: equipment\n"
+        "  target: wafer-lot\n"
         "  cardinality: MANY_TO_MANY\n"
         "  join:\n"
         "    kind: join-table\n"
-        "    store: mes\n"
+        "    store: fab\n"
         "    relation:\n"
-        "      schema: mes\n"
-        "      table: work_center_materials\n"
+        "      schema: fab\n"
+        "      table: equipment_lots\n"
         "    keys:\n"
         "      source:\n"
-        "        work_center_id: wc_id\n"
+        "        equipment_id: equipment_id\n"
         "      target:\n"
-        "        material_id: material_id\n",
+        "        lot_id: lot_id\n",
         encoding="utf-8",
     )
     return root
@@ -168,32 +162,32 @@ async def env(golden_pkg_path, tmp_path):
 class TestSync:
     async def test_snapshot_loads_all_objects(self, env):
         async with env["maker"]() as s:
-            summary = await env["sync"].sync(s, "work-center")
-            await env["sync"].sync(s, "production-order")
-            await env["sync"].sync(s, "material")
+            summary = await env["sync"].sync(s, "equipment")
+            await env["sync"].sync(s, "wafer-lot")
+            await env["sync"].sync(s, "tapeout-version")
             await s.commit()
         assert summary == {"inserted": 3, "updated": 0, "noop": 0, "archived": 0, "quarantined": 0}
 
         repo = env["repo"]
         async with env["maker"]() as s:
-            rows, total = await repo.query(s, "work-center")
+            rows, total = await repo.query(s, "equipment")
             assert total == 3
-            assert rows[0]["name"] in {"CNC Machining Cell", "Final Assembly Line", "Quality Inspection Bench"}
+            assert rows[0]["name"] in {"Scanner A (193i)", "Etcher 1 (ICP)", "CVD Chamber 1"}
 
-            po, _ = await repo.query(s, "production-order", filt={"field": "status", "op": "eq", "value": "PLANNED"})
-            assert [r["order_id"] for r in po] == ["PO-1"]
-            assert isinstance(po[0]["due_date"], dt.date)
+            lots, _ = await repo.query(s, "wafer-lot", filt={"field": "site", "op": "eq", "value": "fab-site-a"})
+            assert [r["lot_id"] for r in lots] == ["LOT-1"]
+            assert isinstance(lots[0]["started_at"], dt.datetime)
 
     async def test_enum_domain_violation_quarantined(self, env):
         con = sqlite3.connect(env["src"])
         con.execute(
-            "INSERT INTO work_centers VALUES ('WC-9','Bad','machining','plant-north',1,1,'EXPLODED','2020-01-01',?)",
+            "INSERT INTO equipment VALUES ('EQ-9','Bad','etch','fab-site-a','EXPLODED','2020-01-01',?)",
             (NOW,),
         )
         con.commit()
         con.close()
         async with env["maker"]() as s:
-            summary = await env["sync"].sync(s, "work-center")
+            summary = await env["sync"].sync(s, "equipment")
             await s.commit()
             quarantined = (await s.execute(select(QuarantineRow))).scalars().all()
         assert summary["quarantined"] == 1
@@ -202,82 +196,80 @@ class TestSync:
 
     async def test_ownership_blocks_sync_overwrite(self, env):
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "production-order")
+            await env["sync"].sync(s, "wafer-lot")
             await s.commit()
-        # source backdates a release (ontology-owned released_at: not
+        # source backdates a hold (ontology-owned status: not
         # overwritable by sync); source-owned columns are left untouched
         con = sqlite3.connect(env["src"])
         con.execute(
-            "UPDATE production_orders SET released_at='2026-09-18T09:00:00+00:00',"
-            " updated_at='2026-09-18T09:00:00+00:00' WHERE order_id='PO-1'"
+            "UPDATE wafer_lots SET status='ON_HOLD', updated_at='2026-09-18T09:00:00+00:00' WHERE lot_id='LOT-1'"
         )
         con.commit()
         con.close()
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "production-order")
+            await env["sync"].sync(s, "wafer-lot")
             await s.commit()
-            row = await env["repo"].get(s, "production-order", "PO-1")
-        assert row["released_at"] is None  # ontology-owned: sync never overwrites
-        assert row["product_id"] == "P-100"  # source-owned still intact
+            row = await env["repo"].get(s, "wafer-lot", "LOT-1")
+        assert row["status"] is None  # ontology-owned: sync never overwrites
+        assert row["version_id"] == "TO-A0"  # source-owned still intact
 
     async def test_source_owned_updates_do_flow(self, env):
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "work-center")
+            await env["sync"].sync(s, "equipment")
             await s.commit()
         con = sqlite3.connect(env["src"])
-        con.execute("UPDATE work_centers SET name='CNC Machining Cell II' WHERE work_center_id='WC-01'")
+        con.execute("UPDATE equipment SET name='Scanner A (193i) DXb' WHERE equipment_id='EQ-01'")
         con.commit()
         con.close()
         async with env["maker"]() as s:
-            summary = await env["sync"].sync(s, "work-center")
+            summary = await env["sync"].sync(s, "equipment")
             await s.commit()
-            row = await env["repo"].get(s, "work-center", "WC-01")
+            row = await env["repo"].get(s, "equipment", "EQ-01")
         assert summary["updated"] == 1
-        assert row["name"] == "CNC Machining Cell II" and row["_rev"] == 2
+        assert row["name"] == "Scanner A (193i) DXb" and row["_rev"] == 2
 
     async def test_absent_means_archive(self, env):
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "work-center")
+            await env["sync"].sync(s, "equipment")
             await s.commit()
         con = sqlite3.connect(env["src"])
-        con.execute("DELETE FROM work_centers WHERE work_center_id='WC-03'")
+        con.execute("DELETE FROM equipment WHERE equipment_id='EQ-03'")
         con.commit()
         con.close()
         async with env["maker"]() as s:
-            summary = await env["sync"].sync(s, "work-center")
+            summary = await env["sync"].sync(s, "equipment")
             await s.commit()
-            _rows, total = await env["repo"].query(s, "work-center")
+            _rows, total = await env["repo"].query(s, "equipment")
         assert summary["archived"] == 1 and total == 2
 
     async def test_watermark_incremental(self, env):
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "production-order")
+            await env["sync"].sync(s, "wafer-lot")
             await s.commit()
         con = sqlite3.connect(env["src"])
         # status is ontology-owned -> source change must NOT flow (ownership!)
         con.execute(
-            "UPDATE production_orders SET status='CANCELLED', updated_at='2026-09-18T10:00:00+00:00'"
-            " WHERE order_id='PO-2'"
+            "UPDATE wafer_lots SET status='COMPLETE', updated_at='2026-09-18T10:00:00+00:00' WHERE lot_id='LOT-2'"
         )
         con.execute(
-            "INSERT INTO production_orders VALUES ('PO-3','P-200',12,'PLANNED','LOW','2026-12-20',"
-            "'2026-09-18T10:30:00+00:00',NULL,'2026-09-18T10:30:00+00:00')"
+            "INSERT INTO wafer_lots VALUES ('LOT-3','TO-A0',12,NULL,'fab-site-a',"
+            "'2026-09-18T10:30:00+00:00','2026-09-18T10:30:00+00:00','2026-09-18T10:30:00+00:00')"
         )
         con.commit()
         con.close()
         async with env["maker"]() as s:
-            summary = await env["sync"].sync(s, "production-order")
+            summary = await env["sync"].sync(s, "wafer-lot")
             await s.commit()
             state = (await s.execute(select(SyncStateRow))).scalar_one()
-        # the new row PO-3 inserts; PO-2 becomes a no-op
-        assert summary == {"inserted": 1, "updated": 0, "noop": 1, "archived": 0, "quarantined": 0}
+        # LOT-3 inserts; LOT-2 and the replayed checkpoint-boundary LOT-1 are no-ops.
+        assert summary == {"inserted": 1, "updated": 0, "noop": 2, "archived": 0, "quarantined": 0}
         assert state.watermark is not None
 
     async def test_sync_writes_outbox(self, env):
         from ontogeny.action.models import OutboxRow
 
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "work-center")
+            await env["sync"].sync(s, "equipment")
             await s.commit()
             events = (await s.execute(select(OutboxRow))).scalars().all()
         assert len(events) == 3 and all(e.op == "upsert" for e in events)
@@ -287,13 +279,13 @@ class TestRepository:
     async def test_versioning_and_history(self, env):
         repo = env["repo"]
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "work-center")
+            await env["sync"].sync(s, "equipment")
             await s.commit()
-        ts = dt.datetime.now(dt.timezone.utc)
+        ts = dt.datetime.now(dt.UTC)
         async with env["maker"]() as s:
-            new = await repo.action_update(s, "work-center", "WC-01", {"name": "Serviced"}, ts)
+            new = await repo.action_update(s, "equipment", "EQ-01", {"name": "Serviced"}, ts)
             await s.commit()
-            hist = await repo.history(s, "work-center", "WC-01")
+            hist = await repo.history(s, "equipment", "EQ-01")
         assert new["_rev"] == 2
         assert [h["_rev"] for h in hist] == [1, 2]
         assert hist[0]["_valid_to"] is not None
@@ -301,66 +293,66 @@ class TestRepository:
     async def test_optimistic_lock_conflict(self, env):
         repo = env["repo"]
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "work-center")
+            await env["sync"].sync(s, "equipment")
             await s.commit()
-        ts = dt.datetime.now(dt.timezone.utc)
+        ts = dt.datetime.now(dt.UTC)
         from ontogeny.errors import ConflictError
 
         async with env["maker"]() as s:
             with pytest.raises(ConflictError):
-                await repo.action_update(s, "work-center", "WC-01", {"name": "A"}, ts, expected_revision=99)
+                await repo.action_update(s, "equipment", "EQ-01", {"name": "A"}, ts, expected_revision=99)
 
     async def test_time_travel_get(self, env):
         repo = env["repo"]
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "work-center")
+            await env["sync"].sync(s, "equipment")
             await s.commit()
-        t0 = dt.datetime.now(dt.timezone.utc)  # after sync: version 1 is current
+        t0 = dt.datetime.now(dt.UTC)  # after sync: version 1 is current
         import asyncio
 
         await asyncio.sleep(0.002)  # ensure strictly increasing version timestamps
-        t1 = dt.datetime.now(dt.timezone.utc)
+        t1 = dt.datetime.now(dt.UTC)
         async with env["maker"]() as s:
-            await repo.action_update(s, "work-center", "WC-01", {"name": "Renamed"}, t1)
+            await repo.action_update(s, "equipment", "EQ-01", {"name": "Renamed"}, t1)
             await s.commit()
         async with env["maker"]() as s:
-            before = await repo.get(s, "work-center", "WC-01", at=t0)
-            after = await repo.get(s, "work-center", "WC-01", at=t1)
-        assert before["name"] == "CNC Machining Cell"
+            before = await repo.get(s, "equipment", "EQ-01", at=t0)
+            after = await repo.get(s, "equipment", "EQ-01", at=t1)
+        assert before["name"] == "Scanner A (193i)"
         assert after["name"] == "Renamed"
 
     async def test_join_table_links(self, env):
         repo = env["repo"]
-        ts = dt.datetime.now(dt.timezone.utc)
+        ts = dt.datetime.now(dt.UTC)
         async with env["maker"]() as s:
-            await repo.link_add(s, "work-center-materials", "WC-01", "M-1", ts)
-            await repo.link_add(s, "work-center-materials", "WC-01", "M-9", ts)  # not exists yet, link table allows
-            await repo.link_remove(s, "work-center-materials", "WC-01", "M-9", ts)
+            await repo.link_add(s, "equipment-lots", "EQ-01", "LOT-1", ts)
+            await repo.link_add(s, "equipment-lots", "EQ-01", "LOT-9", ts)  # not exists yet, link table allows
+            await repo.link_remove(s, "equipment-lots", "EQ-01", "LOT-9", ts)
             await s.commit()
-            members = await repo.link_members(s, "work-center-materials", src_id="WC-01")
-        assert members == [("WC-01", "M-1")]
+            members = await repo.link_members(s, "equipment-lots", src_id="EQ-01")
+        assert members == [("EQ-01", "LOT-1")]
 
     async def test_join_table_readd_after_remove(self, env):
         """link_add -> link_remove -> link_add used to die on the (src, dst)-only
         primary key colliding with the soft-closed row."""
         repo = env["repo"]
-        t0 = dt.datetime.now(dt.timezone.utc)
+        t0 = dt.datetime.now(dt.UTC)
         t1 = t0 + dt.timedelta(microseconds=10)
         t2 = t0 + dt.timedelta(microseconds=20)
         async with env["maker"]() as s:
-            await repo.link_add(s, "work-center-materials", "WC-01", "M-2", t0)
-            await repo.link_remove(s, "work-center-materials", "WC-01", "M-2", t1)
-            await repo.link_add(s, "work-center-materials", "WC-01", "M-2", t2)
+            await repo.link_add(s, "equipment-lots", "EQ-01", "LOT-2", t0)
+            await repo.link_remove(s, "equipment-lots", "EQ-01", "LOT-2", t1)
+            await repo.link_add(s, "equipment-lots", "EQ-01", "LOT-2", t2)
             await s.commit()
-            members = await repo.link_members(s, "work-center-materials", src_id="WC-01")
-        assert ("WC-01", "M-2") in members
+            members = await repo.link_members(s, "equipment-lots", src_id="EQ-01")
+        assert ("EQ-01", "LOT-2") in members
 
     async def test_fk_link_traversal(self, env):
         repo = env["repo"]
         async with env["maker"]() as s:
-            await env["sync"].sync(s, "operation")
+            await env["sync"].sync(s, "process-step")
             await s.commit()
-            ops_from_work_center = await repo.fk_linked_ids(s, "operation-work-center", "WC-01", from_source=True)
-            wc_from_op = await repo.fk_linked_ids(s, "operation-work-center", "OP-1", from_source=False)
-        assert ops_from_work_center == ["OP-1"]
-        assert wc_from_op == ["WC-01"]
+            steps_from_equipment = await repo.fk_linked_ids(s, "step-equipment", "EQ-02", from_source=True)
+            equipment_from_step = await repo.fk_linked_ids(s, "step-equipment", "PS-1", from_source=False)
+        assert steps_from_equipment == ["PS-1"]
+        assert equipment_from_step == ["EQ-02"]

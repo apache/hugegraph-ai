@@ -123,7 +123,7 @@ class TestDecidingProposerOverOllama:
                                     "mutations": [
                                         {
                                             "mutation": "add-optional-property",
-                                            "object": "production-order",
+                                            "object": "wafer-lot",
                                             "prop": "workgroup",
                                             "type": "string",
                                         }
@@ -143,7 +143,7 @@ class TestDecidingProposerOverOllama:
         pkg = load_package(golden_pkg_path)
         compiled = compile_package(pkg)
         out = await proposer.propose(
-            {"kind": "add-optional-property", "object": "production-order", "prop": "workgroup"}, compiled
+            {"kind": "add-optional-property", "object": "wafer-lot", "prop": "workgroup"}, compiled
         )
         assert out and out["origin"] == "llm" and out["mutations"][0]["prop"] == "workgroup"
 
@@ -169,7 +169,7 @@ class TestDecidingProposerOverOllama:
 
         compiled = compile_package(load_package(golden_pkg_path))
         # unknown gap kind: the heuristic fallback has no template either -> no proposal
-        out = await proposer.propose({"kind": "x", "object": "production-order"}, compiled)
+        out = await proposer.propose({"kind": "x", "object": "wafer-lot"}, compiled)
         assert out is None and proposer.stats["llm_rejected"] == 1
 
 
@@ -186,7 +186,7 @@ class TestAssistantEndpoint:
                     json={
                         "message": {
                             "role": "assistant",
-                            "content": 'Use the ontology.\n```json\n{"mutations": [{"mutation": "add-optional-property", "object": "production-order", "prop": "wg", "type": "string"}], "rationale": "gap"}\n```',  # noqa: E501
+                            "content": 'Use the ontology.\n```json\n{"mutations": [{"mutation": "add-optional-property", "object": "wafer-lot", "prop": "wg", "type": "string"}], "rationale": "gap"}\n```',  # noqa: E501
                         },
                     },
                 )
@@ -217,7 +217,7 @@ class TestAssistantEndpoint:
         r = await c.post(
             "/api/v1/assistant/chat",
             json={
-                "messages": [{"role": "user", "content": "Which properties does the production-order object have?"}],
+                "messages": [{"role": "user", "content": "Which properties does the wafer-lot object have?"}],
                 "propose": True,
             },
         )
@@ -297,7 +297,7 @@ class TestLiveOllama:
         client = OllamaChat(self.URL, MODEL)
         proposer = DecidingProposer(client)
         compiled = compile_package(load_package(golden_pkg_path))
-        gap = {"kind": "add-optional-property", "object": "production-order", "prop": "workgroup"}
+        gap = {"kind": "add-optional-property", "object": "wafer-lot", "prop": "workgroup"}
         out = await proposer.propose(gap, compiled)
         # the live model decides; whatever it decides must be a valid catalog
         # mutation with a rationale, or an honest decline

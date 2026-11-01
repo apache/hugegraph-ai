@@ -35,8 +35,8 @@ limitations under the License.
  * Text metrics for the graph canvas.
  *
  * The ontology nodes size themselves to their label: a box that is always 172px
- * wide leaves `bom` swimming in whitespace and clips
- * `production-order · 生产工单`. G6 needs each node's size *before* it lays the
+ * wide leaves `customer` swimming in whitespace and clips
+ * `tapeout-version · 流片版本`. G6 needs each node's size *before* it lays the
  * graph out, and the drawing happens in a canvas, so the measurement has to
  * come from a canvas too — this module keeps one detached 2D context, measures
  * with the same font the node draws with, and memoises the answer.

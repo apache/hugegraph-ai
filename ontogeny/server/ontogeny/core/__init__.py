@@ -17,6 +17,7 @@
 
 """ontogeny.core -- DSL: models, loading, validation, linting, expression language."""
 
+from .kinds import BY_KIND, KINDS, PLATFORM_KINDS, KindSpec
 from .loader import OntologyPackage, load_package
 from .models import (
     ActionResource,
@@ -34,11 +35,15 @@ from .types import PropertyType
 from .validator import ValidationReport, effective_owner, validate
 
 __all__ = [
+    "BY_KIND",
+    "KINDS",
+    "PLATFORM_KINDS",
     "ActionResource",
     "AnyResource",
     "EvalSuiteResource",
     "EvolutionPolicyResource",
     "FunctionResource",
+    "KindSpec",
     "LinkTypeResource",
     "ObjectTypeResource",
     "OntologyPackage",

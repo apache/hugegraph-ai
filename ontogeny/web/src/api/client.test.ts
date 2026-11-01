@@ -37,8 +37,8 @@ import { ApiError, PRESET_PRINCIPALS, getPrincipal, setPrincipal } from './clien
 describe('principal handling', () => {
   beforeEach(() => localStorage.clear())
 
-  it('defaults to the planner preset', () => {
-    expect(getPrincipal().id).toBe(PRESET_PRINCIPALS.planner.id)
+  it('defaults to the product preset', () => {
+    expect(getPrincipal().id).toBe(PRESET_PRINCIPALS.product.id)
   })
 
   it('persists a chosen principal', () => {
@@ -48,7 +48,7 @@ describe('principal handling', () => {
 
   it('falls back to default on corrupted storage', () => {
     localStorage.setItem('ontogeny.principal', '{not json')
-    expect(getPrincipal().id).toBe('u-planner')
+    expect(getPrincipal().id).toBe('u-product')
   })
 })
 
@@ -93,5 +93,42 @@ describe('api error unwrap', () => {
     await apiClient.signals()
     expect(calls[0].headers['X-Ontogeny-Principal']).toContain('u-custom')
     expect(calls[0].url).toContain('/api/v1/evolve/signals')
+  })
+})
+
+
+describe('API failure details', () => {
+  it('shows FastAPI permission errors instead of losing the server explanation', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ detail: 'administrator account required' }), {
+      status: 403, statusText: 'Forbidden',
+    })) as typeof fetch
+    const { apiClient } = await import('./client')
+    await expect(apiClient.builderResources()).rejects.toMatchObject({
+      code: 'HTTP_403', status: 403, message: 'administrator account required',
+    })
+  })
+
+  it('includes field paths in FastAPI validation errors', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ detail: [
+      { loc: ['body', 'parameters', 'qty'], msg: 'Input should be a valid integer' },
+    ] }), { status: 422 })) as typeof fetch
+    const { apiClient } = await import('./client')
+    await expect(apiClient.builderResources()).rejects.toMatchObject({
+      status: 422, message: 'parameters.qty: Input should be a valid integer',
+    })
+  })
+
+  it('does not fail authentication cleanup when browser storage is disabled', () => {
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new DOMException('disabled', 'SecurityError') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('disabled', 'SecurityError') })
+    expect(() => setPrincipal(null)).not.toThrow()
+    expect(() => setPrincipal(PRESET_PRINCIPALS.planner)).not.toThrow()
+  })
+
+  it('can make API requests when browser storage is disabled', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('disabled', 'SecurityError') })
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ signals: [] }))) as typeof fetch
+    const { apiClient } = await import('./client')
+    await expect(apiClient.signals()).resolves.toEqual({ signals: [] })
   })
 })

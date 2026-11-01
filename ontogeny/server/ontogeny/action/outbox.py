@@ -18,9 +18,9 @@
 """Transactional-outbox dispatcher: the ONLY bridge from committed state to
 the outside world (webhooks, projection worker, SSE subscribers).
 
-Each consumer advances its own cursor; failures never block other consumers.
-Poison messages advance the cursor too (with failure count) so one bad event
-cannot stall the pipeline; they surface via metrics/logs for manual replay.
+Each consumer acknowledges events individually; a later ID can commit first,
+so an ID high-water mark alone cannot represent completed deliveries. Failures
+block only their own consumer and are retried on the next tick.
 """
 
 from __future__ import annotations
@@ -32,10 +32,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, exists, insert, literal, select
 
 from ..config import Settings
-from .models import OutboxConsumerRow, OutboxRow
+from .models import OutboxConsumerRow, OutboxReceiptRow, OutboxRow
 
 log = logging.getLogger("ontogeny.outbox")
 
@@ -72,9 +72,10 @@ class OutboxDispatcher:
         *,
         sse: SseBroker | None = None,
         projection_hook: Consumer | None = None,
-        derivation_hook: Consumer | None = None,
+        derivation_hook: Callable[[OutboxRow, Any], Awaitable[bool]] | None = None,
         derivation_drain=None,
         http_client: httpx.AsyncClient | None = None,
+        dispatch_lock: asyncio.Lock | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.settings = settings
@@ -85,6 +86,7 @@ class OutboxDispatcher:
         self.derivation_hook = derivation_hook
         self.derivation_drain = derivation_drain
         self.http = http_client
+        self._dispatch_lock = dispatch_lock or asyncio.Lock()
 
     async def _client(self) -> httpx.AsyncClient:
         if self.http is None:
@@ -102,7 +104,7 @@ class OutboxDispatcher:
             url = self.settings.resolve_env_ref(template)
         except KeyError as exc:
             log.warning("webhook %s not delivered: %s (fix config and replay)", event.id, exc)
-            return True  # consumed-with-prejudice; replayed by rewinding the cursor
+            return True  # consumed-with-prejudice; replay requires deleting its receipt
         allow = self.settings.webhook_allowlist
         host = httpx.URL(url).host if url else None
         if not allow or (host and not any(host == a or host.endswith("." + a) for a in allow)):
@@ -155,31 +157,82 @@ class OutboxDispatcher:
         )
         return True
 
-    async def _deliver_derivation(self, event: OutboxRow) -> bool:
+    async def _deliver_derivation(self, event: OutboxRow, session) -> bool:
         if self.derivation_hook is None:
             return True
-        return bool(await self.derivation_hook(event))
+        return bool(await self.derivation_hook(event, session))
 
     # --------------------------------------------------------------- driving
 
     async def dispatch_pending(self, *, limit: int = 100) -> dict[str, int]:
-        consumers: dict[str, Consumer] = {
-            "webhook": self._deliver_webhook,
-            "projection": self._deliver_projection,
-            "derivation": self._deliver_derivation,
-            "sse": self._deliver_sse,
-        }
+        # The background loop and the admin endpoint share cursors and must
+        # never dispatch the same batch concurrently in this process.
+        async with self._dispatch_lock:
+            return await self._dispatch_pending(limit=limit)
+
+    async def replay(self, consumer: str, *, from_id: int, through_id: int) -> int:
+        """Explicitly retry acknowledged events in a bounded inclusive range.
+
+        Replaying a webhook may deliver it again. This also permits operators
+        to recover old pre-migration gaps that legacy cursors cannot distinguish
+        from completed deliveries.
+        """
+        if consumer not in {"webhook", "projection", "derivation", "sse"} or from_id < 1 or through_id < from_id:
+            raise ValueError("invalid outbox consumer or replay range")
+        async with self._dispatch_lock, self.session_factory() as session:
+            cursor = await session.get(OutboxConsumerRow, consumer)
+            if cursor is None or not cursor.receipts_initialized:
+                raise ValueError("consumer receipts have not been initialized; dispatch first")
+            result = await session.execute(
+                delete(OutboxReceiptRow).where(
+                    OutboxReceiptRow.consumer == consumer,
+                    OutboxReceiptRow.event_id >= from_id,
+                    OutboxReceiptRow.event_id <= through_id,
+                )
+            )
+            await session.commit()
+            return int(result.rowcount)
+
+    async def _dispatch_pending(self, *, limit: int = 100) -> dict[str, int]:
         stats: dict[str, int] = {}
         async with self.session_factory() as session:
+            consumers: dict[str, Consumer] = {
+                "webhook": self._deliver_webhook,
+                "projection": self._deliver_projection,
+                "derivation": lambda event: self._deliver_derivation(event, session),
+                "sse": self._deliver_sse,
+            }
             for name, deliver in consumers.items():
                 cursor = (
                     await session.execute(select(OutboxConsumerRow).where(OutboxConsumerRow.consumer == name))
                 ).scalar_one_or_none()
-                last_id = cursor.last_id if cursor else 0
+                if cursor is None:
+                    cursor = OutboxConsumerRow(consumer=name, last_id=0, receipts_initialized=True)
+                    session.add(cursor)
+                    await session.flush()
+                elif not cursor.receipts_initialized:
+                    # Snapshot the *visible* legacy history once. Do not replay
+                    # old webhooks implicitly; a transaction that commits after
+                    # this statement has no receipt even if its ID is lower.
+                    await session.execute(
+                        insert(OutboxReceiptRow).from_select(
+                            ["consumer", "event_id"],
+                            select(literal(name), OutboxRow.id).where(OutboxRow.id <= cursor.last_id),
+                        )
+                    )
+                    cursor.receipts_initialized = True
+                    await session.flush()
                 rows = (
                     (
                         await session.execute(
-                            select(OutboxRow).where(OutboxRow.id > last_id).order_by(OutboxRow.id).limit(limit)
+                            select(OutboxRow)
+                            .where(
+                                ~exists().where(
+                                    OutboxReceiptRow.consumer == name, OutboxReceiptRow.event_id == OutboxRow.id
+                                )
+                            )
+                            .order_by(OutboxRow.id)
+                            .limit(limit)
                         )
                     )
                     .scalars()
@@ -193,28 +246,15 @@ class OutboxDispatcher:
                         log.warning("outbox consumer %s failed on #%s: %s", name, row.id, exc)
                         ok = False
                     if not ok:
-                        # Do NOT move past a row that was not delivered. Consumers
-                        # return False precisely to be retried (the projection
-                        # worker's own docstring calls it "at-least-once, retried
-                        # by cursor rewind"), and advancing anyway made that a
-                        # lie: one transient HTTP error lost the event forever.
-                        # Stopping leaves the cursor on this row, so the next tick
-                        # tries again — safe because every consumer is idempotent
-                        # (upserts, POSTs to an at-least-once endpoint). A
-                        # permanently failing row stalls only its own consumer,
-                        # and the log line above names it.
                         break
                     delivered += 1
-                    last_id = row.id
+                    session.add(OutboxReceiptRow(consumer=name, event_id=row.id))
+                    cursor.last_id = max(cursor.last_id, row.id)
                     # First successful delivery stamps the row; used to be a
                     # self-assignment (always NULL), so delivery latency was
                     # unobservable and "pending" counts never decreased.
                     if row.published_at is None:
-                        row.published_at = _dt.datetime.now(_dt.timezone.utc)
-                if cursor is None:
-                    session.add(OutboxConsumerRow(consumer=name, last_id=last_id))
-                else:
-                    cursor.last_id = last_id
+                        row.published_at = _dt.datetime.now(_dt.UTC)
                 stats[name] = delivered
             await session.commit()
 

@@ -200,6 +200,29 @@ describe('AgentConsole — one conversation, three modes', () => {
     expect(calls.some((c) => String(c.url).endsWith('/agent/sessions/2/run'))).toBe(true)
   })
 
+  it('retries a failed run on the already-created session', async () => {
+    const run = { match: /\/agent\/sessions\/2\/run$/, status: 503, body: { code: 'UNAVAILABLE', message: 'try later' } }
+    const { calls } = mockFetch([
+      { match: '/agent/plugins', body: { plugins: [PLUGIN] } },
+      { match: /\/agent\/sessions$/, body: (_url: string, init?: RequestInit) =>
+        init?.method === 'POST' ? { ...SESSION, id: 2, task: 'inventory' } : { sessions: [] } },
+      run,
+      { match: /\/agent\/sessions\/2$/, body: { ...DETAIL, id: 2 } },
+    ])
+    renderConsole()
+    await waitFor(() => expect(screen.getByTestId('agent-session-picker')).toHaveValue('new:maintenance-copilot'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'inventory' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(screen.getByTestId('error-banner')).toHaveTextContent('try later'))
+    expect(screen.getByTestId('chat-input')).toHaveValue('inventory')
+    expect(screen.getByTestId('agent-session-picker')).toHaveValue('s:2')
+    run.status = 200
+    run.body = { code: 'OK', message: '' }
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(calls.filter((c) => c.url.endsWith('/agent/sessions/2/run'))).toHaveLength(2))
+    expect(calls.filter((c) => c.url.endsWith('/agent/sessions') && c.init?.method === 'POST')).toHaveLength(1)
+  })
+
   it('agent mode: picking an existing session shows its trace and flags a blocked write', async () => {
     mockFetch([
       { match: '/agent/plugins', body: { plugins: [PLUGIN] } },

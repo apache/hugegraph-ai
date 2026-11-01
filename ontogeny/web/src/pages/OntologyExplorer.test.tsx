@@ -171,7 +171,12 @@ describe('OntologyExplorer — the editable ontology canvas', () => {
   it('draws one directed, selectable edge per link type', async () => {
     mock()
     render()
-    await waitFor(() => expect(screen.getByTestId('ontology-flow')).toBeInTheDocument())
+    // The container can be committed before FlowGraph's effect constructs G6.
+    // Wait for the declared edge in the actual canvas data before inspecting
+    // its direction or exercising its selection handler.
+    await waitFor(() => expect(g6()?.cfg?.data?.edges?.some(
+      (edge: { id?: string }) => edge.id === 'link:sales-order-customer',
+    )).toBe(true))
 
     const link = g6().cfg.data.edges.find((e: { id?: string }) => e.id === 'link:sales-order-customer')
     expect(link).toBeTruthy()

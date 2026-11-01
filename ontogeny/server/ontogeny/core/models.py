@@ -15,7 +15,11 @@
 # specific language governing permissions and
 # limitations under the License.
 
-"""Pydantic models for the nine DSL resource kinds (dsl-spec).
+"""Pydantic models for the eleven DSL resource kinds (dsl-spec).
+
+Nine platform resources (4 core + 3 extension + 1 adapter + 1 baseline)
+plus two manifest resources (Store, Ontology); the taxonomy lives in :mod:`.kinds`,
+which this module asserts against at import time.
 
 Strict by design: ``extra='forbid'`` everywhere so typos fail at load, not at
 runtime. Environment references (``${VAR}``) are carried unresolved; the
@@ -29,6 +33,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from .kinds import BY_KIND
 from .types import PropertyType
 
 API_VERSION = "ontogeny/v1"
@@ -56,10 +61,32 @@ class ResourceMeta(_Model):
 # ---------------------------------------------------------------- store
 
 
+class DocumentCfg(_Model):
+    """How a document corpus is discovered and parsed.
+
+    ``connection`` on the Store is the corpus root; ``include``/``exclude`` are
+    globs relative to it. The extractor capability owns parsing and chunking, so
+    this is a declaration, not a parser configuration.
+    """
+
+    include: list[str] = Field(default_factory=lambda: ["**/*.md", "**/*.txt"])
+    exclude: list[str] = Field(default_factory=list)
+    #: paragraph | sentence | document (document = one chunk per file)
+    split: Literal["paragraph", "sentence", "document"] = "paragraph"
+    language: Literal["zh", "en"] = "zh"
+    #: the external agent owns chunking/parallelism; these are hints only
+    max_chunks_per_doc: int = Field(default=200, ge=1, le=5000)
+    #: prompt header override, relative to the package root
+    prompt_file: str | None = None
+    max_chunks_per_doc: int = Field(default=200, ge=1, le=5000)
+
+
 class StoreSpec(_Model):
-    type: Literal["postgres", "sqlite", "duckdb", "csv", "parquet", "iceberg"]
+    type: Literal["postgres", "sqlite", "duckdb", "csv", "parquet", "iceberg", "document"]
     connection: str
     access: Literal["read-only", "read-write"] = "read-only"
+    #: only meaningful for type=document; defaults keep a minimal store valid
+    documents: DocumentCfg | None = None
 
 
 # ---------------------------------------------------------------- object
@@ -70,7 +97,7 @@ class PropertyDef(_Model):
     display: str | None = None
     description: str | None = None
     required: bool = False
-    owner: Literal["source", "ontology"] | None = None
+    owner: Literal["source", "ontology", "document"] | None = None
     marking: str | None = None
     # expression (read-time) or {"kind": "function", "entry": ..., "object_param": ...,
     # "triggers": [other, object, types]} (write-time, materialized by the
@@ -113,10 +140,29 @@ class WatermarkCfg(_Model):
 
 
 class SyncCfg(_Model):
-    strategy: Literal["snapshot", "watermark", "changelog"]
+    strategy: Literal["snapshot", "watermark", "changelog", "extract"]
     watermark: WatermarkCfg | None = None
     schedule: str | None = None
     deletes: Literal["none", "absent-means-archive"] | None = None
+
+
+class ExtractCfg(_Model):
+    """Document-extraction binding for one object type.
+
+    ``key`` is the identity fallback when the ontology primary key is not
+    extractable from the text; without it a new object is never auto-created
+    (it goes to review). ``match`` is the natural key used to resolve an
+    extracted entity to an existing row before creating a new one.
+    """
+
+    #: labels allowed from this corpus; empty = the owning object type
+    labels: list[str] = Field(default_factory=list)
+    key: list[str] = Field(default_factory=list)
+    match: list[str] = Field(default_factory=list)
+    create: Literal["auto", "review", "never"] = "review"
+    update: Literal["fill-empty", "overwrite", "never"] = "fill-empty"
+    #: let the corpus write properties declared owner: source (off by default)
+    include_source: bool = False
 
 
 class SourceRef(_Model):
@@ -132,6 +178,8 @@ class BackingSpec(_Model):
     source: SourceRef
     mapping: dict[str, str] = Field(default_factory=dict)  # prop -> column (overrides; same-name implied)
     sync: SyncCfg | None = None
+    #: present on document-backed types (sync.strategy == "extract")
+    extract: ExtractCfg | None = None
 
 
 class ObjectTypeSpec(_Model):
@@ -160,7 +208,18 @@ class JoinTableJoin(_Model):
     keys: dict[str, dict[str, str]]  # {"source": {...}, "target": {...}}
 
 
-JoinSpec = Annotated[ForeignKeyJoin | JoinTableJoin, Field(discriminator="kind")]
+class ExtractedJoin(_Model):
+    """Link instances asserted by document extraction (not a column join).
+
+    Rows live in the link table like a join-table link -- the projection,
+    traversal and query paths already read that table -- but carry provenance
+    so a re-extraction or corpus change can retract only what it asserted.
+    """
+
+    kind: Literal["extracted"]
+
+
+JoinSpec = Annotated[ForeignKeyJoin | JoinTableJoin | ExtractedJoin, Field(discriminator="kind")]
 
 
 class LinkSpec(_Model):
@@ -649,3 +708,11 @@ AnyResource = (
     | EvolutionPolicyResource
     | OntologyResource
 )
+
+# Registry/model parity, enforced at import time rather than in a test alone:
+# a kind added to kinds.KINDS without a model (or vice versa) must fail before
+# it can be loaded, published, or reported by /meta.
+if set(RESOURCE_BY_KIND) != set(BY_KIND):  # pragma: no cover - impossible once the file is correct
+    _missing = sorted(set(BY_KIND) - set(RESOURCE_BY_KIND))
+    _extra = sorted(set(RESOURCE_BY_KIND) - set(BY_KIND))
+    raise RuntimeError(f"DSL kind registry out of sync: missing models {_missing}, unregistered kinds {_extra}")

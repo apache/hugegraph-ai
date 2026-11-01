@@ -112,6 +112,13 @@ export const IconX = (p: SVGProps<SVGSVGElement>) => (
 export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
 )
+export const IconUpload = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" width="16" height="16" aria-hidden="true" {...p}>
+    <path d="M8 10.5V2.5M5 5.5l3-3 3 3" />
+    <path d="M2.5 10v2.5A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5V10" />
+  </svg>
+)
+
 export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 5v6h-6" /></svg>
 )

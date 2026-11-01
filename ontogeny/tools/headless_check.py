@@ -275,9 +275,9 @@ ROUTES = [
     "/ontology",
     "/builder",
     "/data",
-    "/objects/sales-order",
-    "/actions/confirm-sales-order",
-    "/functions/capacity-check",
+    "/objects/requirement",
+    "/actions/tapeout",
+    "/functions/analyze-yield-loss",
     "/graph",
     "/agent",
     "/agent/manage",
@@ -285,7 +285,7 @@ ROUTES = [
     "/evolve",
     "/audit",
     "/admin",
-    "/ontology/sales-order",
+    "/ontology/requirement",
     "/access",
     "/login",
     "/knowledge",
@@ -298,23 +298,19 @@ ROUTES = [
 
 
 def _bootstrap_password() -> str | None:
-    """The demo daemon prints a generated admin password once, on first start.
+    """Read the demo's owner-only bootstrap credential, if present.
 
     Reading it back keeps `python tools/headless_check.py` a one-liner against a
     fresh deployment; pass --login-password (or ONTOGENY_ADMIN_PASSWORD) to override.
     """
     if os.environ.get("ONTOGENY_ADMIN_PASSWORD"):
         return os.environ["ONTOGENY_ADMIN_PASSWORD"]
-    import re as _re
-
-    for log in (".ontogeny-daemon/ontogeny.log", ".ontogeny-demo/ontogeny.log"):
+    directories = [os.environ.get("ONTOGENY_DATA_DIR"), ".ontogeny-daemon", ".ontogeny-demo"]
+    for directory in filter(None, directories):
         try:
-            text = Path(log).read_text(encoding="utf-8", errors="ignore")
+            return (Path(directory) / "admin-bootstrap-password").read_text(encoding="utf-8").strip()
         except OSError:
             continue
-        found = _re.findall(r"generated password: (\S+)", text)
-        if found:
-            return found[-1]
     return None
 
 
@@ -409,7 +405,7 @@ async def audit(base: str, only: str | None = None, user: str = "admin", passwor
         await ch.goto(f"{base}/graph")
         drawer = await ch.eval("!!document.querySelector('[data-testid=\"node-info-drawer\"]')")
         report["keyboard"]["drawerPresentOnGraph"] = drawer
-        await ch.goto(f"{base}/objects/sales-order/SO-2026-0001")
+        await ch.goto(f"{base}/objects/tapeout-version/TO-A0")
         drawer2 = await ch.eval("!!document.querySelector('[data-testid=\"node-info-drawer\"]')")
         report["keyboard"]["drawerPresentOnObject"] = drawer2
 

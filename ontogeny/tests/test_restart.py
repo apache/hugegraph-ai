@@ -32,6 +32,7 @@ from ontogeny.config import Settings
 from ontogeny.service import ServiceContext
 
 PRODUCT = {"id": "u-product", "Role": ["product"]}
+PLANNER = PRODUCT  # alias kept for shared helpers
 FAB = {"id": "u-fab", "Role": ["fab"]}
 
 # The golden package has no action governed by the package *default* policy
@@ -95,6 +96,23 @@ async def _restart(settings: Settings, package_root: str) -> ServiceContext:
 
 
 class TestPolicySurvivesRestart:
+    async def test_generated_ids_survive_process_restart(self, demo_env):
+        settings, package_root, first = demo_env
+        async with first.sessionmaker() as session:
+            initial = await first.runtime.execute(session, "reopen-equipment", FAB, {})
+            await session.commit()
+            first_id = initial.object_id
+        await first.engine.dispose()
+        second = await _restart(settings, package_root)
+        try:
+            async with second.sessionmaker() as session:
+                later = await second.runtime.execute(session, "reopen-equipment", FAB, {})
+                await session.commit()
+                assert first_id == "EQ-000001"
+                assert later.object_id == "EQ-000002"
+        finally:
+            await second.engine.dispose()
+
     async def test_cedar_texts_reloaded_from_db(self, demo_env):
         settings, package_root, first = demo_env
         assert first.compiled.cedar_texts["lifecycle"].strip(), "publish must load cedar text"

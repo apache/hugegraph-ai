@@ -189,39 +189,36 @@ class EvalRunner:
             report["passed"] = report["passed"] and ok
 
         for case in getattr(suite.spec, "agents", []) or []:
-            ok, details = await self._run_agent_case(case)
+            ok, details = await self._run_agent_case(session, case, compiled if candidate_pkg is not None else None)
             report["cases"].append({"name": case.name, "kind": "agent", "ok": ok, **details})
             report["passed"] = report["passed"] and ok
 
         return report
 
-    async def _run_agent_case(self, case) -> tuple[bool, dict[str, Any]]:
-        """Replay a scripted trajectory through the REAL broker (same gates,
-        same audit) and compare outcome classes. LLMs are not reproducible, so
-        the script is the unit under test -- exactly what a promotion would
-        release."""
+    async def _run_agent_case(self, source_session, case, candidate=None) -> tuple[bool, dict[str, Any]]:
+        """Replay a trajectory through the broker against a disposable snapshot."""
 
         details: dict[str, Any] = {"plugin": case.plugin, "steps": len(case.script)}
         if self.agent_broker is None:
             return False, {**details, "error": "agent eval requires the broker (service not wired)"}
-        try:
-            self.agent_broker.plugin(case.plugin)  # existence probe: raises -> reported below
-        except Exception as exc:
-            return False, {**details, "error": f"unknown plugin: {exc}"}
+        from .agent_eval import isolated_agent_broker
 
-        async def run_once() -> list[str]:
-            sess = await self.agent_broker.open_session(case.plugin, f"eval:{case.name}")
+        async def run_once(broker) -> list[str]:
+            sess = await broker.open_session(case.plugin, f"eval:{case.name}")
             outcomes: list[str] = []
             for step in case.script:
-                out = await self.agent_broker.call_tool(sess["id"], str(step.get("tool")), dict(step.get("args") or {}))
+                out = await broker.call_tool(sess["id"], str(step.get("tool")), dict(step.get("args") or {}))
                 outcomes.append(classify(str(out.get("outcome"))))
                 if classify(str(out.get("outcome"))) == "ok" and case.expect.idempotent:
                     continue
-            await self.agent_broker.finish_session(sess["id"], {"eval": case.name})
+            await broker.finish_session(sess["id"], {"eval": case.name})
             return outcomes
 
         try:
-            first = await run_once()
+            live_compiled = self.agent_broker.sc.compiled
+            async with isolated_agent_broker(source_session, live_compiled, candidate or live_compiled, case) as broker:
+                first = await run_once(broker)
+                second = await run_once(broker) if case.expect.idempotent else None
         except Exception as exc:
             return False, {**details, "error": f"{type(exc).__name__}: {exc}"}
 
@@ -230,7 +227,6 @@ class EvalRunner:
         details["outcomes"] = first
 
         if case.expect.idempotent:
-            second = await run_once()
             # the write steps must be refused on replay: rules see post-state
             # (e.g. already-CLOSED), so a second execution means double-apply
             for idx, step in enumerate(case.script):

@@ -87,7 +87,11 @@ async def _make_sc(golden_pkg_path, tmp_path):
 
 @pytest_asyncio.fixture()
 async def sc(golden_pkg_path, tmp_path):
-    return await _make_sc(golden_pkg_path, tmp_path)
+    context = await _make_sc(golden_pkg_path, tmp_path)
+    try:
+        yield context
+    finally:
+        await context.engine.dispose()
 
 
 async def _open(mcp, plugin: str = "product-copilot", task: str = "t") -> int:
@@ -189,12 +193,17 @@ class TestProtocolSurface:
     async def test_running_session_isolation_engine_vs_external(self, sc):
         """§2: while the engine owns a running session, an external MCP caller
         gets the structured refusal; the engine-mode surface drives on."""
-        sid = (await sc.agents.open_session("product-copilot", "x"))["id"]
+        from ontogeny.mcp_server import _MCP_DRIVER
+
+        driver = {"id": "external-driver"}
+        token = _MCP_DRIVER.set(driver)
+        sid = (await sc.agents.open_session("product-copilot", "x", driver=driver))["id"]
         await sc.agents.set_status(sid, "running")
 
         async with in_process_mcp_session(sc, engine_mode=False) as external:
             out = await external.call_tool("describe_ontology", {"session_id": sid, "plugin": "product-copilot"})
             assert out["outcome"] == "AGENT_SESSION_RUNNING"
+        _MCP_DRIVER.reset(token)
         async with in_process_mcp_session(sc) as engine_client:
             out = await engine_client.call_tool("describe_ontology", {"session_id": sid, "plugin": "product-copilot"})
             assert out["outcome"] == "ok"
@@ -219,16 +228,19 @@ class TestWireSurface:
     """The mounted /mcp endpoint, driven by a real streamable-HTTP MCP client
     over the ASGI transport (no sockets): what Claude Desktop et al. do."""
 
-    async def test_streamable_http_end_to_end(self, golden_pkg_path, tmp_path):
+    async def test_streamable_http_end_to_end(self, sc):
         from mcp.client.session import ClientSession
         from mcp.client.streamable_http import streamable_http_client
 
-        sc = await _make_sc(golden_pkg_path, tmp_path)
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
         async with app.router.lifespan_context(app):
             assert any(getattr(r, "path", None) == MCP_HTTP_PATH for r in app.routes)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as hc:  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer
+            async with httpx.AsyncClient(  # noqa: SIM117 -- nested transport contexts read clearer
+                transport=transport,
+                base_url="http://test",
+                headers={"X-Ontogeny-Principal": json.dumps({"id": "wire-driver"})},
+            ) as hc:
                 async with streamable_http_client(f"http://test{MCP_HTTP_PATH}", http_client=hc) as streams:
                     async with ClientSession(streams[0], streams[1]) as sess:
                         await sess.initialize()
@@ -254,8 +266,7 @@ class TestWireSurface:
                         assert res.structured_content["outcome"] == "ok"
                         assert res.structured_content["detail"]["total"] == 5
 
-    async def test_mcp_route_is_never_shadowed(self, golden_pkg_path, tmp_path):
-        sc = await _make_sc(golden_pkg_path, tmp_path)
+    async def test_mcp_route_is_never_shadowed(self, sc):
         app = build_app(sc)
         transport = httpx.ASGITransport(app=app)
         async with app.router.lifespan_context(app):  # noqa: SIM117 -- nested lifespan/client/session contexts read clearer

@@ -91,7 +91,7 @@
 // 第 4 拍 · 评测——POST /evolve/proposals/42/eval（候选包副本上跑，线上不动）
 {"passed": true, "suites": {"production-flow-suite": {"passed": true, "cases": [
     {"name": "open-sales-orders", "kind": "query", "ok": true, "latency_ms": 2.4, "rows": 17},
-    {"name": "released-production-orders", "kind": "query", "ok": true, "latency_ms": 3.1, "rows": 8},
+    {"name": "running-lots-exist", "kind": "query", "ok": true, "latency_ms": 3.1, "rows": 2},
     {"kind": "replay", "action": "report-operation", "ok": true,
      "replays": 214, "outcome_matches": 214},                 // 累加语义，不设 no-double-close
     {"kind": "replay", "action": "close-maintenance-order", "ok": true,

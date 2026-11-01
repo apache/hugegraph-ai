@@ -141,7 +141,10 @@ async def test_rerun_after_confirm_creates_a_revision(doc_context):
     assert old["status"] == "confirmed"  # only flips when the revision confirms
 
 
-async def test_task_uses_the_agent_broker_and_agent_command(tmp_path):
+async def test_task_runs_the_configured_agent_command_directly(tmp_path):
+    """After the mainline broker refactor (sessions + call_tool only), the
+    extractor runs the doc-agent protocol out-of-process — no agent session is
+    created for an extraction payload, and the attempt records the direct run."""
     cmd = f"{sys.executable} {REFERENCE_AGENT}"
     sc, _, _ = await make_context(tmp_path, doc_agent_cmd=cmd)
     await sc.sync("supplier")
@@ -150,9 +153,10 @@ async def test_task_uses_the_agent_broker_and_agent_command(tmp_path):
     )
     task_id = created["tasks"][0]["id"]
     detail = await sc.documents.tasks.run(task_id, "tester")
-    assert detail["attempt"]["agent_run_id"] is not None
+    assert detail["attempt"]["agent_run_id"] is None
+    assert detail["attempt"]["provider"] == "direct"
     sessions = await sc.agents.list_sessions()
-    assert any(s["id"] == detail["attempt"]["agent_run_id"] for s in sessions)
+    assert not any(s.get("plugin") == "doc-extract" for s in sessions)
     assert any(c["label"] == "supplier-note" for c in detail["attempt"]["graph"]["vertices"])
 
 

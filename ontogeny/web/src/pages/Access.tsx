@@ -281,7 +281,7 @@ function Accounts() {
                    onChange={(e) => setForm({ ...form, username: e.target.value })} />
           </Field>
           <Field label={t('access.password')} hint={t('access.passwordHint')}>
-            <input className="ontogeny-input font-mono" type="password" value={form.password} data-testid="new-password"
+            <input className="ontogeny-input font-mono" type="password" minLength={6} value={form.password} data-testid="new-password"
                    onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
           <Field label={t('access.display')}>
@@ -315,7 +315,7 @@ function Accounts() {
             variant="primary"
             className="ml-auto"
             data-testid="create-user"
-            disabled={!form.username.trim() || form.password.length < 8 || create.isPending}
+            disabled={!form.username.trim() || form.password.length < 6 || create.isPending}
             onClick={() => create.mutate()}
             icon={<IconPlus width={13} height={13} />}
           >
@@ -407,7 +407,7 @@ function EditUserDialog({ user, onClose, onSave, saving }: {
             <input className="ontogeny-input font-mono" value={markings} onChange={(e) => setMarkings(e.target.value)} />
           </Field>
           <Field label={t('access.resetPassword')} hint={t('access.resetPasswordHint')}>
-            <input className="ontogeny-input font-mono" type="password" value={password} data-testid="edit-password"
+            <input className="ontogeny-input font-mono" type="password" minLength={6} value={password} data-testid="edit-password"
                    onChange={(e) => setPassword(e.target.value)} />
           </Field>
           <div className="flex items-end pb-1">
@@ -423,7 +423,7 @@ function EditUserDialog({ user, onClose, onSave, saving }: {
           <Button
             variant="primary"
             data-testid="save-user"
-            disabled={saving}
+            disabled={saving || (password.length > 0 && password.length < 6)}
             onClick={() => onSave({
               display,
               roles: splitList(roles),
@@ -788,7 +788,7 @@ function Identity() {
     // a live session outranks the header, so becoming someone else means
     // leaving this account first; signOut clears the override, so re-set it
     if (via === 'session' || via === 'bearer') {
-      await signOut()
+      try { await signOut() } catch { return } // auth gate displays the failure
       setPrincipal(p)
       await refresh()
     } else {

@@ -58,18 +58,23 @@ ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "confirm_summary": "TEXT",
         "updated_at": "TEXT",
     },
+    "ontogeny_outbox_cursor": {
+        "receipts_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
+    },
     "ontogeny_agent_session": {
         "expires_at": "TEXT",
         "run_count": "INTEGER",
         "driver": "TEXT",
         "run_started_at": "TEXT",
         "tools_json": "TEXT",
+        "principal_snapshot": "JSON",
     },
     "ontogeny_agent_step": {
         "thought": "TEXT",
         "run_no": "INTEGER",
         "driver": "TEXT",
     },
+    "ontogeny_agent_approval": {"expected_revision": "INTEGER", "failure_reason": "TEXT"},
     "ontogeny_evolve_proposal": {
         # the model's own reasoning, persisted even when it DECLINED the
         # mutation -- the decline rationale is often the most valuable part
@@ -98,7 +103,16 @@ async def init_schema(engine: AsyncEngine) -> None:
     import contextlib
     import importlib
 
-    for mod in ("stores", "action", "telemetry", "evolve", "agent.models", "auth.models", "runtime_config"):
+    for mod in (
+        "stores",
+        "action",
+        "telemetry",
+        "evolve",
+        "agent.models",
+        "auth.models",
+        "runtime_config",
+        "functions.derivation",
+    ):
         # a layer not implemented yet: its tables register once it exists
         with contextlib.suppress(ModuleNotFoundError):
             importlib.import_module(f".{mod}", package="ontogeny")
@@ -106,6 +120,23 @@ async def init_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns(conn)
+        await _migrate_idempotency_index(conn)
+
+
+async def _migrate_idempotency_index(conn) -> None:
+    """Replace the old global key constraint without touching audit data."""
+    from sqlalchemy import text
+
+    # Install the scoped constraint first so the transition never exposes a
+    # window with no uniqueness protection. Existing global uniqueness implies
+    # the existing data are compatible with the new constraint.
+    await conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_revision_idem_scope "
+            "ON ontogeny_revision (action, principal, idempotency_key) WHERE idempotency_key IS NOT NULL"
+        )
+    )
+    await conn.execute(text("DROP INDEX IF EXISTS uq_revision_idem"))
 
 
 async def _add_missing_columns(conn) -> None:

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -273,6 +274,7 @@ class ExprContext:
     principal: dict[str, Any] = field(default_factory=dict)
     now: _dt.datetime = field(default_factory=lambda: _dt.datetime.now(_dt.UTC))
     id_seed: int = 0
+    id_factory: Callable[[str], str] | None = None
     _seq: dict[str, int] = field(default_factory=dict)
 
     def root(self, name: str) -> Any:
@@ -373,6 +375,8 @@ def _call(node: Call, ctx: ExprContext) -> Any:
         pfx = eval_node(node.args[0], ctx)
         if not isinstance(pfx, str):
             raise ExpressionError("newId() prefix must be a string")
+        if ctx.id_factory is not None:
+            return ctx.id_factory(pfx)
         n = ctx._seq.get(pfx, ctx.id_seed) + 1
         ctx._seq[pfx] = n
         return f"{pfx}-{n:06d}"

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -171,10 +172,9 @@ class Promoter:
                 }
             # direction F: a byte-identical backup, so a red post-merge eval
             # can be undone without touching git
-            backup_dir = Path(str(pkg_root) + ".evolve-backup")
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
-            shutil.copytree(pkg_root, backup_dir)
+            root = Path(pkg_root)
+            backup_dir = Path(tempfile.mkdtemp(prefix=f"{root.name}.evolve-backup-", dir=root.parent))
+            shutil.copytree(root, backup_dir, dirs_exist_ok=True, symlinks=True)
             write_package(candidate)  # merge = files on disk (revert = git checkout)
             compiled = await self.registry.publish(session, candidate, created_by=f"evolve:t0:proposal-{proposal.id}")
             proposal.status = "promoted"
@@ -323,22 +323,67 @@ class Promoter:
             )
         return {"clean": clean, "actions": actions}
 
-    async def rollback(self, session, pkg_root: str | Path, backup_dir: str | Path) -> dict[str, Any]:
-        """Direction F: restore the pre-merge files and republish them. The
-        loop undoing its own last merge -- never a human's (backups only exist
-        for evolve T0 merges)."""
-        backup = Path(backup_dir)
+    async def rollback(
+        self, session, pkg_root: str | Path, backup_dir: str | Path, *, commit: bool = False
+    ) -> dict[str, Any]:
+        """Restore and republish the pre-merge package.
+
+        ``commit=True`` is the service's durable rollback boundary: a failed
+        registry write/commit restores the promoted files so disk and DB keep
+        describing the same package. The recovery backup remains available
+        until the caller has reloaded the committed snapshot successfully.
+        """
+        backup, root = Path(backup_dir), Path(pkg_root)
         if not backup.is_dir():
             raise DSLValidationError(f"no evolve backup at {backup_dir!r}")
-        for f in backup.rglob("*"):
-            if f.is_file():
-                dest = Path(pkg_root) / f.relative_to(backup)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(f, dest)
-        pkg = load_package(pkg_root)
-        compiled = await self.registry.publish(session, pkg, created_by="evolve:rollback")
-        shutil.rmtree(backup, ignore_errors=True)
+        cache = self.registry._cache.copy()
+        with tempfile.TemporaryDirectory(prefix=f".{root.name}.rollback-", dir=root.parent) as tmp:
+            current = Path(tmp) / "current"
+            shutil.copytree(root, current, symlinks=True)
+            try:
+                _restore_package(backup, root)
+                pkg = load_package(root)
+                compiled = await self.registry.publish(session, pkg, created_by="evolve:rollback")
+                if commit:
+                    await session.commit()
+            except BaseException:
+                _restore_package(current, root)
+                self.registry._cache.clear()
+                self.registry._cache.update(cache)
+                raise
         return {"status": "rolled_back", "content_hash": compiled.content_hash}
+
+    @staticmethod
+    def cleanup_backup(backup_dir: str | Path) -> None:
+        """Discard recovery files only after commit and runtime reload succeed."""
+        shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+def _restore_package(source: Path, destination: Path) -> None:
+    """Restore the exact file tree, including removing post-backup additions."""
+    for path in destination.iterdir():
+        original = source / path.name
+        if not original.exists() and not original.is_symlink():
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+    for original in source.iterdir():
+        path = destination / original.name
+        if original.is_dir() and not original.is_symlink():
+            if path.is_symlink() or (path.exists() and not path.is_dir()):
+                path.unlink()
+            path.mkdir(exist_ok=True)
+            _restore_package(original, path)
+        else:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            elif path.is_symlink() or original.is_symlink():
+                path.unlink(missing_ok=True)
+            if original.is_symlink():
+                path.symlink_to(original.readlink())
+            else:
+                shutil.copy2(original, path)
 
 
 class MutationCfg:  # pragma: no cover -- retained for config defaults documentation

@@ -120,7 +120,7 @@ class TestSessionDeletionGuards:
 
         async with sc.sessionmaker() as s:
             row = AgentSessionRow(
-                plugin="planning-copilot",
+                plugin="product-copilot",
                 task="t",
                 status="open",
                 principal=f"agent:x-{driver_id}",
@@ -161,7 +161,7 @@ class TestSessionDeletionGuards:
             s.add(
                 AgentApprovalRow(
                     session_id=sid,
-                    plugin="planning-copilot",
+                    plugin="product-copilot",
                     tool="act_tapeout",
                     action="tapeout",
                     parameters={},

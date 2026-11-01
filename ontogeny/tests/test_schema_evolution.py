@@ -198,7 +198,8 @@ class TestAdditiveMigration:
         async with sc.sessionmaker() as s:
             rows, total = await sc.repo.query(s, "wafer-lot", limit=5)
         assert total >= 1
-        assert "traveler_note" in rows[0] and rows[0]["traveler_note"] is None
+        assert "traveler-note" in rows[0] and rows[0]["traveler-note"] is None
+        assert "traveler_note" not in rows[0], "query results expose the declaration, not SQL storage aliases"
 
         # a write through an action now sees the new column too
         async with sc.sessionmaker() as s:
@@ -207,7 +208,7 @@ class TestAdditiveMigration:
             )
             await s.commit()
             row = await sc.repo.get(s, "wafer-lot", "LOT-2419")
-        assert row["traveler_note"] == "EQ-07 etch check"
+        assert row["traveler-note"] == "EQ-07 etch check"
 
         await sc.engine.dispose()
 

@@ -52,6 +52,9 @@ class AgentSessionRow(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     plugin: Mapped[str] = mapped_column(String(100), index=True)
     principal: Mapped[str] = mapped_column(String(200))  # frozen plugin principal id
+    # Full execution claims at session creation; old rows remain NULL and must
+    # be reopened because reconstructing claims from the current plugin widens access.
+    principal_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     task: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open|finished|expired
     # frozen limits (from the plugin at session start)
@@ -118,11 +121,13 @@ class AgentApprovalRow(Base):
     action: Mapped[str] = mapped_column(String(200))
     parameters: Mapped[dict] = mapped_column(JSON)
     target_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    expected_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rationale: Mapped[str] = mapped_column(Text, default="")  # why the agent wants this
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending|approved|rejected|executed
     requested_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     decided_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
     decided_at: Mapped[_dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     revision_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 

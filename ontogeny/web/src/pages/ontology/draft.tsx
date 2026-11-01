@@ -66,6 +66,7 @@ interface PersistedDraft {
   touched: string[]
   removed: string[]
   layout: Layout
+  stores?: string[]
   /** Which package this draft belongs to. A deployment serves ONE active
    *  ontology, so a draft carrying a different domain's name is another model's
    *  work: restoring it onto this canvas showed the previous domain's types
@@ -84,20 +85,29 @@ export type Layout = Record<string, { x: number; y: number }>
  * Deliberately *not* domain-filtered here: at mount the active domain is still
  * unknown (it arrives with the domains query), so the decision of whether this
  * draft may be restored is made once that answer lands — see `adopt`. */
-function readDraft(): PersistedDraft | null {
+function forgetDraft(key: string) {
+  try { localStorage.removeItem(key) } catch { /* storage may be disabled */ }
+}
+
+function readDraft(key: string): PersistedDraft | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw) as PersistedDraft
     if (!Array.isArray(parsed?.resources) || typeof parsed.savedAt !== 'number') return null
+    if (!parsed.resources.every((r) => r && typeof r.kind === 'string' && typeof r.metadata?.name === 'string' && r.spec && typeof r.spec === 'object') ||
+        !Array.isArray(parsed.touched) || !parsed.touched.every((k) => typeof k === 'string') ||
+        !Array.isArray(parsed.removed) || !parsed.removed.every((k) => typeof k === 'string')) return null
     parsed.layout = parsed.layout ?? {}
+    if (typeof parsed.layout !== 'object' || Array.isArray(parsed.layout) ||
+        !Object.values(parsed.layout).every((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))) return null
     if (Date.now() - parsed.savedAt > DRAFT_TTL_MS) {
-      localStorage.removeItem(DRAFT_KEY)
+      forgetDraft(key)
       return null
     }
     return parsed
   } catch {
-    localStorage.removeItem(DRAFT_KEY)
+    forgetDraft(key)
     return null
   }
 }
@@ -208,7 +218,12 @@ function renameObjectRefs(res: OntologyResource, from: string, to: string): Onto
   return hit ? { ...res, spec } : res
 }
 
-export function OntologyDraftProvider({ children }: { children: ReactNode }) {
+export function OntologyDraftProvider({ children, storageScope }: { children: ReactNode; storageScope?: string }) {
+  const storageKey = storageScope === undefined ? DRAFT_KEY : `${DRAFT_KEY}:${encodeURIComponent(storageScope)}`
+  const loadedScope = useRef(storageKey)
+  const editVersion = useRef(0)
+  const loadRequest = useRef(0)
+  const saveInFlight = useRef(false)
   const qc = useQueryClient()
   // Which ontology this editing session belongs to. The deployment serves ONE
   // active domain, and "which one" is a server answer -- so the page's load
@@ -248,25 +263,29 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
 
   // persist on every change; a clean session leaves no draft behind
   useEffect(() => {
-    if (!dirty || domain === null) {
-      localStorage.removeItem(DRAFT_KEY)
+    // Do not erase a persisted draft before the domain answer lets us adopt it.
+    if (domain === null || loadedFor.current !== domain || loadedScope.current !== storageKey) return
+    if (!dirty) {
+      forgetDraft(storageKey)
       return
     }
     try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({
-        savedAt: Date.now(), resources, touched: [...touched], removed: [...removed], layout, domain,
+      localStorage.setItem(storageKey, JSON.stringify({
+        savedAt: Date.now(), resources, touched: [...touched], removed: [...removed], layout, domain, stores,
       } satisfies PersistedDraft))
     } catch {
       // quota exceeded: editing keeps working, it just cannot be restored
     }
-  }, [resources, touched, removed, layout, dirty, domain])
+  }, [resources, touched, removed, layout, dirty, domain, storageKey, stores])
 
-  const load = useCallback(async (forDomain: string | null) => {
+  const load = useCallback(async (forDomain: string | null, keepSaveResult = false) => {
     if (forDomain === null) return
+    const request = ++loadRequest.current
+    const version = editVersion.current
     setLoading(true)
     try {
       const res = await apiClient.builderResources()
-      if (loadedFor.current !== forDomain) return
+      if (loadedFor.current !== forDomain || request !== loadRequest.current || version !== editVersion.current) return
       setResources(res.resources)
       setStores(res.stores ?? [])
       setTouched(new Set())
@@ -276,16 +295,16 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
       setLayout(serverLayout)
       setSavedLayout(serverLayout)
       setLoadError(null)
-      setSaveResult(null)
-      localStorage.removeItem(DRAFT_KEY)
+      if (!keepSaveResult) setSaveResult(null)
+      forgetDraft(storageKey)
       setRestoredAt(null)
     } catch (e) {
-      if (loadedFor.current !== forDomain) return
+      if (loadedFor.current !== forDomain || request !== loadRequest.current) return
       setLoadError(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e))
     } finally {
-      if (loadedFor.current === forDomain) setLoading(false)
+      if (loadedFor.current === forDomain && request === loadRequest.current) setLoading(false)
     }
-  }, [])
+  }, [storageKey])
 
   /** Take ownership of one active domain: restore that domain's own draft when
    *  there is one, otherwise load what is published under it.
@@ -295,11 +314,16 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
    * the previous package or (with nothing loaded) drew nothing at all. */
   useEffect(() => {
     if (!ready || domains.data === undefined) return
-    if (domain === activeDomain) return
-    const draft = readDraft()
+    if (domain === activeDomain && loadedScope.current === storageKey) return
+    ++editVersion.current
+    ++loadRequest.current
+    loadedScope.current = storageKey
+    const draft = readDraft(storageKey)
     const restorable = draft && (draft.domain ?? activeDomain) === activeDomain ? draft : null
     loadedFor.current = activeDomain
     setDomain(activeDomain)
+    setStores(restorable?.stores ?? [])
+    setSaveError(null)
     // a restored draft carries its own WIP positions; otherwise start clean and
     // let the server answer fill in the package's committed layout (see `load`)
     setLayout(restorable?.layout ?? {})
@@ -314,7 +338,7 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
       setSaveResult(null)
       setLoading(false)
     } else {
-      if (draft) localStorage.removeItem(DRAFT_KEY)
+      if (draft) forgetDraft(storageKey)
       setResources([])
       setTouched(new Set())
       setRemoved(new Set())
@@ -322,17 +346,19 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
       setSaveResult(null)
       void load(activeDomain)
     }
-  }, [ready, domains.data, activeDomain, domain, load])
+  }, [ready, domains.data, activeDomain, domain, load, storageKey])
 
   const ensureLoaded = useCallback(() => setReady(true), [])
 
   const update = useCallback<OntologyDraft['update']>((kind, name, next) => {
+    ++editVersion.current
     setResources((prev) => prev.map((r) => (r.kind === kind && r.metadata.name === name ? next(r) : r)))
     setTouched((prev) => new Set(prev).add(rkey(kind, name)))
     setSaveResult(null)
   }, [])
 
   const create = useCallback<OntologyDraft['create']>((res) => {
+    ++editVersion.current
     setResources((prev) => [...prev, res])
     setTouched((prev) => new Set(prev).add(rkey(res.kind, res.metadata.name)))
     setSaveResult(null)
@@ -340,6 +366,7 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
 
   const rename = useCallback<OntologyDraft['rename']>((kind, from, to) => {
     if (!to || to === from) return
+    ++editVersion.current
     // resources whose spec pointed at the old name become dirty as well
     const affected = new Set<string>()
     setResources((prev) => prev.map((r) => {
@@ -363,6 +390,7 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const remove = useCallback<OntologyDraft['remove']>((kind, name) => {
+    ++editVersion.current
     setResources((prev) => prev.filter((r) => !(r.kind === kind && r.metadata.name === name)))
     setTouched((prev) => {
       const next = new Set(prev)
@@ -374,6 +402,9 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const save = useCallback(async () => {
+    if (saveInFlight.current || domain === null) return
+    saveInFlight.current = true
+    const version = editVersion.current
     setSaving(true)
     setSaveError(null)
     try {
@@ -383,26 +414,31 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
         [...removed],
         layout,
       )
+      if (loadedFor.current !== domain || loadedScope.current !== storageKey) return
       setSaveResult({
         content_hash: res.content_hash,
         written: res.written,
         removed: res.removed,
         issues: res.issues ?? [],
       })
-      setTouched(new Set())
-      setRemoved(new Set())
+      const unchanged = editVersion.current === version
+      if (unchanged) {
+        setTouched(new Set())
+        setRemoved(new Set())
+      }
       // the layout is committed alongside the model (the server stores it as
       // the package's layout.yaml): a drag is an edit like any other, so it
       // takes effect when the user says so and not before
       setSavedLayout(layout)
-      localStorage.removeItem(DRAFT_KEY)
+      if (unchanged) forgetDraft(storageKey)
       setRestoredAt(null)
       // a save IS a publish: the compiled snapshot moved, so every page reading
       // it (object tables, the shell's content hash, this canvas) must re-read
       void invalidateMeta(qc)
       // re-seed from what is now published, so ids/versions match the server
-      void load(domain)
+      if (unchanged) void load(domain, true)
     } catch (e) {
+      if (loadedFor.current !== domain || loadedScope.current !== storageKey) return
       if (e instanceof ApiError) {
         const errs = (e.details?.errors ?? []) as Array<{ resource: string; message: string }>
         setSaveError(errs.length ? errs.map((x) => `${x.resource}: ${x.message}`).join('\n') : `${e.code}: ${e.message}`)
@@ -410,29 +446,33 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
         setSaveError(String(e))
       }
     } finally {
+      saveInFlight.current = false
       setSaving(false)
     }
-  }, [resources, touched, removed, layout, domain, load, qc])
+  }, [resources, touched, removed, layout, domain, load, qc, storageKey])
 
   const discard = useCallback(() => {
-    localStorage.removeItem(DRAFT_KEY)
+    ++editVersion.current
+    forgetDraft(storageKey)
     setRestoredAt(null)
     setTouched(new Set())
     setRemoved(new Set())
     setLayout(savedLayout) // unsaved drags go back to where they were
     void load(domain)
-  }, [load, savedLayout, domain])
+  }, [load, savedLayout, domain, storageKey])
 
   const moveNode = useCallback<OntologyDraft['moveNode']>((id, x, y) => {
+    ++editVersion.current
     setLayout((prev) => ({ ...prev, [id]: { x, y } }))
   }, [])
 
-  const resetLayout = useCallback(() => setLayout({}), [])
+  const resetLayout = useCallback(() => { ++editVersion.current; setLayout({}) }, [])
 
   /** Empty the canvas and discard the draft, then re-read the package. Used by
    *  "clear canvas": the model on disk is untouched until a save. */
   const reloadFromServer = useCallback(() => {
-    localStorage.removeItem(DRAFT_KEY)
+    ++editVersion.current
+    forgetDraft(storageKey)
     setSavedLayout({})
     setLayout({})
     setTouched(new Set())
@@ -441,7 +481,7 @@ export function OntologyDraftProvider({ children }: { children: ReactNode }) {
     setSaveResult(null)
     setResources([])
     void load(domain)
-  }, [load, domain])
+  }, [load, domain, storageKey])
 
   const value = useMemo<OntologyDraft>(() => ({
     resources,

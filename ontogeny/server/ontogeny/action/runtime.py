@@ -27,10 +27,11 @@ applies, keeping transactions/audit/policy inside the engine.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 from collections.abc import Callable
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..core import expr as _expr
 from ..core.models import (
@@ -44,6 +45,7 @@ from ..core.models import (
 )
 from ..errors import (
     ConflictError,
+    DSLValidationError,
     NotFoundError,
     OOError,
     RuleRejectedError,
@@ -51,7 +53,7 @@ from ..errors import (
 )
 from ..policy.engine import PolicyEngine
 from ..stores.repo import ObjectRepository, utcnow
-from .models import OutboxRow, RevisionRow
+from .models import IdSequenceRow, OutboxRow, RevisionRow
 
 EffectRunner = Callable[..., Any]  # async (session, entry, params, ctx) -> list[dict]
 
@@ -99,11 +101,33 @@ class ActionRuntime:
         self.policy = policy
         self.settings = settings
         self.function_runner = function_runner
-        # newId() sequence shared by every execution on this runtime: a fresh
-        # seed per execute() made two consecutive creates produce the same id
-        # (PO-000001 twice). The insert guard turns restart-time collisions
-        # into a 409 instead of duplicate alive rows.
-        self._id_seq: dict[str, int] = {}
+
+    def _allocate_id(self, session, prefix: str, object_type: str) -> str:
+        """Allocate under the caller's transaction, skipping legacy object IDs.
+
+        The UPSERT serializes allocations for the same prefix across workers.
+        Existing installations have no sequence row, so check historic as well
+        as current rows before returning a number.
+        """
+        dialect = session.get_bind().dialect.name
+        if dialect == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert
+        elif dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        else:
+            raise OOError(f"newId() is not supported for database dialect {dialect!r}")
+        sequence = IdSequenceRow.__table__
+        table = self.repo._table(object_type)
+        pk_name = self.compiled.objects[object_type].spec.primaryKey[0]
+        pk = table.c[self.compiled.col(pk_name)]
+        pk_is_string = self.compiled.objects[object_type].spec.properties[pk_name].ptype().kind in ("string", "enum")
+        while True:
+            stmt = insert(sequence).values(prefix=prefix, value=1)
+            stmt = stmt.on_conflict_do_update(index_elements=[sequence.c.prefix], set_={"value": sequence.c.value + 1})
+            number = session.execute(stmt.returning(sequence.c.value)).scalar_one()
+            candidate = f"{prefix}-{number:06d}"
+            if not pk_is_string or session.execute(select(pk).where(pk == candidate).limit(1)).first() is None:
+                return candidate
 
     # ------------------------------------------------------------ parameters
 
@@ -163,19 +187,27 @@ class ActionRuntime:
         *,
         expected_revision: int | None = None,
         idempotency_key: str | None = None,
+        commit_rejections: bool = True,
     ) -> RevisionRow:
         action = self.compiled.actions.get(action_name)
         if action is None:
             raise NotFoundError(f"unknown action {action_name!r}")
 
         # 1) idempotent replay
+        idempotency_key = idempotency_key or None
+        principal_id = str(principal.get("id", "anonymous"))
         if idempotency_key:
+            if session.get_bind().dialect.name == "postgresql":
+                # Serialize concurrent callers before checking for a replay.
+                # The unique index remains the final guard on both databases.
+                scope = json.dumps([action_name, principal_id, idempotency_key], separators=(",", ":"))
+                await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(scope, 0))))
             existing = (
                 await session.execute(
                     select(RevisionRow).where(
                         RevisionRow.idempotency_key == idempotency_key,
                         RevisionRow.action == action_name,
-                        RevisionRow.principal == str(principal.get("id", "anonymous")),
+                        RevisionRow.principal == principal_id,
                     )
                 )
             ).scalar_one_or_none()
@@ -199,7 +231,7 @@ class ActionRuntime:
                 action=action_name,
                 object_type=action.spec.target,
                 object_id=str(obj_id or target_id or ""),
-                principal=str(principal.get("id", "anonymous")),
+                principal=principal_id,
                 params=_jsonable(params),
                 before=_jsonable(before),
                 after=_jsonable(after),
@@ -220,11 +252,15 @@ class ActionRuntime:
             if target is None:
                 raise NotFoundError(f"{action.spec.target}/{target_id} not found (or archived)")
         ctx = _expr.ExprContext(
-            target=target or {}, parameters=params, principal=principal, now=utcnow(), _seq=self._id_seq
+            target=target or {},
+            parameters=params,
+            principal=principal,
+            now=utcnow(),
+            id_factory=lambda prefix: self._allocate_id(session.sync_session, prefix, action.spec.target),
         )
         rules_hit = []
         for rule in action.spec.rules:
-            ok = bool(_expr.evaluate(rule.expr, ctx))
+            ok = bool(await session.run_sync(lambda _, expr=rule.expr: _expr.evaluate(expr, ctx)))
             rules_hit.append({"expr": rule.expr, "ok": ok})
             if not ok:
                 rev = await _record(
@@ -233,7 +269,8 @@ class ActionRuntime:
                 # Rules run before any data write, so the session holds nothing but
                 # this audit row: commit it here and the rejection is recorded no
                 # matter which shell (REST/MCP/CLI/eval) invoked the action.
-                await session.commit()
+                if commit_rejections:
+                    await session.commit()
                 raise RuleRejectedError(
                     rule.message or f"rule rejected: {rule.expr}",
                     details={"revision_id": rev.id, "rule": rule.expr},
@@ -243,12 +280,22 @@ class ActionRuntime:
         decision = self.policy.decide(principal, action_name, target)
         if not decision.allow:
             rev = await _record("denied_policy", decision.reason, before=target, rules_hit=rules_hit, decision=decision)
-            await session.commit()  # same reasoning as the rule-rejection path
+            if commit_rejections:
+                await session.commit()  # same reasoning as the rule-rejection path
             from ..errors import PolicyDeniedError
 
             raise PolicyDeniedError(
                 f"policy denied {action_name!r}: {decision.reason}",
                 details={"revision_id": rev.id},
+            )
+
+        # All effects, including archive and link changes, must honor the
+        # caller's version precondition before running any effect or function.
+        # The target was read with FOR UPDATE and remains locked until commit.
+        if target is not None and expected_revision is not None and target["_rev"] != expected_revision:
+            raise ConflictError(
+                f"revision conflict: expected {expected_revision}, current {target['_rev']}",
+                details={"expected": expected_revision, "current": target["_rev"]},
             )
 
         # 4) effect plan (declarative, or sandbox-provided for function-backed)
@@ -257,22 +304,33 @@ class ActionRuntime:
             if self.function_runner is None:
                 raise OOError("function-backed action requires a configured function runner")
             plan = await self.function_runner(session, action.spec.execution.entry, params, ctx)
-            effects = [self._materialize_plan_entry(entry) for entry in plan]
+            try:
+                if not isinstance(plan, list):
+                    raise ValueError("effect plan must be a list")
+                effects = [self._materialize_plan_entry(entry) for entry in plan]
+            except (ValueError, TypeError) as exc:
+                raise DSLValidationError(f"invalid function effect plan: {exc}") from exc
+            self._validate_effect_plan(action, effects)
 
         before = dict(target) if target else None
         after: dict | None = None
         created_id: str | None = None
+        created_ids: list[str] = []
         linked_pairs: list[tuple[str, str]] = []  # (object_type, id) changed via modify-linked
         ts = utcnow()
+        applied_effects = []
 
         for eff in effects:
-            if getattr(eff, "when", None) is not None and not bool(_expr.evaluate(eff.when, ctx)):
+            if getattr(eff, "when", None) is not None and not bool(
+                await session.run_sync(lambda _, expr=eff.when: _expr.evaluate(expr, ctx))
+            ):
                 continue
-            outcome = await self._apply_effect(
-                session, action, eff, ctx, target_id, expected_revision if after is None and before else None, ts
-            )
+            outcome = await self._apply_effect(session, action, eff, ctx, target_id, ts)
+            applied_effects.append(eff)
             if outcome is not None:
                 after, created_id = outcome[0], outcome[1] or created_id
+                if outcome[1] is not None:
+                    created_ids.append(outcome[1])
                 linked_pairs.extend(outcome[2] or [])
 
         # 5) audit revision + outbox (same transaction)
@@ -282,15 +340,8 @@ class ActionRuntime:
         rev = await _record(
             "executed", None, before=before, after=after, rules_hit=rules_hit, decision=decision, obj_id=effective_id
         )
-        for op, oid, payload in self._outbox_events(
-            action,
-            effects,
-            before,
-            after,
-            effective_id,
-            ctx,
-            linked_pairs,
-        ):
+        events = self._outbox_events(applied_effects, before, after, effective_id, linked_pairs, created_ids, target_id)
+        for op, oid, payload in events:
             session.add(
                 OutboxRow(
                     # linked-object events carry their own type in the payload
@@ -329,10 +380,13 @@ class ActionRuntime:
             out[prop] = pdef.ptype().coerce(value, prop=f"{object_type}.{prop}") if pdef else value
         return out
 
-    async def _apply_effect(self, session, action, eff, ctx, target_id, expected_revision, ts):
+    async def _apply_effect(self, session, action, eff, ctx, target_id, ts):
         if isinstance(eff, ModifyTargetEffect):
             changes = self._coerce_props(
-                action.spec.target, {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()}
+                action.spec.target,
+                await session.run_sync(
+                    lambda _: {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()}
+                ),
             )
             new = await self.repo.action_update(
                 session,
@@ -340,14 +394,16 @@ class ActionRuntime:
                 target_id,
                 changes,
                 ts,
-                expected_revision=expected_revision,
             )
             ctx.target = new
             return new, None, []
 
         if isinstance(eff, CreateObjectEffect):
             props = self._coerce_props(
-                action.spec.target, {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.properties.items()}
+                action.spec.target,
+                await session.run_sync(
+                    lambda _: {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.properties.items()}
+                ),
             )
             created = await self.repo.action_insert(session, action.spec.target, props, ts)
             pk = self.compiled.objects[action.spec.target].spec.primaryKey[0]
@@ -375,48 +431,63 @@ class ActionRuntime:
                     raise OOError(f"set-link on FK link {eff.link!r} is only supported from the FK-carrying side")
                 fk_written = False
                 for entry in eff.add:
-                    resolved = {
-                        k: self._eval_value(str(v), ctx, ctx.target or {})
-                        for k, v in entry.model_dump(exclude_none=True).items()
-                    }
+                    resolved = await session.run_sync(
+                        lambda _, entry=entry: {
+                            k: self._eval_value(str(v), ctx, ctx.target or {})
+                            for k, v in entry.model_dump(exclude_none=True).items()
+                        }
+                    )
                     if not resolved:
                         continue
-                    await self.repo.action_update(
+                    ctx.target = await self.repo.action_update(
                         session, action.spec.target, target_id, {fk_prop: next(iter(resolved.values()))}, ts
                     )
                     fk_written = True
                 for entry in eff.remove:
                     if fk_written:
                         continue  # the add already re-pointed the FK: that IS the removal
-                    resolved = {
-                        k: self._eval_value(str(v), ctx, ctx.target or {})
-                        for k, v in entry.model_dump(exclude_none=True).items()
-                    }
+                    resolved = await session.run_sync(
+                        lambda _, entry=entry: {
+                            k: self._eval_value(str(v), ctx, ctx.target or {})
+                            for k, v in entry.model_dump(exclude_none=True).items()
+                        }
+                    )
                     cur = (ctx.target or {}).get(fk_prop)
                     if resolved and cur is not None and str(cur) == str(next(iter(resolved.values()))):
                         # FK membership has no "absent" row: removing = clearing the FK
-                        await self.repo.action_update(session, action.spec.target, target_id, {fk_prop: None}, ts)
+                        ctx.target = await self.repo.action_update(
+                            session, action.spec.target, target_id, {fk_prop: None}, ts
+                        )
+                        fk_written = True
+                if fk_written:
+                    return ctx.target, None, []
             else:
+                from_source = lnk.spec.source == action.spec.target
                 for entry in eff.add:
-                    resolved = {
-                        k: self._eval_value(str(v), ctx, ctx.target or {})
-                        for k, v in entry.model_dump(exclude_none=True).items()
-                    }
+                    resolved = await session.run_sync(
+                        lambda _, entry=entry: {
+                            k: self._eval_value(str(v), ctx, ctx.target or {})
+                            for k, v in entry.model_dump(exclude_none=True).items()
+                        }
+                    )
                     if not resolved:
                         continue
                     # join-table links: entry keys are target-side props; the single
                     # resolved value is the destination PK (v0)
-                    dst = next(iter(resolved.values()))
-                    await self.repo.link_add(session, eff.link, str(target_id), str(dst), ts)
+                    other_id = str(next(iter(resolved.values())))
+                    src, dst = (str(target_id), other_id) if from_source else (other_id, str(target_id))
+                    await self.repo.link_add(session, eff.link, src, dst, ts)
                 for entry in eff.remove:
-                    resolved = {
-                        k: self._eval_value(str(v), ctx, ctx.target or {})
-                        for k, v in entry.model_dump(exclude_none=True).items()
-                    }
+                    resolved = await session.run_sync(
+                        lambda _, entry=entry: {
+                            k: self._eval_value(str(v), ctx, ctx.target or {})
+                            for k, v in entry.model_dump(exclude_none=True).items()
+                        }
+                    )
                     if resolved:
-                        await self.repo.link_remove(
-                            session, eff.link, str(target_id), str(next(iter(resolved.values()))), ts
-                        )
+                        other_id = str(next(iter(resolved.values())))
+                        src, dst = (str(target_id), other_id) if from_source else (other_id, str(target_id))
+                        await self.repo.link_remove(session, eff.link, src, dst, ts)
             return None, None, []
 
         if isinstance(eff, ModifyLinkedEffect):
@@ -426,7 +497,10 @@ class ActionRuntime:
             linked_ids = await self._linked_ids(session, eff.link, target_id, from_source)
             for oid in linked_ids:
                 changes = self._coerce_props(
-                    other, {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()}
+                    other,
+                    await session.run_sync(
+                        lambda _: {k: self._eval_value(v, ctx, ctx.target or {}) for k, v in eff.set.items()}
+                    ),
                 )
                 await self.repo.action_update(session, other, oid, changes, ts)
             # linked rows changed: the caller emits outbox events for them so the
@@ -490,11 +564,37 @@ class ActionRuntime:
             )
         return eff
 
-    def _outbox_events(self, action, effects, before, after, obj_id, ctx, linked_pairs=None):
+    def _validate_effect_plan(self, action, effects) -> None:
+        """Apply the same semantic checks used for package-authored effects."""
+        from ..core.validator import ValidationReport, _validate_action_against
+
+        # Plain function results are data, not DSL; only explicit $expr
+        # values should go through the static expression checker.
+        checked = []
+        for effect in effects:
+            updates = {}
+            for field in ("properties", "set"):
+                values = getattr(effect, field, None)
+                if values is not None:
+                    updates[field] = {k: "'literal'" if isinstance(v, Literal) else v for k, v in values.items()}
+            checked.append(effect.model_copy(update=updates))
+        candidate = action.model_copy(update={"spec": action.spec.model_copy(update={"effects": checked})})
+        report = ValidationReport()
+        _validate_action_against(
+            report,
+            candidate,
+            self.compiled.objects[action.spec.target],
+            self.compiled.objects,
+            self.compiled.links,
+            self.compiled.policies,
+        )
+        if not report.ok:
+            issues = [{"code": issue.code, "message": issue.message} for issue in report.issues]
+            raise DSLValidationError("function effect plan rejected by validator", details={"issues": issues})
+
+    def _outbox_events(self, effects, before, after, obj_id, linked_pairs=None, created_ids=None, target_id=None):
         events: list[tuple[str, str | None, dict]] = []
         for eff in effects:
-            if getattr(eff, "when", None) is not None and not bool(_expr.evaluate(eff.when, ctx)):
-                continue
             if isinstance(eff, WebhookEffect):
                 # store the template; the dispatcher resolves ${VAR} at delivery
                 # time so a missing env var cannot abort a business transaction
@@ -512,7 +612,12 @@ class ActionRuntime:
                 )
             elif isinstance(eff, EmitEventEffect):
                 events.append(("event", obj_id, {"kind": "emit", "payload": eff.payload}))
-        if after is not None and before is None:
+        if created_ids:
+            for created in dict.fromkeys(created_ids):
+                events.append(("upsert", created, {"origin": "action:create"}))
+            if before is not None and target_id not in created_ids:
+                events.append(("upsert", target_id, {"origin": "action:modify"}))
+        elif after is not None and before is None:
             events.append(("upsert", obj_id, {"origin": "action:create"}))
         elif after is not None:
             events.append(("upsert", obj_id, {"origin": "action:modify"}))

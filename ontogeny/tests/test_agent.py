@@ -177,7 +177,10 @@ async def sc(golden_pkg_path, tmp_path):
     )
     ctx = ServiceContext(settings, str(root))
     await ctx.initialize()
-    return ctx
+    try:
+        yield ctx
+    finally:
+        await ctx.engine.dispose()
 
 
 class TestBroker:

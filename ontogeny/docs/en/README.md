@@ -13,15 +13,14 @@ The docs come in two parts: **Part I · Architecture** explains the real constru
 | Metric | Value |
 |---|---|
 | DSL resources | 11 (9 platform resources + 2 manifest) |
-| API operations | 79 |
-| Frontend routes | 15 pages + 9 compatibility redirects |
+| API operations | Live contract: `/openapi.json` || Frontend routes | 15 pages + 9 compatibility redirects |
 | Action effects | 7 kinds |
 | Outbox consumers | 4 |
 | Policy | Cedar subset |
 | Graph engine | Apache HugeGraph |
-| Source of truth | Declarative YAML in Git |
+| Model source of truth | Declarative YAML in Git |
 | LLM | Ollama (swappable) |
-| Tests | 597 backend · 254 frontend · 8 E2E |
+| Tests | Backend, frontend and E2E results: [CI](../../../.github/workflows/ontogeny.yml) |
 
 ## Part I · Architecture
 
@@ -52,4 +51,4 @@ These chapters are hands-on: start with one command, tour the console page by pa
 
 ---
 
-Source-file index: DSL `server/ontogeny/core/{models,loader,validator,linter,expr,types}.py` · registry `server/ontogeny/registry/{compiled,store}.py` · data `server/ontogeny/stores/{ddl,repo,sync,sources}.py` · kinetics `server/ontogeny/action/{runtime,outbox,models}.py` · policy `server/ontogeny/policy/engine.py` · read path `server/ontogeny/engine/service.py` · functions `server/ontogeny/functions/{sandbox,child,derivation}.py` · agents `server/ontogeny/agent/{broker,catalog,models}.py` · `mcp_server.py` · evolution `server/ontogeny/evolve/{diagnoser,proposer,evalrunner,promoter}.py` · telemetry `server/ontogeny/telemetry/service.py` · projection `server/ontogeny/projection/{compiler,hugegraph}.py` · LLM `server/ontogeny/llm/ollama.py` · service composition `server/ontogeny/service.py` · `api/app.py` · `cli.py`.
+Source-file index: DSL `server/ontogeny/core/{models,loader,validator,linter,expr,types}.py` · registry `server/ontogeny/registry/{compiled,store}.py` · data `server/ontogeny/stores/{ddl,repo,sync,sources}.py` · kinetics `server/ontogeny/action/{runtime,outbox,models}.py` · policy `server/ontogeny/policy/engine.py` · read path `server/ontogeny/engine/service.py` · functions `server/ontogeny/functions/{sandbox,child,derivation}.py` · agents `server/ontogeny/agent/{broker,catalog,models}.py` · `mcp_server.py` · evolution `server/ontogeny/evolve/{diagnoser,proposer,evalrunner,promoter}.py` · telemetry `server/ontogeny/telemetry/service.py` · projection `server/ontogeny/projection/{compiler,worker}.py` + `extensions/graph-hugegraph/` · LLM `extensions/llm-ollama/` · service composition `server/ontogeny/service.py` · `api/app.py` · `cli.py`.

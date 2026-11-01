@@ -41,6 +41,12 @@
 
 **Sandbox boundary (shared by all capabilities)**: an isolated subprocess + rlimits + wall-clock kill + PYTHONDONTWRITEBYTECODE; cross-boundary RPC is adjudicated by the parent process against the declared capabilities; returned objects are API-shaped (**fixed: derived properties used to be invisible inside the sandbox, driving inventory computations to zero**).
 
+For declarative HTTP step URLs and header values, only bare `UPPER_SNAKE` deployment references such as `${API_BASE}` are resolved from the environment. Lowercase parameters (`${order_id}`) and prior-step references (`${lookup.order_id}`) remain templates, even if similarly named environment variables exist. Deployment references resolve first, then call templates; the final URL must pass the HTTP allowlist, and parameter or step-result values cannot inject another `${...}` reference into either URL or headers.
+
+HTTP responses are streamed with a 256 KiB limit on decoded body bytes. Exceeding the limit closes the response and fails the function; the runtime does not download the complete oversized body or return a truncated result.
+
+Python sandbox output JSON frames, including batch results, are bounded at 256 KiB including framing; oversized output raises `SandboxError` and the child is cleaned up. This supports normal results above asyncio's default 64 KiB line limit. Large inputs and query replies can still be processed into small results. SDK query sorting is applied before its limit.
+
 ## 4.2 Functional actions: effect plans (the Function proposes, the Action disposes)
 
 ```yaml
@@ -64,3 +70,7 @@ spec:
 ```
 
 **Why expressions and data are distinguished**: values in declarative effects are expressions (statically checkable), while function plans carry runtime data — without the distinction `"EQ-01"` would be parsed as `EQ - 01`.
+
+Before applying a function plan, the runtime runs the same semantic checks as static effects (including property ownership and link references), handles join-table links from either endpoint, and emits an outbox change event for every created object.
+
+Action idempotency keys are scoped to `(action, principal, key)`; an empty key means unset. PostgreSQL serializes same-scope requests before replay lookup. Upgrade replaces the former global unique index without deleting audit revisions.

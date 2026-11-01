@@ -90,7 +90,7 @@ Scenario: a shop-floor analytics dashboard keeps filtering purchase orders by `c
 // Beat 4 · evaluate — POST /evolve/proposals/42/eval (on a candidate-package copy; production untouched)
 {"passed": true, "suites": {"production-flow-suite": {"passed": true, "cases": [
     {"name": "open-sales-orders", "kind": "query", "ok": true, "latency_ms": 2.4, "rows": 17},
-    {"name": "released-production-orders", "kind": "query", "ok": true, "latency_ms": 3.1, "rows": 8},
+    {"name": "running-lots-exist", "kind": "query", "ok": true, "latency_ms": 3.1, "rows": 2},
     {"kind": "replay", "action": "report-operation", "ok": true,
      "replays": 214, "outcome_matches": 214},                 // additive semantics; no no-double-close
     {"kind": "replay", "action": "close-maintenance-order", "ok": true,

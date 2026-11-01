@@ -85,11 +85,6 @@ class TaskService:
     def __init__(self, docs) -> None:
         self.docs = docs
         self.sc = docs.sc
-        self._broker = None
-
-    def bind_broker(self, broker) -> None:
-        self._broker = broker
-        broker.register_task_handler("document.extract", self._agent_task)
 
     # ------------------------------------------------------------- helpers
 
@@ -486,20 +481,9 @@ class TaskService:
         }
 
     async def _run_agent(self, payload: dict[str, Any], *, principal: str, task: str) -> dict[str, Any]:
-        if self._broker is not None:
-            result = await self._broker.run_task(
-                "document.extract",
-                payload,
-                agent="doc-extract",
-                principal={"id": principal, "via": "documents"},
-                task=task,
-                timeout_s=float(self.sc.settings.doc_agent_timeout_s),
-            )
-            return {
-                "output": result["output"],
-                "agent_run_id": result.get("session_id"),
-                "provider": result.get("provider"),
-            }
+        # The extractor runs out-of-process over the doc-agent protocol; the
+        # agent broker's governed surface (sessions + call_tool) is for
+        # ontology tools, not extraction payloads.
         return {"output": await self._agent_task(payload), "agent_run_id": None, "provider": "direct"}
 
     # ---------------------------------------------------------------- run

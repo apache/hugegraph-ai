@@ -40,6 +40,7 @@ import { I18nProvider } from '../i18n'
 import { AuthProvider, useAuth } from '../api/auth'
 import { Login } from './Login'
 import { Access } from './Access'
+import { RequireAuth } from '../App'
 
 const ADMIN_PRINCIPAL = {
   id: 'root', Role: ['admin'], roles: ['admin'], display: '平台管理员',
@@ -102,7 +103,69 @@ function Gate() {
   return principal ? <div data-testid="app-rendered" /> : <Login />
 }
 
+function AuthControls() {
+  const { principal, loading, error, signIn, signOut } = useAuth()
+  if (loading) return <div>loading</div>
+  return (
+    <div>
+      <span data-testid="current-user">{principal?.id ?? 'signed-out'}</span>
+      {error ? <span data-testid="auth-error">{String(error)}</span> : null}
+      <button onClick={() => void signOut().catch(() => {})}>sign out</button>
+      <button onClick={() => void signIn('op', 'password')}>sign in</button>
+    </div>
+  )
+}
+
 describe('session gate', () => {
+  it('does not report a successful sign-out when the server cannot revoke the session', async () => {
+    mockFetch([
+      { match: '/auth/me', body: { principal: ADMIN_PRINCIPAL } },
+      { match: '/auth/logout', status: 503, body: { code: 'UNAVAILABLE', message: 'logout failed' } },
+    ])
+    const qc = new QueryClient()
+    render(<QueryClientProvider client={qc}><AuthProvider><AuthControls /></AuthProvider></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByTestId('current-user')).toHaveTextContent('root'))
+    fireEvent.click(screen.getByRole('button', { name: 'sign out' }))
+    await waitFor(() => expect(screen.getByTestId('auth-error')).toHaveTextContent('logout failed'))
+    expect(screen.getByTestId('current-user')).toHaveTextContent('root')
+  })
+  it('clears cached account data when signing out and into another account', async () => {
+    mockFetch([
+      { match: '/auth/me', body: { principal: ADMIN_PRINCIPAL } },
+      { match: '/auth/logout', body: { ok: true } },
+      { match: '/auth/login', body: { principal: OPERATOR_PRINCIPAL, token: 'token' } },
+    ])
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><AuthProvider><AuthControls /></AuthProvider></QueryClientProvider>)
+    await waitFor(() => expect(screen.getByTestId('current-user')).toHaveTextContent('root'))
+    qc.setQueryData(['objects'], { secret: 'admin data' })
+    let finishOldRequest!: (value: string) => void
+    const oldRequest = qc.fetchQuery({
+      queryKey: ['in-flight'],
+      queryFn: () => new Promise<string>((resolve) => { finishOldRequest = resolve }),
+    }).catch(() => undefined)
+    fireEvent.click(screen.getByRole('button', { name: 'sign out' }))
+    await waitFor(() => expect(screen.getByTestId('current-user')).toHaveTextContent('signed-out'))
+    expect(qc.getQueryData(['objects'])).toBeUndefined()
+    finishOldRequest('old account data')
+    await oldRequest
+    expect(qc.getQueryData(['in-flight'])).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: 'sign in' }))
+    await waitFor(() => expect(screen.getByTestId('current-user')).toHaveTextContent('op'))
+    expect(qc.getQueryData(['objects'])).toBeUndefined()
+  })
+  it('shows a connection error and retries rather than presenting it as a signed-out session', async () => {
+    const route = { match: '/auth/me', status: 503, body: { code: 'UNAVAILABLE', message: 'server unavailable' } }
+    mockFetch([route])
+    wrap(<RequireAuth />)
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not check your session'))
+    expect(screen.queryByTestId('login-page')).toBeNull()
+    route.status = 401
+    route.body = { code: 'UNAUTHENTICATED', message: 'not signed in' }
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument())
+  })
+
   it('shows the login page when nobody is signed in', async () => {
     mockFetch([{ match: '/auth/me', status: 401, body: { code: 'UNAUTHENTICATED', message: 'not signed in' } }])
     wrap(<Gate />)
@@ -187,6 +250,28 @@ describe('Access control', () => {
     })
   })
 
+  it('requires six characters when creating or resetting a password', async () => {
+    mock()
+    wrap(<Access />)
+    await waitFor(() => expect(screen.getByTestId('create-user')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('new-username'), { target: { value: 'wang' } })
+    const input = screen.getByTestId('new-password')
+    expect(input).toHaveAttribute('minlength', '6')
+    fireEvent.change(input, { target: { value: '12345' } })
+    expect(screen.getByTestId('create-user')).toBeDisabled()
+    fireEvent.change(input, { target: { value: '000012' } })
+    expect(screen.getByTestId('create-user')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('edit-li'))
+    const reset = screen.getByTestId('edit-password')
+    expect(reset).toHaveAttribute('minlength', '6')
+    expect(screen.getByTestId('save-user')).toBeEnabled()
+    fireEvent.change(reset, { target: { value: '12345' } })
+    expect(screen.getByTestId('save-user')).toBeDisabled()
+    fireEvent.change(reset, { target: { value: '000012' } })
+    expect(screen.getByTestId('save-user')).toBeEnabled()
+  })
+
   it('disables an account from the row action', async () => {
     const { calls } = mock(ADMIN_PRINCIPAL, [{ match: '/admin/users/li', body: { ...USERS.users[1], status: 'disabled' } }])
     wrap(<Access />)
@@ -244,7 +329,7 @@ describe('Access control', () => {
     await waitFor(() => expect(screen.getByTestId('tab-roles')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('tab-roles'))
 
-    fireEvent.change(screen.getByTestId('new-role'), { target: { value: 'new_role' } })
+    fireEvent.change(await screen.findByTestId('new-role'), { target: { value: 'new_role' } })
     fireEvent.click(screen.getByTestId('add-role'))
     await waitFor(() => expect(screen.getByTestId('role-new_role')).toBeInTheDocument())
 

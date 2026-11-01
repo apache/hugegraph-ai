@@ -44,6 +44,7 @@ REPO = Path(__file__).resolve().parent.parent
 DOMAIN = REPO / "domains" / "chip-lifecycle"
 
 PRODUCT = {"id": "u-pm", "Role": ["product"], "site": "hq"}
+PLANNER = PRODUCT  # mainline-era alias
 FAB = {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
 
 

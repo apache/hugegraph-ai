@@ -26,7 +26,7 @@ from sqlalchemy import JSON, DateTime, Index, String, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.loader import OntologyPackage
-from ..core.models import RESOURCE_BY_KIND, AnyResource
+from ..core.models import RESOURCE_BY_KIND, AnyResource, JoinTableJoin
 from ..core.validator import validate
 from ..db import Base
 from ..errors import DSLValidationError
@@ -152,6 +152,29 @@ class RegistryService:
 
         compiled = compile_package(pkg)
         pkg_name = pkg.manifest.metadata.name
+        tables = {compiled.table_name(name) for name in compiled.objects}
+        tables.update(
+            compiled.link_table(name)
+            for name, link in compiled.links.items()
+            if isinstance(link.spec.join, JoinTableJoin)
+        )
+        # Retired definitions still own their tables: switching or removing a
+        # resource does not remove its materialized data or sync checkpoint.
+        others = (
+            await session.scalars(
+                select(ResourceRow).where(ResourceRow.pkg != pkg_name, ResourceRow.kind.in_(("ObjectType", "LinkType")))
+            )
+        ).all()
+        for row in others:
+            # A publish can change a former join-table link to an FK link;
+            # its latest definition no longer proves the old table absent.
+            table = compiled.table_name(row.api_name) if row.kind == "ObjectType" else compiled.link_table(row.api_name)
+            if table in tables:
+                raise DSLValidationError(
+                    f"domain {pkg_name!r} conflicts with domain {row.pkg!r}: table {table!r} is already owned; "
+                    "use distinct object/link names or a separate database",
+                    details={"domain": pkg_name, "owner": row.pkg, "table": table},
+                )
         now = _dt.datetime.now(_dt.UTC)
 
         # soft-deleted rows are matched too: the unique index covers
@@ -222,13 +245,16 @@ class RegistryService:
         soft delete is what lets the retired domains come back untouched when
         they are activated again.
         """
+        # Validate ownership and publish before retiring anything. A rejected
+        # target must leave the active registry unchanged even within session.
+        compiled = await self.publish(session, pkg, created_by=created_by)
         now = _dt.datetime.now(_dt.UTC)
         await session.execute(
             update(ResourceRow)
             .where(ResourceRow.pkg != pkg.manifest.metadata.name, ResourceRow.deleted_at.is_(None))
             .values(deleted_at=now)
         )
-        return await self.publish(session, pkg, created_by=created_by)
+        return compiled
 
     async def load_latest(self, session) -> CompiledOntology | None:
         """Rebuild the snapshot from persisted rows (restart without git)."""

@@ -261,8 +261,8 @@ class TestSync:
             summary = await env["sync"].sync(s, "wafer-lot")
             await s.commit()
             state = (await s.execute(select(SyncStateRow))).scalar_one()
-        # the new row LOT-3 inserts; LOT-2 becomes a no-op
-        assert summary == {"inserted": 1, "updated": 0, "noop": 1, "archived": 0, "quarantined": 0}
+        # LOT-3 inserts; LOT-2 and the replayed checkpoint-boundary LOT-1 are no-ops.
+        assert summary == {"inserted": 1, "updated": 0, "noop": 2, "archived": 0, "quarantined": 0}
         assert state.watermark is not None
 
     async def test_sync_writes_outbox(self, env):

@@ -1,4 +1,4 @@
-# hugegraph-ai
+# hugegraph-ai (Ontogeny)
 
 [![License](https://img.shields.io/badge/license-Apache%202-0E78BA.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/apache/hugegraph-ai)
@@ -11,14 +11,13 @@ Contributor workflows: [CI selection and full validation](docs/quality/ci.md), [
 
 ## ✨ Key Features
 
+- **[Ontogeny](./ontogeny/README.md)**: A self-improving, agent-ready operational ontology platform — pairing a semantic layer (objects, relations) with a kinetic layer (actions, policies) in Git-managed YAML, served through one governed, auditable API and a human-AI collaborative console
 - **[LLM/GraphRAG](./hugegraph-llm/README.md#graphrag)**: Build intelligent question-answering systems with graph-enhanced retrieval
 - **[Knowledge Graph Construction](./hugegraph-llm/README.md#knowledge-graph-construction)**: Automated graph building from text using LLMs
 - **[HugeGraph-LLM SDK](./hugegraph-llm-sdk/README.md)**: Design schemas and extract reviewed property graphs in your own Python project, without a UI or database service
 - **[Graph ML](./hugegraph-ml/README.md)**: Integration with 20+ graph learning algorithms (GCN, GAT, GraphSAGE, etc.)
 - **[HG-Python Client](./hugegraph-python-client/README.md)**: Easy-to-use Python interface for HugeGraph operations
 - **[Vermeer Python Client](./vermeer-python-client/README.md)**: SDK/Interface for Graph Computing with [Vermeer](https://github.com/apache/hugegraph-computer/tree/master/vermeer#readme)
-
-- **[Ontogeny](./ontogeny/README.md)**: Model business objects, relationships, actions and policies as Git-managed YAML, with a governed API and bilingual console
 
 ## 🚀 Quick Start
 
@@ -100,7 +99,6 @@ Compose binds this demo to `127.0.0.1:8000` by default. Open **http://localhost:
 `ONTOGENY_ADMIN_PASSWORD` before starting Compose to choose the initial password.
 See the [module guide](./ontogeny/README.md) for source installation and configuration.
 
-![Ontogeny architecture](./ontogeny/docs/en/img/arch-board.png)
 
 ![Ontogeny console](./ontogeny/docs/en/img/qs-dashboard.png)
 
@@ -166,11 +164,15 @@ Python client for HugeGraph operations, distributed as `hugegraph-python` (`uv p
 
 ### [ontogeny](./ontogeny/README.md)
 
-A Git-managed operational ontology platform: DSL compilation, object queries,
-actions and policies, audit trails, Agent/MCP sessions, optional HugeGraph
-projection, and a bilingual web console. It runs independently of the existing
-modules. See the [architecture and usage guides](./ontogeny/docs/en/README.md)
-for details.
+A self-improving, agent-ready operational ontology platform — pairing a semantic
+layer (objects, relations) with a kinetic layer (actions, policies) in Git-managed
+YAML:
+
+- **Self-Evolution (RSI)**: Observe → mutate (LLM-generated DSL diffs) → select (deterministic eval suites) → release (auto-merge / PR / canary); machine proposals travel the same Git channel as humans
+- **Object Queries**: One query API over the live ontology, with optional projection onto Apache HugeGraph for deep-graph queries
+- **Actions & Policies**: A single auditable write gate with approval workflows and full audit trails
+- **Agent/MCP Sessions**: Agents read and write through a governed MCP surface, sharing the same policy plane and audit trail as humans
+- **Independent Runtime**: Installs standalone (Python 3.12+) without the other modules; see the [architecture and usage guides](./ontogeny/docs/en/README.md) for details
 
 ## 📚 Learn More
 

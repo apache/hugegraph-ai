@@ -118,29 +118,29 @@ VERTEX_LABEL_ID_STRATEGIES = frozenset({"PRIMARY_KEY", "CUSTOMIZE_STRING", "CUST
 EDGE_LABEL_FREQUENCIES = frozenset({"SINGLE", "MULTIPLE"})
 
 PROPERTY_KEY_DATA_TYPE_METHODS = {
-    "TEXT": "asText",
-    "INT": "asInt",
-    "INTEGER": "asInt",
-    "LONG": "asLong",
-    "DOUBLE": "asDouble",
-    "FLOAT": "asFloat",
-    "BOOLEAN": "asBool",
-    "BOOL": "asBool",
-    "DATE": "asDate",
-    "BYTE": "asByte",
-    "BLOB": "asBlob",
-    "OBJECT": "asObject",
+    "TEXT": "as_text",
+    "INT": "as_int",
+    "INTEGER": "as_int",
+    "LONG": "as_long",
+    "DOUBLE": "as_double",
+    "FLOAT": "as_float",
+    "BOOLEAN": "as_bool",
+    "BOOL": "as_bool",
+    "DATE": "as_date",
+    "BYTE": "as_byte",
+    "BLOB": "as_blob",
+    "OBJECT": "as_object",
 }
 PROPERTY_KEY_CARDINALITY_METHODS = {
-    "SINGLE": "valueSingle",
-    "SET": "valueSet",
-    "LIST": "valueList",
+    "SINGLE": "value_single",
+    "SET": "value_set",
+    "LIST": "value_list",
 }
 PROPERTY_KEY_AGGREGATE_METHODS = {
-    "OLD": "calcOld",
-    "SUM": "calcSum",
-    "MIN": "calcMin",
-    "MAX": "calcMax",
+    "OLD": "calc_old",
+    "SUM": "calc_sum",
+    "MIN": "calc_min",
+    "MAX": "calc_max",
 }
 PROPERTY_KEY_DIRECT_AGGREGATE_TYPES = frozenset({"NONE", "SET", "LIST"})
 PROPERTY_KEY_AGGREGATE_CARDINALITIES = {
@@ -157,14 +157,14 @@ PROPERTY_KEY_DATA_TYPE_CANONICAL = {
     "BOOL": "BOOLEAN",
 }
 VERTEX_LABEL_ID_STRATEGY_METHODS = {
-    "PRIMARY_KEY": "usePrimaryKeyId",
-    "CUSTOMIZE_STRING": "useCustomizeStringId",
-    "CUSTOMIZE_NUMBER": "useCustomizeNumberId",
-    "AUTOMATIC": "useAutomaticId",
+    "PRIMARY_KEY": "use_primary_key_id",
+    "CUSTOMIZE_STRING": "use_customize_string_id",
+    "CUSTOMIZE_NUMBER": "use_customize_number_id",
+    "AUTOMATIC": "use_automatic_id",
 }
 EDGE_LABEL_FREQUENCY_METHODS = {
-    "SINGLE": "singleTime",
-    "MULTIPLE": "multiTimes",
+    "SINGLE": "single_time",
+    "MULTIPLE": "multi_times",
 }
 
 
@@ -1460,7 +1460,7 @@ def _apply_vertex_label_options(builder, operation: dict[str, Any]) -> None:
     if operation.get("nullable_keys") is not None:
         builder.nullable_keys(*operation["nullable_keys"])
     if "enable_label_index" in operation:
-        method = getattr(builder, "enableLabelIndex", None)
+        method = getattr(builder, "enable_label_index", None)
         if not callable(method):
             raise ValueError("Schema builder cannot forward supported create_vertex_label field: enable_label_index")
         method(operation["enable_label_index"])
@@ -1484,7 +1484,7 @@ def _apply_edge_label_options(builder, operation: dict[str, Any]) -> None:
             raise ValueError(f"Unsupported edge label frequency: {frequency}")
         getattr(builder, method_name)()
     if "enable_label_index" in operation:
-        method = getattr(builder, "enableLabelIndex", None)
+        method = getattr(builder, "enable_label_index", None)
         if not callable(method):
             raise ValueError("Schema builder cannot forward supported create_edge_label field: enable_label_index")
         method(operation["enable_label_index"])

@@ -357,7 +357,7 @@ def _execute_vertex_query(
             properties=properties,
         )
         return items, next_page
-    get_by_condition = getattr(manager, "getVertexByConditionWithPage", None)
+    get_by_condition = getattr(manager, "get_vertex_by_condition_with_page", None)
     if get_by_condition is None:
         get_by_condition = manager.get_vertex_by_condition
     result = get_by_condition(
@@ -444,6 +444,9 @@ def _normalize_items(value: Any) -> list[dict[str, Any]]:
 def _plain_item(item: Any) -> dict[str, Any]:
     if isinstance(item, dict):
         return dict(item)
+    serializer = getattr(item, "to_dict", None)
+    if callable(serializer):
+        return serializer()
     result: dict[str, Any] = {}
     for name in (
         "id",

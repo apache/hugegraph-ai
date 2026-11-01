@@ -347,9 +347,9 @@ class GremlinAPI(RestResource):
         """POST /gremlin."""
         return self.request("gremlin.post", body=body)
 
-    def get(self) -> Any:
+    def get(self, *, gremlin: Any = None, language: Any = None, query: dict[str, Any] | None = None) -> Any:
         """GET /gremlin."""
-        return self.request("gremlin.get")
+        return self.request("gremlin.get", params={"gremlin": gremlin, "language": language} | (query or {}))
 
 
 class AlgorithmAPI(RestResource):

@@ -49,5 +49,6 @@ def test_full_rest_body_and_metrics(client_utils):
     created = rest.vertex.create(body={"label": "person", "properties": {"name": "rest_alice", "age": 20}})
     assert rest.vertex.get(created["id"])["properties"]["name"] == "rest_alice"
     # Optional features are tested without creating external services.
+    assert rest.gremlin.get(gremlin="1 + 2")["result"]["data"] == [3]
     assert isinstance(client.metrics().histograms(), dict)
     assert isinstance(client.metrics().all(), str)

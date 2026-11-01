@@ -61,6 +61,7 @@ graph.add_edge("knows", alice.id, bob.id, {})
 print(client.traverser().k_out(alice.id, 2, direction="OUT", limit=100))
 ```
 
+`VertexData.to_dict()` and `EdgeData.to_dict()` return native server payloads, preserving wire field names and additional server fields.
 Vertex IDs preserve their type: `123` is a numeric ID, `"123"` is a string ID. UUIDs are supported.
 List methods such as `graph.list_vertices(page="", limit=100)` return the REST envelope;
 `get_vertex_by_page(...)` returns `(vertices, next_page)`. Pass the returned token to continue.

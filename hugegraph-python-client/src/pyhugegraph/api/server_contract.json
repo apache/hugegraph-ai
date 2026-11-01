@@ -813,13 +813,19 @@
     "gremlin.get": {
       "method": "GET",
       "path": "gremlin",
-      "query": [],
+      "query": [
+        "gremlin",
+        "language"
+      ],
       "content_type": "application/json",
       "body": false,
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/gremlin/GremlinAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/gremlin/GremlinAPI.java",
+      "openapi_query": [],
+      "query_passthrough": true,
+      "query_note": "UriInfo parameters are forwarded to Gremlin and are not enumerated in server OpenAPI."
     },
     "algorithm.post": {
       "method": "POST",

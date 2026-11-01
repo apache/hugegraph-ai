@@ -93,7 +93,7 @@ class RestResource(HGraphContext):
         for key, value in (params or {}).items():
             if value is None:
                 continue
-            if key not in endpoint["query"]:
+            if key not in endpoint["query"] and not endpoint.get("query_passthrough"):
                 raise TypeError(f"Unsupported parameter {key!r} for {operation}")
 
             def encode(item, key=key):

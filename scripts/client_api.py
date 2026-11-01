@@ -58,8 +58,11 @@ def render_resources():
             args += ["body: Any = None"] if op["body"] else []
             args += ["authorization: str | None = None"] if op["headers"] else []
             args += [f"{q}: Any = None" for q in op["query"] if q not in pp]
+            args += ["query: dict[str, Any] | None = None"] if op.get("query_passthrough") else []
             path_arg = ", path_params={" + ", ".join(repr(x) + ": " + x for x in pp) + "}" if pp else ""
             query_arg = ", params={" + ", ".join(repr(q) + ": " + q for q in op["query"]) + "}" if op["query"] else ""
+            if op.get("query_passthrough"):
+                query_arg += " | (query or {})"
             body_arg = ", body=body" if op["body"] else ""
             body_arg += ', headers={"Authorization": authorization}' if op["headers"] else ""
             out += (
@@ -120,7 +123,7 @@ def compare_openapi(document, contract):
     expected = {}
     for spec in contract["operations"].values():
         key = (spec["method"].lower(), normalized(spec["path"]))
-        expected.setdefault(key, set()).update(spec["query"])
+        expected.setdefault(key, set()).update(spec.get("openapi_query", spec["query"]))
     actual = {}
     for path, item in document["paths"].items():
         for method, operation in item.items():
@@ -147,9 +150,10 @@ def compare_openapi(document, contract):
 def coverage_table(contract):
     lines = ["| Python REST entry | Method | Path | Query parameters |", "| --- | --- | --- | --- |"]
     for operation, spec in sorted(contract["operations"].items()):
-        lines.append(
-            f"| `rest.{operation}()` | {spec['method']} | `/{spec['path']}` | {', '.join(spec['query']) or '—'} |"
-        )
+        query = ", ".join(spec["query"]) or "—"
+        if spec.get("query_passthrough"):
+            query += "; additional query map"
+        lines.append(f"| `rest.{operation}()` | {spec['method']} | `/{spec['path']}` | {query} |")
     return "\n".join(lines) + "\n"
 
 

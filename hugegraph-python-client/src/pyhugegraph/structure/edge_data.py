@@ -18,6 +18,7 @@
 
 class EdgeData:
     def __init__(self, dic):
+        self._data = dict(dic)
         self.__id = dic["id"]
         self.__label = dic.get("label", None)
         self.__type = dic.get("type", None)
@@ -58,6 +59,10 @@ class EdgeData:
     @property
     def properties(self):
         return self.__properties
+
+    def to_dict(self) -> dict:
+        """Return the native server payload, preserving wire names and extra fields."""
+        return dict(self._data)
 
     def __repr__(self):
         res = f"{self.__outV}--{self.__label}-->{self.__inV}"

@@ -16,6 +16,18 @@
 from hugegraph_mcp.tools.query_graph_data import _execute_vertex_query
 
 
+def test_query_and_mutation_serializers_preserve_native_edge_payload():
+    from pyhugegraph.structure.edge_data import EdgeData
+
+    from hugegraph_mcp.tools.mutate_graph_properties import _plain_item as mutation_item
+    from hugegraph_mcp.tools.query_graph_data import _plain_item as query_item
+
+    payload = {"id": "edge", "outV": 123, "inV": "123", "properties": {"active": False}, "future_field": 0}
+    edge = EdgeData(payload)
+    assert query_item(edge) == payload
+    assert mutation_item(edge) == payload
+
+
 class _PagedConditionManager:
     def get_vertex_by_condition_with_page(self, *, label, limit, page, properties):
         return [{"id": "v1"}], "next"

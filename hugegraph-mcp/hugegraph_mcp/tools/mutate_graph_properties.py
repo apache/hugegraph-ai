@@ -535,6 +535,9 @@ def _plain_item(item: Any) -> dict[str, Any] | None:
         return None
     if isinstance(item, dict):
         return dict(item)
+    serializer = getattr(item, "to_dict", None)
+    if callable(serializer):
+        return serializer()
     result: dict[str, Any] = {}
     for name in (
         "id",

@@ -230,12 +230,20 @@ def test_snake_case_edge_properties_preserve_server_wire_keys():
     assert edge.in_v == "123"
     assert edge.out_v_label == "a"
     assert edge.in_v_label == "b"
+    assert edge.to_dict()["outV"] == 123
+    assert edge.to_dict()["inV"] == "123"
 
 
 def test_bearer_header_is_not_overwritten_by_basic_authentication():
     session, http = transport()
     RestManager(session).login.verify_token(authorization="Bearer private-token")
     assert http.calls[0][0].headers["Authorization"] == "Bearer private-token"
+
+
+def test_gremlin_get_forwards_uri_parameters_missing_from_openapi():
+    session, http = transport()
+    RestManager(session).gremlin.get(gremlin="x + y", query={"bindings.x": "1", "bindings.y": "2"})
+    assert query(http.calls[0][0]) == {"gremlin": ["x + y"], "bindings.x": ["1"], "bindings.y": ["2"]}
 
 
 def test_text_graph_creation_uses_text_content_type():

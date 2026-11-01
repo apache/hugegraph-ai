@@ -59,6 +59,18 @@ import type {
   TraverseResult,
   ExploreResult,
   ExtensionsInventory,
+  CorpusDocument,
+  CandidateDetail,
+  DocumentRunDetail,
+  DocumentScope,
+  DocumentSchemaOptions,
+  DocumentSkillInput,
+  DocumentSkillOption,
+  DocumentStoresResponse,
+  DocumentTaskDetail,
+  DocumentTaskSummary,
+  ExtractCandidate,
+  ExtractRun,
 } from './types'
 
 export class ApiError extends Error {
@@ -90,10 +102,10 @@ export interface DomainInfo {
 }
 
 export const PRESET_PRINCIPALS: Record<string, Principal> = {
-  planner: { id: 'u-planner', Role: ['planner'], site: 'plant-north' },
-  planner_marked: { id: 'u-planner-m', Role: ['planner'], site: 'plant-north', markings: ['internal'] },
-  operator: { id: 'u-operator', Role: ['operator'], site: 'plant-north' },
-  quality: { id: 'u-quality', Role: ['quality'], site: 'plant-north' },
+  product: { id: 'u-product', Role: ['product'], site: 'hq' },
+  product_marked: { id: 'u-product-m', Role: ['product'], site: 'hq', markings: ['internal'] },
+  fab: { id: 'u-fab', Role: ['fab'], site: 'fab-site-a' },
+  cqe: { id: 'u-cqe', Role: ['cqe'], site: 'hq' },
   visitor: { id: 'visitor', Role: ['visitor'] },
   agent: { id: 'mcp-agent', Role: ['service'] },
 }
@@ -123,7 +135,7 @@ export function getDevPrincipal(): Principal | null {
 /** The principal to *display* (settings dialog): the override, else the default
  *  preset that a fresh dev session would act as. */
 export function getPrincipal(): Principal {
-  return getDevPrincipal() ?? PRESET_PRINCIPALS.planner
+  return getDevPrincipal() ?? PRESET_PRINCIPALS.product
 }
 
 export function setPrincipal(p: Principal | null): void {
@@ -487,6 +499,78 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify({ messages, propose }),
     }),
+
+  // ---- documents (extraction data source) --------------------------------
+  documentStatus: () => api<{ extractor: string; stores: string[] }>('/api/v1/admin/documents/status'),
+  documentStores: () => api<DocumentStoresResponse>('/api/v1/admin/documents/stores'),
+  createDefaultDocumentSource: () =>
+    api<{ created: boolean; store: string; object_type?: string }>('/api/v1/admin/documents/default', {
+      method: 'POST',
+    }),
+  uploadDocuments: (store: string, files: Array<{ name: string; content_b64: string }>) =>
+    api<{ written: string[] }>('/api/v1/admin/documents/upload', {
+      method: 'POST', body: JSON.stringify({ store, files }),
+    }),
+  listDocuments: (store: string) =>
+    api<{ store: string; documents: CorpusDocument[] }>(`/api/v1/admin/documents?store=${encodeURIComponent(store)}`),
+  removeDocument: (docId: string) =>
+    api<{ ok: boolean; archived: number }>(`/api/v1/admin/documents/${docId}`, { method: 'DELETE' }),
+  ingestDocuments: (store: string, objects?: string[], dryRun = false) =>
+    api<Record<string, unknown>>('/api/v1/admin/documents/ingest', {
+      method: 'POST', body: JSON.stringify({ store, objects, dry_run: dryRun }),
+    }),
+  documentRuns: (store?: string) =>
+    api<{ runs: ExtractRun[] }>(`/api/v1/admin/documents/runs${store ? `?store=${encodeURIComponent(store)}` : ''}`),
+  documentRun: (id: number) => api<DocumentRunDetail>(`/api/v1/admin/documents/runs/${id}`),
+  documentCandidates: (status = 'pending', store?: string) =>
+    api<{ candidates: ExtractCandidate[] }>(
+      `/api/v1/admin/documents/candidates?status=${encodeURIComponent(status)}${store ? `&store=${encodeURIComponent(store)}` : ''}`,
+    ),
+  documentCandidate: (id: number) => api<CandidateDetail>(`/api/v1/admin/documents/candidates/${id}`),
+  acceptCandidate: (id: number, overrides: Record<string, unknown> = {}, note?: string) =>
+    api<{ ok: boolean; candidate: ExtractCandidate }>(`/api/v1/admin/documents/candidates/${id}/accept`, {
+      method: 'POST', body: JSON.stringify({ overrides, note }),
+    }),
+  rejectCandidate: (id: number, reason = '') =>
+    api<{ ok: boolean; candidate: ExtractCandidate }>(`/api/v1/admin/documents/candidates/${id}/reject`, {
+      method: 'POST', body: JSON.stringify({ reason }),
+    }),
+
+  // ---- document intelligence tasks (staged, confirm-gated) ----------------
+  documentSchema: (store: string) =>
+    api<DocumentSchemaOptions>(`/api/v1/admin/documents/schema?store=${encodeURIComponent(store)}`),
+  documentSkills: () => api<{ skills: DocumentSkillOption[] }>('/api/v1/admin/documents/skills'),
+  createDocumentSkill: (body: {
+    name: string; display?: string; description?: string; body?: string; examples?: unknown[]
+  }) => api<{ id: string; name: string; version: number }>('/api/v1/admin/documents/skills', {
+    method: 'POST', body: JSON.stringify(body),
+  }),
+  createDocumentTasks: (store: string, files: Array<{ name: string; content_b64: string }>,
+                       scope: DocumentScope | null, skill: DocumentSkillInput | null,
+                       docIds: string[] = []) =>
+    api<{ tasks: DocumentTaskSummary[]; written: string[]; schema_hash: string }>('/api/v1/admin/documents/tasks', {
+      method: 'POST', body: JSON.stringify({ store, files, doc_ids: docIds, scope, skill }),
+    }),
+  documentTasks: (store?: string, status?: string) =>
+    api<{ tasks: DocumentTaskSummary[] }>(
+      `/api/v1/admin/documents/tasks?${store ? `store=${encodeURIComponent(store)}` : ''}${status ? `&status=${encodeURIComponent(status)}` : ''}`,
+    ),
+  documentTask: (id: number) => api<DocumentTaskDetail>(`/api/v1/admin/documents/tasks/${id}`),
+  runDocumentTask: (id: number) => api<DocumentTaskDetail>(`/api/v1/admin/documents/tasks/${id}/run`, { method: 'POST' }),
+  reconfigureDocumentTask: (id: number, scope: DocumentScope, skill: DocumentSkillInput) =>
+    api<DocumentTaskDetail>(`/api/v1/admin/documents/tasks/${id}/config`, {
+      method: 'PATCH', body: JSON.stringify({ scope, skill }),
+    }),
+  saveDocumentTask: (id: number, graph: Record<string, unknown>) =>
+    api<DocumentTaskDetail>(`/api/v1/admin/documents/tasks/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ graph }),
+    }),
+  confirmDocumentTask: (id: number) =>
+    api<{ summary: Record<string, unknown>; task: DocumentTaskDetail; already: boolean }>(
+      `/api/v1/admin/documents/tasks/${id}/confirm`, { method: 'POST' },
+    ),
+  rerunDocumentTask: (id: number) =>
+    api<{ task: DocumentTaskDetail; revision: number }>(`/api/v1/admin/documents/tasks/${id}/rerun`, { method: 'POST' }),
 
   // ---- scenario builder data mounting ------------------------------------
   /** Attach a data source to an object type: store resource + backing binding

@@ -58,6 +58,12 @@ class Settings:
     # A function declaring the llm capability gets this much extra time per
     # declared call, on top of the sandbox's local-work budget.
     llm_call_timeout_s: float = 60.0
+    # external document-extraction agent: a command (stdin/stdout JSON) or an
+    # HTTP endpoint; the platform never calls a model for extraction
+    doc_agent_cmd: str | None = None
+    doc_agent_url: str | None = None
+    doc_agent_token: str | None = None
+    doc_agent_timeout_s: float = 600.0
     storage_provider: str = "sqlite"  # hugegraph | sqlite
     extensions_dir: str | None = None  # colon-separated; default <repo>/extensions
     log_level: str = "INFO"
@@ -103,6 +109,12 @@ def load_settings(**overrides: str | bool) -> Settings:
         ),
         llm_call_timeout_s=float(
             overrides.get("llm_call_timeout_s", os.environ.get("ONTOGENY_LLM_CALL_TIMEOUT_S", 60.0))
+        ),
+        doc_agent_cmd=overrides.get("doc_agent_cmd", os.environ.get("ONTOGENY_DOC_AGENT_CMD")) or None,
+        doc_agent_url=overrides.get("doc_agent_url", os.environ.get("ONTOGENY_DOC_AGENT_URL")) or None,
+        doc_agent_token=overrides.get("doc_agent_token", os.environ.get("ONTOGENY_DOC_AGENT_TOKEN")) or None,
+        doc_agent_timeout_s=float(
+            overrides.get("doc_agent_timeout_s", os.environ.get("ONTOGENY_DOC_AGENT_TIMEOUT_S", 600.0))
         ),
         storage_provider=overrides.get(
             "storage_provider",

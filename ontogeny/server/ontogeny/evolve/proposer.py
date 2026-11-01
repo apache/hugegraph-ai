@@ -27,7 +27,7 @@ Two implementations sharing one contract:
   to the heuristic proposer when the LLM is absent, fails, or proposes something
   the schema cannot accept. Async.
 
-The constitutional split (evolution-loop §4/§6) is preserved exactly: the LLM's
+The baseline split (evolution-loop §4/§6) is preserved exactly: the LLM's
 decision space is bounded by
 
   1. a closed mutation catalog (add-optional-property | enum-widen -- whatever
@@ -35,7 +35,7 @@ decision space is bounded by
   2. post-hoc schema validation (object exists, prop new / enum-widen targets a
      real enum, type parses under the DSL's own type system);
   3. the unchanged selection ladder: deterministic eval, tier classification,
-     budgets, constitution surface. The LLM cannot escalate itself.
+     budgets, governance-baseline surface. The LLM cannot escalate itself.
 
 Unexplainable decisions never enter evaluation: a proposal without a rationale
 is discarded. Provenance is kept (``origin``: llm | heuristic) so every promoted

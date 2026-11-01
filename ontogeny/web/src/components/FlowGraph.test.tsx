@@ -95,6 +95,11 @@ describe('FlowGraph (G6 engine)', () => {
     const a = renderWithProviders(<FlowGraph data={DATA} height={300} />, { path: '/' })
     await Promise.resolve()
     expect(g6().cfg.layout.type).toBe('d3-force')
+    // a label can be 132px wide: the force collisions reserve the label box and
+    // the link length leaves a readable gap, instead of packing 40px dots
+    expect(g6().cfg.layout).toMatchObject({
+      preventOverlap: true, nodeSize: 150, linkDistance: 190, iterations: 500,
+    })
     a.unmount()
 
     renderWithProviders(
@@ -104,6 +109,22 @@ describe('FlowGraph (G6 engine)', () => {
     await Promise.resolve()
     expect(g6().cfg.layout.type).toBe('antv-dagre')
     a.unmount?.()
+  })
+
+  it('keeps node dragging on and lifts the hovered node', async () => {
+    renderGraph()
+    await Promise.resolve()
+    // dragging is still available — the layout only decides the resting places
+    expect(g6().cfg.behaviors).toContain('drag-element')
+    const hover = g6().cfg.behaviors.find(
+      (b: any) => typeof b === 'object' && b.type === 'hover-activate',
+    )
+    expect(hover).toMatchObject({ degree: 0, state: 'hover' })
+    // ...and the hover state is a lift: accent ring, halo and deeper shadow
+    const hoverStyle = g6().cfg.node.state.hover
+    expect(hoverStyle.lineWidth).toBeGreaterThan(2.8)
+    expect(hoverStyle.shadowBlur).toBeGreaterThan(8)
+    expect(hoverStyle.halo).toBe(true)
   })
 
   it('node click raises onNodeClick with the node payload', async () => {

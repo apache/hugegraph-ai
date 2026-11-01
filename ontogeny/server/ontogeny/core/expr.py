@@ -271,7 +271,7 @@ class ExprContext:
     target: dict[str, Any] | None = None
     parameters: dict[str, Any] | None = None
     principal: dict[str, Any] = field(default_factory=dict)
-    now: _dt.datetime = field(default_factory=lambda: _dt.datetime.now(_dt.timezone.utc))
+    now: _dt.datetime = field(default_factory=lambda: _dt.datetime.now(_dt.UTC))
     id_seed: int = 0
     _seq: dict[str, int] = field(default_factory=dict)
 
@@ -331,7 +331,7 @@ def _as_utc(value: _dt.datetime) -> _dt.datetime:
     naive value; mixing it with an aware `now()` used to raise TypeError and
     silently blank out every derived timestamp expression.
     """
-    return value if value.tzinfo else value.replace(tzinfo=_dt.timezone.utc)
+    return value if value.tzinfo else value.replace(tzinfo=_dt.UTC)
 
 
 def _eq(a: Any, b: Any) -> bool:

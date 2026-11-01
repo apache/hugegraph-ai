@@ -291,7 +291,7 @@ body {
  * them. */
 .ontogeny-modal { box-shadow: none; }
 
-.ontogeny-btn, .ontogeny-btn-primary, .ontogeny-btn-ghost, .ontogeny-btn-subtle, .ontogeny-btn-danger {
+.ontogeny-btn, .ontogeny-btn-primary, .ontogeny-btn-ghost, .ontogeny-btn-subtle, .ontogeny-btn-danger, .ontogeny-btn-success {
   @apply inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium
          transition-all duration-150 disabled:opacity-45 disabled:cursor-not-allowed
          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60;
@@ -306,6 +306,8 @@ body {
 .ontogeny-btn-ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
 .ontogeny-btn-subtle { background: transparent; color: var(--text-muted); }
 .ontogeny-btn-subtle:hover:not(:disabled) { background: var(--surface-hover); color: var(--text-primary); }
+.ontogeny-btn-success { background: #059669; color: #fff; }
+.ontogeny-btn-success:hover:not(:disabled) { background: #047857; }
 .ontogeny-btn-danger { background: #dc2626; color: #fff; }
 .ontogeny-btn-danger:hover:not(:disabled) { background: #b91c1c; }
 .ontogeny-btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
@@ -330,40 +332,45 @@ body {
   backdrop-filter: blur(18px) saturate(1.35);
   box-shadow: var(--shadow-float);
 }
-/* The agent dock's floating disc: a PURPLE-tinted frosted lens. The blur is
-   only visible when content passes underneath, so the disc carries a faint
-   violet wash and a violet hairline of its own — glass you can see even over
-   the blank paper, and unmistakable over a card. */
-/* longhand on purpose: a multi-layer `background` shorthand with a bare colour
-   layer is easy to get wrong and silently drops the whole declaration */
+/* The agent dock's floating disc: pure white, so it reads as an opaque lens
+   over any surface (canvas, card, dark chrome) instead of tinting whatever is
+   underneath. A layered shadow does the floating; hover lifts it a few pixels
+   and deepens the shadow, pressed pushes it back down. */
 .ontogeny-dock-glass {
-  background-color: rgba(255, 255, 255, .08);
-  background-image: linear-gradient(135deg, rgba(124, 58, 237, .12), rgba(124, 58, 237, .03));
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
-  box-shadow: 0 8px 26px -10px rgba(88, 28, 135, .3);
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, .08);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, .06),
+    0 10px 24px -8px rgba(15, 23, 42, .18),
+    0 2px 10px rgba(88, 28, 135, .1);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  will-change: transform;
 }
 [data-theme='dark'] .ontogeny-dock-glass {
-  background-color: rgba(20, 26, 35, .16);
-  background-image: linear-gradient(135deg, rgba(167, 139, 250, .14), rgba(167, 139, 250, .04));
-  box-shadow: 0 8px 26px -10px rgba(0, 0, 0, .5);
+  background: #fff;
+  border-color: rgba(255, 255, 255, .16);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, .35),
+    0 14px 32px -10px rgba(0, 0, 0, .55);
 }
 .ontogeny-dock-glass svg { color: #7c3aed; }
-[data-theme='dark'] .ontogeny-dock-glass svg { color: #c4b5fd; }
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .ontogeny-dock-glass { background: var(--surface-card); }
+.ontogeny-dock-glass:hover {
+  transform: translateY(-3px) scale(1.04);
+  border-color: rgba(124, 58, 237, .28);
+  box-shadow:
+    0 4px 10px rgba(15, 23, 42, .08),
+    0 18px 38px -10px rgba(88, 28, 135, .3);
+}
+.ontogeny-dock-glass:active {
+  transform: translateY(-1px) scale(.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ontogeny-dock-glass { transition: none; }
+  .ontogeny-dock-glass:hover, .ontogeny-dock-glass:active { transform: none; }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   /* no blur support: fall back to a more opaque surface so text stays legible */
   .ontogeny-glass { background: var(--surface-card); }
-}
-@keyframes ontogeny-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-}
-.ontogeny-float { animation: ontogeny-float 4.5s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .ontogeny-float { animation: none; }
 }
 
 .ontogeny-input {

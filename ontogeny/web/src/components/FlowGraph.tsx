@@ -169,6 +169,15 @@ const MIN_CARD_ZOOM = 0.66
  *  past this the dots and their labels start colliding. */
 const MAX_DOT_ZOOM = 1.25
 
+/** Room an instance node needs, in CSS px. The drawing is a 40–52px dot plus a
+ *  label underneath that may be 132px wide, so the force layout has to reserve
+ *  the label's box rather than the dot's: the old 64px collision box let labels
+ *  overlap while the circles sat comfortably apart. */
+const INSTANCE_NODE_FOOTPRINT = 150
+/** Centre-to-centre distance along an edge. Doubles as the breathing room
+ *  between two labelled neighbours, so it is comfortably wider than the label. */
+const INSTANCE_LINK_DISTANCE = 190
+
 /** Minimap box, in CSS px. */
 const MINIMAP_SIZE: [number, number] = [132, 84]
 
@@ -301,7 +310,19 @@ export function FlowGraph({
       }
       : layout === 'radial'
         ? { type: 'radial', unitRadius: 90, linkDistance: 100, preventOverlap: true }
-        : { type: 'd3-force', preventOverlap: true, nodeSize: 64, linkDistance: 82, collide: 64 }
+        // Instance graph: spread by a force simulation, but with the label's
+        // footprint as the collision box and enough simulation rounds for the
+        // whole neighbourhood to settle (the 300-round default stopped while
+        // clusters were still on top of each other).
+        : {
+          type: 'd3-force',
+          preventOverlap: true,
+          nodeSize: INSTANCE_NODE_FOOTPRINT,
+          linkDistance: INSTANCE_LINK_DISTANCE,
+          nodeStrength: -240,
+          collideStrength: 0.85,
+          iterations: 500,
+        }
 
     const measure = () => (fill
       ? { w: container.clientWidth || 900, h: container.clientHeight || 560 }
@@ -489,6 +510,23 @@ export function FlowGraph({
             }
             : { halo: true, haloLineWidth: 6, haloOpacity: 0.3, lineWidth: 3.5, stroke: ACCENT },
           active: card ? { lineWidth: 2.4 } : { lineWidth: 2.8 },
+          // Hover is a lift: the dot keeps its type fill but gains an accent
+          // ring, a halo and a deeper shadow, so a pointer passing over the
+          // canvas answers "this one is interactive" before the click.
+          ...(card
+            ? {}
+            : {
+              hover: {
+                lineWidth: 3.4,
+                stroke: ACCENT,
+                halo: true,
+                haloLineWidth: 8,
+                haloOpacity: 0.16,
+                shadowColor: withAlpha(ACCENT, 0.38),
+                shadowBlur: 22,
+                shadowOffsetY: 6,
+              },
+            }),
         },
       },
       edge: {
@@ -542,7 +580,17 @@ export function FlowGraph({
         },
       },
       layout: g6Layout,
-      behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element'],
+      // Pan, zoom and node drag are always on — the layout settles the nodes,
+      // but the reader may still pull one aside to follow an edge.
+      behaviors: [
+        'drag-canvas',
+        'zoom-canvas',
+        'drag-element',
+        // Instance canvases lift a node on hover (node.state.hover). Card
+        // canvases are HTML elements with their own CSS hover, so the canvas
+        // behaviour stays out of their way.
+        ...(card ? [] : [{ type: 'hover-activate', key: 'hover-activate', degree: 0, state: 'hover' }]),
+      ],
       plugins: [
         ...(showMinimap
           ? [{

@@ -1,0 +1,12 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: supplier-risk-note
+  display: Has risk note
+  description: A supplier is the subject of a risk note extracted from a document
+spec:
+  source: supplier
+  target: supplier-note
+  cardinality: ONE_TO_MANY
+  join:
+    kind: extracted

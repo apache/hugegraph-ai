@@ -1,0 +1,36 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: supplier
+  display: Supplier
+  description: A supplier in the ERP master data
+spec:
+  primaryKey: [supplier_id]
+  properties:
+    supplier_id:
+      type: string
+      display: Supplier ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    country:
+      type: string
+      display: Country
+    risk_tier:
+      type: "enum[LOW, MEDIUM, HIGH]"
+      display: Risk tier
+      owner: ontology
+  backing:
+    store: suppliers
+    mode: materialized
+    source:
+      table: suppliers
+    mapping: {}
+    sync:
+      strategy: snapshot
+    # a referenceable type: documents may POINT AT a supplier (resolved by
+    # name) but never create one
+    extract:
+      match: [name]

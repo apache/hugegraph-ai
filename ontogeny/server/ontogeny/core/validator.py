@@ -35,6 +35,8 @@ from .models import (
     ActionResource,
     ArchiveObjectEffect,
     CreateObjectEffect,
+    ExtractCfg,
+    ExtractedJoin,
     FunctionResource,
     LinkTypeResource,
     ModifyLinkedEffect,
@@ -101,6 +103,10 @@ def effective_owner(obj: ObjectTypeResource, prop: str) -> str:
     backing = obj.spec.backing
     if backing is None:
         return "ontology"
+    # a document corpus is a third authority: it never overwrites what a
+    # system of record or an action already owns (see the merge policy)
+    if backing.sync is not None and backing.sync.strategy == "extract":
+        return "document"
     if not backing.mapping:
         return "source"
     return "source" if prop in backing.mapping else "ontology"
@@ -164,6 +170,10 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 f"Store/{s.metadata.name}",
                 f"read-write requires a transactional store, got {s.spec.type}",
             )
+        # documents are read-only snapshots; write-back is an outbox adapter,
+        # never a corpus reader
+        if s.spec.type == "document" and s.spec.access != "read-only":
+            rep.error("STORE-DOC-RO", f"Store/{s.metadata.name}", "document stores are read-only")
 
     # ---- objects ----------------------------------------------------------
     for obj in pkg.objects():
@@ -189,6 +199,33 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                     rep.error("SYNC-WATERMARK", res_id, "watermark strategy requires watermark.column")
                 if b.sync.strategy == "changelog":
                     rep.warn("SYNC-CHANGELOG", res_id, "changelog strategy requires a runtime Kafka source")
+                if b.sync.strategy == "extract":
+                    store = stores.get(b.store)
+                    if store is not None and store.spec.type != "document":
+                        rep.error(
+                            "SYNC-EXTRACT-STORE",
+                            res_id,
+                            f"extract strategy requires a document store, {b.store!r} is {store.spec.type}",
+                        )
+                    if len(obj.spec.primaryKey) != 1:
+                        # link rows and outbox events key on one id; composite
+                        # identity is a platform-wide gap, not a document one
+                        rep.error(
+                            "SYNC-EXTRACT-PK",
+                            res_id,
+                            "document-backed object types require exactly one primaryKey property",
+                        )
+                    cfg = b.extract or ExtractCfg()
+                    for name in [*cfg.key, *cfg.match]:
+                        if name not in obj.spec.properties:
+                            rep.error(
+                                "SYNC-EXTRACT-KEY",
+                                res_id,
+                                f"extract key/match {name!r} is not a property",
+                            )
+                    for label in cfg.labels:
+                        if label not in objects:
+                            rep.error("SYNC-EXTRACT-LABEL", res_id, f"extract label {label!r} is not an ObjectType")
         for pname, pdef in obj.spec.properties.items():
             if pdef.derived_kind() == "expr":
                 try:
@@ -251,6 +288,33 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                             res_id,
                             f"join key types differ: {a_prop}:{pa.type} vs {b_prop}:{pb.type}",
                         )
+        elif isinstance(j, ExtractedJoin):
+            # asserted by document extraction: the endpoints must be
+            # object types (checked above); at least one side should be
+            # document-backed or the link has no producer
+            def _document_backed(name: str) -> bool:
+                o = objects.get(name)
+                b = o.spec.backing if o is not None else None
+                return bool(b and b.sync and b.sync.strategy == "extract")
+
+            if not _document_backed(lnk.spec.source) and not _document_backed(lnk.spec.target):
+                rep.warn(
+                    "LINK-EXTRACT-SOURCE",
+                    res_id,
+                    "extracted link has no document-backed endpoint; nothing will assert it",
+                )
+            for side in (lnk.spec.source, lnk.spec.target):
+                if _document_backed(side):
+                    continue
+                endpoint_obj = objects.get(side)
+                b = endpoint_obj.spec.backing if endpoint_obj is not None else None
+                if b is None or b.extract is None or not (b.extract.match or b.extract.key):
+                    rep.warn(
+                        "LINK-EXTRACT-REF",
+                        res_id,
+                        f"{side!r} is not document-backed and declares no extract.match/key; "
+                        "the corpus cannot resolve it",
+                    )
         else:
             if j.store not in stores:
                 rep.error("LINK-STORE", res_id, f"join-table references unknown store {j.store!r}")
@@ -646,11 +710,11 @@ def _validate_action_against(
                 continue
             if pdef.derived:
                 rep.error("ACTION-DERIVED", res_id, f"{label} cannot set derived property {prop!r}")
-            if check_owner and effective_owner(obj_res, prop) != "ontology":
+            if check_owner and effective_owner(obj_res, prop) == "source":
                 rep.error(
                     "ACTION-OWNER",
                     res_id,
-                    f"{label} sets source-owned property {prop!r} (owner must be ontology)",
+                    f"{label} sets source-owned property {prop!r} (owner must be ontology or document)",
                 )
             _static_expr(rep, res_id, value_expr, spec, target, objects, allow_enum_literal=True)
 

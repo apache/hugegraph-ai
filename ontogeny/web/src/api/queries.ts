@@ -57,6 +57,7 @@ limitations under the License.
  */
 import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiClient } from '../api/client'
+import type { CandidateDetail, DocumentRunDetail, DocumentStoreSummary, ExtractCandidate, ExtractRun, CorpusDocument } from '../api/types'
 
 /** Compile-and-publish is the only way the snapshot changes, so it never goes
  *  stale on its own — only an explicit invalidation moves it. */
@@ -142,6 +143,18 @@ export const keys = {
   /** One key for `/agent/sessions/{id}`, whichever page polls it. */
   agentSession: (id: number | string | null) => ['agent-session', String(id)] as const,
 
+  // ---- documents --------------------------------------------------------
+  documentStores: ['document-stores'] as const,
+  documents: (store: string) => ['documents', store] as const,
+  documentRuns: (store?: string) => ['document-runs', store ?? ''] as const,
+  documentRun: (id: number | string) => ['document-run', String(id)] as const,
+  documentCandidates: (status: string, store?: string) => ['document-candidates', status, store ?? ''] as const,
+  documentCandidate: (id: number | string) => ['document-candidate', String(id)] as const,
+  documentTasks: (store?: string, status?: string) => ['document-tasks', store ?? '', status ?? ''] as const,
+  documentTask: (id: number | string) => ['document-task', String(id)] as const,
+  documentSchema: (store: string) => ['document-schema', store] as const,
+  documentSkills: ['document-skills'] as const,
+
   // ---- admin ------------------------------------------------------------
   extensions: ['extensions'] as const,
   llmStatus: ['llm-status'] as const,
@@ -153,3 +166,82 @@ export const keys = {
 export function useMeta() {
   return useQuery(metaQuery())
 }
+
+/* --------------------------------------------------------------- documents */
+
+export function documentStoresQuery() {
+  return queryOptions({
+    queryKey: keys.documentStores,
+    queryFn: apiClient.documentStores,
+  })
+}
+
+export function documentsQuery(store: string) {
+  return queryOptions({
+    queryKey: keys.documents(store),
+    queryFn: async (): Promise<{ store: string; documents: CorpusDocument[] }> => apiClient.listDocuments(store),
+    enabled: Boolean(store),
+  })
+}
+
+export function documentRunsQuery(store?: string) {
+  return queryOptions({
+    queryKey: keys.documentRuns(store),
+    queryFn: async (): Promise<{ runs: ExtractRun[] }> => apiClient.documentRuns(store),
+  })
+}
+
+export function documentRunQuery(id: number | null) {
+  return queryOptions({
+    queryKey: keys.documentRun(id ?? 'none'),
+    queryFn: async (): Promise<DocumentRunDetail> => apiClient.documentRun(Number(id)),
+    enabled: typeof id === 'number' && Number.isFinite(id),
+  })
+}
+
+export function documentCandidatesQuery(status = 'pending', store?: string) {
+  return queryOptions({
+    queryKey: keys.documentCandidates(status, store),
+    queryFn: async (): Promise<{ candidates: ExtractCandidate[] }> => apiClient.documentCandidates(status, store),
+  })
+}
+
+export function documentTasksQuery(store?: string, status?: string) {
+  return queryOptions({
+    queryKey: keys.documentTasks(store, status),
+    queryFn: async () => apiClient.documentTasks(store, status),
+  })
+}
+
+export function documentTaskQuery(id: number | null) {
+  return queryOptions({
+    queryKey: keys.documentTask(id ?? 'none'),
+    queryFn: async () => apiClient.documentTask(Number(id)),
+    enabled: typeof id === 'number' && Number.isFinite(id),
+  })
+}
+
+export function documentSchemaQuery(store: string, enabled = true) {
+  return queryOptions({
+    queryKey: keys.documentSchema(store),
+    queryFn: async () => apiClient.documentSchema(store),
+    enabled: Boolean(store) && enabled,
+  })
+}
+
+export function documentSkillsQuery() {
+  return queryOptions({
+    queryKey: keys.documentSkills,
+    queryFn: apiClient.documentSkills,
+  })
+}
+
+export function documentCandidateQuery(id: number | null) {
+  return queryOptions({
+    queryKey: keys.documentCandidate(id ?? 'none'),
+    queryFn: async (): Promise<CandidateDetail> => apiClient.documentCandidate(Number(id)),
+    enabled: typeof id === 'number' && Number.isFinite(id),
+  })
+}
+
+export type { DocumentStoreSummary }

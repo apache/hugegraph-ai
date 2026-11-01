@@ -293,7 +293,7 @@ class FunctionSandbox:
         budget = self._budget(function_resource)
         try:
             return await asyncio.wait_for(child_main(), timeout=budget)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise SandboxError(f"function {entry!r} exceeded {budget:g}s wall clock") from exc
         finally:
             with contextlib.suppress(ProcessLookupError):

@@ -36,7 +36,7 @@ from ..evolve.models import EvolveSignalRow
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 class TelemetryQueryRow(Base):

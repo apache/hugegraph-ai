@@ -39,6 +39,7 @@ async def builder_save(
 ) -> dict[str, Any]:
     from .core import load_package
     from .core import validate as _v
+    from .core.kinds import KIND_DIRS
     from .core.models import RESOURCE_BY_KIND
     from .errors import DSLValidationError
 
@@ -100,20 +101,8 @@ async def builder_save(
         # keep its legacy 422 envelope
         raise DSLValidationError("builder resources failed validation", details={"errors": errors})
 
-    # write YAML files into the package directory (grouped by kind)
-    _DIR_MAP = {
-        "Store": "stores",
-        "ObjectType": "objects",
-        "LinkType": "links",
-        "Action": "actions",
-        "Function": "functions",
-        "PolicySet": "policies",
-        "Projection": "projections",
-        "EvalSuite": "evals",
-        "AgentPlugin": "agents",
-        "EvolutionPolicy": None,
-        "Ontology": None,
-    }
+    # write YAML files into the package directory (grouped by kind; the
+    # kind -> directory map lives in core/kinds.py, not in a second literal)
     # Ontology → ontology.yaml; EvolutionPolicy → evolution.yaml (flat files)
     manifest = next((r for r in parsed if r.kind == "Ontology"), None)
     if manifest is None:
@@ -192,7 +181,7 @@ async def builder_save(
     removed = []
     for entry in deletes or []:
         kind, _, name = entry.partition("/")
-        subdir = _DIR_MAP.get(kind)
+        subdir = KIND_DIRS.get(kind)
         if subdir and "/" not in name and ".." not in name and name:
             fp_r = os.path.realpath(os.path.join(pkg_r, subdir, f"{name}.yaml"))
             if not fp_r.startswith(pkg_r + os.sep):
@@ -211,7 +200,7 @@ async def builder_save(
 
     written = []
     for res in parsed:
-        subdir = _DIR_MAP.get(res.kind)
+        subdir = KIND_DIRS.get(res.kind)
         if subdir is None:
             continue
         d = pkg_dir / subdir
@@ -240,7 +229,7 @@ async def builder_save(
     # load then sees two resources with the same identity and the package
     # becomes unswitchable with DUP-NAME. Prefer the conventional
     # `<metadata.name>.yaml` filename when both exist.
-    for subdir in {v for v in _DIR_MAP.values() if v}:
+    for subdir in {v for v in KIND_DIRS.values() if v}:
         d = pkg_dir / subdir
         if not d.is_dir():
             continue

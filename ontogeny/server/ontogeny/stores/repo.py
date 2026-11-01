@@ -35,7 +35,7 @@ from .ddl import ensure_tables, object_table
 
 
 def utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 def _and(*conds):
@@ -301,6 +301,82 @@ class ObjectRepository:
         await session.execute(t.insert().values(**merged))
         return "updated"
 
+    async def apply_extracted(
+        self,
+        session,
+        object_type: str,
+        values: dict[str, Any],
+        ts: _dt.datetime,
+    ) -> str:
+        """Write document-bound values with explicit authority.
+
+        The binder has already decided *which* fields may change (ownership,
+        fill-only, review); this method only makes the write versioned and
+        idempotent. ``None`` never overwrites an existing value: an absent
+        extraction is not evidence of absence.
+        """
+        t = self._table(object_type)
+        pk_cols = self._pk_cols(object_type)
+        missing = [c for c in pk_cols if values.get(c) is None]
+        if missing:
+            raise StoreError(f"extracted row missing primary key {missing}")
+        where = _and(t.c._valid_to.is_(None), *[getattr(t.c, c) == values[c] for c in pk_cols])
+        current = (await session.execute(select(t).where(where).limit(1).with_for_update())).mappings().first()
+
+        if current is None:
+            seed = {c: values.get(c) for c in self._prop_cols(object_type) if c in values}
+            seed.update({"_rev": 1, "_valid_from": ts, "_valid_to": None, "_synced_at": ts})
+            await session.execute(t.insert().values(**seed))
+            return "inserted"
+
+        changes = {
+            c: v
+            for c, v in values.items()
+            if c in self._prop_cols(object_type) and v is not None and (c not in pk_cols) and current.get(c) != v
+        }
+        if not changes:
+            return "noop"
+        await session.execute(update(t).where(where).values(_valid_to=ts))
+        merged = {c: current.get(c) for c in self._prop_cols(object_type)}
+        merged.update({c: current.get(c) for c in self._materialized_cols(object_type)})
+        merged.update(changes)
+        merged.update({"_rev": current["_rev"] + 1, "_valid_from": ts, "_valid_to": None, "_synced_at": ts})
+        await session.execute(t.insert().values(**merged))
+        return "updated"
+
+    async def find_by_keys(
+        self,
+        session,
+        object_type: str,
+        keys: dict[str, Any],
+        *,
+        limit: int = 3,
+    ) -> list[str]:
+        """Resolve extracted natural keys to live ids (normalized comparison).
+
+        Case/whitespace normalization is deliberate: "ACME Corp" and "acme corp"
+        are the same supplier in practice, and a false negative creates a
+        duplicate that no later run can merge (we never auto-merge objects).
+        """
+        t = self._table(object_type)
+        pk_cols = self._pk_cols(object_type)
+        where = [t.c._valid_to.is_(None)]
+        for prop, value in keys.items():
+            if value is None or value == "":
+                continue
+            col = getattr(t.c, self.compiled.col(prop))
+            kind = self.compiled.ptype(object_type, prop).kind
+            if kind in ("string", "enum", "media", "document"):
+                where.append(func.lower(func.trim(col)) == str(value).strip().lower())
+            else:
+                where.append(col == value)
+        if len(where) == 1:
+            return []
+        rows = (
+            await session.execute(select(*[getattr(t.c, c) for c in pk_cols]).where(_and(*where)).limit(limit))
+        ).all()
+        return [str(r[0]) for r in rows]
+
     def _materialized_cols(self, object_type: str) -> list[str]:
         """Function-derived columns: materialized values that must survive a
         version transition (they are recomputed by the derivation worker, but a
@@ -392,6 +468,16 @@ class ObjectRepository:
             .first()
         )
         if existing:
+            # an explicit (action) assertion shares the edge with the corpus:
+            # mark it external so a later document removal cannot close it
+            provenance = dict(existing.get("_provenance") or {})
+            if not provenance.get("external"):
+                provenance["external"] = True
+                await session.execute(
+                    update(t)
+                    .where(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None))
+                    .values(_provenance=provenance)
+                )
             return
         await session.execute(t.insert().values(src_id=src_id, dst_id=dst_id, _valid_from=ts, _valid_to=None))
 
@@ -406,6 +492,99 @@ class ObjectRepository:
             .where(and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)))
             .values(_valid_to=ts)
         )
+
+    async def link_assert(
+        self,
+        session,
+        link_name: str,
+        src_id: str,
+        dst_id: str,
+        provenance: dict[str, Any],
+        ts: _dt.datetime,
+    ) -> str:
+        """Assert an extracted edge; merge provenance when the pair is alive."""
+        from .ddl import link_table
+
+        t = link_table(self.compiled, link_name)
+        existing = (
+            (
+                await session.execute(
+                    select(t).where(and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)))
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if existing:
+            merged = dict(existing.get("_provenance") or {})
+            if existing.get("_provenance") is None:
+                # the edge predates the corpus (an action created it): never
+                # let a document's retraction close it
+                merged["external"] = True
+            docs = list(merged.get("docs") or [])
+            doc_id = provenance.get("doc_id")
+            if doc_id and doc_id not in docs:
+                docs.append(doc_id)
+            merged["docs"] = docs
+            evidence = list(merged.get("evidence") or [])
+            evidence.append(provenance)
+            merged["evidence"] = evidence[-20:]
+            await session.execute(
+                update(t)
+                .where(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None))
+                .values(_provenance=merged)
+            )
+            return "noop"
+        await session.execute(
+            t.insert().values(
+                src_id=src_id,
+                dst_id=dst_id,
+                _valid_from=ts,
+                _valid_to=None,
+                _provenance={"docs": [provenance["doc_id"]], "evidence": [provenance]},
+            )
+        )
+        return "asserted"
+
+    async def link_retract(
+        self,
+        session,
+        link_name: str,
+        src_id: str,
+        dst_id: str,
+        doc_id: str,
+        ts: _dt.datetime,
+    ) -> bool:
+        """Drop one document's assertion; close the edge only when none remain."""
+        from .ddl import link_table
+
+        t = link_table(self.compiled, link_name)
+        row = (
+            (
+                await session.execute(
+                    select(t).where(and_(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)))
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row is None:
+            return False
+        provenance = dict(row.get("_provenance") or {})
+        docs = [d for d in (provenance.get("docs") or []) if d != doc_id]
+        if provenance.get("external") or docs:
+            provenance["docs"] = docs
+            provenance["evidence"] = [e for e in (provenance.get("evidence") or []) if e.get("doc_id") != doc_id]
+            await session.execute(
+                update(t)
+                .where(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None))
+                .values(_provenance=provenance)
+            )
+            return False
+        await session.execute(
+            update(t).where(t.c.src_id == src_id, t.c.dst_id == dst_id, t.c._valid_to.is_(None)).values(_valid_to=ts)
+        )
+        return True
 
     async def link_members(
         self,

@@ -233,7 +233,7 @@ def serve(
         ".ontogeny-demo", "--data-dir", help="demo state directory (metadata + source db + package copy)"
     ),
     package: str = typer.Option(
-        None, "--package", help="ontology package to install into the demo (default: domains/product-manufacturing)"
+        None, "--package", help="ontology package to install into the demo (default: domains/chip-lifecycle)"
     ),
     reseed: bool = typer.Option(False, "--reseed", help="rebuild the demo source db and package copy from scratch"),
     build_ui: bool = typer.Option(True, "--build-ui/--no-build-ui", help="build web/dist when missing"),
@@ -246,7 +246,7 @@ def serve(
     if demo:
         from .demo import DEFAULT_PACKAGE, prepare_demo
 
-        # A first-class domain (a package directly inside a domains/ root) is
+        # An in-tree domain (a package directly inside a domains/ root) is
         # served IN PLACE: console saves — model edits and the canvas
         # layout.yaml — land in domains/<name>/ instead of a throwaway copy
         # that the demo's runtime reset would later wipe. Anything else (an

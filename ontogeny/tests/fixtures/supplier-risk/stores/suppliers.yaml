@@ -1,0 +1,10 @@
+apiVersion: ontogeny/v1
+kind: Store
+metadata:
+  name: suppliers
+  display: Supplier master (ERP)
+  description: Supplier master data in the ERP database
+spec:
+  type: sqlite
+  connection: ${SUPPLIER_DSN}
+  access: read-write

@@ -37,8 +37,8 @@ import { ApiError, PRESET_PRINCIPALS, getPrincipal, setPrincipal } from './clien
 describe('principal handling', () => {
   beforeEach(() => localStorage.clear())
 
-  it('defaults to the planner preset', () => {
-    expect(getPrincipal().id).toBe(PRESET_PRINCIPALS.planner.id)
+  it('defaults to the product preset', () => {
+    expect(getPrincipal().id).toBe(PRESET_PRINCIPALS.product.id)
   })
 
   it('persists a chosen principal', () => {
@@ -48,7 +48,7 @@ describe('principal handling', () => {
 
   it('falls back to default on corrupted storage', () => {
     localStorage.setItem('ontogeny.principal', '{not json')
-    expect(getPrincipal().id).toBe('u-planner')
+    expect(getPrincipal().id).toBe('u-product')
   })
 })
 

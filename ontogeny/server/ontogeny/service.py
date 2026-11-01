@@ -40,6 +40,7 @@ from .auth import AuthService
 from .config import Settings
 from .core.loader import load_package
 from .db import init_schema, make_engine, make_sessionmaker
+from .documents import models as _document_models  # noqa: F401  (registers tables before create_all)
 from .engine import QueryService
 from .errors import DSLValidationError, NotFoundError, OOError, StoreError
 from .evolve import Promoter
@@ -212,6 +213,9 @@ class ServiceContext:
         # sc.agent_engines (engine factories). The core only defines contracts.
         self.llm = None
         self.graph_store_factory = None
+        # populated by a document-extractor extension (capability:document-extractor)
+        self.document_extractor = None
+        self.document_extractor_factory = None
         self.agent_engines: dict[str, Any] = {}
         self.ext: ExtensionHost | None = None
 
@@ -555,6 +559,14 @@ class ServiceContext:
             self.repo,
             lambda store: make_source(store, self.settings.resolve_env_ref(store.spec.connection)),
         )
+        from .documents.engine import DocumentService
+
+        self.documents = DocumentService(self)
+        # the factory is registered by the extension host at boot; building the
+        # adapter is cheap; the external agent is called only on extraction
+        self.document_extractor = (
+            self.document_extractor_factory(self) if self.document_extractor_factory is not None else None
+        )
         self.policy = PolicyEngine(compiled)
         # sc.llm comes from an llm-provider extension (llm-ollama ships with the
         # repo); None means "capability absent" and every LLM consumer degrades.
@@ -672,6 +684,8 @@ class ServiceContext:
             derivation_drain=_derivation_drain,
         )
         self.agents = AgentBroker(self)
+        # document extraction shares the broker's entry/trace/audit
+        self.documents.tasks.bind_broker(self.agents)
         self.eval_runner.agent_broker = self.agents  # agent eval cases use the same gates
         # accounts & sessions: identity only -- authorization stays in the policy
         # plane, which is why AuthService never decides anything about resources
@@ -1054,6 +1068,11 @@ class ServiceContext:
             compiled = await self.registry.activate(session, pkg, created_by="console")
             await session.commit()
         self.package_root = str(target.resolve())
+        # the canvas layout travels with the package: without rebinding it a
+        # switch keeps writing/reading the previous domain's layout.yaml
+        from .layout import LayoutStore
+
+        self._layout = LayoutStore(self.package_root)
         self._rebuild_services(compiled)
         async with self.sessionmaker() as session:
             await self.repo.ensure(session)
@@ -1323,13 +1342,37 @@ class ServiceContext:
             elif kind.kind in ("date", "timestamp"):
                 import datetime as _dt
 
-                params[name] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                params[name] = _dt.datetime.now(_dt.UTC).isoformat()
                 sources[name] = "now"
             else:
                 params[name], sources[name] = "sample", "sample text"
         return params, sources
 
     async def sync(self, object_type: str) -> dict[str, Any]:
+        # document-backed types do not pull rows: the corpus is extracted,
+        # bound and committed by the document plane. Everything downstream
+        # (outbox, projection, query) is identical.
+        obj = self.compiled.objects.get(object_type) if self.compiled is not None else None
+        backing = obj.spec.backing if obj is not None else None
+        if backing is not None and backing.sync is not None and backing.sync.strategy == "extract":
+            from .documents.engine import DocumentError
+
+            try:
+                return await self.documents.ingest(backing.store, objects=[object_type])
+            except DocumentError as exc:
+                # A bulk "sync every type" must not fail just because no
+                # extractor is installed; document ingestion stays an explicit
+                # document-plane action and is reported as skipped here.
+                if "no document extractor" not in str(exc):
+                    raise
+                return {
+                    "inserted": 0,
+                    "updated": 0,
+                    "noop": 0,
+                    "archived": 0,
+                    "quarantined": 0,
+                    "skipped": "no-document-extractor",
+                }
         try:
             async with self.sessionmaker() as session:
                 summary = await self.sync_engine.sync(session, object_type)
@@ -1354,7 +1397,7 @@ class ServiceContext:
                         strategy=strategy,
                         status="error",
                         error=f"{type(exc).__name__}: {exc}",
-                        finished_at=_dt.datetime.now(_dt.timezone.utc),
+                        finished_at=_dt.datetime.now(_dt.UTC),
                     )
                 )
                 await s2.commit()

@@ -43,7 +43,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.types import TypeDecorator
 
-from ..core.models import JoinTableJoin
+from ..core.models import ExtractedJoin, JoinTableJoin
 from ..core.types import PropertyType
 
 SYSTEM_COLUMNS = ("_rev", "_valid_from", "_valid_to", "_synced_at")
@@ -67,15 +67,15 @@ class UTCDateTime(TypeDecorator):
         if isinstance(value, _dt.date) and not isinstance(value, _dt.datetime):
             value = _dt.datetime(value.year, value.month, value.day)
         if value.tzinfo is None:
-            return value.replace(tzinfo=_dt.timezone.utc)
-        return value.astimezone(_dt.timezone.utc)
+            return value.replace(tzinfo=_dt.UTC)
+        return value.astimezone(_dt.UTC)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=_dt.timezone.utc)
-        return value.astimezone(_dt.timezone.utc)
+            return value.replace(tzinfo=_dt.UTC)
+        return value.astimezone(_dt.UTC)
 
 
 # One MetaData per ontology snapshot: two packages may both define an
@@ -150,8 +150,8 @@ def object_table(compiled, object_type: str) -> Table:
 
 def link_table(compiled, link_name: str) -> Table:
     lnk = compiled.links[link_name]
-    if not isinstance(lnk.spec.join, JoinTableJoin):
-        raise ValueError(f"link {link_name} is not join-table backed")
+    if not isinstance(lnk.spec.join, (JoinTableJoin, ExtractedJoin)):
+        raise ValueError(f"link {link_name} is not join-table or extraction backed")
     metadata = _metadata_for(compiled)
     name = compiled.link_table(link_name)
     cached = metadata.tables.get(name)
@@ -167,6 +167,9 @@ def link_table(compiled, link_name: str) -> Table:
         Column("dst_id", String(500), primary_key=True),
         Column("_valid_from", DateTime(timezone=True), nullable=False, primary_key=True),
         Column("_valid_to", DateTime(timezone=True), nullable=True),
+        # which documents asserted this edge (extracted links only). JSON so a
+        # pair keeps every source document; NULL on action/join-table links.
+        Column("_provenance", JSON, nullable=True),
     )
 
 
@@ -185,7 +188,9 @@ def ensure_tables(conn, compiled) -> None:
     tables: list[Table] = [
         object_table(compiled, t) for t, o in compiled.objects.items() if o.spec.backing is not None
     ] + [
-        link_table(compiled, lnk) for lnk in compiled.links if isinstance(compiled.links[lnk].spec.join, JoinTableJoin)
+        link_table(compiled, lnk)
+        for lnk in compiled.links
+        if isinstance(compiled.links[lnk].spec.join, (JoinTableJoin, ExtractedJoin))
     ]
     for t in tables:
         if t.name not in existing:

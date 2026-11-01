@@ -85,7 +85,9 @@ def create_app_factory():
 
             log = logging.getLogger("ontogeny.demo")
             total = 0
-            for object_type in sc.compiled.objects if sc.compiled else {}:
+            for object_type, obj in (sc.compiled.objects if sc.compiled else {}).items():
+                if obj.spec.backing and obj.spec.backing.sync.strategy == "extract":
+                    continue
                 async with sc.sessionmaker() as s:
                     summary = await sc.sync_engine.sync(s, object_type)
                     await s.commit()

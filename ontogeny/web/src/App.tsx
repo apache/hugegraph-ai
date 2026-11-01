@@ -58,6 +58,7 @@ const ActionRunner = lazy(() => import('./pages/ActionRunner').then((m) => ({ de
 const FunctionTester = lazy(() => import('./pages/FunctionTester').then((m) => ({ default: m.FunctionTester })))
 const GraphExplorer = lazy(() => import('./pages/GraphExplorer').then((m) => ({ default: m.GraphExplorer })))
 const Knowledge = lazy(() => import('./pages/Knowledge').then((m) => ({ default: m.Knowledge })))
+const Documents = lazy(() => import('./pages/Documents').then((m) => ({ default: m.Documents })))
 const Action = lazy(() => import('./pages/Action').then((m) => ({ default: m.Action })))
 const AgentManagement = lazy(() => import('./pages/AgentManagement').then((m) => ({ default: m.AgentManagement })))
 const EvolveConsole = lazy(() => import('./pages/EvolveConsole').then((m) => ({ default: m.EvolveConsole })))
@@ -110,6 +111,7 @@ export function Router() {
           {/* the semantic and kinetic halves of the ontology, each editable;
               /data (the old single preview) still resolves to the semantic one */}
           <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/documents" element={<Documents />} />
           <Route path="/action" element={<Action />} />
           {/* /data was the old single "everything at once" page; the model now
               lives on /knowledge and /action, and a type's rows open in a dialog

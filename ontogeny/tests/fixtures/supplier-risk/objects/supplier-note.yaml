@@ -1,0 +1,44 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: supplier-note
+  display: Supplier risk note
+  description: A risk assessment extracted from a document
+spec:
+  primaryKey: [note_id]
+  properties:
+    note_id:
+      type: string
+      display: Note ID
+      required: true
+      owner: document
+    supplier_name:
+      type: string
+      display: Supplier
+      required: true
+      owner: document
+    risk_level:
+      type: "enum[LOW, MEDIUM, HIGH]"
+      display: Risk level
+      owner: document
+    effective_date:
+      type: date
+      display: Effective date
+      owner: document
+    summary:
+      type: string
+      display: Summary
+      owner: document
+  backing:
+    store: supplier-docs
+    mode: materialized
+    source:
+      table: supplier-notes
+    mapping: {}
+    sync:
+      strategy: extract
+    extract:
+      key: [supplier_name, effective_date]
+      match: [supplier_name, effective_date]
+      create: auto
+      update: fill-empty

@@ -70,7 +70,7 @@ class SyncRunRow(Base):
 
 class QuarantineRow(Base):
     """Generic quarantine: bad rows wait here for schema fixes (their arrival
-    rate is a first-class signal for the evolution loop)."""
+    rate is a primary signal for the evolution loop)."""
 
     __tablename__ = "ontogeny_quarantine"
 
@@ -129,6 +129,18 @@ class SyncEngine:
         store = self.compiled.stores.get(backing.store)
         if store is None:
             raise StoreError(f"unknown store {backing.store!r}")
+
+        # Document-backed types are populated by extraction, never by a source
+        # table. `sync all` must skip them instead of asking for a SQL adapter.
+        if store.spec.type == "document" or (backing.sync is not None and backing.sync.strategy == "extract"):
+            return {
+                "inserted": 0,
+                "updated": 0,
+                "noop": 0,
+                "archived": 0,
+                "quarantined": 0,
+                "skipped": "document-backed",
+            }
 
         run = SyncRunRow(
             object_type=object_type,

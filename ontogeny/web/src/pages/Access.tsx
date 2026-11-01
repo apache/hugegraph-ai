@@ -901,7 +901,7 @@ function Identity() {
         <div className="flex gap-2">
           <input
             className="ontogeny-input font-mono"
-            placeholder='{"id":"u","Role":["planner"],"site":"north"}'
+            placeholder='{"id":"u","Role":["product"],"site":"hq"}'
             value={custom}
             data-testid="sim-custom"
             onChange={(e) => setCustom(e.target.value)}

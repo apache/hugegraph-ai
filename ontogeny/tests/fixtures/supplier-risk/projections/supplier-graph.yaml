@@ -1,0 +1,31 @@
+apiVersion: ontogeny/v1
+kind: Projection
+metadata:
+  name: supplier-graph
+  display: Supplier risk graph
+  description: Suppliers, document-derived risk notes and the asserted edges between them, projected into HugeGraph for multi-hop impact queries.
+spec:
+  engine: hugegraph
+  endpoint: ${HUGEGRAPH_URL}
+  graph: supplier_risk
+  graphspace: DEFAULT
+  api: auto
+  include:
+    objects:
+      supplier:
+        properties:
+          - name
+          - country
+          - risk_tier
+      supplier-note:
+        properties:
+          - supplier_name
+          - risk_level
+          - effective_date
+          - summary
+    links:
+      - supplier-risk-note
+  deletion: remove
+  indexes:
+    - object: supplier-note
+      property: risk_level

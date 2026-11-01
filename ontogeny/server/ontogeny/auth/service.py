@@ -203,10 +203,10 @@ class AuthService:
                 SessionRow(
                     token_hash=token_fingerprint(token),
                     user_id=row.id,
-                    expires_at=_dt.datetime.now(_dt.timezone.utc) + SESSION_TTL,
+                    expires_at=_dt.datetime.now(_dt.UTC) + SESSION_TTL,
                 )
             )
-            row.last_login_at = _dt.datetime.now(_dt.timezone.utc)
+            row.last_login_at = _dt.datetime.now(_dt.UTC)
             await session.commit()
             return token, row.principal()
 
@@ -214,7 +214,7 @@ class AuthService:
         """A bearer token -> principal, or None when unknown/expired/disabled."""
         if not token:
             return None
-        now = _dt.datetime.now(_dt.timezone.utc)
+        now = _dt.datetime.now(_dt.UTC)
         async with self.sc.sessionmaker() as session:
             sess = (
                 await session.execute(select(SessionRow).where(SessionRow.token_hash == token_fingerprint(token)))
@@ -223,7 +223,7 @@ class AuthService:
                 return None
             expires = sess.expires_at
             if expires is not None and expires.tzinfo is None:
-                expires = expires.replace(tzinfo=_dt.timezone.utc)
+                expires = expires.replace(tzinfo=_dt.UTC)
             if expires is None or expires < now:
                 await session.delete(sess)
                 await session.commit()

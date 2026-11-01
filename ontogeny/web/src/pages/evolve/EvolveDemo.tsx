@@ -221,8 +221,8 @@ export function EvolveDemo({ onFinished }: { onFinished?: () => void }) {
           status: 'fail',
           detail: t('evolve.demo.promoteFail', { reason: e instanceof ApiError ? e.message : String(e) }),
         })
-        if (code === 'CONSTITUTION_VIOLATION') {
-          patch('promote', { status: 'warn', detail: t('evolve.demo.promoteHuman', { tier: 't3', reason: t('proposal.constitution') }) })
+        if (code === 'BASELINE_VIOLATION') {
+          patch('promote', { status: 'warn', detail: t('evolve.demo.promoteHuman', { tier: 't3', reason: t('proposal.baseline') }) })
         }
         finish('stopped')
         return

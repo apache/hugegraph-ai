@@ -263,4 +263,4 @@ def classify(outcome: str) -> str:
 def _dt_now_minus_days(days: int):
     import datetime as _dt
 
-    return _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+    return _dt.datetime.now(_dt.UTC) - _dt.timedelta(days=days)

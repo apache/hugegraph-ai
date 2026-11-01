@@ -42,7 +42,7 @@ log = logging.getLogger("ontogeny.agent")
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 def _jsonable(value: Any) -> Any:
@@ -79,6 +79,99 @@ class AgentServiceError(StoreError):
 class AgentBroker:
     def __init__(self, sc) -> None:
         self.sc = sc
+        # non-tool task handlers (document extraction, future batch jobs):
+        # one entry for console sessions AND batch work, same trace/audit store
+        self._task_handlers: dict[str, Any] = {}
+
+    def register_task_handler(self, kind: str, handler) -> None:
+        self._task_handlers[kind] = handler
+
+    async def run_task(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        agent: str = "doc-extract",
+        principal: dict[str, Any] | None = None,
+        task: str = "",
+        timeout_s: float = 600.0,
+    ) -> dict[str, Any]:
+        """Run a non-conversational agent task through the same broker.
+
+        The task provider owns the actual model/agent call; the broker owns the
+        entry, the trace row and the audit. Tool calls/approvals are deliberately
+        not available here: extraction is a read-only batch capability.
+        """
+        handler = self._task_handlers.get(kind)
+        if handler is None:
+            raise NotFoundError(f"unknown agent task kind {kind!r}")
+        driver = principal or {"id": "system", "via": "task"}
+        started = _utcnow()
+        async with self.sc.sessionmaker() as session:
+            row = AgentSessionRow(
+                plugin=agent,
+                principal=str(driver.get("id", "system")),
+                task=task or kind,
+                status="running",
+                budget_steps=1,
+                budget_wall_ms=int(max(timeout_s, 1.0) * 1000),
+                budget_writes=0,
+                run_count=1,
+                run_started_at=started,
+                driver={"id": str(driver.get("id", "system")), "via": str(driver.get("via", "task"))},
+            )
+            session.add(row)
+            await session.flush()
+            session_id = row.id
+            await session.commit()
+        t0 = time.perf_counter()
+        try:
+            output = await handler(payload)
+        except Exception as exc:
+            latency = (time.perf_counter() - t0) * 1000
+            async with self.sc.sessionmaker() as session:
+                row = await session.get(AgentSessionRow, session_id)
+                if row is not None:
+                    row.status = "failed"
+                    row.finished_at = _utcnow()
+                    row.result = {"error": f"{type(exc).__name__}: {exc}"[:4000]}
+                session.add(
+                    AgentStepRow(
+                        session_id=session_id,
+                        seq=1,
+                        tool=f"task:{kind}",
+                        args_digest=args_digest({"agent": agent, "task": task}),
+                        outcome="ERROR",
+                        detail={"error": f"{type(exc).__name__}: {exc}"[:2000]},
+                        latency_ms=latency,
+                        run_no=1,
+                        driver=str(driver.get("id", "system")),
+                    )
+                )
+                await session.commit()
+            raise
+        latency = (time.perf_counter() - t0) * 1000
+        async with self.sc.sessionmaker() as session:
+            row = await session.get(AgentSessionRow, session_id)
+            if row is not None:
+                row.status = "finished"
+                row.finished_at = _utcnow()
+                row.result = {"ok": True, "kind": kind}
+            session.add(
+                AgentStepRow(
+                    session_id=session_id,
+                    seq=1,
+                    tool=f"task:{kind}",
+                    args_digest=args_digest({"agent": agent, "task": task}),
+                    outcome="ok",
+                    detail={"kind": kind},
+                    latency_ms=latency,
+                    run_no=1,
+                    driver=str(driver.get("id", "system")),
+                )
+            )
+            await session.commit()
+        return {"output": output, "session_id": session_id, "agent": agent, "provider": "task"}
 
     # ------------------------------------------------------------- catalog
 
@@ -198,7 +291,7 @@ class AgentBroker:
         """True when the session is past its expires_at (and marks it)."""
         # SQLite returns naive UTC datetimes; normalize before comparing
         exp = (
-            row.expires_at.replace(tzinfo=_dt.timezone.utc)
+            row.expires_at.replace(tzinfo=_dt.UTC)
             if row.expires_at is not None and row.expires_at.tzinfo is None
             else row.expires_at
         )
@@ -352,7 +445,7 @@ class AgentBroker:
         audited to the human, executions to the plugin principal. A rejection
         refunds the writes slot (the write did not happen).
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from sqlalchemy import select
 
@@ -369,7 +462,7 @@ class AgentBroker:
 
             def _close(status: str) -> None:
                 row.status, row.decided_by = status, principal.get("id", "?")
-                row.decided_at = datetime.now(timezone.utc)
+                row.decided_at = datetime.now(_dt.UTC)
 
             if decision == "rejected":
                 _close("rejected")
@@ -477,7 +570,7 @@ class AgentBroker:
         if started is None:
             return False
         if started.tzinfo is None:  # SQLite returns naive UTC datetimes
-            started = started.replace(tzinfo=_dt.timezone.utc)
+            started = started.replace(tzinfo=_dt.UTC)
         elapsed_ms = (_utcnow() - started).total_seconds() * 1000
         return elapsed_ms > sess.budget_wall_ms
 

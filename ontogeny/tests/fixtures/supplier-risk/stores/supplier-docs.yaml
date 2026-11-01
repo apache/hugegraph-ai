@@ -1,0 +1,16 @@
+apiVersion: ontogeny/v1
+kind: Store
+metadata:
+  name: supplier-docs
+  display: Supplier documents
+  description: Risk notes, audit letters and assessment memos (markdown/text; the extractor also reads PDF and DOCX)
+spec:
+  type: document
+  connection: data/docs
+  access: read-only
+  documents:
+    include: ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.docx"]
+    exclude: ["**/~$*"]
+    split: paragraph
+    language: en
+    max_chunks_per_doc: 200

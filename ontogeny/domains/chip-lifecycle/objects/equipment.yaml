@@ -1,0 +1,43 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: equipment
+  display: Equipment
+  description: A fab tool that runs process steps; the unit a step can be reassigned to
+spec:
+  primaryKey:
+  - equipment_id
+  properties:
+    equipment_id:
+      type: string
+      display: Equipment ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    process:
+      type: string
+      display: Process
+    site:
+      type: string
+      display: Fab site
+    status:
+      type: enum[ACTIVE, MAINTENANCE, RETIRED]
+      display: Status
+      owner: ontology
+    created_at:
+      type: timestamp
+      display: Created at
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: equipment
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

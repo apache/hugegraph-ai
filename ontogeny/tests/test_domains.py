@@ -36,10 +36,10 @@ async def test_list_domains_active_first(client):
     r = await c.get("/api/v1/admin/domains")
     assert r.status_code == 200
     body = r.json()
-    assert body["active"] == "product-manufacturing"
+    assert body["active"] == "chip-lifecycle"
     assert len(body["domains"]) == 1
     dom = body["domains"][0]
-    assert dom["name"] == "product-manufacturing"
+    assert dom["name"] == "chip-lifecycle"
     assert dom["active"] is True
     assert dom["objects"] > 0  # the golden package ships object types
     assert (sc.domains_root()) == sc.domains_root()  # deterministic
@@ -68,14 +68,14 @@ async def test_create_activate_and_switch_back(client):
     # listing shows both, active first
     r = await c.get("/api/v1/admin/domains")
     doms = r.json()["domains"]
-    assert [d["name"] for d in doms] == ["logistics", "product-manufacturing"]
+    assert [d["name"] for d in doms] == ["logistics", "chip-lifecycle"]
     assert doms[0]["active"] is True and doms[1]["active"] is False
 
-    # switch back: the product-manufacturing snapshot (types AND published rows) returns
-    r = await c.post("/api/v1/admin/domains/activate", json={"name": "product-manufacturing"})
+    # switch back: the chip-lifecycle snapshot (types AND published rows) returns
+    r = await c.post("/api/v1/admin/domains/activate", json={"name": "chip-lifecycle"})
     assert r.status_code == 200
     r = await c.get("/api/v1/meta/ontology")
-    assert "production-order" in r.json()["objects"]
+    assert "wafer-lot" in r.json()["objects"]
 
 
 async def test_switch_survives_restart(client):
@@ -135,4 +135,4 @@ async def test_domain_check_flags_a_broken_package(client):
     assert doms["broken"]["check"]["ok"] is False
     assert doms["broken"]["check"]["errors"]
     # and the healthy one still passes
-    assert doms["product-manufacturing"]["check"]["ok"] is True
+    assert doms["chip-lifecycle"]["check"]["ok"] is True

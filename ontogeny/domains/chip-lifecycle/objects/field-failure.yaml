@@ -1,0 +1,78 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: field-failure
+  display: Field failure
+  description: A failed chip returned by a customer; surge alerts and root causes are state on this record.
+    The source table carries a lot_id column that this model does not declare yet —
+    the gap the RSI loop closes (see CASE.md).
+spec:
+  primaryKey:
+  - failure_id
+  properties:
+    failure_id:
+      type: string
+      display: Failure ID
+      required: true
+    customer_id:
+      type: string
+      display: Customer
+      required: true
+    symptom:
+      type: string
+      display: Symptom
+      required: true
+    failure_mode:
+      type: enum[FUNCTIONAL, PARAMETRIC, VISUAL]
+      display: Failure mode
+    reported_at:
+      type: timestamp
+      display: Reported at
+    status:
+      type: enum[OPEN, ANALYZED, CLOSED]
+      display: Status
+      owner: ontology
+    alert_status:
+      type: "enum[OPEN, ACK, CLOSED]"
+      display: Alert status
+      owner: ontology
+    alert_severity:
+      type: "enum[INFO, WARN, MAJOR, CRITICAL]"
+      display: Alert severity
+      owner: ontology
+    alert_kind:
+      type: "enum[DEFECT_SURGE]"
+      display: Alert kind
+      owner: ontology
+    alerted_at:
+      type: timestamp
+      display: Alerted at
+      owner: ontology
+    root_cause:
+      type: string
+      display: Root cause
+      owner: ontology
+    root_cause_class:
+      type: "enum[DESIGN, PROCESS, MATERIAL, ASSEMBLY, PLANNING]"
+      display: Root cause class
+      owner: ontology
+    confidence:
+      type: decimal(4,3)
+      display: Confidence
+      owner: ontology
+    diagnosed_at:
+      type: timestamp
+      display: Diagnosed at
+      owner: ontology
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: field_failures
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

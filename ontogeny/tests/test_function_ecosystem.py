@@ -12,8 +12,8 @@
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
-# specific language governing permissions and
-# limitations under the License.
+# specific language governing permissions and limitations
+# under the License.
 
 """Function ecosystem: the four kinetic-layer function capabilities.
 
@@ -23,9 +23,9 @@
 4. (streaming invoke is a documented next step -- see implementation.md §5.9)
 
 The golden package ships no function-derived property, so capability 2 is
-exercised on a COPY of it that adds exactly one (product.open_order_count,
-counting the product's PLANNED production orders) -- the derivation contract
-must hold on the real domain shape, not on a toy ontology.
+exercised on a COPY of it that adds exactly one (tapeout-version.open_lot_count,
+counting the version's RUNNING wafer lots) -- the derivation contract must hold
+on the real domain shape, not on a toy ontology.
 """
 
 from __future__ import annotations
@@ -41,70 +41,71 @@ from ontogeny.demo import prepare_demo
 from ontogeny.service import ServiceContext
 
 REPO = Path(__file__).resolve().parent.parent
-DOMAIN = REPO / "domains" / "product-manufacturing"
+DOMAIN = REPO / "domains" / "chip-lifecycle"
 
-PLANNER = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
+PRODUCT = {"id": "u-pm", "Role": ["product"], "site": "hq"}
+FAB = {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
 
 
 def _pkg_with_function_property(root: Path) -> Path:
     """The golden package plus ONE function-derived property.
 
-    ``product.open_order_count`` mirrors the shape the (now removed) system
+    ``tapeout-version.open_lot_count`` mirrors the shape the (now removed) system
     example used: a sandboxed counter over another object type, materialized by
-    the derivation worker, with a cross-object trigger on production-order.
+    the derivation worker, with a cross-object trigger on wafer-lot.
     """
     import shutil
 
     shutil.rmtree(root, ignore_errors=True)
     shutil.copytree(DOMAIN, root)
 
-    product = root / "objects" / "product.yaml"
-    text = product.read_text(encoding="utf-8")
+    tapeout = root / "objects" / "tapeout-version.yaml"
+    text = tapeout.read_text(encoding="utf-8")
     assert "  backing:" in text
-    product.write_text(
+    tapeout.write_text(
         text.replace(
             "  backing:",
-            "    open_order_count:\n"
+            "    open_lot_count:\n"
             "      type: integer\n"
-            "      display: Open production orders\n"
-            "      description: Function-derived count of PLANNED production orders for\n"
-            "        this product, materialized by the derivation worker\n"
+            "      display: Running wafer lots\n"
+            "      description: Function-derived count of RUNNING wafer lots for\n"
+            "        this tapeout version, materialized by the derivation worker\n"
             "      derived:\n"
             "        kind: function\n"
-            "        entry: order_count.py:open_order_count\n"
+            "        entry: lot_count.py:open_lot_count\n"
             "        object_param: obj\n"
-            "        triggers: [production-order]\n"
+            "        triggers: [wafer-lot]\n"
             "  backing:",
             1,
         ),
         encoding="utf-8",
     )
 
-    (root / "functions" / "order_count.py").write_text(
-        '"""Open order count: a cross-object function-derived property.\n'
+    (root / "functions" / "lot_count.py").write_text(
+        '"""Open lot count: a cross-object function-derived property.\n'
         "\n"
         "Unlike an expression derived (read-time, this-row-only), a function\n"
         "derived may ontogeny.query other object types, so the derivation worker\n"
-        "materializes it after writes. Counts the product's orders still PLANNED.\n"
+        "materializes it after writes. Counts the version's lots still RUNNING.\n"
         '"""\n'
         "\n"
         "\n"
-        "def open_order_count(obj: dict) -> int:\n"
-        '    orders = ontogeny.query("production-order", filter={"product_id": obj.get("product_id")},\n'
+        "def open_lot_count(obj: dict) -> int:\n"
+        '    lots = ontogeny.query("wafer-lot", filter={"version_id": obj.get("version_id")},\n'
         "                        limit=200)\n"
-        '    return sum(1 for o in orders if o.get("status") == "PLANNED")\n',
+        '    return sum(1 for lot in lots if lot.get("status") == "RUNNING")\n',
         encoding="utf-8",
     )
-    (root / "functions" / "order-count.yaml").write_text(
-        "apiVersion: ontogeny/v1\nkind: Function\nmetadata: {name: order-count}\n"
+    (root / "functions" / "lot-count.yaml").write_text(
+        "apiVersion: ontogeny/v1\nkind: Function\nmetadata: {name: open-lot-count}\n"
         "spec:\n"
         "  runtime: python\n"
-        "  entry: order_count.py:open_order_count\n"
+        "  entry: lot_count.py:open_lot_count\n"
         "  parameters:\n"
-        "    obj: {type: string, required: true, display: Product object}\n"
-        "  returns: {type: integer, display: Open order count}\n"
+        "    obj: {type: string, required: true, display: Tapeout version object}\n"
+        "  returns: {type: integer, display: Running lot count}\n"
         "  capabilities:\n"
-        "  - read-objects: [production-order]\n",
+        "  - read-objects: [wafer-lot]\n",
         encoding="utf-8",
     )
     return root
@@ -126,78 +127,78 @@ async def sc(tmp_path):
 
 class TestFunctionBackedProperties:
     async def test_materialized_after_sync_and_dispatch(self, sc):
-        assert "open_order_count" in sc.compiled.objects["product"].spec.properties
+        assert "open_lot_count" in sc.compiled.objects["tapeout-version"].spec.properties
 
         # before derivation the column is empty
         async with sc.sessionmaker() as s:
-            row = await sc.repo.get(s, "product", "P-200")
-        assert row["open_order_count"] is None
+            row = await sc.repo.get(s, "tapeout-version", "TO-A0")
+        assert row["open_lot_count"] is None
 
         await sc.outbox.dispatch_pending()  # derivation consumer + drain
 
         async with sc.sessionmaker() as s:
-            p200 = await sc.repo.get(s, "product", "P-200")  # PO-1002 seeded PLANNED
-            p100 = await sc.repo.get(s, "product", "P-100")  # PO-1001 RELEASED, PO-1004 COMPLETED
-        assert p200["open_order_count"] == 1
-        assert p100["open_order_count"] == 0
+            a0 = await sc.repo.get(s, "tapeout-version", "TO-A0")  # LOT-2419 still RUNNING
+            a1 = await sc.repo.get(s, "tapeout-version", "TO-A1")  # planned, no lots yet
+        assert a0["open_lot_count"] == 1
+        assert a1["open_lot_count"] == 0
 
     async def test_cross_object_trigger_recomputes_owner(self, sc):
-        """A NEW production order bumps product.open_order_count even though
-        the product row itself did not move (derived.triggers)."""
+        """A NEW wafer lot bumps tapeout-version.open_lot_count even though the
+        version row itself did not move (derived.triggers)."""
         await sc.outbox.dispatch_pending()  # materialize seed values first
         async with sc.sessionmaker() as s:
-            base = await sc.repo.get(s, "product", "P-300")
-        assert base["open_order_count"] == 0  # PO-1003 is RELEASED, not PLANNED
+            base = await sc.repo.get(s, "tapeout-version", "TO-A1")
+        assert base["open_lot_count"] == 0  # TO-A1 is PLANNED, no lots started
 
         async with sc.sessionmaker() as s:
             await sc.runtime.execute(
                 s,
-                "create-production-order",
-                PLANNER,
-                {"product_id": "P-300", "qty": 5},
+                "start-lot",
+                FAB,
+                {"version_id": "TO-A1", "qty_wafers": 5, "site": "fab-site-a"},
                 None,
             )
             await s.commit()
         await sc.outbox.dispatch_pending()
 
         async with sc.sessionmaker() as s:
-            p300 = await sc.repo.get(s, "product", "P-300")
-        assert p300["open_order_count"] == 1
+            a1 = await sc.repo.get(s, "tapeout-version", "TO-A1")
+        assert a1["open_lot_count"] == 1
 
     async def test_action_triggers_recomputation(self, sc):
-        """Creating a production order must refresh the count on the next drain,
-        and releasing it (PLANNED -> RELEASED) must drop it again."""
+        """Starting a wafer lot must refresh the count on the next drain, and
+        holding it (RUNNING -> ON_HOLD) must drop it again."""
 
         async with sc.sessionmaker() as s:
             rev = await sc.runtime.execute(
                 s,
-                "create-production-order",
-                PLANNER,
-                {"product_id": "P-100", "qty": 2},
+                "start-lot",
+                FAB,
+                {"version_id": "TO-A1", "qty_wafers": 2, "site": "fab-site-a"},
                 None,
             )
             await s.commit()
-        order_id = rev.object_id
+        lot_id = rev.object_id
         await sc.outbox.dispatch_pending()
 
         async with sc.sessionmaker() as s:
-            p100 = await sc.repo.get(s, "product", "P-100")
-        assert p100["open_order_count"] == 1
+            a1 = await sc.repo.get(s, "tapeout-version", "TO-A1")
+        assert a1["open_lot_count"] == 1
 
-        # releasing the order takes it out of the PLANNED count
+        # holding the lot takes it out of the RUNNING count
         async with sc.sessionmaker() as s:
             await sc.runtime.execute(
                 s,
-                "release-production-order",
-                PLANNER,
-                {},
-                order_id,
+                "hold-lot",
+                FAB,
+                {"reason": "yield investigation"},
+                lot_id,
             )
             await s.commit()
         await sc.outbox.dispatch_pending()
         async with sc.sessionmaker() as s:
-            p100 = await sc.repo.get(s, "product", "P-100")
-        assert p100["open_order_count"] == 0
+            a1 = await sc.repo.get(s, "tapeout-version", "TO-A1")
+        assert a1["open_lot_count"] == 0
 
 
 class TestLlmInFunctions:
@@ -224,7 +225,7 @@ class TestLlmInFunctions:
                 entry="summarize.py:summarize",
                 parameters={"text": ParamDef(type="string", required=True)},
                 capabilities=[
-                    Capability(**{"read-objects": ["production-order"]}),
+                    Capability(**{"read-objects": ["wafer-lot"]}),
                     Capability(**{"llm": {"max-calls": 2}}),
                 ],
             ),
@@ -247,7 +248,7 @@ class TestLlmInFunctions:
         await sc.initialize()
         try:
             async with sc.sessionmaker() as s:
-                value = await sc.sandbox.run(s, fn, {"text": "spindle replacement"})
+                value = await sc.sandbox.run(s, fn, {"text": "ESD clamp resize"})
             assert value == "the summary"
             assert len(ollama_hits) == 1  # routed through the gateway, child has no network
 
@@ -357,7 +358,7 @@ class TestVersionedFunctions:
 
     async def test_version_pin_detects_drift(self, sc):
         """A caller pinning a version gets a deterministic accept-or-conflict."""
-        version = sc.compiled.function_versions["order-yield"]
+        version = sc.compiled.function_versions["analyze-yield-loss"]
 
         # matching pin: ok; wrong pin -> conflict (asserted via the API layer in test_api)
         from ontogeny.errors import ConflictError

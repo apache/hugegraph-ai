@@ -1,0 +1,48 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: requirement
+  display: Requirement
+  description: A customer or product requirement the chip must satisfy
+spec:
+  primaryKey:
+  - requirement_id
+  properties:
+    requirement_id:
+      type: string
+      display: Requirement ID
+      required: true
+    title:
+      type: string
+      display: Title
+      required: true
+    priority:
+      type: enum[LOW, NORMAL, HIGH]
+      display: Priority
+    status:
+      type: enum[OPEN, CHANGED, FULFILLED, CLOSED]
+      display: Status
+      owner: ontology
+    spec:
+      type: string
+      display: Specification
+      owner: ontology
+    created_at:
+      type: timestamp
+      display: Created at
+    changed_at:
+      type: timestamp
+      display: Changed at
+      owner: ontology
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: requirements
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

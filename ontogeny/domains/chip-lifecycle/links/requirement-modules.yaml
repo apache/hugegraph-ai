@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: requirement-modules
+  display: Requirement has modules
+  description: The design modules that implement a requirement
+spec:
+  source: requirement
+  target: design-module
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      design-module.requirement_id: requirement.requirement_id

@@ -1,0 +1,37 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: open-field-failure
+  display: Open field failure
+  description: Register a failed chip returned by a customer
+spec:
+  target: field-failure
+  parameters:
+    customer_id:
+      type: string
+      display: Customer
+      required: true
+    symptom:
+      type: string
+      display: Symptom
+      required: true
+    failure_mode:
+      type: enum[FUNCTIONAL, PARAMETRIC, VISUAL]
+      display: Failure mode
+  rules:
+  - expr: parameters.symptom != ''
+    message: Symptom must not be empty
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      failure_id: newId('FF')
+      customer_id: parameters.customer_id
+      symptom: parameters.symptom
+      failure_mode: parameters.failure_mode
+      status: OPEN
+      reported_at: now()
+  audit:
+    fields:
+    - target.failure_id
+    - parameters

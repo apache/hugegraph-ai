@@ -26,9 +26,9 @@ Invariants under test:
   permission laundering through the approval endpoint);
 - a decision is single-shot (no double-execution).
 
-The write under test is release-production-order: planners own it, and its
-permit carries a row-level condition (resource.status == "PLANNED"), so the
-same gates a human planner goes through bind agents too.
+The write under test is tapeout: the product role owns it, and its permit
+carries a row-level condition (resource.status == "PLANNED"), so the same
+gates a human product engineer goes through bind agents too.
 """
 
 from __future__ import annotations
@@ -49,21 +49,21 @@ PLUGIN = """\
 apiVersion: ontogeny/v1
 kind: AgentPlugin
 metadata:
-  name: planning-copilot
-  display: Planning copilot
+  name: product-copilot
+  display: Product copilot
 spec:
   principal:
-    id: "agent:planning-copilot"
-    Role: [planner]
-    site: plant-north
+    id: "agent:product-copilot"
+    Role: [product]
+    site: hq
   transport: { kind: http }
   tools:
-    allow: [describe_ontology, search_production_order, act_release_production_order]
+    allow: [describe_ontology, search_wafer_lot, act_tapeout]
   approval: { writes: confirm }
   budget: { steps: 25, wall_ms: 60000, writes_per_session: 3 }
 """
 
-PLANNER = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
+PRODUCT = {"id": "u-product", "Role": ["product"], "site": "hq"}
 VISITOR = {"id": "u-visitor", "Role": ["visitor"]}
 
 
@@ -75,7 +75,7 @@ def _sc_settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
 
 
@@ -105,15 +105,15 @@ async def client(golden_pkg_path, tmp_path):
 
 async def _pending_approval(c) -> dict:
     session = (
-        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "release PO-1002"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "tapeout TO-A1"})
     ).json()
     out = (
         await c.post(
-            "/api/v1/agent/sessions/1/tools/act_release_production_order",
+            "/api/v1/agent/sessions/1/tools/act_tapeout",
             json={
                 "parameters": {},
-                "target_id": "PO-1002",
-                "rationale": "PO-1002 is PLANNED with NORMAL priority and due 2026-10-30",
+                "target_id": "TO-A1",
+                "rationale": "TO-A1 is PLANNED and its mask set is booked; submit it to the fab",
             },
         )
     ).json()
@@ -131,16 +131,16 @@ class TestApprovalGate:
         r = await c.post(
             f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
             json={"decision": "approved"},
-            headers=_hdr(PLANNER),
+            headers=_hdr(PRODUCT),
         )
         assert r.status_code == 200
         body = r.json()
-        assert body["status"] == "executed" and body["decided_by"] == "u-planner"
+        assert body["status"] == "executed" and body["decided_by"] == "u-product"
 
         # the object actually moved
-        po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
-        assert po["status"] == "RELEASED"
-        assert po["released_at"] is not None
+        ver = (await c.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(PRODUCT))).json()
+        assert ver["status"] == "FAB"
+        assert ver["taped_out_at"] is not None
 
         # audit trail carries BOTH actors: execution to the plugin, decision to the human
         async with sc.sessionmaker() as s:
@@ -148,12 +148,12 @@ class TestApprovalGate:
 
             from ontogeny.action.models import RevisionRow
 
-            revs = (await s.execute(select(RevisionRow).where(RevisionRow.object_id == "PO-1002"))).scalars().all()
-            assert any(r.principal == "agent:planning-copilot" for r in revs)
+            revs = (await s.execute(select(RevisionRow).where(RevisionRow.object_id == "TO-A1"))).scalars().all()
+            assert any(r.principal == "agent:product-copilot" for r in revs)
             approval = (
                 await s.execute(select(AgentApprovalRow).where(AgentApprovalRow.id == pending["approval_id"]))
             ).scalar_one()
-            assert approval.status == "executed" and approval.decided_by == "u-planner"
+            assert approval.status == "executed" and approval.decided_by == "u-product"
             assert approval.revision_id is not None
 
     async def test_reject_refuses_and_records(self, client):
@@ -162,11 +162,11 @@ class TestApprovalGate:
         r = await c.post(
             f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
             json={"decision": "rejected"},
-            headers=_hdr(PLANNER),
+            headers=_hdr(PRODUCT),
         )
         assert r.status_code == 200 and r.json()["status"] == "rejected"
-        po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
-        assert po["status"] == "PLANNED"
+        ver = (await c.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(PRODUCT))).json()
+        assert ver["status"] == "PLANNED"
 
     async def test_approver_must_hold_the_permit_themselves(self, client):
         """I3: a principal without the action's Cedar permit cannot approve —
@@ -189,13 +189,13 @@ class TestApprovalGate:
         r1 = await c.post(
             f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
             json={"decision": "approved"},
-            headers=_hdr(PLANNER),
+            headers=_hdr(PRODUCT),
         )
         assert r1.json()["status"] == "executed"
         r2 = await c.post(
             f"/api/v1/agent/approvals/{pending['approval_id']}/decision",
             json={"decision": "approved"},
-            headers=_hdr(PLANNER),
+            headers=_hdr(PRODUCT),
         )
         assert r2.status_code == 500  # OOError -> already decided
 
@@ -204,13 +204,13 @@ class TestApprovalGate:
         a human rejection refunds the slot (the agent is not deadlocked by a
         decision it does not control)."""
         c, _ = client
-        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "x"})
         ids = []
         for i in range(3):  # budget_writes = 3
             out = (
                 await c.post(
-                    "/api/v1/agent/sessions/1/tools/act_release_production_order",
-                    json={"parameters": {}, "target_id": "PO-1002", "rationale": f"try {i}"},
+                    "/api/v1/agent/sessions/1/tools/act_tapeout",
+                    json={"parameters": {}, "target_id": "TO-A1", "rationale": f"try {i}"},
                 )
             ).json()
             assert out["outcome"] == "pending_approval"
@@ -218,17 +218,17 @@ class TestApprovalGate:
         # 4th intent is refused with a structured budget outcome
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_release_production_order",
-                json={"parameters": {}, "target_id": "PO-1002", "rationale": "one too many"},
+                "/api/v1/agent/sessions/1/tools/act_tapeout",
+                json={"parameters": {}, "target_id": "TO-A1", "rationale": "one too many"},
             )
         ).json()
         assert out["outcome"] == "AGENT_BUDGET_EXCEEDED", out
         # rejecting one refunds the slot
-        await c.post(f"/api/v1/agent/approvals/{ids[0]}/decision", json={"decision": "rejected"}, headers=_hdr(PLANNER))
+        await c.post(f"/api/v1/agent/approvals/{ids[0]}/decision", json={"decision": "rejected"}, headers=_hdr(PRODUCT))
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_release_production_order",
-                json={"parameters": {}, "target_id": "PO-1002", "rationale": "fits again"},
+                "/api/v1/agent/sessions/1/tools/act_tapeout",
+                json={"parameters": {}, "target_id": "TO-A1", "rationale": "fits again"},
             )
         ).json()
         assert out["outcome"] == "pending_approval", out
@@ -239,12 +239,12 @@ class TestApprovalGate:
 
 AUTO_PLUGIN = (
     PLUGIN.replace(
-        "allow: [describe_ontology, search_production_order, act_release_production_order]",
-        "allow: [describe_ontology, search_production_order, act_release_production_order, act_create_production_order]",  # noqa: E501
+        "allow: [describe_ontology, search_wafer_lot, act_tapeout]",
+        "allow: [describe_ontology, search_wafer_lot, act_tapeout, act_create_requirement]",
     )
     .replace(
         "approval: { writes: confirm }",
-        "approval: { writes: auto, auto_actions: [act_release_production_order] }",
+        "approval: { writes: auto, auto_actions: [act_tapeout] }",
     )
     .replace(
         "budget: { steps: 25, wall_ms: 60000, writes_per_session: 3 }",
@@ -252,28 +252,28 @@ AUTO_PLUGIN = (
     )
 )
 
-# a shop-floor agent holds the operator role, which Cedar grants NO release
+# a fab-floor agent holds the fab role, which Cedar grants NO tapeout
 # permit: its auto write must hit the policy gate, not the approval queue
-OPERATOR_PLUGIN = (
+FAB_PLUGIN = (
     PLUGIN.replace(
-        "name: planning-copilot",
-        "name: floor-agent",
+        "name: product-copilot",
+        "name: fab-agent",
     )
     .replace(
-        'id: "agent:planning-copilot"',
-        'id: "agent:floor-agent"',
+        'id: "agent:product-copilot"',
+        'id: "agent:fab-agent"',
     )
     .replace(
-        "display: Planning copilot",
-        "display: Shop floor agent",
+        "display: Product copilot",
+        "display: Fab floor agent",
     )
     .replace(
-        "Role: [planner]",
-        "Role: [operator]",
+        "Role: [product]",
+        "Role: [fab]",
     )
     .replace(
         "approval: { writes: confirm }",
-        "approval: { writes: auto, auto_actions: [act_release_production_order] }",
+        "approval: { writes: auto, auto_actions: [act_tapeout] }",
     )
 )
 
@@ -288,7 +288,7 @@ async def auto_client(golden_pkg_path, tmp_path):
     for f in (root / "agents").glob("*.yaml"):
         f.unlink()
     (root / "agents" / "copilot.yaml").write_text(AUTO_PLUGIN, encoding="utf-8")
-    (root / "agents" / "floor-agent.yaml").write_text(OPERATOR_PLUGIN, encoding="utf-8")
+    (root / "agents" / "fab-agent.yaml").write_text(FAB_PLUGIN, encoding="utf-8")
     src = tmp_path / "erp.db"
     seed_from_package(golden_pkg_path, src, force=True)
     sc = ServiceContext(_sc_settings(tmp_path, src), str(root))
@@ -306,17 +306,17 @@ class TestAutoApproval:
         """M3: auto_actions executes the write in one step -- the agent outcome
         is the revision, no human queue involved."""
         c, _ = auto_client
-        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "auto"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "auto"})
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_release_production_order",
-                json={"parameters": {}, "target_id": "PO-1002"},
+                "/api/v1/agent/sessions/1/tools/act_tapeout",
+                json={"parameters": {}, "target_id": "TO-A1"},
             )
         ).json()
         assert out["outcome"] == "executed", out
         assert out.get("revision_id")
-        po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
-        assert po["status"] == "RELEASED"
+        ver = (await c.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(PRODUCT))).json()
+        assert ver["status"] == "FAB"
         # no approval row was created
         approvals = (await c.get("/api/v1/agent/approvals")).json()["approvals"]
         assert approvals == []
@@ -325,43 +325,43 @@ class TestAutoApproval:
         """auto gate is a whitelist: an act_* tool that the plugin may CALL but
         that is not in auto_actions must not slip through as auto (fail closed)."""
         c, _ = auto_client
-        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "x"})
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_create_production_order",
-                json={"parameters": {"product_id": "P-100", "qty": 5}},
+                "/api/v1/agent/sessions/1/tools/act_create_requirement",
+                json={"parameters": {"title": "IO slew rate control", "priority": "NORMAL"}},
             )
         ).json()
         assert out["outcome"] == "POLICY_DENIED", out
         assert "auto_actions" in out.get("error", "")
 
     async def test_row_level_policy_applies_to_agents_too(self, auto_client):
-        """The plugin principal carries its Cedar roles; release-production-order
-        is permitted to planners only, so an operator-principaled agent hitting
-        the same action is refused by policy -- the agent never escapes the
-        role model its identity declares."""
+        """The plugin principal carries its Cedar roles; tapeout is permitted to
+        the product role only, so a fab-principaled agent hitting the same
+        action is refused by policy -- the agent never escapes the role model
+        its identity declares."""
         c, _ = auto_client
-        await c.post("/api/v1/agent/sessions", json={"plugin": "floor-agent", "task": "x"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "fab-agent", "task": "x"})
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_release_production_order",
-                json={"parameters": {}, "target_id": "PO-1002"},
+                "/api/v1/agent/sessions/1/tools/act_tapeout",
+                json={"parameters": {}, "target_id": "TO-A1"},
             )
         ).json()
         assert out["outcome"] == "POLICY_DENIED", out
-        # and the order is untouched
-        po = (await c.get("/api/v1/objects/production-order/PO-1002", headers=_hdr(PLANNER))).json()
-        assert po["status"] == "PLANNED"
+        # and the version is untouched
+        ver = (await c.get("/api/v1/objects/tapeout-version/TO-A1", headers=_hdr(PRODUCT))).json()
+        assert ver["status"] == "PLANNED"
 
     async def test_writes_budget_counts_auto_executions(self, auto_client):
         """Auto executions consume writes_per_session; the next write hits the
         budget ceiling with a structured outcome."""
         c, _ = auto_client
-        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "x"})
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_release_production_order",
-                json={"parameters": {}, "target_id": "PO-1002"},
+                "/api/v1/agent/sessions/1/tools/act_tapeout",
+                json={"parameters": {}, "target_id": "TO-A1"},
             )
         ).json()
         assert out["outcome"] == "executed", out
@@ -370,8 +370,8 @@ class TestAutoApproval:
         # budget_writes = 1 -> the next write (a fresh create) is over budget
         out = (
             await c.post(
-                "/api/v1/agent/sessions/1/tools/act_create_production_order",
-                json={"parameters": {"product_id": "P-100", "qty": 5}},
+                "/api/v1/agent/sessions/1/tools/act_create_requirement",
+                json={"parameters": {"title": "IO slew rate control", "priority": "NORMAL"}},
             )
         ).json()
         assert out["outcome"] == "AGENT_BUDGET_EXCEEDED", out

@@ -1,0 +1,32 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: raise-yield-alert
+  display: Raise yield alert
+  description: Record a yield alert on a wafer test; the alert is state, not a separate entity
+spec:
+  target: wafer-test
+  parameters:
+    severity:
+      type: "enum[INFO, WARN, MAJOR, CRITICAL]"
+      required: true
+      display: Severity
+    kind:
+      type: "enum[YIELD_DROP, SPC_OOC]"
+      required: true
+      display: Alert kind
+  rules:
+  - expr: target.result != 'PASS' or target.defect_qty > 0
+    message: A passing test with zero defects does not need an alert
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      alert_status: OPEN
+      alert_severity: parameters.severity
+      alert_kind: parameters.kind
+      alerted_at: now()
+  audit:
+    fields:
+    - target.test_id
+    - parameters

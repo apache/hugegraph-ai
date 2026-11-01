@@ -87,18 +87,18 @@ class TestViaTag:
         """The acting-as path must reach /auth/me, or the picker in the UI could
         never get past the login gate it sits behind."""
         c, _ = client
-        r = await c.get("/api/v1/auth/me", headers=_header({"id": "u-planner", "Role": ["planner"]}))
+        r = await c.get("/api/v1/auth/me", headers=_header({"id": "u-product", "Role": ["product"]}))
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["principal"]["via"] == "dev-header"
         assert body["principal"]["authenticated"] is False
-        assert body["principal"]["Role"] == ["planner"]
+        assert body["principal"]["Role"] == ["product"]
         assert body["dev_auth"] is True
 
     async def test_session_wins_and_is_tagged(self, client):
         c, _ = client
         await _login(c, "root", "root-password")  # cookie jar now holds the session
-        r = await c.get("/api/v1/auth/me", headers=_header({"id": "u-planner", "Role": ["visitor"]}))
+        r = await c.get("/api/v1/auth/me", headers=_header({"id": "u-product", "Role": ["visitor"]}))
         assert r.status_code == 200
         body = r.json()
         # the session decides, NOT the header: this is the precedence the UI
@@ -123,7 +123,7 @@ class TestBearer:
         assert r.status_code == 200, r.text
         assert r.json()["principal"]["via"] == "bearer"
 
-        # ...and it is a first-class credential for every endpoint, not a
+        # ...and it is a valid credential for every endpoint, not a
         # special case for auth/me
         r = await c.get("/api/v1/admin/users", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200, r.text
@@ -151,7 +151,7 @@ class TestBearer:
         c.cookies.clear()
         r = await c.get(
             "/api/v1/auth/me",
-            headers={"Authorization": f"Bearer {token}", **_header({"id": "u-planner", "Role": ["visitor"]})},
+            headers={"Authorization": f"Bearer {token}", **_header({"id": "u-product", "Role": ["visitor"]})},
         )
         assert r.json()["principal"]["via"] == "bearer"
 
@@ -178,7 +178,7 @@ class TestBearer:
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
             token = await _login(c, "root", "root-password")
             c.cookies.clear()
-            r = await c.get("/api/v1/auth/me", headers=_header({"id": "u-planner", "Role": ["visitor"]}))
+            r = await c.get("/api/v1/auth/me", headers=_header({"id": "u-product", "Role": ["visitor"]}))
             assert r.status_code == 401, "dev_auth off -> the header must not sign anyone in"
             r = await c.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
             assert r.status_code == 200
@@ -196,16 +196,15 @@ class TestSimulationIsDecidedByCedar:
         h = _header(ADMIN)
 
         visitor = {"id": "u-v", "Role": ["visitor"]}
-        validate = "/api/v1/actions/release-production-order/validate"
-        body = {"parameters": {}, "target_id": "PO-1002"}
+        validate = "/api/v1/actions/tapeout/validate"
+        # TO-A1 is seeded PLANNED: the rules pass and only policy decides
+        body = {"parameters": {}, "target_id": "TO-A1"}
         r = await c.post(validate, headers=_header(visitor), json=body)
         assert r.status_code == 200, r.text
         assert r.json()["policy"]["allow"] is False, "no permit for the role -> Cedar denies"
 
         # grant a role the action through the role matrix, simulate it, pass
-        saved = await c.put(
-            "/api/v1/admin/roles/closer", headers=h, json={"name": "closer", "actions": ["release-production-order"]}
-        )
+        saved = await c.put("/api/v1/admin/roles/closer", headers=h, json={"name": "closer", "actions": ["tapeout"]})
         assert saved.status_code == 200, saved.text
         closer = {"id": "u-c", "Role": ["closer"]}
         r = await c.post(validate, headers=_header(closer), json=body)

@@ -1,0 +1,10 @@
+apiVersion: ontogeny/v1
+kind: PolicySet
+metadata:
+  name: lifecycle
+  display: Lifecycle policies
+  description: 'Role-based grants for the chip lifecycle actions: product, fab and
+    customer quality'
+spec:
+  language: cedar
+  source: lifecycle.cedar

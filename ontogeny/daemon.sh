@@ -66,6 +66,9 @@ WEB_DIR="$REPO_ROOT/web"
 # 所有相对路径（.venv/bin/ontogeny、data-dir、pid/log 文件）都相对仓库根：
 # 从任何目录调用本脚本都成立
 cd "$REPO_ROOT"
+mkdir -p "$DATA_DIR"
+
+export ONTOGENY_DOC_AGENT_CMD=${ONTOGENY_DOC_AGENT_CMD:-"$REPO_ROOT/.venv/bin/python $REPO_ROOT/tools/doc_agent_demo.py"}
 
 pid_of() {
   [ -f "$PID_FILE" ] && cat "$PID_FILE" 2>/dev/null | tr -d '[:space:]'

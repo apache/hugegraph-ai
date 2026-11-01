@@ -1,0 +1,21 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: retract-wafer-test
+  display: Retract wafer test
+  description: Soft-delete a mistaken CP test entry; the row stays queryable in
+    history (archive-object)
+spec:
+  target: wafer-test
+  parameters:
+    reason:
+      type: string
+      display: Reason
+      required: true
+  policy: lifecycle
+  effects:
+  - kind: archive-object
+  audit:
+    fields:
+    - target.test_id
+    - parameters

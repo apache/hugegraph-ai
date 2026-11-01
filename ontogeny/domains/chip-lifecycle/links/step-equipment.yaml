@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: step-equipment
+  display: Equipment runs steps
+  description: Which process steps run on a piece of equipment
+spec:
+  source: equipment
+  target: process-step
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      process-step.equipment: equipment.equipment_id

@@ -1,0 +1,38 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: start-lot
+  display: Start wafer lot
+  description: Start a wafer lot for a tapeout version at a fab site
+spec:
+  target: wafer-lot
+  parameters:
+    version_id:
+      type: string
+      display: Tapeout version
+      required: true
+    qty_wafers:
+      type: integer
+      display: Wafers
+      required: true
+    site:
+      type: string
+      display: Fab site
+  rules:
+  - expr: parameters.qty_wafers > 0
+    message: Wafer count must be positive
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      lot_id: newId('LOT')
+      version_id: parameters.version_id
+      qty_wafers: parameters.qty_wafers
+      site: parameters.site
+      status: RUNNING
+      started_at: now()
+      created_at: now()
+  audit:
+    fields:
+    - target.lot_id
+    - parameters

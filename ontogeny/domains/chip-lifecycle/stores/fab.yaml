@@ -1,0 +1,10 @@
+apiVersion: ontogeny/v1
+kind: Store
+metadata:
+  name: fab
+  display: PLM / fab / CRM source
+  description: Chip lifecycle source system (demo SQLite copy via ${ERP_DSN})
+spec:
+  type: sqlite
+  connection: ${ERP_DSN}
+  access: read-write

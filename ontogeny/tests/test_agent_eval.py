@@ -33,17 +33,17 @@ PLUGIN = """\
 apiVersion: ontogeny/v1
 kind: AgentPlugin
 metadata:
-  name: planning-copilot
-  display: Planning copilot
+  name: product-copilot
+  display: Product copilot
 spec:
   principal:
-    id: "agent:planning-copilot"
-    Role: [planner]
-    site: plant-north
+    id: "agent:product-copilot"
+    Role: [product]
+    site: hq
   transport: { kind: local }
   tools:
-    allow: [describe_ontology, search_production_order, act_release_production_order]
-  approval: { writes: auto, auto_actions: [act_release_production_order] }
+    allow: [describe_ontology, search_tapeout_version, act_tapeout]
+  approval: { writes: auto, auto_actions: [act_tapeout] }
   budget: { steps: 25, wall_ms: 60000, writes_per_session: 5 }
 """
 
@@ -54,13 +54,13 @@ metadata:
   name: planning-suite
 spec:
   agents:
-  - name: copilot-releases-and-is-idempotent
-    plugin: planning-copilot
+  - name: copilot-tapes-out-and-is-idempotent
+    plugin: product-copilot
     script:
-    - tool: search_production_order
+    - tool: search_tapeout_version
       args: { filter: { field: status, op: eq, value: PLANNED }, limit: 5 }
-    - tool: act_release_production_order
-      args: { parameters: {}, target_id: PO-1002 }
+    - tool: act_tapeout
+      args: { parameters: {}, target_id: TO-A1 }
     expect:
       outcomes: [ok, ok]
       idempotent: true
@@ -85,7 +85,7 @@ async def sc(golden_pkg_path, tmp_path):
     settings = Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
     ctx = ServiceContext(settings, str(root))
     await ctx.initialize()
@@ -103,7 +103,8 @@ class TestAgentEval:
         assert case["kind"] == "agent"
         assert case["ok"], case
         assert case["outcomes"] == ["ok", "ok"]
-        # idempotency: the replay must show the second release refused by rules
+        # idempotency: the replay must show the second tapeout refused by rules
+        # (TO-A1 is FAB after the first run, and only PLANNED versions tape out)
         assert "replay" in case
         assert case["replay"][1] == "rejected"
 
@@ -115,11 +116,11 @@ class TestAgentEval:
         from dataclasses import replace as dc_replace
 
         suite = sc.compiled.eval_suites["planning-suite"]
-        plug = sc.compiled.agent_plugins["planning-copilot"]
+        plug = sc.compiled.agent_plugins["product-copilot"]
         stripped = plug.model_copy(deep=True)
-        stripped.spec.tools.allow = [t for t in stripped.spec.tools.allow if t != "act_release_production_order"]
+        stripped.spec.tools.allow = [t for t in stripped.spec.tools.allow if t != "act_tapeout"]
         original_compiled = sc.compiled
-        sc.compiled = dc_replace(original_compiled, agent_plugins={"planning-copilot": stripped})
+        sc.compiled = dc_replace(original_compiled, agent_plugins={"product-copilot": stripped})
         try:
             async with sc.sessionmaker() as s:
                 report = await sc.eval_runner.run(s, suite)

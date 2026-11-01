@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: lot-steps
+  display: Lot has process steps
+  description: The process steps a lot went through
+spec:
+  source: wafer-lot
+  target: process-step
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      process-step.lot_id: wafer-lot.lot_id

@@ -1,0 +1,29 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: hold-lot
+  display: Hold wafer lot
+  description: Put a running lot on hold; its in-flight process steps go back to queued (modify-linked)
+spec:
+  target: wafer-lot
+  parameters:
+    reason:
+      type: string
+      display: Reason
+  rules:
+  - expr: target.status == 'RUNNING'
+    message: Only running lots can be put on hold
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      status: ON_HOLD
+  - kind: modify-linked
+    link: lot-steps
+    set:
+      status: QUEUED
+  audit:
+    fields:
+    - target.lot_id
+    - target.status
+    - parameters

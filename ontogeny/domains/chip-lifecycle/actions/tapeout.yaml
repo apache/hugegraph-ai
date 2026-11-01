@@ -1,0 +1,27 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: tapeout
+  display: Tapeout
+  description: Submit a planned version to the fab
+spec:
+  target: tapeout-version
+  rules:
+  - expr: target.status == 'PLANNED'
+    message: Only planned versions can be taped out
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      status: FAB
+      taped_out_at: now()
+  - kind: emit-event
+    payload:
+      event: tapeout.submitted
+  - when: target.project == 'X1'
+    kind: webhook
+    url: ${FAB_WEBHOOK}
+  audit:
+    fields:
+    - target.version_id
+    - target.status

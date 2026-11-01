@@ -105,7 +105,7 @@ class TestLogin:
     async def test_disabled_account_cannot_sign_in(self, client):
         c, sc, _ = client
         await sc.auth.ensure_admin()
-        await sc.auth.create_user(username="temp", password="temp-password", roles=["operator"])
+        await sc.auth.create_user(username="temp", password="temp-password", roles=["fab"])
         await sc.auth.update_user("temp", {"status": "disabled"})
         r = await c.post("/api/v1/auth/login", json={"username": "temp", "password": "temp-password"})
         assert r.status_code == 401
@@ -113,7 +113,7 @@ class TestLogin:
     async def test_changing_a_password_kills_existing_sessions(self, client):
         c, sc, _ = client
         await sc.auth.ensure_admin()
-        await sc.auth.create_user(username="ana", password="ana-password", roles=["operator"])
+        await sc.auth.create_user(username="ana", password="ana-password", roles=["fab"])
         r = await c.post("/api/v1/auth/login", json={"username": "ana", "password": "ana-password"})
         assert r.status_code == 200
         assert (await c.get("/api/v1/auth/me")).status_code == 200
@@ -129,7 +129,7 @@ class TestAccountAdministration:
         # anonymous
         assert (await c.get("/api/v1/admin/users")).status_code == 403
         # a signed-in non-admin
-        await sc.auth.create_user(username="op", password="op-password", roles=["operator"])
+        await sc.auth.create_user(username="op", password="op-password", roles=["fab"])
         await c.post("/api/v1/auth/login", json={"username": "op", "password": "op-password"})
         assert (await c.get("/api/v1/admin/users")).status_code == 403
 
@@ -145,16 +145,16 @@ class TestAccountAdministration:
                 "username": "li",
                 "password": "li-password",
                 "display": "李工",
-                "roles": ["operator", "quality"],
-                "site": "plant-north",
+                "roles": ["fab", "cqe"],
+                "site": "fab-site-a",
             },
         )
         assert created.status_code == 200, created.text
-        assert created.json()["roles"] == ["operator", "quality"]
+        assert set(created.json()["roles"]) == {"fab", "cqe"}
 
-        patched = await c.patch("/api/v1/admin/users/li", headers=h, json={"roles": ["operator"], "site": "south"})
+        patched = await c.patch("/api/v1/admin/users/li", headers=h, json={"roles": ["fab"], "site": "south"})
         assert patched.status_code == 200
-        assert patched.json()["roles"] == ["operator"]
+        assert patched.json()["roles"] == ["fab"]
         assert patched.json()["site"] == "south"
 
         removed = await c.delete("/api/v1/admin/users/li", headers=h)
@@ -188,16 +188,16 @@ class TestRolesAndPermissions:
         body = r.json()
         # roles come from the vocabulary, the policies AND the accounts
         names = {x["name"] for x in body["roles"]}
-        assert "planner" in names
+        assert "product" in names
         assert "admin" in names
-        # the golden package's release-production-order policy is conditional
-        # (only PLANNED orders) and hand-written, so the matrix shows it but
+        # the golden package's tapeout policy is conditional
+        # (only PLANNED versions) and hand-written, so the matrix shows it but
         # marks it as not managed
-        cell = body["matrix"]["planner"]["release-production-order"]
+        cell = body["matrix"]["product"]["tapeout"]
         assert cell["granted"] is True
         assert cell["managed"] is False
         assert cell["conditional"] is True
-        assert "production" in cell["source"]
+        assert "lifecycle" in cell["source"]
 
     async def test_granted_permission_is_enforced_by_the_engine(self, client):
         """The point of the whole design: the matrix writes Cedar, and Cedar is
@@ -209,35 +209,36 @@ class TestRolesAndPermissions:
 
         # a role with no grants at all
         await sc.auth.create_user(username="op", password="op-password", roles=["line_lead"])
-        operator = {"id": "op", "Role": ["line_lead"], "site": "plant-north"}
+        operator = {"id": "op", "Role": ["line_lead"], "site": "fab-site-a"}
 
-        async def may_release() -> bool:
+        async def may_tapeout() -> bool:
             """The dry-run endpoint: rules + policy, no writes and no data
-            dependency, so this isolates the authorization question."""
+            dependency, so this isolates the authorization question (TO-A1 is
+            seeded PLANNED, so the rules pass and only policy decides)."""
             r = await c.post(
-                "/api/v1/actions/release-production-order/validate",
+                "/api/v1/actions/tapeout/validate",
                 headers={"X-Ontogeny-Principal": json.dumps(operator)},
-                json={"parameters": {}, "target_id": "PO-1002"},
+                json={"parameters": {}, "target_id": "TO-A1"},
             )
             assert r.status_code == 200, r.text
             return bool(r.json()["policy"]["allow"])
 
-        assert await may_release() is False, "no permit yet -> Cedar denies"
+        assert await may_tapeout() is False, "no permit yet -> Cedar denies"
 
         # grant the role the action through the role matrix
         saved = await c.put(
             "/api/v1/admin/roles/line_lead",
             headers=h,
-            json={"name": "line_lead", "actions": ["release-production-order"]},
+            json={"name": "line_lead", "actions": ["tapeout"]},
         )
         assert saved.status_code == 200, saved.text
         assert (pkg / "policies" / "role-line-lead.cedar").is_file()
 
-        assert await may_release() is True, "the grant is enforced by the engine"
+        assert await may_tapeout() is True, "the grant is enforced by the engine"
 
         # and revoking it is just as real
         await c.put("/api/v1/admin/roles/line_lead", headers=h, json={"name": "line_lead", "actions": []})
-        assert await may_release() is False
+        assert await may_tapeout() is False
 
     async def test_deleting_a_role_reassigns_its_holders(self, client):
         c, sc, _ = client
@@ -248,28 +249,28 @@ class TestRolesAndPermissions:
         await c.put(
             "/api/v1/admin/roles/temp_role",
             headers=h,
-            json={"name": "temp_role", "actions": ["release-production-order"]},
+            json={"name": "temp_role", "actions": ["tapeout"]},
         )
         r = await c.request(
-            "DELETE", "/api/v1/admin/roles/temp_role", headers=h, json={"name": "temp_role", "reassign_to": "operator"}
+            "DELETE", "/api/v1/admin/roles/temp_role", headers=h, json={"name": "temp_role", "reassign_to": "fab"}
         )
         assert r.status_code == 200, r.text
         assert r.json()["reassigned"] == ["m1"]
         users = (await c.get("/api/v1/admin/users", headers=h)).json()["users"]
-        assert next(u for u in users if u["username"] == "m1")["roles"] == ["operator"]
+        assert next(u for u in users if u["username"] == "m1")["roles"] == ["fab"]
 
     async def test_role_policy_is_deterministic(self, client):
         """Re-saving an unchanged matrix must not churn the content hash."""
         c, sc, pkg = client
         await sc.auth.ensure_admin()
         h = {"X-Ontogeny-Principal": json.dumps(ADMIN)}
-        body = {"name": "qa", "actions": ["record-inspection", "release-production-order"]}
+        body = {"name": "qa", "actions": ["record-wafer-test", "tapeout"]}
         await c.put("/api/v1/admin/roles/qa", headers=h, json=body)
         first = (pkg / "policies" / "role-qa.cedar").read_text(encoding="utf-8")
         await c.put(
             "/api/v1/admin/roles/qa",
             headers=h,
-            json={"name": "qa", "actions": ["release-production-order", "record-inspection"]},
+            json={"name": "qa", "actions": ["tapeout", "record-wafer-test"]},
         )
         assert (pkg / "policies" / "role-qa.cedar").read_text(encoding="utf-8") == first
 
@@ -280,7 +281,7 @@ class TestRolesAndPermissions:
         await c.put(
             "/api/v1/admin/roles/site_lead",
             headers=h,
-            json={"name": "site_lead", "actions": ["release-production-order"], "site": "plant-north"},
+            json={"name": "site_lead", "actions": ["tapeout"], "site": "fab-site-a"},
         )
         text = (pkg / "policies" / "role-site-lead.cedar").read_text(encoding="utf-8")
-        assert 'principal.site == "plant-north"' in text
+        assert 'principal.site == "fab-site-a"' in text

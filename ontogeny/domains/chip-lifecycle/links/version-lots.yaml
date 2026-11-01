@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: version-lots
+  display: Version has lots
+  description: The wafer lots produced from a tapeout version
+spec:
+  source: tapeout-version
+  target: wafer-lot
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      wafer-lot.version_id: tapeout-version.version_id

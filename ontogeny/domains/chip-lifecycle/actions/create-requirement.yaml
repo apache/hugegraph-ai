@@ -1,0 +1,36 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: create-requirement
+  display: Create requirement
+  description: Register a new requirement entry
+spec:
+  target: requirement
+  parameters:
+    title:
+      type: string
+      display: Title
+      required: true
+    priority:
+      type: enum[LOW, NORMAL, HIGH]
+      display: Priority
+    spec:
+      type: string
+      display: Specification
+  rules:
+  - expr: parameters.title != ''
+    message: Title must not be empty
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      requirement_id: newId('REQ')
+      title: parameters.title
+      priority: parameters.priority
+      spec: parameters.spec
+      status: OPEN
+      created_at: now()
+  audit:
+    fields:
+    - target.requirement_id
+    - parameters

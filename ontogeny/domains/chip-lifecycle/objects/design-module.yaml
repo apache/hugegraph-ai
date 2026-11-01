@@ -1,0 +1,52 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: design-module
+  display: Design module
+  description: A circuit block that implements a requirement and ships in a tapeout version
+spec:
+  primaryKey:
+  - module_id
+  properties:
+    module_id:
+      type: string
+      display: Module ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    purpose:
+      type: string
+      display: Purpose
+    owner_team:
+      type: string
+      display: Owner team
+    requirement_id:
+      type: string
+      display: Primary requirement
+      required: true
+    version_id:
+      type: string
+      display: Included in version
+    status:
+      type: enum[ACTIVE, REVISED, RETIRED]
+      display: Status
+      owner: ontology
+    created_at:
+      type: timestamp
+      display: Created at
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: design_modules
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'
+    extract:
+      match: [module_id]

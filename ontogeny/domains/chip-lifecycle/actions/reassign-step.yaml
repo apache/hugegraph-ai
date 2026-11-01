@@ -1,0 +1,31 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: reassign-step
+  display: Reassign step to equipment
+  description: Move a queued process step to a different tool by rewriting the
+    step-equipment link (set-link)
+spec:
+  target: process-step
+  parameters:
+    equipment_id:
+      type: string
+      display: Target equipment
+      required: true
+  rules:
+  - expr: target.status != 'COMPLETED'
+    message: Completed steps cannot be reassigned
+  - expr: parameters.equipment_id != target.equipment
+    message: Step is already assigned to that equipment
+  policy: lifecycle
+  effects:
+  - kind: set-link
+    link: step-equipment
+    add:
+    - equipment_id: parameters.equipment_id
+    remove:
+    - equipment_id: target.equipment
+  audit:
+    fields:
+    - target.step_id
+    - parameters

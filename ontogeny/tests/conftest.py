@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-EXAMPLES = REPO / "domains" / "product-manufacturing"
+EXAMPLES = REPO / "domains" / "chip-lifecycle"
 
 # extension packages are importable the same way the extension host loads them:
 # their directory goes on sys.path (mirrors ontogeny.ext_host._load_one)
@@ -65,7 +65,7 @@ def protect_golden_example():
     if before != after:
         raise AssertionError(
             "golden example tree was modified by the test session: tests must "
-            "copy domains/product-manufacturing to a temp dir before promoting mutations"
+            "copy domains/chip-lifecycle to a temp dir before promoting mutations"
         )
 
 
@@ -110,7 +110,7 @@ async def client(golden_pkg_path, tmp_path):
         # the platform's production default is dev_auth OFF;
         # tests opt INTO the identity simulation explicitly
         dev_auth=True,
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
     sc = ServiceContext(settings, str(pkg_root))
     await sc.initialize()
@@ -123,3 +123,15 @@ async def client(golden_pkg_path, tmp_path):
     default_headers = {"X-Ontogeny-Principal": json.dumps({"id": "ci-admin", "is_admin": True})}
     async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=default_headers) as c:
         yield c, sc
+
+
+# ---- document ingestion ----------------------------------------------------
+# The fixture lives in doc_fixtures so the tests can also call its helpers
+# directly; pytest only discovers fixtures defined in conftest/test modules.
+from doc_fixtures import make_context
+
+
+@pytest_asyncio.fixture()
+async def doc_context(tmp_path):
+    sc, pkg, db = await make_context(tmp_path)
+    yield sc, pkg, db

@@ -1,0 +1,35 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: record-root-cause
+  display: Record root cause
+  description: Persist the reviewed root cause on a wafer test; analysis itself is a Function
+spec:
+  target: wafer-test
+  parameters:
+    root_cause:
+      type: string
+      required: true
+      display: Root cause
+    root_cause_class:
+      type: "enum[DESIGN, PROCESS, MATERIAL, ASSEMBLY, PLANNING]"
+      display: Root cause class
+    confidence:
+      type: decimal(4,3)
+      display: Confidence
+  rules:
+  - expr: parameters.confidence <= 1
+    message: Confidence must be between 0 and 1
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      root_cause: parameters.root_cause
+      root_cause_class: parameters.root_cause_class
+      confidence: parameters.confidence
+      diagnosed_at: now()
+  audit:
+    fields:
+    - target.test_id
+    - target.root_cause
+    - parameters

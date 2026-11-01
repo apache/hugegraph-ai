@@ -85,7 +85,7 @@ class TestRouterGates:
         async with _anon(client) as c:
             r = await c.get("/api/v1/audit/revisions")
             assert r.status_code == 401
-            r = await c.get("/api/v1/subscriptions/objects/material")
+            r = await c.get("/api/v1/subscriptions/objects/wafer-lot")
             assert r.status_code == 401
 
     async def test_approval_deletion_is_admin_only(self, client):
@@ -102,35 +102,39 @@ class TestRouterGates:
 class TestMaskingBypasses:
     async def test_history_versions_are_masked(self, client):
         c, _ = client
-        await c.post("/api/v1/admin/sync/material")
+        await c.post("/api/v1/admin/sync/tapeout-version")
         h = {"X-Ontogeny-Principal": json.dumps({"id": "visitor"})}  # no markings claim
-        r = await c.get("/api/v1/objects/material/M-104/history", headers=h)
+        r = await c.get("/api/v1/objects/tapeout-version/TO-A0/history", headers=h)
         assert r.status_code == 200
         versions = r.json()["versions"]
-        assert versions, "seeded material must have at least the initial version"
+        assert versions, "seeded tapeout version must have at least the initial version"
         for v in versions:
-            assert v.get("unit_cost") == "__masked__", "history leaked a marked value"
+            assert v.get("mask_cost") == "__masked__", "history leaked a marked value"
 
     async def test_history_unmasks_for_claiming_principal(self, client):
         c, _ = client
-        await c.post("/api/v1/admin/sync/material")
-        h = {"X-Ontogeny-Principal": json.dumps({"id": "buyer", "markings": ["internal"]})}
-        r = await c.get("/api/v1/objects/material/M-104/history", headers=h)
-        assert all(v["unit_cost"] != "__masked__" for v in r.json()["versions"])
+        await c.post("/api/v1/admin/sync/tapeout-version")
+        h = {"X-Ontogeny-Principal": json.dumps({"id": "engineer", "markings": ["internal"]})}
+        r = await c.get("/api/v1/objects/tapeout-version/TO-A0/history", headers=h)
+        assert all(v["mask_cost"] != "__masked__" for v in r.json()["versions"])
 
     async def test_aggregate_on_marked_field_is_denied(self, client):
         c, _ = client
-        await c.post("/api/v1/admin/sync/material")
+        await c.post("/api/v1/admin/sync/tapeout-version")
         h = {"X-Ontogeny-Principal": json.dumps({"id": "visitor"})}
-        r = await c.post("/api/v1/objects/material/aggregate", json={"fn": "avg", "field": "unit_cost"}, headers=h)
+        r = await c.post(
+            "/api/v1/objects/tapeout-version/aggregate", json={"fn": "avg", "field": "mask_cost"}, headers=h
+        )
         assert r.status_code == 403
         assert r.json()["code"] == "POLICY_DENIED"
 
     async def test_aggregate_on_marked_field_allows_claiming_principal(self, client):
         c, _ = client
-        await c.post("/api/v1/admin/sync/material")
-        h = {"X-Ontogeny-Principal": json.dumps({"id": "buyer", "markings": ["internal"]})}
-        r = await c.post("/api/v1/objects/material/aggregate", json={"fn": "avg", "field": "unit_cost"}, headers=h)
+        await c.post("/api/v1/admin/sync/tapeout-version")
+        h = {"X-Ontogeny-Principal": json.dumps({"id": "engineer", "markings": ["internal"]})}
+        r = await c.post(
+            "/api/v1/objects/tapeout-version/aggregate", json={"fn": "avg", "field": "mask_cost"}, headers=h
+        )
         assert r.status_code == 200 and r.json()["value"] > 0
 
 
@@ -143,10 +147,12 @@ class TestT0FailClosed:
     async def test_promote_without_eval_report_is_refused(self, client):
         c, sc = client
         for t in sc.compiled.objects:  # eval suite queries need materialized tables
+            if sc.compiled.objects[t].spec.backing.sync.strategy == "extract":
+                continue  # document plane, not the source seed
             await c.post(f"/api/v1/admin/sync/{t}")
         for _ in range(6):  # the unmapped-filter signal the proposer acts on
             await c.post(
-                "/api/v1/objects/production-order/query",
+                "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
             )
         await c.post("/api/v1/evolve/aggregate")
@@ -170,13 +176,11 @@ class TestNewId:
         ids = []
         for _ in range(2):
             r = await c.post(
-                "/api/v1/actions/create-production-order/execute",
+                "/api/v1/actions/start-lot/execute",
                 json={
-                    "parameters": {"product_id": "P-101", "qty": 5, "priority": "NORMAL", "due_date": "2026-12-01"},
+                    "parameters": {"version_id": "TO-A0", "qty_wafers": 5, "site": "fab-site-a"},
                 },
-                headers={
-                    "X-Ontogeny-Principal": json.dumps({"id": "planner", "Role": ["planner"], "site": "plant-north"})
-                },
+                headers={"X-Ontogeny-Principal": json.dumps({"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"})},
             )
             assert r.status_code == 200, r.text
             ids.append(r.json()["object_id"])
@@ -187,11 +191,11 @@ class TestNewId:
 
         c, sc = client
         r = await c.post(
-            "/api/v1/actions/create-production-order/execute",
+            "/api/v1/actions/start-lot/execute",
             json={
-                "parameters": {"product_id": "P-101", "qty": 5, "priority": "NORMAL", "due_date": "2026-12-01"},
+                "parameters": {"version_id": "TO-A0", "qty_wafers": 5, "site": "fab-site-a"},
             },
-            headers={"X-Ontogeny-Principal": json.dumps({"id": "planner", "Role": ["planner"], "site": "plant-north"})},
+            headers={"X-Ontogeny-Principal": json.dumps({"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"})},
         )
         assert r.status_code == 200
         pk = r.json()["object_id"]
@@ -206,14 +210,14 @@ class TestNewId:
                 # alive row (the old schema happily accepted it)
                 await repo.action_insert(
                     s,
-                    "production-order",
+                    "wafer-lot",
                     {
-                        "order_id": pk,
-                        "product_id": "P-101",
-                        "qty": 1,
-                        "status": "PLANNED",
+                        "lot_id": pk,
+                        "version_id": "TO-A0",
+                        "qty_wafers": 1,
+                        "status": "RUNNING",
                     },
-                    dt.datetime.now(dt.timezone.utc),
+                    dt.datetime.now(dt.UTC),
                 )
 
 
@@ -225,14 +229,14 @@ class TestNewId:
 class TestValidatorHardening:
     def test_join_keys_unknown_side_is_a_report_not_a_crash(self, golden_pkg):
         pkg = copy.deepcopy(golden_pkg)
-        lnk = pkg.find("LinkType", "production-order-inspections")
+        lnk = pkg.find("LinkType", "lot-tests")
         lnk.spec.join = JoinTableJoin(
             kind="join-table",
-            store="erp",
-            relation=SourceRef(table="production_orders"),
+            store="fab",
+            relation=SourceRef(table="wafer_lots"),
             keys={
-                "sorce": {"order_id": "order_id"},  # typo: used to AttributeError
-                "target": {"order_id": "order_id"},
+                "sorce": {"lot_id": "lot_id"},  # typo: used to AttributeError
+                "target": {"lot_id": "lot_id"},
             },
         )
         rep = validate(pkg)
@@ -263,35 +267,35 @@ class TestValidatorHardening:
         pkg = copy.deepcopy(golden_pkg)
         from ontogeny.core.models import Rule
 
-        act = pkg.find("Action", "release-production-order")
+        act = pkg.find("Action", "tapeout")
         act.spec.rules = [*act.spec.rules, Rule(expr="principal has site")]
         rep = validate(pkg)
         assert not any("principal has site" in i.message and i.code == "EXPR-PATH" for i in rep.issues)
 
     def test_effect_when_is_statically_validated(self, golden_pkg):
         pkg = copy.deepcopy(golden_pkg)
-        eff = pkg.find("Action", "release-production-order").spec.effects[0]
+        eff = pkg.find("Action", "tapeout").spec.effects[0]
         eff.when = "target.prioraty == 'HIGH'"  # typo: used to pass publish
         rep = validate(pkg)
         assert any(i.code == "EXPR-PATH" for i in rep.issues)
 
     def test_create_object_cannot_set_derived_property(self, golden_pkg):
         pkg = copy.deepcopy(golden_pkg)
-        eff = pkg.find("Action", "create-production-order").spec.effects[0]
-        eff.properties["release_lag_h"] = "1"  # release_lag_h is expression-derived
+        eff = pkg.find("Action", "create-tapeout-version").spec.effects[0]
+        eff.properties["fab_lag_h"] = "1"  # fab_lag_h is expression-derived
         rep = validate(pkg)
         assert any(i.code == "ACTION-DERIVED" for i in rep.issues)
 
     def test_linter_flags_deep_derived_chains(self, golden_pkg):
         pkg = copy.deepcopy(golden_pkg)
-        obj = pkg.find("ObjectType", "production-order")
+        obj = pkg.find("ObjectType", "wafer-lot")
         props = obj.spec.properties
         base = {"type": "integer"}
-        # qty -> d1 -> d2 -> d3: a 3-deep chain the old object-keyed memo
+        # qty_wafers -> d1 -> d2 -> d3: a 3-deep chain the old object-keyed memo
         # measured as depth 1, so OO-004 never fired
         from ontogeny.core.models import PropertyDef
 
-        props["d1"] = PropertyDef(**base, display="d1", derived="target.qty + 1")
+        props["d1"] = PropertyDef(**base, display="d1", derived="target.qty_wafers + 1")
         props["d2"] = PropertyDef(**base, display="d2", derived="target.d1 + 1")
         props["d3"] = PropertyDef(**base, display="d3", derived="target.d2 + 1")
         rep = lint(pkg)
@@ -372,25 +376,21 @@ class TestSyncFailureAudit:
         import pathlib
 
         _c, sc = client
-        # break the source: the production-order source table disappears
+        # break the source: the wafer-lot source table disappears
         dsn = sc.settings.env["ERP_DSN"]
         db_path = pathlib.Path(dsn.removeprefix("sqlite+aiosqlite:///"))
         con = sqlite3.connect(str(db_path))
-        con.execute("DROP TABLE IF EXISTS production_orders")
+        con.execute("DROP TABLE IF EXISTS wafer_lots")
         con.commit()
         con.close()
         from sqlalchemy.exc import OperationalError
 
         with pytest.raises(OperationalError):
-            await sc.sync("production-order")
+            await sc.sync("wafer-lot")
         from sqlalchemy import select
 
         from ontogeny.stores.sync import SyncRunRow
 
         async with sc.sessionmaker() as s:
-            rows = (
-                (await s.execute(select(SyncRunRow).where(SyncRunRow.object_type == "production-order")))
-                .scalars()
-                .all()
-            )
+            rows = (await s.execute(select(SyncRunRow).where(SyncRunRow.object_type == "wafer-lot"))).scalars().all()
         assert any(r.status == "error" and r.error for r in rows), "the failed run's audit must survive the rollback"

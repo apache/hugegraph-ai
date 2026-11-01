@@ -1,0 +1,41 @@
+# Fab copilot: the fab-role agent. Reads lots, steps and tests, runs the yield
+# functions and records tests, alerts and root causes. The write set is exactly
+# what the Cedar policies grant the fab role — nothing more.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: fab-copilot
+  display: Fab copilot
+  description: 'Fab-role agent: search lots, process steps and wafer tests, run
+    yield-loss analysis and record tests, yield alerts and root causes — writes
+    need human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:fab-copilot"
+    Role: [fab]
+    site: fab-site-a
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_wafer_lot
+    - search_process_step
+    - search_equipment
+    - search_wafer_test
+    - search_tapeout_version
+    - search_fmea_note
+    - call_analyze_yield_loss
+    - call_yield_pareto
+    - act_start_lot
+    - act_complete_process_step
+    - act_hold_lot
+    - act_record_wafer_test
+    - act_retract_wafer_test
+    - act_reassign_step
+    - act_raise_yield_alert
+    - act_record_root_cause
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

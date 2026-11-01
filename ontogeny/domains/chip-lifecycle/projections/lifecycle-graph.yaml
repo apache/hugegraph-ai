@@ -1,0 +1,85 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: production-lifecycle-graph
+  display: Lifecycle relationship graph
+  description: Requirements, design modules, tapeout versions, wafer lots, process
+    steps, CP tests, customers, field failures and FMEA notes projected into
+    HugeGraph for multi-hop traceability and impact analysis
+kind: Projection
+spec:
+  engine: hugegraph
+  endpoint: ${HUGEGRAPH_URL}
+  graph: chip_lifecycle
+  graphspace: DEFAULT
+  api: auto
+  include:
+    objects:
+      requirement:
+        properties:
+        - title
+        - priority
+        - status
+      design-module:
+        properties:
+        - name
+        - purpose
+        - status
+      tapeout-version:
+        properties:
+        - project
+        - status
+      wafer-lot:
+        properties:
+        - qty_wafers
+        - status
+        - site
+      process-step:
+        properties:
+        - seq
+        - name
+        - equipment
+        - status
+      equipment:
+        properties:
+        - name
+        - process
+        - status
+      wafer-test:
+        properties:
+        - result
+        - alert_status
+        - root_cause_class
+        - confidence
+      customer:
+        properties:
+        - name
+        - segment
+      field-failure:
+        properties:
+        - failure_mode
+        - status
+        - alert_status
+        - root_cause_class
+      fmea-note:
+        properties:
+        - title
+        - fmea_id
+        - failure_mode
+        - rpn
+    links:
+    - requirement-modules
+    - version-includes
+    - version-lots
+    - lot-steps
+    - step-equipment
+    - lot-tests
+    - customer-failures
+    - design-fmea-notes
+  deletion: remove
+  indexes:
+  - object: wafer-lot
+    property: status
+  - object: process-step
+    property: status
+  - object: field-failure
+    property: status

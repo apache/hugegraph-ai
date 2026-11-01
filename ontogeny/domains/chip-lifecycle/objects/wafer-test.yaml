@@ -1,0 +1,77 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: wafer-test
+  display: Wafer test (CP)
+  description: A CP test result recorded for a lot; yield alerts and root causes are state on this record
+spec:
+  primaryKey:
+  - test_id
+  properties:
+    test_id:
+      type: string
+      display: Test ID
+      required: true
+    lot_id:
+      type: string
+      display: Wafer lot
+      required: true
+    tested_qty:
+      type: integer
+      display: Tested quantity
+    defect_qty:
+      type: integer
+      display: Defect quantity
+    result:
+      type: enum[PASS, FAIL, PENDING]
+      display: Result
+    tester:
+      type: string
+      display: Tester
+    tested_at:
+      type: timestamp
+      display: Tested at
+    alert_status:
+      type: "enum[OPEN, ACK, CLOSED]"
+      display: Alert status
+      owner: ontology
+    alert_severity:
+      type: "enum[INFO, WARN, MAJOR, CRITICAL]"
+      display: Alert severity
+      owner: ontology
+    alert_kind:
+      type: "enum[YIELD_DROP, SPC_OOC]"
+      display: Alert kind
+      owner: ontology
+    alerted_at:
+      type: timestamp
+      display: Alerted at
+      owner: ontology
+    root_cause:
+      type: string
+      display: Root cause
+      owner: ontology
+    root_cause_class:
+      type: "enum[DESIGN, PROCESS, MATERIAL, ASSEMBLY, PLANNING]"
+      display: Root cause class
+      owner: ontology
+    confidence:
+      type: decimal(4,3)
+      display: Confidence
+      owner: ontology
+    diagnosed_at:
+      type: timestamp
+      display: Diagnosed at
+      owner: ontology
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: wafer_tests
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

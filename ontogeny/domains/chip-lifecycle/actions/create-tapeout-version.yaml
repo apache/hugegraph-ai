@@ -1,0 +1,32 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: create-tapeout-version
+  display: Create tapeout version
+  description: Plan a new tapeout version of a project
+spec:
+  target: tapeout-version
+  parameters:
+    project:
+      type: string
+      display: Project
+      required: true
+    notes:
+      type: string
+      display: Notes
+  rules:
+  - expr: parameters.project != ''
+    message: Project must not be empty
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      version_id: newId('TO')
+      project: parameters.project
+      notes: parameters.notes
+      status: PLANNED
+      created_at: now()
+  audit:
+    fields:
+    - target.version_id
+    - parameters

@@ -123,7 +123,7 @@ class TestDecidingProposerOverOllama:
                                     "mutations": [
                                         {
                                             "mutation": "add-optional-property",
-                                            "object": "production-order",
+                                            "object": "wafer-lot",
                                             "prop": "workgroup",
                                             "type": "string",
                                         }
@@ -143,7 +143,7 @@ class TestDecidingProposerOverOllama:
         pkg = load_package(golden_pkg_path)
         compiled = compile_package(pkg)
         out = await proposer.propose(
-            {"kind": "add-optional-property", "object": "production-order", "prop": "workgroup"}, compiled
+            {"kind": "add-optional-property", "object": "wafer-lot", "prop": "workgroup"}, compiled
         )
         assert out and out["origin"] == "llm" and out["mutations"][0]["prop"] == "workgroup"
 

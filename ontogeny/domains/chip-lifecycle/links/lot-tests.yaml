@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: lot-tests
+  display: Lot has tests
+  description: The CP wafer tests recorded for a lot
+spec:
+  source: wafer-lot
+  target: wafer-test
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      wafer-test.lot_id: wafer-lot.lot_id

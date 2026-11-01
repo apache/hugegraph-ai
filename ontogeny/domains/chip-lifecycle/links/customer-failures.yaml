@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: customer-failures
+  display: Customer has failures
+  description: The field failures reported by a customer
+spec:
+  source: customer
+  target: field-failure
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      field-failure.customer_id: customer.customer_id

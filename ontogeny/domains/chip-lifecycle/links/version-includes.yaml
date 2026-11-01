@@ -1,0 +1,14 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: version-includes
+  display: Version includes modules
+  description: The design modules integrated into a tapeout version
+spec:
+  source: tapeout-version
+  target: design-module
+  cardinality: ONE_TO_MANY
+  join:
+    kind: foreign-key
+    keys:
+      design-module.version_id: tapeout-version.version_id

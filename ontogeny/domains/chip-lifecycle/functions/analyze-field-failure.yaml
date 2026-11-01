@@ -1,0 +1,21 @@
+apiVersion: ontogeny/v1
+kind: Function
+metadata:
+  name: analyze-field-failure
+  display: Analyze field failure
+  description: Read-only root-cause candidates for one customer field failure
+spec:
+  runtime: python
+  entry: analyze_field_failure.py:analyze_field_failure
+  parameters:
+    failure_id:
+      type: string
+      required: true
+      display: Failure ID
+  returns:
+    type: string
+    display: Root-cause candidates (JSON)
+  capabilities:
+  - read-objects:
+    - field-failure
+    - customer

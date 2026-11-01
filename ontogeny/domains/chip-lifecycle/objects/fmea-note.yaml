@@ -1,0 +1,80 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: fmea-note
+  display: FMEA failure note
+  description: One failure mode extracted from an FMEA document and resolved to a design module
+spec:
+  primaryKey: [note_id]
+  properties:
+    note_id:
+      type: string
+      display: Note ID
+      required: true
+      owner: document
+    title:
+      type: string
+      display: Title
+      required: true
+      owner: document
+    fmea_id:
+      type: string
+      display: FMEA ID
+      owner: document
+    module_id:
+      type: string
+      display: Design module
+      required: true
+      owner: document
+    failure_mode:
+      type: string
+      display: Failure mode
+      owner: document
+    cause:
+      type: string
+      display: Cause
+      owner: document
+    effect:
+      type: string
+      display: Effect
+      owner: document
+    severity:
+      type: integer
+      display: Severity
+      owner: document
+    occurrence:
+      type: integer
+      display: Occurrence
+      owner: document
+    detection:
+      type: integer
+      display: Detection
+      owner: document
+    rpn:
+      type: integer
+      display: RPN
+      owner: document
+    recommended_action:
+      type: string
+      display: Recommended action
+      owner: document
+    source_doc:
+      type: string
+      display: Source document
+      owner: document
+    status:
+      type: "enum[EXTRACTED, REVIEWED, ACCEPTED]"
+      display: Status
+      owner: document
+  backing:
+    store: chip-docs
+    mode: materialized
+    source:
+      table: fmea-notes
+    sync:
+      strategy: extract
+    extract:
+      key: [title]
+      match: [title]
+      create: auto
+      update: fill-empty

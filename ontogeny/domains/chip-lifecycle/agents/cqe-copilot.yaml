@@ -1,0 +1,36 @@
+# CQE copilot: the customer-quality-role agent. Reads failures, customers,
+# lots and tests, runs the field-failure analysis and drafts surge alerts and
+# root causes. The write set is exactly what the Cedar policies grant the cqe
+# role — nothing more.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: cqe-copilot
+  display: CQE copilot
+  description: 'Customer-quality agent: search field failures, customers, lots and
+    tests, run field-failure analysis and draft surge alerts and root causes —
+    writes need human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:cqe-copilot"
+    Role: [cqe]
+    site: hq
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_field_failure
+    - search_customer
+    - search_wafer_lot
+    - search_wafer_test
+    - search_design_module
+    - search_fmea_note
+    - call_analyze_field_failure
+    - act_open_field_failure
+    - act_raise_surge_alert
+    - act_record_failure_root_cause
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

@@ -1,0 +1,38 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: create-design-module
+  display: Create design module
+  description: Add a circuit block that implements a requirement
+spec:
+  target: design-module
+  parameters:
+    name:
+      type: string
+      display: Module name
+      required: true
+    purpose:
+      type: string
+      display: Purpose
+    owner_team:
+      type: string
+      display: Owner team
+    requirement_id:
+      type: string
+      display: Primary requirement
+      required: true
+  policy: lifecycle
+  effects:
+  - kind: create-object
+    properties:
+      module_id: newId('DSG')
+      name: parameters.name
+      purpose: parameters.purpose
+      owner_team: parameters.owner_team
+      requirement_id: parameters.requirement_id
+      status: ACTIVE
+      created_at: now()
+  audit:
+    fields:
+    - target.module_id
+    - parameters

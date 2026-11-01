@@ -1,0 +1,46 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: wafer-lot
+  display: Wafer lot
+  description: A batch of wafers of one tapeout version, the unit of quality traceability
+spec:
+  primaryKey:
+  - lot_id
+  properties:
+    lot_id:
+      type: string
+      display: Lot ID
+      required: true
+    version_id:
+      type: string
+      display: Tapeout version
+      required: true
+    qty_wafers:
+      type: integer
+      display: Wafers
+    status:
+      type: enum[RUNNING, COMPLETE, ON_HOLD]
+      display: Status
+      owner: ontology
+    site:
+      type: string
+      display: Fab site
+    started_at:
+      type: timestamp
+      display: Started at
+    created_at:
+      type: timestamp
+      display: Created at
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: wafer_lots
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

@@ -1,0 +1,21 @@
+apiVersion: ontogeny/v1
+kind: Function
+metadata:
+  name: analyze-yield-loss
+  display: Analyze yield loss
+  description: Read-only root-cause candidates for one failing CP test, using the lot and its yield loss
+spec:
+  runtime: python
+  entry: analyze_yield_loss.py:analyze_yield_loss
+  parameters:
+    test_id:
+      type: string
+      required: true
+      display: Test ID
+  returns:
+    type: string
+    display: Root-cause candidates (JSON)
+  capabilities:
+  - read-objects:
+    - wafer-test
+    - wafer-lot

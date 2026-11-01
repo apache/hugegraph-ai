@@ -1,0 +1,17 @@
+apiVersion: ontogeny/v1
+kind: Store
+metadata:
+  name: chip-docs
+  display: Chip quality documents
+  description: FMEA and design review documents for document intelligence
+spec:
+  type: document
+  connection: data/docs
+  documents:
+    include:
+      - "**/*.md"
+      - "**/*.txt"
+      - "**/*.pdf"
+      - "**/*.docx"
+    split: paragraph
+    language: en

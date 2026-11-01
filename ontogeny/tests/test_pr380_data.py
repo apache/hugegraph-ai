@@ -25,29 +25,27 @@ import pytest
 
 class TestProjectionKeysetBackfill:
     async def test_backfill_pages_past_batch_size(self, client):
-        """A 25-row table with batch forced to 10 must fully land in the graph."""
+        """A 26-row table with batch forced to 10 must fully land in the graph."""
         import datetime as dt
 
         from ontogeny.projection.worker import ProjectionWorker
 
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
-        # 4 seeded + 21 fresh rows = 25 > any single page
+        await c.post("/api/v1/admin/sync/equipment")
+        # 5 seeded + 21 fresh rows = 26 > any single page
         for i in range(21):
             async with sc.sessionmaker() as s:
                 await sc.repo.action_insert(
                     s,
-                    "work-center",
+                    "equipment",
                     {
-                        "work_center_id": f"WC-X{i:02d}",
+                        "equipment_id": f"EQ-X{i:02d}",
                         "name": f"Extra {i}",
                         "process": "assembly",
-                        "site": "plant-north",
-                        "capacity_per_shift": 10,
-                        "shifts_per_day": 1,
+                        "site": "fab-site-a",
                         "status": "ACTIVE",
                     },
-                    dt.datetime.now(dt.timezone.utc),
+                    dt.datetime.now(dt.UTC),
                 )
                 await s.commit()
 
@@ -77,7 +75,7 @@ class TestProjectionKeysetBackfill:
         sc.repo.query = small_query
         try:
             async with sc.sessionmaker() as s:
-                expected = len(await sc.repo.alive_ids(s, "work-center"))
+                expected = len(await sc.repo.alive_ids(s, "equipment"))
                 counts = await worker.rebuild(sc.repo, s)
         finally:
             sc.repo.query = original_query
@@ -120,7 +118,7 @@ class TestDemoEnvRespect:
         from ontogeny.demo.bootstrap import prepare_demo
 
         monkeypatch.setenv("ONTOGENY_DB_DSN", "sqlite+aiosqlite:////data/operator.db")
-        paths = prepare_demo(tmp_path / "demo", package="domains/product-manufacturing")
+        paths = prepare_demo(tmp_path / "demo", package="domains/chip-lifecycle")
         env = paths.as_env()
         import os
 
@@ -164,7 +162,7 @@ class TestAdminLockout:
 class TestBoundedReads:
     async def test_query_limit_rejected_over_bound(self, client):
         c, _ = client
-        r = await c.post("/api/v1/objects/work-center/query", json={"limit": 100000})
+        r = await c.post("/api/v1/objects/equipment/query", json={"limit": 100000})
         assert r.status_code == 422
 
     async def test_traverse_depth_rejected_over_bound(self, client):
@@ -172,8 +170,8 @@ class TestBoundedReads:
         r = await c.post(
             "/api/v1/graph/traverse",
             json={
-                "start_type": "production-order",
-                "start_ids": ["PO-1001"],
+                "start_type": "wafer-lot",
+                "start_ids": ["LOT-2417"],
                 "path": [],
                 "max_depth": 10,
             },
@@ -182,8 +180,8 @@ class TestBoundedReads:
 
     async def test_readonly_tool_limit_clamped(self, client):
         c, sc = client
-        await c.post("/api/v1/admin/sync/work-center")
-        out = await sc.agents.read_only_tool("search_work_center", None, {"limit": 999999})
+        await c.post("/api/v1/admin/sync/equipment")
+        out = await sc.agents.read_only_tool("search_equipment", None, {"limit": 999999})
         assert out["outcome"] == "ok" and len(out["detail"]["objects"]) <= 1000
 
 
@@ -199,7 +197,7 @@ class TestSandboxStdoutIsolation:
         )
         import yaml as _yaml
 
-        doc = _yaml.safe_load((pkg / "functions" / "capacity-check.yaml").read_text(encoding="utf-8"))
+        doc = _yaml.safe_load((pkg / "functions" / "analyze-yield-loss.yaml").read_text(encoding="utf-8"))
         doc["metadata"]["name"] = "chatty"
         doc["spec"]["entry"] = "chatty.py:say"
         doc["spec"]["parameters"] = {"what": {"type": "string", "display": "What", "required": True}}

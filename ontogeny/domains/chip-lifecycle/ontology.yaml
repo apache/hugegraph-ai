@@ -1,0 +1,13 @@
+apiVersion: ontogeny/v1
+metadata:
+  name: chip-lifecycle
+  display: Chip Lifecycle Domain
+  description: 'Semiconductor product lifecycle domain ontology: requirements, design
+    modules, tapeout versions, equipment, wafer lots, process steps, CP wafer tests,
+    customers and field failures. Alerts and root causes are state on the test and
+    failure records; analysis is done by read-only sandboxed functions. One detailed
+    FMEA document feeds the document-intelligence case.'
+  version: 1.0.0
+kind: Ontology
+spec:
+  imports: []

@@ -1,0 +1,35 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: change-requirement
+  display: Change requirement
+  description: Apply a controlled spec change to a requirement
+spec:
+  target: requirement
+  parameters:
+    spec:
+      type: string
+      display: New specification
+      required: true
+    reason:
+      type: string
+      display: Reason
+  rules:
+  - expr: target.status != 'CLOSED'
+    message: Closed requirements cannot be changed
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      spec: parameters.spec
+      status: CHANGED
+      changed_at: now()
+  - when: target.priority == 'HIGH'
+    kind: emit-event
+    payload:
+      event: requirement.changed
+  audit:
+    fields:
+    - target.requirement_id
+    - target.status
+    - parameters

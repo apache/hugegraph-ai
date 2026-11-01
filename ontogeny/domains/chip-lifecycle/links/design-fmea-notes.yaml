@@ -1,0 +1,12 @@
+apiVersion: ontogeny/v1
+kind: LinkType
+metadata:
+  name: design-fmea-notes
+  display: Design module FMEA
+  description: An FMEA failure mode extracted and resolved to an existing design module
+spec:
+  source: design-module
+  target: fmea-note
+  cardinality: ONE_TO_MANY
+  join:
+    kind: extracted

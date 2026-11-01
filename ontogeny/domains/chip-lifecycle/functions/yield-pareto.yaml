@@ -1,0 +1,16 @@
+apiVersion: ontogeny/v1
+kind: Function
+metadata:
+  name: yield-pareto
+  display: Yield loss pareto
+  description: Rank wafer lots by CP yield loss with their process route, so the biggest loss surfaces first
+spec:
+  runtime: python
+  entry: yield_pareto.py:yield_pareto
+  returns:
+    type: string
+    display: Yield loss pareto (JSON)
+  capabilities:
+  - read-objects:
+    - wafer-test
+    - process-step

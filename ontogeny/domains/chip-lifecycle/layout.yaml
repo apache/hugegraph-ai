@@ -1,0 +1,85 @@
+# ontogeny canvas layout: hand-arranged node positions of the ontology
+# workbench, committed with the model by a builder save. Per package,
+# travels with zip import/export; safe to delete (auto layout returns).
+layout:
+  type:requirement:
+    x: -640.0
+    y: 0.0
+  action:create-requirement:
+    x: -640.0
+    y: -110.0
+  action:change-requirement:
+    x: -691.0594223484851
+    y: 102.19341856060608
+  function:requirement-impact:
+    x: -319.96093749999983
+    y: -97.91429924242428
+  type:design-module:
+    x: -420.0
+    y: 0.0
+  action:create-design-module:
+    x: -615.6735321969693
+    y: 187.02296401515162
+  type:fmea-note:
+    x: -420.0
+    y: 160.0
+  type:tapeout-version:
+    x: -200.0
+    y: 0.0
+  action:create-tapeout-version:
+    x: -276.4322916666668
+    y: 111.6323390151515
+  action:tapeout:
+    x: -150.12073863636365
+    y: 187.38399621212113
+  type:wafer-lot:
+    x: 20.0
+    y: 0.0
+  action:start-lot:
+    x: -44.174952651515255
+    y: 129.6957859848485
+  action:hold-lot:
+    x: 76.52817234848484
+    y: 231.0404829545454
+  type:process-step:
+    x: 240.0
+    y: 60.0
+  action:complete-process-step:
+    x: 268.87665719696935
+    y: 192.35440340909088
+  type:wafer-test:
+    x: 187.87523674242425
+    y: -107.86931818181816
+  action:record-wafer-test:
+    x: 172.35913825757584
+    y: -201.953125
+  function:analyze-yield-loss:
+    x: -20.591856060605974
+    y: -174.63304924242425
+  function:yield-pareto:
+    x: 313.05279356060606
+    y: 1.484374999999943
+  action:raise-yield-alert:
+    x: 339.69105113636334
+    y: -236.26657196969705
+  action:record-root-cause:
+    x: 397.1425189393937
+    y: -97.55326704545448
+  type:customer:
+    x: 480.0
+    y: 110.0
+  type:field-failure:
+    x: 660.0
+    y: 110.0
+  action:open-field-failure:
+    x: 719.9195075757575
+    y: -58.836410984848506
+  function:analyze-field-failure:
+    x: 498.9109848484849
+    y: -24.070785984848477
+  action:raise-surge-alert:
+    x: 898.7807765151522
+    y: 109.76917613636363
+  action:record-failure-root-cause:
+    x: 800.0
+    y: 220.0

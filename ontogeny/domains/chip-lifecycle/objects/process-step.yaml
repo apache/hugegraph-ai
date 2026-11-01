@@ -1,0 +1,49 @@
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: process-step
+  display: Process step
+  description: One routing step a lot went through, with the equipment that ran it
+spec:
+  primaryKey:
+  - step_id
+  properties:
+    step_id:
+      type: string
+      display: Step ID
+      required: true
+    lot_id:
+      type: string
+      display: Wafer lot
+      required: true
+    seq:
+      type: integer
+      display: Sequence
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    equipment:
+      type: string
+      display: Equipment
+    status:
+      type: enum[QUEUED, RUNNING, COMPLETED]
+      display: Status
+      owner: ontology
+    completed_at:
+      type: timestamp
+      display: Completed at
+      owner: ontology
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: process_steps
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

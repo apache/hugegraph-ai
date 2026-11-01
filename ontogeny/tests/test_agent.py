@@ -51,17 +51,17 @@ VALID = """\
 apiVersion: ontogeny/v1
 kind: AgentPlugin
 metadata:
-  name: planning-copilot
-  display: Planning copilot
+  name: product-copilot
+  display: Product copilot
 spec:
   principal:
-    id: "agent:planning-copilot"
-    Role: [planner]
-    site: plant-north
+    id: "agent:product-copilot"
+    Role: [product]
+    site: hq
   transport: { kind: http }
   tools:
-    allow: [describe_ontology, search_production_order, search_material, search_work_center,
-        act_release_production_order]
+    allow: [describe_ontology, search_wafer_lot, search_tapeout_version, search_equipment,
+        act_tapeout]
     deny: []
   approval: { writes: confirm }
   budget: { steps: 25, wall_ms: 60000, writes_per_session: 2 }
@@ -76,21 +76,21 @@ class TestPluginDSL:
         assert len(pkg.agent_plugins()) == 1
 
     def test_unknown_tool_rejected(self, golden_pkg_path, tmp_path):
-        bad = VALID.replace("search_work_center", "search_nope")
+        bad = VALID.replace("search_equipment", "search_nope")
         pkg = _pkg_with_plugin(tmp_path, golden_pkg_path, bad)
         rep = validate(pkg)
         assert not rep.ok
         assert any(i.code == "AGENT-TOOL-UNKNOWN" for i in rep.issues)
 
     def test_unknown_role_rejected(self, golden_pkg_path, tmp_path):
-        bad = VALID.replace("Role: [planner]", "Role: [planer]")
+        bad = VALID.replace("Role: [product]", "Role: [prodct]")
         pkg = _pkg_with_plugin(tmp_path, golden_pkg_path, bad)
         rep = validate(pkg)
         assert not rep.ok
         assert any(i.code == "AGENT-ROLE-UNKNOWN" for i in rep.issues)
 
     def test_allow_deny_conflict_rejected(self, golden_pkg_path, tmp_path):
-        bad = VALID.replace("deny: []", "deny: [search_work_center]")
+        bad = VALID.replace("deny: []", "deny: [search_equipment]")
         pkg = _pkg_with_plugin(tmp_path, golden_pkg_path, bad)
         rep = validate(pkg)
         assert any(i.code == "AGENT-TOOL-CONFLICT" for i in rep.issues)
@@ -133,10 +133,10 @@ class TestCatalog:
         tools = effective_tools(compiled, plug)
         assert set(tools) == {
             "describe_ontology",
-            "search_production_order",
-            "search_material",
-            "search_work_center",
-            "act_release_production_order",
+            "search_wafer_lot",
+            "search_tapeout_version",
+            "search_equipment",
+            "act_tapeout",
         }
         # nothing outside the compiled vocabulary can appear
         assert set(tools) <= set(build_catalog(compiled))
@@ -145,7 +145,7 @@ class TestCatalog:
         from ontogeny.agent.catalog import effective_tools
 
         compiled = self._compiled(golden_pkg_path, tmp_path)
-        plug = compiled.agent_plugins["planning-copilot"]
+        plug = compiled.agent_plugins["product-copilot"]
         bare = plug.model_copy(deep=True)
         bare.spec.tools.allow = []
         bare.spec.tools.deny = []
@@ -173,7 +173,7 @@ async def sc(golden_pkg_path, tmp_path):
     settings = Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
     ctx = ServiceContext(settings, str(root))
     await ctx.initialize()
@@ -182,11 +182,11 @@ async def sc(golden_pkg_path, tmp_path):
 
 class TestBroker:
     async def test_session_carries_frozen_budget_and_catalog(self, sc):
-        out = await sc.agents.open_session("planning-copilot", "盘点活跃产线并释放生产订单")
-        assert out["plugin"] == "planning-copilot"
-        assert out["principal"] == "agent:planning-copilot"
+        out = await sc.agents.open_session("product-copilot", "盘点活跃设备并提交TO-A1流片")
+        assert out["plugin"] == "product-copilot"
+        assert out["principal"] == "agent:product-copilot"
         assert out["budget"]["steps"] == 25
-        assert "act_release_production_order" in out["tools"]
+        assert "act_tapeout" in out["tools"]
         assert out["catalog_hash"]
 
     async def test_unknown_plugin_rejected(self, sc):
@@ -198,19 +198,19 @@ class TestBroker:
     async def test_search_runs_under_plugin_principal_and_masks(self, sc):
         for t in sc.compiled.objects:
             await sc.sync(t)
-        session = await sc.agents.open_session("planning-copilot", "")
-        out = await sc.agents.call_tool(session["id"], "search_material", {"limit": 5})
+        session = await sc.agents.open_session("product-copilot", "")
+        out = await sc.agents.call_tool(session["id"], "search_tapeout_version", {"limit": 5})
         assert out["outcome"] == "ok"
         rows = out["detail"]["objects"]
-        assert rows and rows[0]["unit_cost"] == "__masked__"  # plugin has no markings
+        assert rows and rows[0]["mask_cost"] == "__masked__"  # plugin has no markings
 
     async def test_tool_outside_catalog_refused(self, sc):
-        session = await sc.agents.open_session("planning-copilot", "")
-        out = await sc.agents.call_tool(session["id"], "search_operation", {})
+        session = await sc.agents.open_session("product-copilot", "")
+        out = await sc.agents.call_tool(session["id"], "search_requirement", {})
         assert out["outcome"] == "AGENT_TOOL_NOT_ALLOWED"  # compiled but not in allow
 
     async def test_step_budget_enforced(self, sc):
-        session = await sc.agents.open_session("planning-copilot", "")
+        session = await sc.agents.open_session("product-copilot", "")
         sid = session["id"]
         # burn the budget with cheap describe calls (25 steps in the plugin spec)
         for _ in range(25):
@@ -220,26 +220,26 @@ class TestBroker:
         assert out["outcome"] == "AGENT_BUDGET_EXCEEDED"
 
     async def test_write_without_approval_is_pending(self, sc):
-        await sc.sync("production-order")
-        session = await sc.agents.open_session("planning-copilot", "")
+        await sc.sync("tapeout-version")
+        session = await sc.agents.open_session("product-copilot", "")
         out = await sc.agents.call_tool(
             session["id"],
-            "act_release_production_order",
+            "act_tapeout",
             {
                 "parameters": {},
-                "target_id": "PO-1002",
-                "rationale": "PO-1002 is PLANNED and due soon; release it to the shop floor",
+                "target_id": "TO-A1",
+                "rationale": "TO-A1 is PLANNED and its mask set is ready; submit it to the fab",
             },
         )
         assert out["outcome"] == "pending_approval"
         assert out["approval_id"]
-        # nothing executed: the production order is still PLANNED
+        # nothing executed: the tapeout version is still PLANNED
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
-        assert po["status"] == "PLANNED"
+            ver = await sc.query.get(s, "tapeout-version", "TO-A1", {"id": "auditor", "Role": ["auditor"]})
+        assert ver["status"] == "PLANNED"
 
     async def test_finished_session_refuses_calls(self, sc):
-        session = await sc.agents.open_session("planning-copilot", "")
+        session = await sc.agents.open_session("product-copilot", "")
         await sc.agents.finish_session(session["id"], {"summary": "done"})
         out = await sc.agents.call_tool(session["id"], "describe_ontology", {})
         assert out["outcome"] == "AGENT_SESSION_CLOSED"
@@ -250,11 +250,11 @@ class TestDirectionSessionControls:
     multiple drives per session with per-run tagged traces."""
 
     async def test_budget_override_zero_is_unlimited(self, sc):
-        limited = await sc.agents.open_session("planning-copilot", "limited", budget={"steps": 1})
-        unlimited = await sc.agents.open_session("planning-copilot", "unlimited", budget={"steps": 0})
+        limited = await sc.agents.open_session("product-copilot", "limited", budget={"steps": 1})
+        unlimited = await sc.agents.open_session("product-copilot", "unlimited", budget={"steps": 0})
 
         async def step_probe(sess_id):
-            out = await sc.agents.call_tool(sess_id, "search_material", {"limit": 1})
+            out = await sc.agents.call_tool(sess_id, "search_tapeout_version", {"limit": 1})
             return out["outcome"]
 
         # limited: the first step passes, the second hits the ceiling
@@ -267,8 +267,8 @@ class TestDirectionSessionControls:
     async def test_expired_session_refuses_calls_and_runs(self, sc):
         import datetime as _dt
 
-        past = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=1)
-        sess = await sc.agents.open_session("planning-copilot", "expired", expires_at=past)
+        past = _dt.datetime.now(_dt.UTC) - _dt.timedelta(minutes=1)
+        sess = await sc.agents.open_session("product-copilot", "expired", expires_at=past)
         out = await sc.agents.call_tool(sess["id"], "describe_ontology", {})
         assert out["outcome"] == "AGENT_SESSION_EXPIRED"
         from ontogeny.errors import OOError
@@ -278,11 +278,11 @@ class TestDirectionSessionControls:
         assert ei.value.details.get("code") == "AGENT_SESSION_EXPIRED"
 
     async def test_rerun_increments_run_count_and_tags_steps(self, sc):
-        first = await sc.agents.open_session("planning-copilot", "multi-run")
+        first = await sc.agents.open_session("product-copilot", "multi-run")
         sid = first["id"]
         await sc.agents.call_tool(sid, "describe_ontology", {})
         await sc.agents.start_run(sid)  # run 2 (open session: counter bumps)
-        await sc.agents.call_tool(sid, "search_material", {"limit": 5})
+        await sc.agents.call_tool(sid, "search_tapeout_version", {"limit": 5})
         detail = await sc.agents.get_session(sid)
         assert detail["run_count"] == 2
         assert [st["run_no"] for st in detail["steps"]] == [1, 2]

@@ -41,32 +41,37 @@ def compiled(golden_pkg):
 
 class TestCompiler:
     def test_schema_shape(self, compiled):
-        prj = compiled.projections["production-graph"]
+        prj = compiled.projections["production-lifecycle-graph"]
         schema = compile_projection(compiled, prj)
-        assert schema["graph"] == "product_manufacturing"  # the domain's own name
+        assert schema["graph"] == "chip_lifecycle"  # the domain's own name
         labels = {v["label"] for v in schema["vertexlabels"]}
         assert labels == {
-            "product",
-            "bom",
-            "material",
-            "work-center",
-            "production-order",
-            "operation",
-            "quality-inspection",
+            "requirement",
+            "design-module",
+            "tapeout-version",
+            "equipment",
+            "wafer-lot",
+            "process-step",
+            "wafer-test",
+            "customer",
+            "field-failure",
+            "fmea-note",
         }
-        pk = next(v for v in schema["vertexlabels"] if v["label"] == "production-order")
-        assert pk["primary_keys"] == ["order_id"]
+        pk = next(v for v in schema["vertexlabels"] if v["label"] == "wafer-lot")
+        assert pk["primary_keys"] == ["lot_id"]
         # whitelisted properties only, marking never enters (validator enforces)
-        mat = next(v for v in schema["vertexlabels"] if v["label"] == "material")
-        assert "unit_cost" not in mat["properties"] and "name" in mat["properties"]
+        ver = next(v for v in schema["vertexlabels"] if v["label"] == "tapeout-version")
+        assert "mask_cost" not in ver["properties"] and "project" in ver["properties"]
         edges = {e["name"] for e in schema["edgelabels"]}
         assert edges == {
-            "bom-product",
-            "bom-material",
-            "production-order-product",
-            "production-order-operations",
-            "production-order-inspections",
-            "operation-work-center",
+            "requirement-modules",
+            "version-includes",
+            "version-lots",
+            "lot-steps",
+            "lot-tests",
+            "step-equipment",
+            "customer-failures",
+            "design-fmea-notes",
         }
         types = {p["name"]: p["data_type"] for p in schema["propertykeys"]}
         assert types["name"] == "TEXT" and types["status"] == "TEXT"
@@ -75,7 +80,7 @@ class TestCompiler:
 class TestClientAndWorker:
     @pytest_asyncio.fixture()
     async def rig(self, compiled):
-        prj = compiled.projections["production-graph"]
+        prj = compiled.projections["production-lifecycle-graph"]
         calls: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -113,33 +118,33 @@ class TestClientAndWorker:
 
     async def test_upsert_vertices_body(self, rig):
         await rig["client"].upsert_vertices(
-            "work-center",
-            "work_center_id",
+            "equipment",
+            "equipment_id",
             [
-                {"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"},
+                {"equipment_id": "EQ-02", "name": "Scanner A (193i)", "status": "ACTIVE"},
             ],
         )
         import json
 
         body = json.loads(rig["calls"][-1].read())
-        assert body[0]["label"] == "work-center" and body[0]["id"] == "WC-01"
+        assert body[0]["label"] == "equipment" and body[0]["id"] == "EQ-02"
         # the client is transport-level: it sends what it is given; whitelist
         # filtering happens in ProjectionWorker.project_object
-        assert body[0]["properties"] == {"name": "CNC Machining Cell", "status": "ACTIVE"}
+        assert body[0]["properties"] == {"name": "Scanner A (193i)", "status": "ACTIVE"}
 
     async def test_archive_deletes_vertex(self, rig):
         await rig["worker"].handle_event(
             None,
             None,
             OutboxRow(
-                object_type="work-center",
-                object_id="WC-99",
+                object_type="equipment",
+                object_id="EQ-99",
                 op="archive",
                 payload={},
             ),
         )
         last = rig["calls"][-1]
-        assert last.method == "DELETE" and "WC-99" in str(last.url)
+        assert last.method == "DELETE" and "EQ-99" in str(last.url)
 
     async def test_unprojected_type_consumed_silently(self, rig):
         ok = await rig["worker"].handle_event(
@@ -193,7 +198,7 @@ class TestScaffold:
         _, sc = client
         payload = sc._derive_projection(name="auto-graph", graph=sc.graph_name(), graphspace="DEFAULT")
         res = ProjectionResource.model_validate(payload)
-        assert res.spec.graph == sc.graph_name() == "product_manufacturing"
+        assert res.spec.graph == sc.graph_name() == "chip_lifecycle"
 
     async def test_derived_projection_passes_the_validator(self, client):
         """It is written into the package, so validate() is the real gate."""
@@ -271,7 +276,7 @@ class TestScaffold:
         because it could not look."""
         _, sc = client
         state = await sc.graph_state()
-        assert state["graph_name"] == "product_manufacturing"
+        assert state["graph_name"] == "chip_lifecycle"
         # this fixture runs sqlite storage, so nothing can be probed
         assert state["graph_exists"] is None
 
@@ -289,7 +294,7 @@ class TestDeclaredVersusWired:
         _, sc = client
         summary = await sc.projection_summary()
         assert summary["declared"] is True
-        assert summary["declared_name"] == "production-graph"
+        assert summary["declared_name"] == "production-lifecycle-graph"
 
     async def test_declared_but_unwired_says_what_is_actually_missing(self, client):
         # this fixture runs sqlite storage: the projection is declared, the graph

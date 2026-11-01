@@ -1,0 +1,33 @@
+# Product copilot: the product-role agent. Reads requirements, modules and
+# versions, runs the impact function and drafts requirement changes. The write
+# set is exactly what the Cedar policies grant the product role — nothing more.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: product-copilot
+  display: Product copilot
+  description: 'Product-role agent: search requirements, design modules and tapeout
+    versions, run requirement-impact and draft requirement changes — writes need
+    human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:product-copilot"
+    Role: [product]
+    site: hq
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_requirement
+    - search_design_module
+    - search_tapeout_version
+    - search_wafer_lot
+    - search_fmea_note
+    - call_requirement_impact
+    - act_create_requirement
+    - act_change_requirement
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 30, wall_ms: 90000, writes_per_session: 3 }

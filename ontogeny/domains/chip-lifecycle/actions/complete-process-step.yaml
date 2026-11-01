@@ -1,0 +1,25 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: complete-process-step
+  display: Complete process step
+  description: Confirm a lot's process step as finished
+spec:
+  target: process-step
+  parameters:
+    note:
+      type: string
+      display: Note
+  rules:
+  - expr: target.status != 'COMPLETED'
+    message: Process step is already completed
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      status: COMPLETED
+      completed_at: now()
+  audit:
+    fields:
+    - target.step_id
+    - target.status

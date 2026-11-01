@@ -1,0 +1,36 @@
+apiVersion: ontogeny/v1
+kind: Action
+metadata:
+  name: record-failure-root-cause
+  display: Record failure root cause
+  description: Persist the reviewed root cause on a field failure and mark it analyzed
+spec:
+  target: field-failure
+  parameters:
+    root_cause:
+      type: string
+      required: true
+      display: Root cause
+    root_cause_class:
+      type: "enum[DESIGN, PROCESS, MATERIAL, ASSEMBLY, PLANNING]"
+      display: Root cause class
+    confidence:
+      type: decimal(4,3)
+      display: Confidence
+  rules:
+  - expr: parameters.confidence <= 1
+    message: Confidence must be between 0 and 1
+  policy: lifecycle
+  effects:
+  - kind: modify-target
+    set:
+      root_cause: parameters.root_cause
+      root_cause_class: parameters.root_cause_class
+      confidence: parameters.confidence
+      diagnosed_at: now()
+      status: ANALYZED
+  audit:
+    fields:
+    - target.failure_id
+    - target.root_cause
+    - parameters

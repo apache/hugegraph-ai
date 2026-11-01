@@ -64,8 +64,8 @@ class TestValidator:
     def test_a_read_step_must_be_declared(self):
         fn = _fn(
             runtime="declarative",
-            steps=[FunctionStep(id="a", kind="read", object="work-center")],
-            capabilities=[Capability(**{"read-objects": ["production-order"]})],
+            steps=[FunctionStep(id="a", kind="read", object="equipment")],
+            capabilities=[Capability(**{"read-objects": ["wafer-lot"]})],
         )
         assert "FN-STEP-CAP" in _codes(fn)
 
@@ -168,8 +168,8 @@ class TestTemplate:
     def test_rows_read_as_lines_not_json(self):
         # a model reasoning about records wants lines; a JSON blob makes it
         # parse before it can think
-        text = _render_text([{"work_center_id": "WC-1", "status": "ACTIVE"}])
-        assert text == "- work_center_id=WC-1, status=ACTIVE"
+        text = _render_text([{"equipment_id": "EQ-1", "status": "ACTIVE"}])
+        assert text == "- equipment_id=EQ-1, status=ACTIVE"
         assert _render_text([]) == "(none)"
 
     def test_unknown_reference_is_an_error_not_a_silent_blank(self):
@@ -203,7 +203,7 @@ class TestRuntime:
         _, sc = client
         # the object tables start empty: the fixture seeds a SOURCE database, so
         # a read step has nothing to read until a sync has run
-        for object_type in ("work-center", "production-order", "material"):
+        for object_type in ("equipment", "tapeout-version"):
             await sc.sync(object_type)
         return DeclarativeRuntime(llm=_FakeLLM("ADVICE"), repo=sc.repo, compiled=sc.compiled)
 
@@ -216,8 +216,8 @@ class TestRuntime:
         fn = _fn(
             runtime="declarative",
             returns_step="rows",
-            steps=[FunctionStep(id="rows", kind="read", object="work-center", limit=3)],
-            capabilities=[Capability(**{"read-objects": ["work-center"]})],
+            steps=[FunctionStep(id="rows", kind="read", object="equipment", limit=3)],
+            capabilities=[Capability(**{"read-objects": ["equipment"]})],
         )
         rows = await self._run(client, runtime, fn, {})
         assert isinstance(rows, list) and rows
@@ -229,7 +229,7 @@ class TestRuntime:
         """A function body is trusted server-side logic, not a reader.
 
         Pinned deliberately, because the platform's own authorization pattern
-        depends on it: ``material.unit_cost`` is marked ``internal``, and
+        depends on it: ``tapeout-version.mask_cost`` is marked ``internal``, and
         server-side logic may need that row-level attribute from the
         authoritative record rather than from the caller. Masking is a
         reader-surface control (REST/MCP/graph preview); ``read-objects`` is the
@@ -240,35 +240,35 @@ class TestRuntime:
         fn = _fn(
             runtime="declarative",
             returns_step="rows",
-            steps=[FunctionStep(id="rows", kind="read", object="material", limit=3)],
-            capabilities=[Capability(**{"read-objects": ["material"]})],
+            steps=[FunctionStep(id="rows", kind="read", object="tapeout-version", limit=3)],
+            capabilities=[Capability(**{"read-objects": ["tapeout-version"]})],
         )
         rows = await self._run(client, runtime, fn, {})
         # the marked property arrives REAL: masking must not leak into functions
-        assert rows and all(isinstance(r.get("unit_cost"), float) and r["unit_cost"] > 0 for r in rows)
+        assert rows and all(isinstance(r.get("mask_cost"), float) and r["mask_cost"] > 0 for r in rows)
 
     async def test_the_prompt_sees_rendered_facts(self, client, runtime):
         fn = _fn(
             runtime="declarative",
             returns_step="advice",
-            parameters={"work_center_id": ParamDef(type="string")},
+            parameters={"equipment_id": ParamDef(type="string")},
             steps=[
                 FunctionStep(
                     id="rows",
                     kind="read",
-                    object="work-center",
-                    filter={"work_center_id": "${work_center_id}"},
+                    object="equipment",
+                    filter={"equipment_id": "${equipment_id}"},
                     limit=1,
                 ),
-                FunctionStep(id="advice", kind="llm", prompt="facts:\n${rows}\nfocus: ${work_center_id}"),
+                FunctionStep(id="advice", kind="llm", prompt="facts:\n${rows}\nfocus: ${equipment_id}"),
             ],
-            capabilities=[Capability(**{"read-objects": ["work-center"]}), Capability(**{"llm": {"max-calls": 1}})],
+            capabilities=[Capability(**{"read-objects": ["equipment"]}), Capability(**{"llm": {"max-calls": 1}})],
         )
-        out = await self._run(client, runtime, fn, {"work_center_id": "WC-01"})
+        out = await self._run(client, runtime, fn, {"equipment_id": "EQ-02"})
         assert out == "ADVICE"
         prompt = runtime.llm.seen[-1][-1]["content"]
-        assert "WC-01" in prompt  # the parameter rendered
-        assert "- work_center_id=" in prompt  # rows rendered as lines, not JSON
+        assert "EQ-02" in prompt  # the parameter rendered
+        assert "- equipment_id=" in prompt  # rows rendered as lines, not JSON
 
     async def test_llm_budget_is_enforced(self, client, runtime):
         fn = _fn(
@@ -283,10 +283,10 @@ class TestRuntime:
         fn = _fn(
             runtime="declarative",
             steps=[
-                FunctionStep(id="a", kind="read", object="work-center", limit=1),
+                FunctionStep(id="a", kind="read", object="equipment", limit=1),
                 FunctionStep(id="b", kind="llm", prompt="x"),
             ],
-            capabilities=[Capability(**{"read-objects": ["work-center"]}), Capability(**{"llm": True})],
+            capabilities=[Capability(**{"read-objects": ["equipment"]}), Capability(**{"llm": True})],
         )
         out = await self._run(client, runtime, fn, {})
         assert set(out) == {"a", "b"} and out["b"] == "ADVICE"
@@ -395,8 +395,8 @@ class TestDispatcher:
         fn = _fn(
             runtime="declarative",
             returns_step="rows",
-            steps=[FunctionStep(id="rows", kind="read", object="work-center", limit=1)],
-            capabilities=[Capability(**{"read-objects": ["work-center"]})],
+            steps=[FunctionStep(id="rows", kind="read", object="equipment", limit=1)],
+            capabilities=[Capability(**{"read-objects": ["equipment"]})],
         )
         async with sc.sessionmaker() as session:
             values = await sc.functions.map_rows(session, fn, [{"obj": 1}, {"obj": 2}])
@@ -441,9 +441,10 @@ class TestFunctionBoundaryRule:
 
     A function declares *which object types* it may read (``read-objects``); it
     does not get property-level masks, because it is not a reader. The domain
-    package's own functions (capacity-check, material-availability, order-yield)
-    are the proof: they read whole rows by capability. This test exists so the
-    rule is a decision someone makes rather than something that drifts.
+    package's own functions (requirement-impact, analyze-yield-loss,
+    analyze-field-failure, yield-pareto) are the proof: they read whole rows by
+    capability. This test exists so the rule is a decision someone makes rather
+    than something that drifts.
     """
 
     async def test_a_code_function_reads_the_same_rows_a_declarative_one_does(self, client, tmp_path):
@@ -452,12 +453,12 @@ class TestFunctionBoundaryRule:
         from ontogeny.core.models import FunctionResource, FunctionSpec, ResourceMeta
 
         _, sc = client
-        await sc.sync("work-center")
+        await sc.sync("equipment")
         src = tmp_path / "peek.py"
         src.write_text(
             textwrap.dedent("""
             def peek() -> dict:
-                rows = ontogeny.query("work-center", limit=1)
+                rows = ontogeny.query("equipment", limit=1)
                 return rows[0] if rows else {}
         """),
             encoding="utf-8",
@@ -470,13 +471,13 @@ class TestFunctionBoundaryRule:
                 runtime="python",
                 entry=f"{src}:peek",
                 parameters={},
-                capabilities=[Capability(**{"read-objects": ["work-center"]})],
+                capabilities=[Capability(**{"read-objects": ["equipment"]})],
             ),
         )
         async with sc.sessionmaker() as session:
             row = await sc.functions.run(session, fn, {})
         # identical to the declarative read above: capability-scoped, whole rows
-        assert row.get("site") == "plant-north"
+        assert row.get("site") == "fab-site-a"
 
 
 class TestLlmBudgetParsing:
@@ -519,7 +520,7 @@ class TestFunctionSourceEditing:
             "apiVersion: ontogeny/v1\nkind: Function\n"
             f"metadata: {{name: {name}}}\n"
             f"spec:\n  runtime: python\n  entry: {name}.py:{name}\n"
-            "  capabilities:\n  - read-objects: [work-center]\n",
+            "  capabilities:\n  - read-objects: [equipment]\n",
             encoding="utf-8",
         )
         await sc.publish(str(sc.package_root), created_by="test")
@@ -642,7 +643,7 @@ class TestFunctionSourceTesting:
             "apiVersion: ontogeny/v1\nkind: Function\n"
             f"metadata: {{name: {name}}}\n"
             f"spec:\n  runtime: python\n  entry: {name}.py:{name}\n"
-            "  capabilities:\n  - read-objects: [work-center]\n",
+            "  capabilities:\n  - read-objects: [equipment]\n",
             encoding="utf-8",
         )
         await sc.publish(str(sc.package_root), created_by="test")
@@ -732,37 +733,37 @@ class TestSmokeParams:
     """
 
     async def test_a_primary_key_parameter_gets_a_real_id(self, client, tmp_path):
-        """`work_center_id` is answered with a row that exists, so the function's
+        """`equipment_id` is answered with a row that exists, so the function's
         own logic runs instead of bailing out on "not found"."""
         _, sc = client
-        await sc.sync("work-center")
+        await sc.sync("equipment")
         _fn, _src = await TestFunctionSourceEditing()._python_fn(sc, tmp_path, name="pk-probe")
 
-        # a function whose only parameter names the work centre primary key
+        # a function whose only parameter names the equipment primary key
         (Path(sc.package_root) / "functions" / "pk-probe.yaml").write_text(
             "apiVersion: ontogeny/v1\nkind: Function\nmetadata: {name: pk-probe}\n"
             "spec:\n  runtime: python\n  entry: pk_probe.py:pk_probe\n"
-            "  parameters:\n    work_center_id: {type: string, required: true}\n"
-            "  capabilities:\n  - read-objects: [work-center]\n",
+            "  parameters:\n    equipment_id: {type: string, required: true}\n"
+            "  capabilities:\n  - read-objects: [equipment]\n",
             encoding="utf-8",
         )
         (Path(sc.package_root) / "functions" / "pk_probe.py").write_text(
-            "def pk_probe(work_center_id: str = '') -> dict:\n"
-            "    rows = ontogeny.query('work-center', filter={'work_center_id': work_center_id}, limit=1)\n"
-            "    return {'found': len(rows), 'id': work_center_id}\n",
+            "def pk_probe(equipment_id: str = '') -> dict:\n"
+            "    rows = ontogeny.query('equipment', filter={'equipment_id': equipment_id}, limit=1)\n"
+            "    return {'found': len(rows), 'id': equipment_id}\n",
             encoding="utf-8",
         )
         await sc.publish(str(sc.package_root), created_by="test")
 
         code = (
-            "def pk_probe(work_center_id: str = '') -> dict:\n"
-            "    rows = ontogeny.query('work-center', filter={'work_center_id': work_center_id}, limit=1)\n"
-            "    return {'found': len(rows), 'id': work_center_id}\n"
+            "def pk_probe(equipment_id: str = '') -> dict:\n"
+            "    rows = ontogeny.query('equipment', filter={'equipment_id': equipment_id}, limit=1)\n"
+            "    return {'found': len(rows), 'id': equipment_id}\n"
         )
         out = await sc.test_function_source("pk-probe", code)
         assert out["ok"] is True, out
-        assert out["params"]["work_center_id"] == "WC-01"
-        assert "real id" in out["param_sources"]["work_center_id"]
+        assert out["params"]["equipment_id"] == "EQ-02"
+        assert "real id" in out["param_sources"]["equipment_id"]
         assert out["value"]["found"] == 1, "the function read a row that exists"
 
     async def test_defaults_and_type_samples_fill_the_rest(self, client, tmp_path):
@@ -776,7 +777,7 @@ class TestSmokeParams:
             spec=FunctionSpec(
                 runtime="python",
                 entry="probe.py:run",
-                capabilities=[Capability(**{"read-objects": ["work-center"]})],
+                capabilities=[Capability(**{"read-objects": ["equipment"]})],
                 parameters={
                     "window_days": ParamDef(type="integer", default=30),
                     "kind": ParamDef(type="enum[LOW, HIGH]", required=True),

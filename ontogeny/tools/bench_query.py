@@ -109,7 +109,7 @@ async def main() -> None:
 
     tmp = Path(tempfile.mkdtemp(prefix="ontogeny-bench-"))
     try:
-        pkg_src = Path(os.environ.get("ONTOGENY_BENCH_PACKAGE") or REPO / "domains" / "product-manufacturing")
+        pkg_src = Path(os.environ.get("ONTOGENY_BENCH_PACKAGE") or REPO / "domains" / "chip-lifecycle")
         pkg = tmp / "pkg"
         shutil.copytree(pkg_src, pkg)
         src = tmp / "src.db"

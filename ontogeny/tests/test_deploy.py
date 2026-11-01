@@ -244,7 +244,7 @@ async def test_container_copy_mode_boots_from_its_configured_package_volume(gold
     try:
         await sc.initialize()
         assert Path(sc.compiled.package_root).resolve() == (data / "pkg").resolve()
-        assert sc.compiled.package_name == "product-manufacturing"
+        assert sc.compiled.package_name == "chip-lifecycle"
     finally:
         await sc.engine.dispose()
 

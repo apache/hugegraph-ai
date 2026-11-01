@@ -224,6 +224,7 @@ cython_debug/
 .ontogeny-*/
 admin-bootstrap-password
 .kina-*/
+ontogeny/.docs/
 __pycache__/
 *.pyc
 .pytest_cache/

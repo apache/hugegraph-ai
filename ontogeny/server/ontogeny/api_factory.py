@@ -82,7 +82,14 @@ def create_app_factory():
             await sc.initialize()
             if os.environ.get("ONTOGENY_DEMO_POPULATE") == "1" and sc.package_root:
                 total = 0
-                for object_type in sc.compiled.objects if sc.compiled else {}:
+                # document-extract types pull no rows: their corpus is
+                # extracted, bound and committed by the document plane
+                syncable = [
+                    name
+                    for name, obj in (sc.compiled.objects if sc.compiled else {}).items()
+                    if not (obj.spec.backing and obj.spec.backing.sync and obj.spec.backing.sync.strategy == "extract")
+                ]
+                for object_type in syncable:
                     async with sc.sessionmaker() as s:
                         summary = await sc.sync_engine.sync(s, object_type)
                         await s.commit()

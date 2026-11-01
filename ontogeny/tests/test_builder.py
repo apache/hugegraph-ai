@@ -51,9 +51,9 @@ INSPECTION_POINT = {
             "cycle_days": {"type": "integer"},
         },
         "backing": {
-            "store": "mes",
+            "store": "fab",
             "mode": "materialized",
-            "source": {"schema": "mes", "table": "inspection_point"},
+            "source": {"schema": "fab", "table": "inspection_point"},
             "mapping": {},
             "sync": {"strategy": "snapshot"},
         },
@@ -67,7 +67,7 @@ INSPECTION_POLICY = {
     "spec": {
         "language": "cedar",
         # inline text on the wire; must land as policies/<name>.cedar on disk
-        "source": 'permit(principal, action == Action::"record-inspection", resource);',
+        "source": 'permit(principal, action == Action::"record-wafer-test", resource);',
     },
 }
 
@@ -95,7 +95,7 @@ async def client(golden_pkg_path, tmp_path):
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={
             "ERP_DSN": f"sqlite+aiosqlite:///{src}",
-            "WMS_WEBHOOK": "https://wms.example.test/hook",
+            "FAB_WEBHOOK": "https://fab-portal.example.test/hook",
             "SCENARIO_DSN": f"sqlite+aiosqlite:///{tmp_path / 'scenario.db'}",
         },
     )
@@ -123,7 +123,7 @@ def _save(c, resources, deletes=None, layout=None):
 class TestBuilderSave:
     async def test_partial_save_writes_yaml_and_publishes(self, client):
         c, _sc, pkg = client
-        work_center_yaml = (pkg / "objects" / "work-center.yaml").read_bytes()
+        equipment_yaml = (pkg / "objects" / "equipment.yaml").read_bytes()
 
         r = await _save(c, [SCENARIO_STORE, INSPECTION_POINT])
         assert r.status_code == 200, r.text
@@ -133,7 +133,7 @@ class TestBuilderSave:
         assert body["removed"] == []
 
         # untouched golden YAML is byte-identical (no lossy meta rewrite)
-        assert (pkg / "objects" / "work-center.yaml").read_bytes() == work_center_yaml
+        assert (pkg / "objects" / "equipment.yaml").read_bytes() == equipment_yaml
         # the new object landed as its own file and is live in the meta
         assert (pkg / "objects" / "inspection-point.yaml").is_file()
         meta = (await c.get("/api/v1/meta/ontology")).json()
@@ -152,12 +152,12 @@ class TestBuilderSave:
         assert doc["spec"]["source"] == "inspection-policy.cedar"  # file ref, not inline
 
         # live snapshot AND a cold restart both resolve the rule text
-        assert "record-inspection" in sc.compiled.cedar_texts["inspection-policy"]
+        assert "record-wafer-test" in sc.compiled.cedar_texts["inspection-policy"]
         from ontogeny.core import load_package
         from ontogeny.registry.compiled import compile_package
 
         recompiled = compile_package(load_package(pkg))
-        assert "record-inspection" in recompiled.cedar_texts["inspection-policy"]
+        assert "record-wafer-test" in recompiled.cedar_texts["inspection-policy"]
 
     async def test_deletes_remove_files_and_publish(self, client):
         c, _sc, pkg = client
@@ -289,25 +289,25 @@ class TestBuilderResources:
         }
 
         # a function keeps its capability VALUES, not just the capability name
-        fn = by_key["Function/capacity-check"]
+        fn = by_key["Function/analyze-yield-loss"]
         assert fn["spec"]["runtime"] == "python"
-        assert fn["spec"]["entry"] == "capacity.py:capacity_check"
+        assert fn["spec"]["entry"] == "analyze_yield_loss.py:analyze_yield_loss"
         assert fn["spec"]["returns"]["type"] == "string"
-        assert fn["spec"]["capabilities"] == [{"read-objects": ["work-center", "production-order"]}]
+        assert fn["spec"]["capabilities"] == [{"read-objects": ["wafer-test", "wafer-lot"]}]
 
         # a projection keeps the endpoint, per-object property lists and indexes
-        prj = by_key["Projection/production-graph"]
+        prj = by_key["Projection/production-lifecycle-graph"]
         assert prj["spec"]["endpoint"] == "${HUGEGRAPH_URL}"
-        assert prj["spec"]["include"]["objects"]["production-order"]["properties"] == ["qty", "status", "priority"]
+        assert prj["spec"]["include"]["objects"]["wafer-lot"]["properties"] == ["qty_wafers", "status", "site"]
         assert prj["spec"]["indexes"] == [
-            {"object": "production-order", "property": "status"},
-            {"object": "operation", "property": "status"},
-            {"object": "work-center", "property": "status"},
+            {"object": "wafer-lot", "property": "status"},
+            {"object": "process-step", "property": "status"},
+            {"object": "field-failure", "property": "status"},
         ]
 
         # a policy carries its Cedar TEXT inline (the save endpoint turns it
         # back into policies/<name>.cedar)
-        pol = by_key["PolicySet/production"]
+        pol = by_key["PolicySet/lifecycle"]
         assert "permit(" in pol["spec"]["source"]
 
     async def test_round_trip_edit_does_not_strip_untouched_spec_fields(self, client):
@@ -318,8 +318,8 @@ class TestBuilderResources:
             for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]
         }
 
-        edited = json.loads(json.dumps(before["Function/capacity-check"]))
-        edited["metadata"]["display"] = "Capacity check (edited)"
+        edited = json.loads(json.dumps(before["Function/analyze-yield-loss"]))
+        edited["metadata"]["display"] = "Analyze yield loss (edited)"
         r = await _save(c, [edited])
         assert r.status_code == 200, r.text
 
@@ -327,12 +327,12 @@ class TestBuilderResources:
             f"{x['kind']}/{x['metadata']['name']}": x
             for x in (await c.get("/api/v1/admin/builder/resources")).json()["resources"]
         }
-        assert after["Function/capacity-check"]["metadata"]["display"] == "Capacity check (edited)"
+        assert after["Function/analyze-yield-loss"]["metadata"]["display"] == "Analyze yield loss (edited)"
         # the fields the editor never touched survive the round-trip
-        assert after["Function/capacity-check"]["spec"] == before["Function/capacity-check"]["spec"]
+        assert after["Function/analyze-yield-loss"]["spec"] == before["Function/analyze-yield-loss"]["spec"]
         # and so does every other resource
         for key, res in before.items():
-            if key == "Function/capacity-check":
+            if key == "Function/analyze-yield-loss":
                 continue
             assert after[key] == res, key
 
@@ -343,18 +343,18 @@ class TestCanvasLayout:
 
     async def test_layout_roundtrips_through_save_and_resources(self, client):
         c, _sc, pkg = client
-        r = await _save(c, [], layout={"type:work-center": {"x": 120, "y": 80}})
+        r = await _save(c, [], layout={"type:equipment": {"x": 120, "y": 80}})
         assert r.status_code == 200, r.text
 
         # the sidecar lives with the package, next to ontology.yaml, and the
         # editor seed answers it back
         assert (pkg / "layout.yaml").is_file()
         res = await c.get("/api/v1/admin/builder/resources")
-        assert res.json()["layout"]["type:work-center"] == {"x": 120, "y": 80}
+        assert res.json()["layout"]["type:equipment"] == {"x": 120, "y": 80}
 
     async def test_empty_layout_removes_the_sidecar(self, client):
         c, _sc, pkg = client
-        await _save(c, [], layout={"type:work-center": {"x": 1, "y": 2}})
+        await _save(c, [], layout={"type:equipment": {"x": 1, "y": 2}})
         assert (pkg / "layout.yaml").is_file()
 
         r = await _save(c, [], layout={})  # "reset to automatic layout"
@@ -365,11 +365,11 @@ class TestCanvasLayout:
 
     async def test_save_without_layout_key_keeps_stored_positions(self, client):
         c, _sc, _pkg = client
-        await _save(c, [], layout={"type:work-center": {"x": 1, "y": 2}})
+        await _save(c, [], layout={"type:equipment": {"x": 1, "y": 2}})
         await _save(c, [INSPECTION_POINT])  # a plain resource save: no layout key
 
         res = await c.get("/api/v1/admin/builder/resources")
-        assert res.json()["layout"]["type:work-center"] == {"x": 1, "y": 2}
+        assert res.json()["layout"]["type:equipment"] == {"x": 1, "y": 2}
 
     async def test_malformed_positions_are_dropped_not_fatal(self, client):
         c, _sc, _pkg = client

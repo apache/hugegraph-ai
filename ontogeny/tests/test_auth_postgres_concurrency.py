@@ -103,5 +103,5 @@ async def test_concurrent_admin_removal_preserves_last_admin(pg_auth, monkeypatc
             await session.scalars(select(UserRow).where(UserRow.is_admin.is_(True), UserRow.status == "active"))
         ).all()
         assert len(admins) == 1
-    user = await pg_auth.update_user("member", {"display": "Updated", "roles": ["operator"]})
-    assert user["display"] == "Updated" and user["roles"] == ["operator"]
+    user = await pg_auth.update_user("member", {"display": "Updated", "roles": ["fab"]})
+    assert user["display"] == "Updated" and user["roles"] == ["fab"]

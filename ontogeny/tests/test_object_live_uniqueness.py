@@ -40,13 +40,13 @@ async def test_existing_table_gets_index_and_allows_historical_versions(golden_p
     compiled = compile_package(load_package(golden_pkg_path))
     engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'old.db'}")
     repo, maker = ObjectRepository(compiled), make_sessionmaker(engine)
-    table = repo._table("material")
+    table = repo._table("tapeout-version")
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                f'CREATE TABLE "{table.name}" (material_id TEXT NOT NULL, name TEXT NOT NULL, '
+                f'CREATE TABLE "{table.name}" (version_id TEXT NOT NULL, project TEXT NOT NULL, '
                 "_rev INTEGER NOT NULL, _valid_from DATETIME NOT NULL, _valid_to DATETIME, "
-                "_synced_at DATETIME, PRIMARY KEY(material_id, _valid_from))"
+                "_synced_at DATETIME, PRIMARY KEY(version_id, _valid_from))"
             )
         )
     async with maker() as db:
@@ -56,9 +56,9 @@ async def test_existing_table_gets_index_and_allows_historical_versions(golden_p
         names = await conn.run_sync(lambda c: [i["name"] for i in inspect(c).get_indexes(table.name)])
     assert live_index_name(table.name) in names
     async with maker() as db:
-        await repo.action_insert(db, "material", {"material_id": "M-new", "name": "one"}, utcnow())
-        await repo.action_update(db, "material", "M-new", {"name": "two"}, utcnow())
-        assert len(await repo.history(db, "material", "M-new")) == 2
+        await repo.action_insert(db, "tapeout-version", {"version_id": "TO-NEW", "project": "one"}, utcnow())
+        await repo.action_update(db, "tapeout-version", "TO-NEW", {"project": "two"}, utcnow())
+        assert len(await repo.history(db, "tapeout-version", "TO-NEW")) == 2
         await db.commit()
     await engine.dispose()
 
@@ -67,20 +67,20 @@ async def test_duplicate_old_rows_block_migration_without_deletion(golden_pkg_pa
     compiled = compile_package(load_package(golden_pkg_path))
     engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'old-duplicates.db'}")
     repo, maker = ObjectRepository(compiled), make_sessionmaker(engine)
-    table = repo._table("material")
+    table = repo._table("tapeout-version")
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                f'CREATE TABLE "{table.name}" (material_id TEXT NOT NULL, name TEXT NOT NULL, '
+                f'CREATE TABLE "{table.name}" (version_id TEXT NOT NULL, project TEXT NOT NULL, '
                 "_rev INTEGER NOT NULL, _valid_from DATETIME NOT NULL, _valid_to DATETIME, "
-                "_synced_at DATETIME, PRIMARY KEY(material_id, _valid_from))"
+                "_synced_at DATETIME, PRIMARY KEY(version_id, _valid_from))"
             )
         )
         await conn.execute(
             text(
                 f'INSERT INTO "{table.name}" VALUES '
-                "('M-dup','first',1,'2026-01-01',NULL,NULL), "
-                "('M-dup','second',2,'2026-01-02',NULL,NULL)"
+                "('TO-DUP','first',1,'2026-01-01',NULL,NULL), "
+                "('TO-DUP','second',2,'2026-01-02',NULL,NULL)"
             )
         )
     async with maker() as db:
@@ -98,14 +98,14 @@ async def test_constraint_conflict_does_not_poison_transaction(golden_pkg_path, 
     repo, maker = ObjectRepository(compiled), make_sessionmaker(engine)
     async with maker() as db:
         await repo.ensure(db)
-        await repo.action_insert(db, "material", {"material_id": "M-new", "name": "one"}, utcnow())
-        table = repo._table("material")
-        values = {"material_id": "M-new", "name": "two", "_rev": 1, "_valid_from": utcnow(), "_valid_to": None}
+        await repo.action_insert(db, "tapeout-version", {"version_id": "TO-NEW", "project": "one"}, utcnow())
+        table = repo._table("tapeout-version")
+        values = {"version_id": "TO-NEW", "project": "two", "_rev": 1, "_valid_from": utcnow(), "_valid_to": None}
         with pytest.raises(ConflictError):
-            await repo._insert_current(db, table, "material", values)
+            await repo._insert_current(db, table, "tapeout-version", values)
         assert (await db.execute(select(func.count()).select_from(table))).scalar_one() == 1
         with pytest.raises(IntegrityError):
-            await repo._insert_current(db, table, "material", values | {"material_id": None})
+            await repo._insert_current(db, table, "tapeout-version", values | {"version_id": None})
         await db.commit()
     await engine.dispose()
 
@@ -118,24 +118,24 @@ async def test_create_is_rolled_back_with_outer_transaction(golden_pkg_path, tmp
         await repo.ensure(db)
         await db.commit()
     async with maker() as db:
-        await repo.action_insert(db, "material", {"material_id": "M-rollback", "name": "one"}, utcnow())
+        await repo.action_insert(db, "tapeout-version", {"version_id": "TO-ROLLBACK", "project": "one"}, utcnow())
         await db.rollback()
     async with maker() as db:
-        assert await repo.get(db, "material", "M-rollback") is None
+        assert await repo.get(db, "tapeout-version", "TO-ROLLBACK") is None
     await engine.dispose()
 
 
 async def test_unique_index_uses_all_business_key_columns(golden_pkg_path, tmp_path):
     compiled = replace(compile_package(load_package(golden_pkg_path)), content_hash=uuid.uuid4().hex)
-    compiled.objects["material"].spec.primaryKey = ["material_id", "name"]
+    compiled.objects["tapeout-version"].spec.primaryKey = ["version_id", "project"]
     engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'composite.db'}")
     repo, maker = ObjectRepository(compiled), make_sessionmaker(engine)
     async with maker() as db:
         await repo.ensure(db)
-        await repo.action_insert(db, "material", {"material_id": "M-composite", "name": "one"}, utcnow())
-        await repo.action_insert(db, "material", {"material_id": "M-composite", "name": "two"}, utcnow())
+        await repo.action_insert(db, "tapeout-version", {"version_id": "TO-COMPOSITE", "project": "one"}, utcnow())
+        await repo.action_insert(db, "tapeout-version", {"version_id": "TO-COMPOSITE", "project": "two"}, utcnow())
         with pytest.raises(ConflictError):
-            await repo.action_insert(db, "material", {"material_id": "M-composite", "name": "one"}, utcnow())
+            await repo.action_insert(db, "tapeout-version", {"version_id": "TO-COMPOSITE", "project": "one"}, utcnow())
         await db.commit()
     await engine.dispose()
 
@@ -148,7 +148,7 @@ async def test_postgres_concurrent_creates_one_live_version(
 ):
     monkeypatch.setenv("ONTOGENY_ADMIN_PASSWORD", secrets.token_urlsafe(32))
     sc = await _make(golden_pkg_path, tmp_path, db_dsn=os.environ["ONTOGENY_PG_DSN"])
-    key = "M-" + uuid.uuid4().hex
+    key = "TO-" + uuid.uuid4().hex
     original = sc.repo._insert_current
     ready = asyncio.Event()
     arrived = 0
@@ -167,12 +167,12 @@ async def test_postgres_concurrent_creates_one_live_version(
     async def create():
         async with sc.sessionmaker() as db:
             try:
-                props = {"material_id": key, "name": "race"}
+                props = {"version_id": key, "project": "race"}
                 ts = timestamp if same_timestamp else utcnow()
                 if method == "action":
-                    await sc.repo.action_insert(db, "material", props, ts)
+                    await sc.repo.action_insert(db, "tapeout-version", props, ts)
                 else:
-                    await sc.repo.sync_upsert(db, "material", props, ts)
+                    await sc.repo.sync_upsert(db, "tapeout-version", props, ts)
             except ConflictError:
                 # The savepoint has rolled back the failed statement; the
                 # caller can still use and roll back the outer transaction.
@@ -184,13 +184,13 @@ async def test_postgres_concurrent_creates_one_live_version(
 
     try:
         assert sorted(await asyncio.gather(create(), create())) == ["conflict", "created"]
-        table = sc.repo._table("material")
+        table = sc.repo._table("tapeout-version")
         async with sc.sessionmaker() as db:
             count = (
                 await db.execute(
                     select(func.count())
                     .select_from(table)
-                    .where(table.c.material_id == key, table.c._valid_to.is_(None))
+                    .where(table.c.version_id == key, table.c._valid_to.is_(None))
                 )
             ).scalar_one()
         assert count == 1

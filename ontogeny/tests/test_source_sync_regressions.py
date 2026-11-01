@@ -77,32 +77,32 @@ async def test_watermark_ties_cross_every_batch_without_omissions(tmp_path, prim
 async def test_sync_checkpoints_only_after_entire_equal_watermark_group(env):
     with sqlite3.connect(env["src"]) as db:
         db.executemany(
-            "INSERT INTO production_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [(f"PO-TIE-{i:04d}", "P-100", 5, "PLANNED", "NORMAL", "2026-12-01", NOW, None, NOW) for i in range(1100)],
+            "INSERT INTO wafer_lots VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(f"LOT-TIE-{i:04d}", "TO-A0", 5, None, "fab-site-a", None, NOW, NOW) for i in range(1100)],
         )
     async with env["maker"]() as session:
-        summary = await env["sync"].sync(session, "production-order")
+        summary = await env["sync"].sync(session, "wafer-lot")
         await session.commit()
         state = (await session.execute(select(SyncStateRow))).scalar_one()
         assert state.watermark == NOW
-        assert len(await env["repo"].alive_ids(session, "production-order")) == 1102
+        assert len(await env["repo"].alive_ids(session, "wafer-lot")) == 1102
     assert summary["inserted"] == 1102
     async with env["maker"]() as session:
-        repeated = await env["sync"].sync(session, "production-order")
+        repeated = await env["sync"].sync(session, "wafer-lot")
         await session.commit()
     # The scalar checkpoint deliberately replays its boundary; unchanged
     # objects remain at their original revision via idempotent upserts.
     assert repeated == {"inserted": 0, "updated": 0, "noop": 1102, "archived": 0, "quarantined": 0}
     with sqlite3.connect(env["src"]) as db:
         db.execute(
-            "INSERT INTO production_orders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("PO-LATE", "P-100", 5, "PLANNED", "NORMAL", "2026-12-01", NOW, None, NOW),
+            "INSERT INTO wafer_lots VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("LOT-LATE", "TO-A0", 5, None, "fab-site-a", None, NOW, NOW),
         )
     async with env["maker"]() as session:
-        late = await env["sync"].sync(session, "production-order")
+        late = await env["sync"].sync(session, "wafer-lot")
         await session.commit()
-        assert await env["repo"].get(session, "production-order", "PO-LATE") is not None
-        unchanged = await env["repo"].get(session, "production-order", "PO-1")
+        assert await env["repo"].get(session, "wafer-lot", "LOT-LATE") is not None
+        unchanged = await env["repo"].get(session, "wafer-lot", "LOT-1")
         assert unchanged["_rev"] == 1
     assert late["inserted"] == 1 and late["noop"] == 1102
 
@@ -111,29 +111,29 @@ async def test_sync_checkpoints_only_after_entire_equal_watermark_group(env):
 async def test_snapshot_bad_update_preserves_last_good_object_but_archives_absent_row(env, mapped_key):
     if mapped_key:
         with sqlite3.connect(env["src"]) as db:
-            db.execute("ALTER TABLE work_centers ADD COLUMN source_key TEXT")
-            db.execute("UPDATE work_centers SET source_key=work_center_id")
-        env["compiled"].objects["work-center"].spec.backing.mapping["work_center_id"] = "source_key"
+            db.execute("ALTER TABLE equipment ADD COLUMN source_key TEXT")
+            db.execute("UPDATE equipment SET source_key=equipment_id")
+        env["compiled"].objects["equipment"].spec.backing.mapping["equipment_id"] = "source_key"
     async with env["maker"]() as session:
-        await env["sync"].sync(session, "work-center")
+        await env["sync"].sync(session, "equipment")
         await session.commit()
-        original = await env["repo"].get(session, "work-center", "WC-01")
+        original = await env["repo"].get(session, "equipment", "EQ-01")
     with sqlite3.connect(env["src"]) as db:
-        db.execute("UPDATE work_centers SET status='INVALID', name='must not land' WHERE work_center_id='WC-01'")
-        db.execute("DELETE FROM work_centers WHERE work_center_id='WC-03'")
+        db.execute("UPDATE equipment SET status='INVALID', name='must not land' WHERE equipment_id='EQ-01'")
+        db.execute("DELETE FROM equipment WHERE equipment_id='EQ-03'")
     async with env["maker"]() as session:
-        summary = await env["sync"].sync(session, "work-center")
+        summary = await env["sync"].sync(session, "equipment")
         await session.commit()
-        preserved = await env["repo"].get(session, "work-center", "WC-01")
-        alive = await env["repo"].alive_ids(session, "work-center")
+        preserved = await env["repo"].get(session, "equipment", "EQ-01")
+        alive = await env["repo"].alive_ids(session, "equipment")
         quarantined = (await session.execute(select(QuarantineRow))).scalars().all()
         archives = (await session.execute(select(OutboxRow).where(OutboxRow.op == "archive"))).scalars().all()
     assert summary["quarantined"] == 1
     assert summary["archived"] == 1
     assert preserved == original
-    assert alive == {"WC-01", "WC-02"}
-    assert [row.source_pk for row in quarantined] == ["WC-01"]
-    assert [row.object_id for row in archives] == ["WC-03"]
+    assert alive == {"EQ-01", "EQ-02"}
+    assert [row.source_pk for row in quarantined] == ["EQ-01"]
+    assert [row.object_id for row in archives] == ["EQ-03"]
 
 
 async def test_snapshot_presence_uses_canonical_integer_key_when_other_fields_are_invalid(env):
@@ -148,7 +148,7 @@ async def test_snapshot_presence_uses_canonical_integer_key_when_other_fields_ar
                 "primaryKey": ["id"],
                 "properties": {"id": {"type": "integer", "required": True}, "count": {"type": "integer"}},
                 "backing": {
-                    "store": "mes",
+                    "store": "fab",
                     "source": {"table": "numeric_input"},
                     "mapping": {"id": "source_key"},
                     "sync": {"strategy": "snapshot"},

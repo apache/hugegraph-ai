@@ -32,44 +32,44 @@ class TestForbidSemantics:
     def _engine(self, cedar: str):
         from ontogeny.registry.compiled import compile_package
 
-        pkg = copy.deepcopy(load_package("domains/product-manufacturing"))
+        pkg = copy.deepcopy(load_package("domains/chip-lifecycle"))
         pkg.source_texts[("PolicySet", "default")] = cedar
         return PolicyEngine(compile_package(pkg))
 
     def test_forbid_overrides_permit(self):
         eng = self._engine(
-            'permit(principal, action == Action::"release-production-order", resource);\n'
-            'forbid(principal, action == Action::"release-production-order", resource)\n'
-            '  when { resource.status == "RELEASED" };'
+            'permit(principal, action == Action::"tapeout", resource);\n'
+            'forbid(principal, action == Action::"tapeout", resource)\n'
+            '  when { resource.status == "FAB" };'
         )
-        d = eng.decide({"id": "u", "Role": ["planner"]}, "release-production-order", {"status": "RELEASED"})
+        d = eng.decide({"id": "u", "Role": ["product"]}, "tapeout", {"status": "FAB"})
         assert d.allow is False and "forbid overrides permit" in d.reason
 
     def test_forbid_not_matching_still_permits(self):
         eng = self._engine(
-            'permit(principal, action == Action::"release-production-order", resource);\n'
-            'forbid(principal, action == Action::"release-production-order", resource)\n'
-            '  when { resource.status == "RELEASED" };'
+            'permit(principal, action == Action::"tapeout", resource);\n'
+            'forbid(principal, action == Action::"tapeout", resource)\n'
+            '  when { resource.status == "FAB" };'
         )
-        d = eng.decide({"id": "u", "Role": ["planner"]}, "release-production-order", {"status": "PLANNED"})
+        d = eng.decide({"id": "u", "Role": ["product"]}, "tapeout", {"status": "PLANNED"})
         assert d.allow is True
 
     def test_forbid_role_scoped(self):
         eng = self._engine(
-            'permit(principal, action == Action::"release-production-order", resource);\n'
-            'forbid(principal in Role::"auditor", action == Action::"release-production-order", resource);'
+            'permit(principal, action == Action::"tapeout", resource);\n'
+            'forbid(principal in Role::"auditor", action == Action::"tapeout", resource);'
         )
-        assert eng.decide({"id": "u", "Role": ["auditor"]}, "release-production-order", {}).allow is False
-        assert eng.decide({"id": "u", "Role": ["planner"]}, "release-production-order", {}).allow is True
+        assert eng.decide({"id": "u", "Role": ["auditor"]}, "tapeout", {}).allow is False
+        assert eng.decide({"id": "u", "Role": ["product"]}, "tapeout", {}).allow is True
 
     def test_parse_forbids_counts(self):
         assert len(parse_forbids('forbid(principal, action == Action::"x", resource);')) == 1
         assert parse_forbids('permit(principal, action == Action::"x", resource);') == []
 
     def test_unparseable_forbid_refused_at_publish(self):
-        pkg = copy.deepcopy(load_package("domains/product-manufacturing"))
+        pkg = copy.deepcopy(load_package("domains/chip-lifecycle"))
         pkg.source_texts[("PolicySet", "default")] = (
-            'forbid(principal, action == Action::"release-production-order", resource) when {{ broken'
+            'forbid(principal, action == Action::"tapeout", resource) when {{ broken'
         )
         rep = validate(pkg)
         assert any(i.code == "POLICY-FORBID" for i in rep.issues), (
@@ -84,28 +84,28 @@ class TestForbidSemantics:
 
 class TestDerivedMarkingPropagation:
     def test_derived_from_marked_requires_marking(self):
-        pkg = copy.deepcopy(load_package("domains/product-manufacturing"))
-        obj = pkg.find("ObjectType", "material")
+        pkg = copy.deepcopy(load_package("domains/chip-lifecycle"))
+        obj = pkg.find("ObjectType", "tapeout-version")
         from ontogeny.core.models import PropertyDef
 
         obj.spec.properties["cost_hint"] = PropertyDef(
             type="decimal(10,2)",
             display="cost hint",
-            derived="target.unit_cost * 1.1",  # unit_cost carries marking: internal
+            derived="target.mask_cost * 1.1",  # mask_cost carries marking: internal
         )
         rep = validate(pkg)
         assert any(i.code == "DERIVED-MARKING" for i in rep.issues)
 
     def test_derived_with_marking_passes(self):
-        pkg = copy.deepcopy(load_package("domains/product-manufacturing"))
-        obj = pkg.find("ObjectType", "material")
+        pkg = copy.deepcopy(load_package("domains/chip-lifecycle"))
+        obj = pkg.find("ObjectType", "tapeout-version")
         from ontogeny.core.models import PropertyDef
 
         obj.spec.properties["cost_hint"] = PropertyDef(
             type="decimal(10,2)",
             display="cost hint",
             marking="internal",
-            derived="target.unit_cost * 1.1",
+            derived="target.mask_cost * 1.1",
         )
         rep = validate(pkg)
         assert not any(i.code == "DERIVED-MARKING" for i in rep.issues)
@@ -120,7 +120,7 @@ class TestSessionDeletionGuards:
 
         async with sc.sessionmaker() as s:
             row = AgentSessionRow(
-                plugin="planning-copilot",
+                plugin="product-copilot",
                 task="t",
                 status="open",
                 principal=f"agent:x-{driver_id}",
@@ -161,9 +161,9 @@ class TestSessionDeletionGuards:
             s.add(
                 AgentApprovalRow(
                     session_id=sid,
-                    plugin="planning-copilot",
-                    tool="act_release_production_order",
-                    action="release-production-order",
+                    plugin="product-copilot",
+                    tool="act_tapeout",
+                    action="tapeout",
                     parameters={},
                     status="pending",
                 )

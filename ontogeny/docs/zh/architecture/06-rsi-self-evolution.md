@@ -5,7 +5,7 @@
 **中文** | [English](../../en/architecture/06-rsi-self-evolution.md)
 
 
-递归改进的对象是**模型层**（ontology + action），平台宪法永不被循环触碰。变异外包给 LLM，**选择函数不外包**——这是与无界 RSI 的分界线。
+递归改进的对象是**模型层**（ontology + action），平台治理基线永不被循环触碰。变异外包给 LLM，**选择函数不外包**——这是与无界 RSI 的分界线。
 循环没有玄学，每一拍都是确定性代码 + 落库产物：**信号**来自四类检测器对遥测的规则扫描（`ontogeny_evolve_signal`），**变异**只能出自白名单（`ontogeny_evolve_proposal`，必须携带 rationale），**评测**全部确定性可求值（无 LLM-judge），**晋升**走 T0–T3 分层 + ISO 周预算（`ontogeny_evolve_budget`）。任何一拍的产物都是数据库行和 Git diff——可审计、可重放、可回滚。
 
 ## RSI 循环 · 六拍（每拍落库、每拍可独立重放）
@@ -14,7 +14,7 @@
 2. **归因**：`POST /evolve/diagnose`——diagnoser.py 把信号翻译成 gap 假设（附证据计数，marking-aware）；信息性信号只呈现给人/LLM，**不自动变异**
 3. **提案**：启发式提议器（零 LLM，缺省路径）或 LLM 提议器（Ollama 结构化 `{mutations, rationale}`）→ 写 `ontogeny_evolve_proposal`；**解析失败或无 rationale 在入口即丢弃**
 4. **评测**：`POST /evolve/proposals/{id}/eval`——EvalRunner 在**候选包副本**上跑全部 EvalSuite（线上不动）；report 与 passed 与否都写回提案行
-5. **分级晋升**：`ontogeny evolve promote {id}`——promoter 按 EvolutionPolicy 定 tier → 查周预算 → 查宪法 → T0 应用并发布 / T1·T2 出人审分支 / T3 转 `awaiting_human`
+5. **分级晋升**：`ontogeny evolve promote {id}`——promoter 按 EvolutionPolicy 定 tier → 查周预算 → 查治理基线 → T0 应用并发布 / T1·T2 出人审分支 / T3 转 `awaiting_human`
 6. **生效与回滚**：晋升即 `registry.publish` + `reload()` 热切换编译快照（新 schema 立即在线）；回滚 = `git checkout` 上一版包目录再 publish——**文件系统即版本，Git 即撤销键**
 
 ## 三阶段分览
@@ -38,7 +38,7 @@
 
 | | |
 |---|---|
-| L1 | validate / lint（结构 + 宪法红线，promoter 内执行） |
+| L1 | validate / lint（结构 + 治理基线红线，promoter 内执行） |
 | **L2** | 查询回归（**按声明 schema 校验列**，空结果不判红）+ **动作时间旅行回放**：历史修订在新规则下反事实执行，与人类真实决策比对 |
 | L3/L4 | 影子双跑 · LLM 只解释归类，**永不做通过条件**——LLM 不可复现，所以脚本是受测物 |
 
@@ -64,7 +64,7 @@
 | **T0 自动合并** | `add-optional-property` · `enum-widen` · `index-tune` | eval 全绿 + 周预算（示例包 **8 次/周**，单命名空间） | validate → 应用变异 → publish → **热切换**，全程无人 |
 | **T1 人工 PR** | 白名单外的一切安全变更 | validate | 机器落地已校验分支目录 `pkg.proposal-{id}`（无机械应用器的变异由人在分支内改），人来合、发 |
 | **T2 金丝雀** | `rule-change` · `effect-change` · `function-change` | eval 绿 + 影子 diff 干净 + **显式审批** | 同 T1 分支流程；上线后影子双跑对比，无回归才切流 |
-| **T3 仅人类** | `policy-loosen` · `marking-change` · `ownership-change` · `eval-passbar-change` · `destructive-migration` | 机器提案触碰即 `ConstitutionViolationError` | 提案转 `awaiting_human`，审计写明原因——**自动化的路径根本不存在**，不是被拦截 |
+| **T3 仅人类** | `policy-loosen` · `marking-change` · `ownership-change` · `eval-passbar-change` · `destructive-migration` | 机器提案触碰即 `BaselineViolationError` | 提案转 `awaiting_human`，审计写明原因——**自动化的路径根本不存在**，不是被拦截 |
 
 **Graduation（tier 升级）**：同类别变更连续 10 次干净晋升 + 人工批准才可 T1→T0——且这次升级本身是 T3 操作。T0 预算是按 ISO 周记的数据库行，超限抛 `BudgetExceededError`：**宁可让循环停一拍，也不让它跑快一点**。
 
@@ -91,7 +91,7 @@
 // 第 4 拍 · 评测——POST /evolve/proposals/42/eval（候选包副本上跑，线上不动）
 {"passed": true, "suites": {"production-flow-suite": {"passed": true, "cases": [
     {"name": "open-sales-orders", "kind": "query", "ok": true, "latency_ms": 2.4, "rows": 17},
-    {"name": "released-production-orders", "kind": "query", "ok": true, "latency_ms": 3.1, "rows": 8},
+    {"name": "running-lots-exist", "kind": "query", "ok": true, "latency_ms": 3.1, "rows": 2},
     {"kind": "replay", "action": "report-operation", "ok": true,
      "replays": 214, "outcome_matches": 214},                 // 累加语义，不设 no-double-close
     {"kind": "replay", "action": "close-maintenance-order", "ok": true,
@@ -124,9 +124,9 @@
 // publish + reload() 热切换后，看板的下一次查询即命中——从信号到生效，无人参与
 ```
 
-**治理边界在同一例子里同样具体**：若 LLM 提议器拿同一条信号提议"顺手把 `approve-purchase-order` 的金额上限规则放宽"（`rule-change` ∉ T0 白名单），分类器直接给 T2——落地人审分支 + 影子双跑，绝不因"顺手"自动生效；若提案触及 T3 面（例如放宽 Cedar 方向），promoter 当场抛 `ConstitutionViolationError`，提案转 `awaiting_human`。另有一条同构路径：源 ERP 新出现的枚举值（如 `status=CLOSED`）会先被同步挡进隔离区（TYPE_MISMATCH，不阻塞批次），`quarantine_rate` 信号 → `enum-widen` 提案 → 同样 T0 晋升——这正是前文"坏行进隔离区不阻塞批次（坏行率 = RSI 信号）"与循环的接点。
+**治理边界在同一例子里同样具体**：若 LLM 提议器拿同一条信号提议"顺手把 `approve-purchase-order` 的金额上限规则放宽"（`rule-change` ∉ T0 白名单），分类器直接给 T2——落地人审分支 + 影子双跑，绝不因"顺手"自动生效；若提案触及 T3 面（例如放宽 Cedar 方向），promoter 当场抛 `BaselineViolationError`，提案转 `awaiting_human`。另有一条同构路径：源 ERP 新出现的枚举值（如 `status=CLOSED`）会先被同步挡进隔离区（TYPE_MISMATCH，不阻塞批次），`quarantine_rate` 信号 → `enum-widen` 提案 → 同样 T0 晋升——这正是前文"坏行进隔离区不阻塞批次（坏行率 = RSI 信号）"与循环的接点。
 
-## 宪法（循环不可触碰面，机器提案触碰即降 T3）
+## 治理基线（循环不可触碰面，机器提案触碰即降 T3）
 
 ① 引擎与求值器本体 ② EvalSuite 通过线（不可自降）③ Cedar 放宽方向 ④ marking 与属性所有权 ⑤ tier 定义与预算 ⑥ 审计本身。
 **Tier graduation**：同类变更连续 10 次干净晋升 + 人工批准才可 T1→T0——且升级本身是 T3。

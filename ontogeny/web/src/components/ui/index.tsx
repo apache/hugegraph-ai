@@ -38,7 +38,7 @@ import { IconWarning } from '../icons'
 
 /* ------------------------------------------------------------------ Button */
 
-type ButtonVariant = 'primary' | 'ghost' | 'subtle' | 'danger'
+type ButtonVariant = 'primary' | 'ghost' | 'subtle' | 'danger' | 'success'
 
 export function Button({
   children,

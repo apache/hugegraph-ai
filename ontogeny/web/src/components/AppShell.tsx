@@ -44,7 +44,7 @@ import { Badge, Button, Panel } from './ui'
 import { DomainSwitcher } from './DomainSwitcher'
 import { AgentDock } from './AgentDock'
 import {
-  IconBook, IconChevron, IconCog, IconCube, IconGlobe, IconGrid, IconLayers, IconList,
+  IconBook, IconChevron, IconCog, IconCube, IconDatabase, IconGlobe, IconGrid, IconLayers, IconList,
   IconMoon, IconNetwork, IconRoute, IconSearch, IconShield, IconSpark, IconSun, IconUser, IconX,
   
 } from './icons'
@@ -79,6 +79,7 @@ const NAV_GROUPS: Array<{
       // (objects · links · projection), Action = what may happen (actions ·
       // functions · policies). The old single "data preview" is the Knowledge
       // page's first tab; /data still resolves there.
+      { to: '/documents', key: 'nav.documents', icon: IconDatabase },
       { to: '/knowledge', key: 'nav.knowledge', icon: IconBook },
       { to: '/action', key: 'nav.action', icon: IconRoute },
     ],
@@ -106,7 +107,7 @@ const NAV_GROUPS: Array<{
 
 /** Fixed-English provenance line. Deliberately not i18n'd: upstream branding
  *  reads the same in every locale, and the footer stays a single short line. */
-const APP_PROVENANCE = 'A subproject of Apache HugeGraph · v0.3'
+const APP_PROVENANCE = 'A subproject of Apache HugeGraph · v1.9'
 
 /** Command-palette style search over the loaded ontology + navigation.
  *  Resting state is one icon in the one-line footer; activating swaps the row
@@ -476,7 +477,7 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
             data-testid="settings-version"
             title={meta.error ? t('app.metaUnreadable') : meta.data?.content_hash}
           >
-            RSI v0.3 · {meta.error ? t('common.unknown') : (meta.data?.content_hash.slice(0, 8) ?? '—')}
+            RSI v1.9 · {meta.error ? t('common.unknown') : (meta.data?.content_hash.slice(0, 8) ?? '—')}
           </span>
           <Button variant="primary" data-testid="settings-done" onClick={onClose}>{t('settings.done')}</Button>
         </div>
@@ -764,7 +765,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             data-testid="sidebar-footer"
             title={meta.error ? t('app.metaUnreadable') : meta.data?.content_hash}
           >
-            {collapsed ? 'v0.3' : APP_PROVENANCE}
+            {collapsed ? 'v1.9' : APP_PROVENANCE}
           </div>
         </div>
       </aside>

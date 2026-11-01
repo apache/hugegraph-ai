@@ -108,7 +108,7 @@ describe('App shell', () => {
     expect(screen.queryByTestId('docs-link')).toBeNull()
     expect(screen.getByTestId('theme-toggle')).toBeInTheDocument()
     expect(screen.getByTestId('settings-open')).toBeInTheDocument()
-    expect(screen.getByTestId('sidebar-footer')).toHaveTextContent('A subproject of Apache HugeGraph · v0.3')
+    expect(screen.getByTestId('sidebar-footer')).toHaveTextContent('A subproject of Apache HugeGraph · v1.9')
 
     // everything detailed lives in the settings dialog; the dev acting-as
     // picker moved to 权限与角色 → 身份模拟, so the dialog no longer has it

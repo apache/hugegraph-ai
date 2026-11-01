@@ -97,3 +97,5 @@ and `client.rest()` when complete server request/response payloads are required.
 Schema export now uses `get_schema()` and always returns the server JSON schema.
 `NeighborRankParameters` no longer requires an unsupported `label` field; edge labels belong to its steps, which also expose `skip_degree`.
 Older servers may ignore `with_result=false` and return the result during task polling.
+
+LLM and ML releases now require `hugegraph-python>=1.8.0,<2`. LLM backups write native JSON to `schema.json`; pre-existing Groovy backups remain historical files.

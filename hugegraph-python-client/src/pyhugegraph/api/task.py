@@ -58,7 +58,7 @@ class TaskManager(HugeParamsBase):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TaskTimeoutError(task_id, timeout)
-            connect, read = self.session.cfg.timeout
+            connect, read = self.session.timeout
             request_timeout = Timeout(total=remaining, connect=min(connect, remaining), read=min(read, remaining))
             try:
                 task = self.get_task(

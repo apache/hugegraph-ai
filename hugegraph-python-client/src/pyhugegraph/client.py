@@ -48,11 +48,13 @@ class PyHugeClient:
         user: str,
         pwd: str,
         graphspace: str | None = None,
-        timeout: tuple[float, float] | None = None,
+        timeout: float | tuple[float, float] | None = None,
         *,
         token: str | None = None,
     ):
-        self.cfg = HGraphConfig(url, user, pwd, graph, graphspace, timeout or (0.5, 15.0), token=token)
+        self.cfg = HGraphConfig(
+            url, user, pwd, graph, graphspace, (0.5, 15.0) if timeout is None else timeout, token=token
+        )
         self._session = HGraphSession(self.cfg)
         if token is not None:
             self.use_token(token)

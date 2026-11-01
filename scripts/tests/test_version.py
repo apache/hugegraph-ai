@@ -56,7 +56,7 @@ class TestReleaseVersion(unittest.TestCase):
         for module in version.MODULES:
             project = tomllib.loads((self.root / module / "pyproject.toml").read_text())["project"]
             self.assertEqual("1.9.2", project["version"])
-            if module == "hugegraph-mcp":
+            if any(dependency.startswith("hugegraph-python>=") for dependency in project.get("dependencies", [])):
                 self.assertIn("hugegraph-python>=1.9.2,<2", project["dependencies"])
             if module == "hugegraph-llm":
                 self.assertIn("hugegraph-llm-sdk==1.9.2", project["dependencies"])

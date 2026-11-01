@@ -150,14 +150,15 @@ def backup_data():
         backup_subdir = os.path.join(BACKUP_DIR, f"{date_str}")
         create_dir_safely(backup_subdir)
 
+        schema = client.schema().get_schema()
         files = {
             "vertices.json": f"g.V().limit({MAX_VERTICES})"
             f".aggregate('vertices').count().as('count').select('count','vertices')",
             "edges.json": f"g.E().limit({MAX_EDGES}).aggregate('edges').count().as('count').select('count','edges')",
-            "schema.json": client.schema().get_schema(),
+            "schema.json": schema,
         }
 
-        vertexlabels = client.schema().get_schema()["vertexlabels"]
+        vertexlabels = schema["vertexlabels"]
         all_pk_flag = all(data.get("id_strategy") == "PRIMARY_KEY" for data in vertexlabels)
 
         for filename, query in files.items():
@@ -186,14 +187,7 @@ def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
             )
             json.dump(data, f, ensure_ascii=False)
         elif filename == "schema.json":
-            data_full = query
-            if isinstance(data_full, dict) and "schema" in data_full:
-                groovy_filename = filename.replace(".json", ".groovy")
-                with open(os.path.join(backup_subdir, groovy_filename), "w", encoding="utf-8") as groovy_file:
-                    groovy_file.write(str(data_full["schema"]))
-            else:
-                data = data_full
-                json.dump(data, f, ensure_ascii=False)
+            json.dump(query, f, ensure_ascii=False)
 
 
 def manage_backup_retention():

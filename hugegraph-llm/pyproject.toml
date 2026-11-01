@@ -65,7 +65,7 @@ dependencies = [
     "starlette>=1.0.1,<2",
     "uvicorn>=0.54,<1",
     "PyYAML>=6.0.3,<7",
-    "hugegraph-python",
+    "hugegraph-python>=1.8.0,<2",
     "pycgraph==3.2.2", # 3.3.0 has no CPython 3.14 Linux wheel or source distribution on PyPI.
 ]
 

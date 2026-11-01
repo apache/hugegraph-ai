@@ -29,7 +29,7 @@ from urllib3.util.retry import Retry
 from pyhugegraph.utils.authentication import request_auth
 from pyhugegraph.utils.compat import ServerAdapter
 from pyhugegraph.utils.constants import Constants
-from pyhugegraph.utils.huge_config import HGraphConfig
+from pyhugegraph.utils.huge_config import HGraphConfig, normalize_timeout
 from pyhugegraph.utils.log import log
 from pyhugegraph.utils.util import ResponseValidation, redact_sensitive_data
 
@@ -71,7 +71,7 @@ class HGraphSession:
         self._status_forcelist = status_forcelist
         self._auth = (cfg.username, cfg.password)
         self._headers = {"Content-Type": Constants.HEADER_CONTENT_TYPE}
-        self._timeout = cfg.timeout
+        self._timeout = normalize_timeout(cfg.timeout)
         self._session = session if session else requests.Session()
         self.__configure_session()
 
@@ -94,6 +94,10 @@ class HGraphSession:
             self._retries,
             self._backoff_factor,
         )
+
+    @property
+    def timeout(self) -> tuple[float, float]:
+        return self._timeout
 
     @property
     def cfg(self):

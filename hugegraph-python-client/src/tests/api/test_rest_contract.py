@@ -87,7 +87,7 @@ class RecordingHTTP(requests.Session):
         super().close()
 
 
-def transport(responses=(), *, graphspace="DEFAULT", url="https://example.test/proxy"):
+def transport(responses=(), *, graphspace="DEFAULT", url="https://example.test/proxy", timeout=(0.5, 15)):
     http = RecordingHTTP(responses)
     cfg = SimpleNamespace(
         url=url,
@@ -96,7 +96,7 @@ def transport(responses=(), *, graphspace="DEFAULT", url="https://example.test/p
         gs_supported=graphspace is not None,
         username="admin",
         password="private-password",
-        timeout=(0.5, 15),
+        timeout=timeout,
     )
     return HGraphSession(cfg, session=http), http
 
@@ -142,13 +142,15 @@ def clock(monkeypatch):
     return clock
 
 
-def test_wait_loads_result_once_after_success(clock):
+@pytest.mark.parametrize("http_timeout", [(0.5, 15), 2])
+def test_wait_loads_result_once_after_success(clock, http_timeout):
     session, http = transport(
         [
             {"id": 7, "task_status": "running"},
             {"id": 7, "task_status": "success"},
             {"id": 7, "task_status": "success", "task_result": '{"count": 3}'},
-        ]
+        ],
+        timeout=http_timeout,
     )
     tasks = TaskManager(session)
     task = tasks.wait(7, timeout=5, poll_interval=0.2)
@@ -325,6 +327,16 @@ def test_version_probe_uses_the_selected_authentication(monkeypatch, token):
     expected = "Bearer proxy-token" if token else requests.auth._basic_auth_str("admin", "password")
     assert http.calls[0][0].headers["Authorization"] == expected
     assert "proxy-token" not in repr(cfg)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), (1, 0)])
+def test_invalid_http_timeout_fails_before_version_probe(monkeypatch, timeout):
+    def unexpected_probe(*_args, **_kwargs):
+        pytest.fail("Invalid HTTP timeout must fail before network access")
+
+    monkeypatch.setattr("pyhugegraph.utils.huge_config.requests.get", unexpected_probe)
+    with pytest.raises(ValueError, match="HTTP timeout"):
+        PyHugeClient("http://example.test", "g", "admin", "password", timeout=timeout)
 
 
 def test_gremlin_get_forwards_uri_parameters_missing_from_openapi():

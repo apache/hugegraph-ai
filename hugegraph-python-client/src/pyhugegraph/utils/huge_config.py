@@ -17,12 +17,20 @@
 
 """Connection configuration and a single server-profile probe."""
 
+import math
 import re
 from dataclasses import dataclass, field
 
 import requests
 
 from pyhugegraph.utils.authentication import request_auth
+
+
+def normalize_timeout(timeout: float | tuple[float, float]) -> tuple[float, float]:
+    values = (timeout, timeout) if isinstance(timeout, (int, float)) else timeout
+    if len(values) != 2 or any(not math.isfinite(value) or value <= 0 for value in values):
+        raise ValueError("HTTP timeout must be positive and finite, or a pair of positive finite values")
+    return float(values[0]), float(values[1])
 
 
 @dataclass
@@ -32,12 +40,13 @@ class HGraphConfig:
     password: str = field(repr=False)
     graph_name: str
     graphspace: str | None = None
-    timeout: tuple[float, float] = (0.5, 15.0)
+    timeout: float | tuple[float, float] = (0.5, 15.0)
     token: str | None = field(default=None, repr=False, kw_only=True)
     gs_supported: bool = field(default=False, init=False)
     version: list[int] = field(default_factory=list)
 
     def __post_init__(self):
+        self.timeout = normalize_timeout(self.timeout)
         if self.token is not None and not self.token.strip():
             raise ValueError("token must not be empty")
         if not self.url.startswith(("http://", "https://")):

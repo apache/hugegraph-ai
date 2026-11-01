@@ -12,6 +12,7 @@ The APIs below describe the current source tree; released-package availability f
 uv pip install hugegraph-python
 # From the HugeGraph-AI workspace, to use current source:
 uv sync --extra python-client
+source .venv/bin/activate
 ```
 
 ```python
@@ -25,7 +26,7 @@ with PyHugeClient("http://127.0.0.1:8080", "hugegraph", "admin", "admin") as cli
 The client probes `/versions` once when no graphspace is supplied. Server 1.7+ selects `DEFAULT`;
 1.5/1.6 use legacy graph/auth routes. An explicit `graphspace` selects the graphspace profile without probing.
 A failed probe raises an error instead of guessing a profile. URLs may include a reverse-proxy prefix.
-The default HTTP `(connect, read)` timeout is `(0.5, 15.0)` seconds; set `timeout=(2, 30)` when needed.
+The default HTTP `(connect, read)` timeout is `(0.5, 15.0)` seconds; set `timeout=(2, 30)` when needed, or pass a positive scalar for both values.
 One client owns one session, shared by all managers. Close the client or use a `with` block.
 
 Subsequent snippets assume `client` is open, for example inside the `with` block above.
@@ -128,7 +129,7 @@ print(rest.kout.post(body={"source": alice.id, "steps": {"direction": "OUT"}, "m
 print(client.cypher().post(body={"cypher": "MATCH (n) RETURN n LIMIT 5"}))
 ```
 
-See [all REST operations and query parameters](API_COVERAGE.md).
+See [all REST operations and query parameters](https://github.com/apache/hugegraph-ai/blob/main/hugegraph-python-client/API_COVERAGE.md).
 `client.rest()` exposes explicit resource methods, accepts complete request bodies, and shares authentication and transport.
 Operations preserve JSON/text responses; HTTP 204 returns an empty dictionary. Server errors are surfaced through
 the existing exception types. A configured Bearer token (`client.use_token(token)`) takes precedence over Basic auth;
@@ -143,7 +144,7 @@ Graph configuration export returns source text and can be unavailable on graphs 
 ## Migration and server synchronization
 
 Public methods and object properties now use `snake_case`; CamelCase aliases and manager-level `close()` are removed.
-Close the owning client. See [the migration table](MIGRATION.md), including the corrected shortest-path signatures.
+Close the owning client. See [the migration table](https://github.com/apache/hugegraph-ai/blob/main/hugegraph-python-client/MIGRATION.md), including the corrected shortest-path signatures.
 
 The checked-in contract pins server commit `8e327b8f3d3ffcf61547be7fea1a15d3af2de8b4`.
 Static REST resources and coverage tables are generated from that contract:

@@ -43,7 +43,7 @@ dependencies = [
     "packaging",
     "torchdata",
     "PyYAML",
-    "hugegraph-python",
+    "hugegraph-python>=1.8.0,<2",
     # Common data dependencies managed by root
     "numpy",
     "pandas",

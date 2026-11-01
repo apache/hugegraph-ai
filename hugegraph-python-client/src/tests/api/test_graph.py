@@ -180,7 +180,7 @@ class TestGraphManager(unittest.TestCase):
         vertex2 = self.graph.add_vertex("person", {"name": "Bob", "age": 23})
         self.graph.add_edge("knows", vertex1.id, vertex2.id, {"date": "2012-01-10"})
         self.graph.add_edge("knows", vertex2.id, vertex1.id, {"date": "2012-01-10"})
-        edges = self.graph.get_edge_by_page("knows")
+        edges, _ = self.graph.get_edge_by_page("knows")
         self.assertEqual(len(edges), 2)
 
     def test_remove_edge_by_id(self):

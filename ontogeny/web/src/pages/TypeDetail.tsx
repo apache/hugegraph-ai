@@ -119,7 +119,7 @@ export function TypeDetail() {
                           to be hard-coded to "source" for every property, so it
                           said nothing at all */}
                       {def.owner ? (
-                        <Badge tone={def.owner === 'ontology' ? 'brand' : 'neutral'}>
+                        <Badge tone={def.owner === 'ontology' ? 'brand' : def.owner === 'document' ? 'info' : 'neutral'}>
                           {t(`type.owner.${def.owner}`)}
                         </Badge>
                       ) : <span className="muted">—</span>}

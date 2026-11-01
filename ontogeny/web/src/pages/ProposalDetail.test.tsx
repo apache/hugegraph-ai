@@ -119,16 +119,16 @@ describe('ProposalDetail', () => {
     expect(screen.getByTestId('promote-result')).toHaveTextContent('t0-auto-merge')
   })
 
-  it('explains a constitution violation', async () => {
+  it('explains a baseline violation', async () => {
     mockFetch([
-      { match: '/evolve/proposals/7/promote', status: 403, body: { code: 'CONSTITUTION_VIOLATION', message: 'touches the constitution surface' } },
+      { match: '/evolve/proposals/7/promote', status: 403, body: { code: 'BASELINE_VIOLATION', message: 'touches the governance-baseline surface' } },
       { match: '/evolve/proposals/7', body: { ...PROPOSAL, diff: [{ mutation: 'policy-loosen' }] } },
       { match: '/meta/ontology', body: META },
     ])
     render()
     await waitFor(() => expect(screen.getByTestId('promote-proposal')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('promote-proposal'))
-    await waitFor(() => expect(screen.getByTestId('error-banner')).toHaveTextContent('CONSTITUTION_VIOLATION'))
-    expect(screen.getAllByText(/constitutional surface/i).length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByTestId('error-banner')).toHaveTextContent('BASELINE_VIOLATION'))
+    expect(screen.getAllByText(/governance-baseline surface/i).length).toBeGreaterThan(0)
   })
 })

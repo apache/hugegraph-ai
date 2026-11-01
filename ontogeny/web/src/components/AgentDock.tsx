@@ -127,12 +127,12 @@ export function AgentDock() {
         aria-label={t('agent.dock.open')}
         title={`${t('agent.dock.open')} · ⌘J`}
         onClick={() => setOpen(true)}
-        // Frosted glass over whatever is underneath — more transparent than the
-        // shared ontogeny-glass, so on the canvas it reads as a floating lens rather
-        // than a pasted chip — plus a slow float and a lift on hover. The larger
-        // 58px target gives the robot-arm mark room to read clearly.
-        className="ontogeny-dock-glass ontogeny-float group fixed bottom-5 right-5 z-40 grid size-[58px] place-items-center rounded-full text-[var(--brand-fg)] transition-[transform,box-shadow] duration-200 hover:scale-[1.06] hover:shadow-[0_10px_28px_rgba(15,23,42,.22)] active:scale-95 max-md:bottom-4 max-md:right-4"
-        style={{ animationPlayState: 'running' }}
+        // A pure-white disc over whatever is underneath: the layered shadow
+        // makes it float like a lens rather than a pasted chip, and hover lifts
+        // it further (the hover transform lives in `.ontogeny-dock-glass` so it
+        // can also be disabled by prefers-reduced-motion). The larger 58px
+        // target gives the robot-arm mark room to read clearly.
+        className="ontogeny-dock-glass fixed bottom-5 right-5 z-40 grid size-[58px] place-items-center rounded-full text-[var(--brand-fg)] max-md:bottom-4 max-md:right-4"
       >
         <RobotArmMark size={32} />
       </button>

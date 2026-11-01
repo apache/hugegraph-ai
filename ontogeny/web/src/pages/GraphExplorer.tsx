@@ -31,7 +31,7 @@ limitations under the License.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { apiClient } from '../api/client'
@@ -144,6 +144,20 @@ export function GraphExplorer() {
         seed: seed.trim() ? Number(seed.trim()) : null,
       }),
   })
+
+  // The canvas opens with a small live sample instead of an empty grid: the
+  // default exploration runs once on arrival, so the page shows what the graph
+  // is before asking anyone to configure anything. It fires once per visit and
+  // only while the default (neighbourhood) mode is on screen — landing on a
+  // deep-linked tab must not spend a request the canvas will not show, and an
+  // ontology with no object types has nothing to sample.
+  const autoLoaded = useRef(false)
+  useEffect(() => {
+    if (top !== 'neighbourhood' || autoLoaded.current) return
+    if (!meta.data || objectTypes.length === 0) return
+    autoLoaded.current = true
+    explore.mutate()
+  }, [top, explore, meta.data, objectTypes.length])
 
   // ---- path state (路径遍历)
   const [pStartType, setPStartType] = useState(objectTypes[0] ?? '')
@@ -406,12 +420,23 @@ export function GraphExplorer() {
                 />
                 {explore.error ? <div className="p-4"><ErrorBanner error={explore.error} /></div> : null}
                 {!explore.data ? (
-                  <GraphEmptyState
-                    icon={<IconNetwork width={22} height={22} />}
-                    title={t('graph.explore.emptyTitle')}
-                    steps={[t('graph.explore.emptyStep1'), t('graph.explore.emptyStep2'), t('graph.explore.emptyStep3')]}
-                    action={<Button variant="primary" onClick={() => explore.mutate()} icon={<IconNetwork width={14} height={14} />}>{t('graph.explore.run')}</Button>}
-                  />
+                  explore.isPending ? (
+                    <div
+                      className="grid min-h-0 flex-1 place-items-center"
+                      data-testid="explore-loading"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <span className="text-[12px] muted">{t('common.loading')}</span>
+                    </div>
+                  ) : (
+                    <GraphEmptyState
+                      icon={<IconNetwork width={22} height={22} />}
+                      title={t('graph.explore.emptyTitle')}
+                      steps={[t('graph.explore.emptyStep1'), t('graph.explore.emptyStep2'), t('graph.explore.emptyStep3')]}
+                      action={<Button variant="primary" onClick={() => explore.mutate()} icon={<IconNetwork width={14} height={14} />}>{t('graph.explore.run')}</Button>}
+                    />
+                  )
                 ) : (
                   <div className="min-h-0 flex-1 p-2" data-testid="explore-result">
                     <ExploreGraph result={explore.data} onNodeClick={openExploreNode} onNodeDoubleClick={openNeighbourhood} fill />

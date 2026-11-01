@@ -30,7 +30,7 @@
 | `ONTOGENY_LLM_BASE_URL / ONTOGENY_LLM_MODEL` | unconfigured | the Ollama endpoint and model; unconfigured → assistant 503, everything else unaffected |
 | in-DSL `${ERP_DSN}` etc. | — | business config injected by the deployment; a missing webhook variable only affects delivery, never transactions |
 
-## 12.4 Core API endpoints (grouped by domain · the full, live contract is `/openapi.json` — 79 operations / 70 paths)
+## 12.4 Core API endpoints (grouped by domain · the full, live contract is `/openapi.json` — 104 operations / 92 paths)
 
 | Domain | Endpoint | Method | Description |
 |---|---|---|---|
@@ -53,6 +53,7 @@
 | **agent** | `/agent/sessions/{id}/tools/{tool}` | POST | single-gate execution (reads run directly / writes pend approval) |
 | **agent** | `/agent/sessions/{id}/run` | POST | dispatch the loop by engine.kind (builtin-llm / external-pull) |
 | **agent** | `/agent/approvals…` | GET/POST | the approval queue and decisions |
+| **documents** | `/documents…` (corpus · schema · skills · tasks) | GET/POST/PATCH/DELETE | document intelligence: corpus registration by content hash, extraction schema preview, staged task runs (extract → review → confirm; nothing writes before confirm) |
 
 Other groups: **audit** (/audit/revisions) · **evolve** (/evolve/signals · aggregate · diagnose · proposals[/eval|promote]) · **assistant** (/assistant/chat, grounding + propose modes) · **admin** (llm/status · publish · sync/{t} · outbox/dispatch · derive · projection/rebuild · **domains[/import] (zip ontology package import)**) · **subscriptions** (SSE). The complete list is at `/docs` (OpenAPI).
 
@@ -65,6 +66,7 @@ Other groups: **audit** (/audit/revisions) · **evolve** (/evolve/signals · agg
 | `/knowledge` · `/objects/:t[/:id]` | Knowledge: semantic editing + object data / links / projection tabs (legacy /data · /objects redirect here) · object browser / detail (version timeline + link navigation) |
 | `/action` · `/actions/:n` · `/functions/:n` | Kinetic layer editing (actions · functions · policy sets) · the Action runner (schema forms + dry-run + structured errors) · the function test bench |
 | `/graph` | Graph explorer: neighborhood exploration (DFS) · path traversal · projection views |
+| `/documents` | Document intelligence: one workspace — corpus inventory, task review (original ⇄ extracted graph), explicit confirm gate |
 | `/agent/manage` · `/evolve[/…]` | **Agent session management** (sessions / approvals / plugins; legacy /agent/* redirects) · the evolution console + proposal detail (diff / eval / promotion) |
 | `/audit` · `/admin` · `/access` | Action audit · operations & extensions (LLM gateway / registry / projection / demo) · access control |
 
@@ -77,6 +79,6 @@ Global: ⌘K search · EN/中文 switch (persisted + `<html lang>`) · light/dar
 | `RULE_REJECTED` | 422 | a business rule refused (the revision is persisted; the hit rule and revision number are attached) |
 | `POLICY_DENIED` | 403 | Cedar policy refused (default-deny semantics; the refusal is audited) |
 | `REVISION_CONFLICT` | 409 | optimistic-lock conflict / idempotency-key ownership conflict / function version drift |
-| `CONSTITUTION_VIOLATION` | 403 | a proposal touched the constitution → dropped to T3 human review |
+| `BASELINE_VIOLATION` | 403 | a proposal touched the governance baseline → dropped to T3 human review |
 | `BUDGET_EXCEEDED` | 429 | the T0 weekly budget is exhausted / an agent session exceeded its budget |
 | `CAPABILITY_DENIED` / `SANDBOX_ERROR` | 403/500 | sandbox capability overreach / sandbox execution failure |

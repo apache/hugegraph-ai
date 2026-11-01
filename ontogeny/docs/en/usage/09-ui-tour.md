@@ -4,7 +4,7 @@
 
 **[中文](../../zh/usage/09-ui-tour.md)** | English
 
-Six high-frequency pages covering the daily path "model → data → trace → govern". All screenshots come from a real running demo instance (`ontogeny serve --demo`, the product-manufacturing sample domain).
+Seven high-frequency pages covering the daily path "model → data → trace → govern". All screenshots come from a real running demo instance (`ontogeny serve --demo`, the chip-lifecycle sample domain).
 
 ## ① Ontology definition (/ontology)
 
@@ -41,3 +41,9 @@ The immutable revision stream: who, when, which resource, before/after; function
 ![Roles & permissions](../img/tour-access.png)
 
 The role × action grant matrix reads and writes the managed Cedar policy set directly; grants coming from hand-written policies are shown read-only locked — it never pretends to revoke someone else's permit.
+
+## ⑦ Document intelligence (/documents)
+
+![Document intelligence](../img/tour-documents.png)
+
+Documents, tasks, review and confirmation live in one workspace: the left column is the corpus inventory (source switcher and extractor status on top), the right side walks each task through "run extraction → review & edit → confirm". Nothing writes before confirm; the extraction agent only emits what the ontology schema declares, and references like `Module:`/`BOM:` resolve to existing rows only.

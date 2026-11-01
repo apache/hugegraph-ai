@@ -2,8 +2,8 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202-0E78BA.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/apache/hugegraph-ai)
-[![Backend Tests](https://img.shields.io/badge/pytest-561%20passed-brightgreen.svg)](#contributing)
-[![Frontend Tests](https://img.shields.io/badge/vitest-245%20passed-brightgreen.svg)](#contributing)
+[![Backend Tests](https://img.shields.io/badge/pytest-661%20passed-brightgreen.svg)](#contributing)
+[![Frontend Tests](https://img.shields.io/badge/vitest-261%20passed-brightgreen.svg)](#contributing)
 
 `ontogeny` — Greek *onto-* (being, the root of *ontology*) + *genesis* (birth, development): in biology the word names the **full-life-cycle development of an individual organism**. The name is the thesis: an ontology here is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use. It is a **self-improving operational ontology platform** built on [Apache HugeGraph](https://github.com/apache/hugegraph): it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto HugeGraph for deep-graph queries.
 
@@ -13,7 +13,7 @@ The whole system on one board — this is the console's Overview dashboard, and 
 
 ![Overall architecture board](./ontogeny/docs/en/img/arch-board.png)
 
-*Top: the eight first-class DSL citizens (Action = the only write gate, EvalSuite = the selection box). Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
+*Top: the nine platform DSL resources — the other two of the 11 kinds are manifest resources (`Store`, `Ontology`). Action = the only write gate, EvalSuite = the selection box, EvolutionPolicy = the human-only governance baseline. Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
 
 Contributor workflows: [CI selection and full validation](docs/quality/ci.md), [release preparation](docs/releasing.md).
 
@@ -23,7 +23,7 @@ Contributor workflows: [CI selection and full validation](docs/quality/ci.md), [
 - **Single-process kernel** — `ontogeny serve` = Registry + query engine + Action runtime on SQLite / Postgres
 - **Agent-first** — a governed MCP tool surface at `/mcp`; agents and humans share one policy surface, writes pass human approval gates
 - **Self-improving (RSI)** — observe → mutate (LLM-generated DSL diffs) → select (deterministic eval suites) → release (T0 auto-merge / T1 PR / T2 canary); *mutation is outsourced to the LLM, the selection function is not*
-- **Constitutional guardrails** — machine proposals travel the same Git/CI channel as humans; policy relaxation, markings and tier definitions always require human review
+- **Baselineal guardrails** — machine proposals travel the same Git/CI channel as humans; policy relaxation, markings and tier definitions always require human review
 - **Bilingual enterprise console** — React 19 + TypeScript: ontology canvas (browse *and* edit), graph exploration, action runner, audit, self-evolution console
 
 Modeling is code review, not form-filling — the ontology canvas shows every object, link, action and function of the domain, with references highlighted on hover:
@@ -85,7 +85,7 @@ Governance you can point at: every execution and every refusal lands in an immut
 
 ### [ontogeny](./ontogeny) — the platform
 
-The self-improving operational ontology platform described above: [`server/ontogeny`](./ontogeny/server/ontogeny) (Python kernel — DSL, registry, versioned stores, five-stage action runtime, Cedar-subset policy, query engine, sandboxed functions, RSI loop, graph projection, agent governance), [`extensions`](./ontogeny/extensions) (llm-ollama / graph-hugegraph / agent-builtin-llm), [`web`](./ontogeny/web) (React 19 + TypeScript console, bilingual EN/zh-CN) and [`domains`](./ontogeny/domains) (the product-manufacturing showcase, which doubles as the test-suite golden package). One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single governance channel. See [ontogeny/README.md](./ontogeny/README.md) for the full documentation index.
+The self-improving operational ontology platform described above: [`server/ontogeny`](./ontogeny/server/ontogeny) (Python kernel — DSL, registry, versioned stores, five-stage action runtime, Cedar-subset policy, query engine, sandboxed functions, RSI loop, graph projection, agent governance), [`extensions`](./ontogeny/extensions) (llm-ollama / graph-hugegraph / agent-builtin-llm), [`web`](./ontogeny/web) (React 19 + TypeScript console, bilingual EN/zh-CN) and [`domains`](./ontogeny/domains) (the chip-lifecycle semiconductor showcase — the test-suite golden package, with an intentional RSI demo gap). One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single governance channel. See [ontogeny/README.md](./ontogeny/README.md) for the full documentation index.
 
 ### Existing modules (hugegraph-ai)
 
@@ -100,7 +100,7 @@ These modules predate Ontogeny and continue to work standalone. **They are being
 | [hugegraph-python-client](./hugegraph-python-client) | Full-coverage Python client for HugeGraph (schema management, CRUD, Gremlin, REST), distributed as `hugegraph-python` | Used inside Ontogeny's extensions where full REST coverage is needed (async adapters remain the primary path) |
 | [vermeer-python-client](./vermeer-python-client) | SDK for graph computing with [Vermeer](https://github.com/apache/hugegraph-computer/tree/master/vermeer#readme) | **Step 3**: powers `POST /graph/algorithm` (pagerank / community / shortest-path) — results return as ID sets re-assembled through the governed query path |
 
-The LLM application, SDK, Python client and MCP require Python 3.12–3.14. Ontogeny is a standalone package requiring Python 3.10 or later; `hugegraph-ml` is outside the uv workspace and requires Python 3.12 or later. See each module’s README for setup.
+The LLM application, SDK, Python client and MCP require Python 3.12–3.14. Ontogeny is a standalone package requiring Python 3.12 or later; `hugegraph-ml` is outside the uv workspace and requires Python 3.12 or later. See each module’s README for setup.
 
 ## 📚 Learn More
 

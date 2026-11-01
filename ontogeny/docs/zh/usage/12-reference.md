@@ -31,7 +31,7 @@
 | `ONTOGENY_LLM_BASE_URL / ONTOGENY_LLM_MODEL` | 未配置 | Ollama 端点与模型；未配置 → 助手 503，其余功能不受影响 |
 | DSL 内 `${ERP_DSN}` 等 | — | 业务配置由部署注入；webhook 变量缺失只影响投递不影响事务 |
 
-## 12.4 API 核心端点（按域分组 · 全量与实时契约以 `/openapi.json` 为准，共 79 操作/70 路径）
+## 12.4 API 核心端点（按域分组 · 全量与实时契约以 `/openapi.json` 为准，共 104 操作/92 路径）
 
 | 域 | 端点 | 方法 | 说明 |
 |---|---|---|---|
@@ -54,6 +54,7 @@
 | **agent** | `/agent/sessions/{id}/tools/{tool}` | POST | 单门执行（读直执行 / 写挂审批） |
 | **agent** | `/agent/sessions/{id}/run` | POST | 按 engine.kind 分发驱动循环（builtin-llm / external-pull） |
 | **agent** | `/agent/approvals…` | GET/POST | 审批队列与决策 |
+| **documents** | `/documents…`（语料 · schema · 技能 · 任务） | GET/POST/PATCH/DELETE | 文档智能：语料按内容哈希登记、抽取 schema 预览、分段任务流（抽取 → 审核 → 确认；确认前不写图） |
 
 其余组：**audit**（/audit/revisions）· **evolve**（/evolve/signals · aggregate · diagnose · proposals[/eval|promote]）· **assistant**（/assistant/chat，grounding + propose 模式）· **admin**（llm/status · publish · sync/{t} · outbox/dispatch · derive · projection/rebuild · **domains[/import]（zip 本体包导入）**）· **subscriptions**（SSE）。完整清单以 `/docs`（OpenAPI）为准。
 
@@ -66,6 +67,7 @@
 | `/knowledge` · `/objects/:t[/:id]` | Knowledge：语义层编辑 + 对象数据 / 链接 / 投影标签（旧 /data · /objects 重定向至此）· 对象浏览器 / 对象详情（版本时间线 + 链接导航） |
 | `/action` · `/actions/:n` · `/functions/:n` | 动力学层编辑（动作 · 函数 · 策略集）· Action 运行器（schema 表单 + dry-run + 结构化错误）· 函数测试台 |
 | `/graph` | 图探索：邻域探索（DFS）· 路径遍历 · 投影视图 |
+| `/documents` | 文档智能：单一工作区——文档清单、任务审核（原文 ⇄ 抽取图）、显式确认门 |
 | `/agent/manage` · `/evolve[/…]` | **Agent 会话管理**（会话 / 审批 / 插件；旧 /agent/* 重定向）· 自进化控制台 + 提案详情（diff / 评测 / 晋升） |
 | `/audit` · `/admin` · `/access` | 审计流 · 运维与扩展（LLM 网关 / 注册表 / 投影 / 演示环境）· 权限与角色 |
 
@@ -78,6 +80,6 @@
 | `RULE_REJECTED` | 422 | 业务规则拒绝（修订已入库；附命中规则与修订号） |
 | `POLICY_DENIED` | 403 | Cedar 策略拒绝（默认拒绝语义；拒绝留痕） |
 | `REVISION_CONFLICT` | 409 | 乐观锁冲突 / 幂等键归属冲突 / 函数版本漂移 |
-| `CONSTITUTION_VIOLATION` | 403 | 提案触碰宪法面 → 降 T3 人审 |
+| `BASELINE_VIOLATION` | 403 | 提案触碰治理基线面 → 降 T3 人审 |
 | `BUDGET_EXCEEDED` | 429 | T0 周预算耗尽 / Agent 会话预算超限 |
 | `CAPABILITY_DENIED` / `SANDBOX_ERROR` | 403/500 | 沙箱能力越权 / 沙箱执行失败 |

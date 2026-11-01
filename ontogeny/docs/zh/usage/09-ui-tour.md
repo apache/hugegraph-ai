@@ -5,7 +5,7 @@
 **中文** | [English](../../en/usage/09-ui-tour.md)
 
 
-六个高频页面，覆盖「建模 → 数据 → 追溯 → 治理」的日常动线。全部截图取自真实运行的演示实例（`ontogeny serve --demo`，product-manufacturing 样例域）。
+七个高频页面，覆盖「建模 → 数据 → 追溯 → 治理」的日常动线。全部截图取自真实运行的演示实例（`ontogeny serve --demo`，chip-lifecycle 样例域）。
 
 ## ① 本体浏览器（/ontology）
 
@@ -42,3 +42,9 @@
 ![权限与角色](../img/tour-access.png)
 
 角色 × 动作授权矩阵直接读写受管 Cedar 策略集；手工策略授予只读锁定显示，不假装能撤销别人的 permit。
+
+## ⑦ 文档智能（/documents）
+
+![文档智能](../img/tour-documents.png)
+
+文档、任务、审核与确认在同一个工作区完成：左侧是文档清单（顶部切换文档源、查看抽取器状态），右侧对每个任务走「运行抽取 → 审核与编辑 → 确认写入」三步；确认前不写图，抽取 Agent 按本体 schema 只抽取声明过的节点与边，`Module:`/`BOM:` 一类引用只解析已存在的行。

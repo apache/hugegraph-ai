@@ -10,6 +10,7 @@
 |---|---|---|---|
 | `source` (default) | owns inserts and updates; full pushes accepted as-is | forbidden to modify (blocked at validation) | ledger fields: numbers, names, timestamps |
 | `ontology` | seeds once, **never overwrites** | the only legal writer | business state: status, qty_completed, … |
+| `document` | never overwrites | fills empty fields + appends evidence; conflicts go to review | narrative fields extracted from documents |
 
 The declaration alone kills the classic "source system's full push wipes action state" incident. Empty mapping = same-name direct mapping (all source); derived properties are automatically `ontology`.
 
@@ -49,3 +50,21 @@ The journey of one drain (functions/derivation.py):
 | full backfill | object tables → CSV → HugeGraph-Loader; **new graph space + atomic alias switch** (the old graph stays queryable during backfill) |
 | incremental | outbox consumer upserts per event / deleting a vertex cascades to edges (optional keep-flagged) |
 | degradation | endpoint unconfigured → SQL-only from startup (with an alert); ≥3 hops automatically falls back to SQL recursive CTEs |
+
+
+## 3.6 Document data source (extraction · optional)
+
+`Store(type: document)` is a corpus, not a row source: files are registered by content hash, and `ObjectType.backing.sync.strategy: extract` binds the corpus to the ontology. Extraction is delegated to an **external agent**: the platform sends the ontology-compiled schema and the document (text or base64) over stdin/stdout JSON or HTTP, and the agent returns each chunk's source text and graph. The platform calls no model; the contract is in [`extensions/doc-extract-agent/README.md`](../../../extensions/doc-extract-agent/README.md).
+
+| Stage | Mechanism | Guarantee |
+|---|---|---|
+Extraction never writes object rows directly: upload creates an `ontogeny_extract_task` with a local scope and skill snapshot, the agent output is staged as an attempt, and only an explicit **confirm** writes objects, links, assertions and outbox in one transaction. A confirmed task rerun creates a new revision; the old one stays as audit history.
+
+| Corpus | directory/glob → `ontogeny_document` (sha256) | change detection by content; a changed path removes the old document and registers a new one |
+| Extract | one Task per document → agent attempt staging (source chunks + graph + validation) | unconfirmed tasks write nothing; reruns keep attempts, reproducible from the scope/skill snapshot |
+| Bind | `documents/binder.py`: type coercion, PK / `extract.key` identity, `extract.match` resolution, endpoint/direction checks | no identity, ambiguous matches and unresolved endpoints become candidates — never guesses |
+| Merge | `owner` + `extract.update` (fill-empty by default) | conflicts become candidates; `source` properties are not written unless allowed |
+| Links | `LinkType.join.kind: extracted` writes the link table with `_provenance` | re-extraction/removal retracts only what that document asserted |
+| Exit | on confirm, the ordinary object tables + outbox | query, actions, policy, projection, MCP unchanged; `RevisionRow(action="ingest.confirm")` records the write |
+
+The review surface (`ontogeny_extract_candidate`) returns **the original chunk, the quoted evidence, the current value and the proposed value**; a human may edit before accepting. Rejection records the reason and writes nothing. Quarantine still absorbs type mismatches; its rate and schema gaps feed the RSI signals.

@@ -4,23 +4,23 @@
 
 **[中文](../../zh/architecture/02-ontology-model-and-dsl.md)** | English
 
-**11 resources**, all `apiVersion: ontogeny/v1` YAML — the directory is the package, Git is the source of truth; `${VAR}` references are injected at runtime, no secrets inside the package. The semantic layer (objects · links) pairs with the kinetic layer (actions · functions · policies), plus the derived layer (projections), the agent layer (plugins) and the evolution layer (eval suite / constitution).
+**11 resources = 9 platform resources + 2 manifest resources**, all `apiVersion: ontogeny/v1` YAML — the directory is the package, Git is the source of truth; `${VAR}` references are injected at runtime, no secrets inside the package. The semantic layer (objects · links) pairs with the kinetic layer (actions · functions · policies), plus the derived layer (projections), the agent layer (plugins) and the evolution layer (eval suite / governance baseline). The grouping is owned by [00 · Kind Taxonomy](00-kind-taxonomy.md).
 
 ## The 11 resources
 
-| kind | Layer | Responsibility & key fields |
-|---|---|---|
-| `Store` | data plane | storage binding: `type` (postgres/sqlite/duckdb/csv/parquet/iceberg) · `connection: ${DSN}` · `access` (read-write is the precondition for actions writing back) |
-| `ObjectType` | semantic | nouns: `primaryKey` · `properties` (type/required/**owner**/marking/**derived**) · `backing` (store + mode + source + mapping + **sync**) |
-| `LinkType` | semantic | relations: `cardinality` (1:1 / 1:N / M:N) · join (**foreign-key** or **join-table**) |
-| `Action` | kinetic | verbs: five stages (parameters → rules → policy → effects → audit); declarative or `execution: function` |
-| `Function` | kinetic | logic: `runtime` (python/ts) · `entry` · `capabilities` (read-objects / llm) · `publish` (version-anchored) |
-| `PolicySet` | governance | Cedar policy files (`source: *.cedar`); falls back to the package default policy when not declared |
-| `Projection` | derived | graph projection: `include` (allowlisted properties + links, **markings never enter**) · deletion · indexes · `endpoint` |
-| `AgentPlugin` | agent | agent as a resource: `principal` (frozen identity = permission surface) · `tools.allow` · `approval.writes` · `budget` (steps/wall_ms/writes) |
-| `EvalSuite` | evolution | selection functions: queries (shape/latency/rows) + replays (action replay) + coverage (quarantine rate) — **all deterministically evaluable** |
-| `EvolutionPolicy` | evolution | the constitution file: loop · observability · tiers T0–T3 (mutations + budget) · graduation — **human-editable only** |
-| `Ontology` | manifest | package manifest: name/display/version/imports (package dependencies, the basis of a template market) |
+| Group | kind | Layer | Responsibility & key fields |
+|---|---|---|---|
+| manifest | `Store` | data plane | storage binding: `type` (postgres/sqlite/duckdb/csv/parquet/iceberg) · `connection: ${DSN}` · `access` (read-write is the precondition for actions writing back) |
+| Core | `ObjectType` | semantic | nouns: `primaryKey` · `properties` (type/required/**owner**/marking/**derived**) · `backing` (store + mode + source + mapping + **sync**) |
+| Core | `LinkType` | semantic | relations: `cardinality` (1:1 / 1:N / M:N) · join (**foreign-key** or **join-table**) |
+| Core | `Action` | kinetic | verbs: five stages (parameters → rules → policy → effects → audit); declarative or `execution: function` |
+| Extension | `Function` | kinetic | logic: `runtime` (python/ts) · `entry` · `capabilities` (read-objects / llm) · `publish` (version-anchored) |
+| Core | `PolicySet` | governance | Cedar policy files (`source: *.cedar`); falls back to the package default policy when not declared |
+| Adapter | `Projection` | derived | graph projection: `include` (allowlisted properties + links, **markings never enter**) · deletion · indexes · `endpoint` |
+| Extension | `AgentPlugin` | agent | agent as a resource: `principal` (frozen identity = permission surface) · `tools.allow` · `approval.writes` · `budget` (steps/wall_ms/writes) |
+| Extension | `EvalSuite` | evolution | selection functions: queries (shape/latency/rows) + replays (action replay) + coverage (quarantine rate) — **all deterministically evaluable** |
+| Baseline | `EvolutionPolicy` | evolution | the governance baseline file: loop · observability · tiers T0–T3 (mutations + budget) · graduation — **human-editable only** |
+| manifest | `Ontology` | manifest | package manifest: name/display/version/imports (package dependencies, the basis of a template market) |
 
 ## Example: the two kinds of derivation
 
@@ -61,6 +61,6 @@ A hand-written Pratt parser (lexing → AST → tree evaluation, **eval() banned
 
 ## Validators & lint (the publish gates)
 
-**validate (blocks publishing, 20+ check codes)**: referential integrity · join key types · primary-key sanity · **actions writing source-owned properties = error** (ownership) · derivations banned from mapping · **markings banned from projections** · expression static analysis · function-derivation entry shape · EvalSuite references · constitution markings.
+**validate (blocks publishing, 20+ check codes)**: referential integrity · join key types · primary-key sanity · **actions writing source-owned properties = error** (ownership) · derivations banned from mapping · **markings banned from projections** · expression static analysis · function-derivation entry shape · EvalSuite references · governance baseline markings.
 
 **lint (team conventions, exemptable)**: display/description required · kebab-case · derivation chain ≤2 · webhook actions must narrow audit.fields — conventions don't block publishing but do leave a trace.

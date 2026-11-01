@@ -4,7 +4,7 @@
 
 **[中文](../../zh/architecture/06-rsi-self-evolution.md)** | English
 
-What recurses is the **model layer** (ontology + action); the platform constitution is never touched by the loop. Mutation is outsourced to the LLM, **selection never is** — the dividing line from unbounded RSI.
+What recurses is the **model layer** (ontology + action); the platform governance baseline is never touched by the loop. Mutation is outsourced to the LLM, **selection never is** — the dividing line from unbounded RSI.
 There is no mysticism in the loop: every beat is deterministic code plus a persisted artifact. **Signals** come from rule-based scanners over telemetry (`ontogeny_evolve_signal`); **mutations** come only from the whitelist (`ontogeny_evolve_proposal`, rationale mandatory); **evaluation** is entirely deterministically evaluable (no LLM-judge); **promotion** runs the T0–T3 tiers against an ISO-week budget (`ontogeny_evolve_budget`). Every beat's products are database rows and a Git diff — auditable, replayable, revertible.
 
 ## The RSI loop · six beats (each persisted, each independently replayable)
@@ -13,7 +13,7 @@ There is no mysticism in the loop: every beat is deterministic code plus a persi
 2. **Attribution**: `POST /evolve/diagnose` — diagnoser.py translates signals into gap hypotheses (with evidence counts, marking-aware); informational signals are only presented to humans/the LLM, **never mutated on automatically**
 3. **Proposal**: the heuristic proposer (zero LLM, the default path) or the LLM proposer (Ollama structured `{mutations, rationale}`) → `ontogeny_evolve_proposal`; **parse failures or missing rationale are dropped at the entrance**
 4. **Evaluation**: `POST /evolve/proposals/{id}/eval` — EvalRunner runs all EvalSuites on a **candidate-package copy** (production untouched); the report and the pass flag are written back to the proposal row
-5. **Tiered promotion**: `ontogeny evolve promote {id}` — the promoter reads the tier from EvolutionPolicy → checks the weekly budget → checks the constitution → T0 applies & publishes / T1·T2 open a review branch / T3 → `awaiting_human`
+5. **Tiered promotion**: `ontogeny evolve promote {id}` — the promoter reads the tier from EvolutionPolicy → checks the weekly budget → checks the governance baseline → T0 applies & publishes / T1·T2 open a review branch / T3 → `awaiting_human`
 6. **Activation & rollback**: promotion = `registry.publish` + `reload()` hot-swapping the compiled snapshot (new schema live immediately); rollback = `git checkout` the previous package dir and publish — **the file system is the version, Git is the undo key**
 
 ## The three stages in view
@@ -37,7 +37,7 @@ There is no mysticism in the loop: every beat is deterministic code plus a persi
 
 | | |
 |---|---|
-| L1 | validate / lint (structure + constitutional red lines, inside the promoter) |
+| L1 | validate / lint (structure + baseline red lines, inside the promoter) |
 | **L2** | query regression (**columns checked against the declared schema**; empty results are not red) + **action time-travel replay**: historical revisions re-executed counterfactually under the new rules, compared with real human decisions |
 | L3/L4 | shadow double-run · the LLM only explains and classifies, **never gates** — the LLM is not reproducible, so the script is the test subject |
 
@@ -63,7 +63,7 @@ Three design invariants: ① **thresholds are tunable** — every trigger line c
 | **T0 auto-merge** | `add-optional-property` · `enum-widen` · `index-tune` | eval all green + weekly budget (example package **8/week**, per namespace) | validate → apply → publish → **hot swap**, fully unattended |
 | **T1 human PR** | everything safe outside the whitelist | validate | the machine lands a validated branch dir `pkg.proposal-{id}` (mutations without a mechanical applier are edited by a human in the branch); a human merges & publishes |
 | **T2 canary** | `rule-change` · `effect-change` · `function-change` | eval green + clean shadow diff + **explicit approval** | same branch flow as T1; after going live a shadow double-run compares, traffic switches only without regressions |
-| **T3 human-only** | `policy-loosen` · `marking-change` · `ownership-change` · `eval-passbar-change` · `destructive-migration` | a machine proposal touching these raises `ConstitutionViolationError` | the proposal goes to `awaiting_human` with the reason audited — **the automated path does not exist**, it is not merely blocked |
+| **T3 human-only** | `policy-loosen` · `marking-change` · `ownership-change` · `eval-passbar-change` · `destructive-migration` | a machine proposal touching these raises `BaselineViolationError` | the proposal goes to `awaiting_human` with the reason audited — **the automated path does not exist**, it is not merely blocked |
 
 **Graduation (tier upgrades)**: ten consecutive clean promotions of the same mutation class + human approval to move T1→T0 — and the upgrade itself is a T3 operation. The T0 budget is a database row per ISO week; overrun raises `BudgetExceededError`: **better to let the loop pause a beat than let it run a little faster.**
 
@@ -123,9 +123,9 @@ Scenario: a shop-floor analytics dashboard keeps filtering purchase orders by `c
 // after publish + reload() hot swap, the dashboard's next query hits — signal to effect, no human in the loop
 ```
 
-**The governance boundary is equally concrete in the same example**: had the LLM proposer used the same signal to also propose "loosening the amount-cap rule of `approve-purchase-order`" (`rule-change` ∉ the T0 whitelist), the classifier assigns T2 — a review branch + shadow double-run, never auto-activated for convenience; a proposal touching the T3 surface (say, loosening Cedar) makes the promoter throw `ConstitutionViolationError` on the spot, and the proposal goes to `awaiting_human`. A homologous path: a new enum value from the source ERP (say `status=CLOSED`) is first quarantined by sync (TYPE_MISMATCH, batch unblocked), then the `quarantine_rate` signal → an `enum-widen` proposal → the same T0 promotion — exactly the join between "bad rows quarantine without blocking (bad-row rate = an RSI signal)" and the loop.
+**The governance boundary is equally concrete in the same example**: had the LLM proposer used the same signal to also propose "loosening the amount-cap rule of `approve-purchase-order`" (`rule-change` ∉ the T0 whitelist), the classifier assigns T2 — a review branch + shadow double-run, never auto-activated for convenience; a proposal touching the T3 surface (say, loosening Cedar) makes the promoter throw `BaselineViolationError` on the spot, and the proposal goes to `awaiting_human`. A homologous path: a new enum value from the source ERP (say `status=CLOSED`) is first quarantined by sync (TYPE_MISMATCH, batch unblocked), then the `quarantine_rate` signal → an `enum-widen` proposal → the same T0 promotion — exactly the join between "bad rows quarantine without blocking (bad-row rate = an RSI signal)" and the loop.
 
-## The constitution (the surface the loop may never touch; machine proposals touching it drop to T3)
+## The governance baseline (the surface the loop may never touch; machine proposals touching it drop to T3)
 
 ① the engine and evaluator themselves ② EvalSuite pass bars (cannot self-lower) ③ the Cedar loosening direction ④ markings & property ownership ⑤ tier definitions & budgets ⑥ the audit itself.
 **Tier graduation**: ten consecutive clean promotions of a class + human approval for T1→T0 — and the upgrade itself is T3.

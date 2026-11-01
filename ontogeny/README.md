@@ -1,8 +1,8 @@
 # ontogeny
 
 [![License](https://img.shields.io/badge/license-Apache%202-0E78BA.svg)](./LICENSE)
-[![Backend Tests](https://img.shields.io/badge/pytest-561%20passed-brightgreen.svg)](#contributing)
-[![Frontend Tests](https://img.shields.io/badge/vitest-245%20passed-brightgreen.svg)](#contributing)
+[![Backend Tests](https://img.shields.io/badge/pytest-597%20passed-brightgreen.svg)](#contributing)
+[![Frontend Tests](https://img.shields.io/badge/vitest-254%20passed-brightgreen.svg)](#contributing)
 
 `ontogeny` — Greek *onto-* (being, the root of *ontology*) + *genesis* (birth, development): in biology the word names the **full-life-cycle development of an individual organism**. The name is the thesis: an ontology here is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use. It is a **self-improving operational ontology platform**: it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto [Apache HugeGraph](https://github.com/apache/hugegraph) for deep-graph queries.
 
@@ -12,7 +12,7 @@ The whole system on one board — this is the console's Overview dashboard, and 
 
 ![Overall architecture board](./docs/en/img/arch-board.png)
 
-*Top: the DSL resources (Action = the only write gate, EvalSuite = the selection box). Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
+*Top: the nine DSL platform resources — the other two of the 11 kinds are manifest resources (`Store`, `Ontology`). Action = the only write gate, EvalSuite = the selection box, EvolutionPolicy = the human-only governance baseline. Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
 
 ## Key Features
 
@@ -20,8 +20,9 @@ The whole system on one board — this is the console's Overview dashboard, and 
 - **Single-process kernel** — `ontogeny serve` = Registry + query engine + Action runtime on SQLite / Postgres
 - **Agent-first** — a governed MCP tool surface at `/mcp`; agents and humans share one policy surface, writes pass human approval gates
 - **Self-improving (RSI)** — observe → mutate (LLM-generated DSL diffs) → select (deterministic eval suites) → release (T0 auto-merge / T1 PR / T2 canary); *mutation is outsourced to the LLM, the selection function is not*
-- **Constitutional guardrails** — machine proposals travel the same Git/CI channel as humans; policy relaxation, markings and tier definitions always require human review
+- **Baselineal guardrails** — machine proposals travel the same Git/CI channel as humans; policy relaxation, markings and tier definitions always require human review
 - **Bilingual enterprise console** — React 19 + TypeScript: ontology canvas (browse *and* edit), graph exploration, action runner, audit, self-evolution console
+- **Document data sources** — bind a document corpus to object types; an **external agent** receives the ontology schema and the document and returns a graph, a deterministic binder enforces identity/types/ownership, and every conflict or missing endpoint waits in a review queue that shows the original chunk beside the proposed values
 
 Modeling is code review, not form-filling — the ontology canvas shows every object, link, action and function of the domain, with references highlighted on hover:
 
@@ -78,6 +79,50 @@ Governance you can point at: every execution and every refusal lands in an immut
 
 ![The audit stream](./docs/en/img/tour-audit.png)
 
+## Document intelligence
+
+A document corpus is a `Store` with `type: document`; an object type opts in
+with `backing.sync.strategy: extract` and an `extract` block (identity key,
+natural-key match, create/update policy). **Document intelligence** creates one
+task per document: the upload picks a local scope (object types, links,
+properties) and a skill snapshot, the agent run is staged, a human can edit the
+reviewed graph, and only an explicit **Confirm into graph** binds and writes
+objects, links, assertions and outbox events.
+
+The extraction schema is **compiled from the ontology** — never a model-invented
+schema — and the output is bound deterministically:
+
+- values are coerced to ontology types and validated;
+- identity is the declared key, never a guess; ambiguous matches go to review;
+- extraction only fills empty fields (`fill-empty`), conflicts are queued;
+- links are `join.kind: extracted` and keep per-document provenance;
+- a run writes nothing; confirming emits the ordinary outbox event, so
+  projection, SSE, webhooks, derivation and the audit trail behave exactly as
+  for SQL rows.
+
+Extraction is delegated to an **external agent** — ontogeny itself calls no
+model on this path. Configure one of:
+
+```bash
+# a command: JSON request on stdin, JSON response on stdout
+export ONTOGENY_DOC_AGENT_CMD="python tools/doc_agent_reference.py"
+
+# or an HTTP endpoint: POST the same JSON body
+export ONTOGENY_DOC_AGENT_URL="http://agent:9000/extract"
+export ONTOGENY_DOC_AGENT_TOKEN="..."        # optional Bearer token
+```
+
+`tools/doc_agent_reference.py` is a deterministic reference agent that makes the
+Product Manufacturing demo runnable without an LLM; `tools/doc_agent_openai.py` shows the
+same contract backed by any OpenAI-compatible endpoint. A real agent only has to
+honour the JSON contract in
+[`extensions/doc-extract-agent`](./extensions/doc-extract-agent): it receives
+`schema`, `instructions` and one `document` (text or `content_b64`), and returns
+`chunks` with the exact source text and the graph.
+
+Without a configured agent the corpus remains visible but extraction fails with
+an actionable error — the platform never silently degrades a write path.
+
 ## Production Notes
 
 - **Single-process kernel**: registry, outbox, derivation, evolve and projection workers all live in the one server process. Do NOT scale with `uvicorn --workers N`; scale by domain (one process per database).
@@ -88,10 +133,13 @@ Governance you can point at: every execution and every refusal lands in an immut
 
 | Path | What it is |
 |---|---|
-| [`server/ontogeny`](./server/ontogeny) | The Python kernel (`ontogeny`): 11-kind DSL + validators (`core`), registry & compiled snapshots (`registry`), object tables & sync engine (`stores`), five-stage action runtime (`action`), Cedar-subset policy (`policy`), query engine (`engine`), sandboxed functions (`functions`), RSI loop (`telemetry` + `evolve`), graph projection (`projection`), agent session governance (`agent`), extension host (`ext_host`) |
+| [`server/ontogeny`](./server/ontogeny) | The Python kernel (`ontogeny`): 11-kind DSL (9 platform resources + 2 manifest, one registry in `core/kinds.py`) + validators (`core`), registry & compiled snapshots (`registry`), object tables & sync engine (`stores`), five-stage action runtime (`action`), Cedar-subset policy (`policy`), query engine (`engine`), sandboxed functions (`functions`), RSI loop (`telemetry` + `evolve`), graph projection (`projection`), agent session governance (`agent`), extension host (`ext_host`) |
 | [`extensions`](./extensions) | Pluggable implementations: [llm-ollama](./extensions/llm-ollama) (LLM gateway), [graph-hugegraph](./extensions/graph-hugegraph) (projection store), [agent-builtin-llm](./extensions/agent-builtin-llm) (reference agent engine) |
 | [`web`](./web) | React 19 + TypeScript + Vite + Tailwind v4 console, bilingual EN/zh-CN |
-| [`domains`](./domains) | Domain packages (YAML + seed data + agent plugins); [product-manufacturing](./domains/product-manufacturing) is the showcase **and** the test-suite golden package: 7 objects, 6 links, 8 actions, 3 functions, policies, a projection, an eval suite and a demo story |
+| [`domains`](./domains) | The runtime domain package and test-suite golden example: [chip-lifecycle](./domains/chip-lifecycle), the semiconductor lifecycle showcase (10 objects, 8 links, 16 actions, 4 functions, one detailed FMEA document case, and an intentional RSI demo gap). |
+| [`server/ontogeny/documents`](./server/ontogeny/documents) | Document corpus, schema compilation, deterministic binding, review queue and extraction runs |
+| [`extensions/doc-extract-agent`](./extensions/doc-extract-agent) | The extractor capability: delegates to an external agent over stdin/stdout JSON or HTTP; no model client or parser dependency in the platform |
+| [`tools/doc_agent_reference.py`](./tools/doc_agent_reference.py) | A deterministic reference agent implementing the contract (used by the demo and tests) |
 
 One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single governance channel. The full contract lives at `GET /openapi.json`.
 
@@ -106,7 +154,7 @@ One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single
 See the [HugeGraph contribution guidelines](https://hugegraph.apache.org/docs/contribution-guidelines/).
 
 ```bash
-pytest                              # backend (524 tests; live-LLM cases auto-skip)
+pytest                              # backend (597 tests; live-LLM cases auto-skip)
 cd web && npx vitest run && npm run build   # frontend + typecheck + build
 ruff check . && ruff format .       # lint
 ```

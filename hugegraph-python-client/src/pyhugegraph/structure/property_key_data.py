@@ -64,3 +64,6 @@ class PropertyKeyData:
     def __repr__(self):
         res = f"name: {self.__name}, cardinality: {self.__cardinality}, data_type: {self.__data_type}"
         return res
+
+    # Legacy public names share the canonical implementations.
+    dataType = data_type  # noqa: N815

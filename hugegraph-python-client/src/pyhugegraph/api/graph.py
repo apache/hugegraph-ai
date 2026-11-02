@@ -25,6 +25,14 @@ from pyhugegraph.structure.vertex_data import VertexData
 
 
 class GraphManager(HugeParamsBase):
+    @staticmethod
+    def _page_token(page, offset):
+        if offset not in (None, 0):
+            if page is not None:
+                raise ValueError("page and nonzero offset cannot be combined")
+            return None
+        return "" if page is None else page
+
     def add_vertex(self, label, properties, id=None):
         body = {"label": label, "properties": properties}
         if id is not None:
@@ -89,12 +97,22 @@ class GraphManager(HugeParamsBase):
         )
 
     def get_vertex_by_page(self, label, limit, page=None, properties=None, **options):
-        response = self.list_vertices(label=label, properties=properties, page=page or "", limit=limit, **options)
+        response = self.list_vertices(
+            label=label,
+            properties=properties,
+            page=self._page_token(page, options.get("offset")),
+            limit=limit,
+            **options,
+        )
         return [VertexData(item) for item in response["vertices"]], response.get("page")
 
     def get_vertex_by_condition_with_page(self, label="", limit=0, page=None, properties=None, **options):
         response = self.list_vertices(
-            label=label or None, properties=properties, page=page or "", limit=limit if limit > 0 else None, **options
+            label=label or None,
+            properties=properties,
+            page=self._page_token(page, options.get("offset")),
+            limit=limit if limit > 0 else None,
+            **options,
         )
         return [VertexData(item) for item in response["vertices"]], response.get("page")
 
@@ -200,7 +218,7 @@ class GraphManager(HugeParamsBase):
             direction=direction,
             label=label,
             properties=properties,
-            page=page or "",
+            page=self._page_token(page, options.get("offset")),
             limit=limit if limit > 0 else None,
             **options,
         )
@@ -232,3 +250,23 @@ class GraphManager(HugeParamsBase):
 
     def scan_edges(self, start, end, *, page=None, page_limit=None):
         return self.request("edges.scan", params={"start": start, "end": end, "page": page, "page_limit": page_limit})
+
+    # Legacy public names share the canonical implementations.
+    addEdge = add_edge  # noqa: N815
+    addEdges = add_edges  # noqa: N815
+    addVertex = add_vertex  # noqa: N815
+    addVertices = add_vertices  # noqa: N815
+    appendEdge = append_edge  # noqa: N815
+    appendVertex = append_vertex  # noqa: N815
+    eliminateEdge = eliminate_edge  # noqa: N815
+    eliminateVertex = eliminate_vertex  # noqa: N815
+    getEdgeById = get_edge_by_id  # noqa: N815
+    getEdgeByPage = get_edge_by_page  # noqa: N815
+    getEdgesById = get_edges_by_id  # noqa: N815
+    getVertexByCondition = get_vertex_by_condition  # noqa: N815
+    getVertexByConditionWithPage = get_vertex_by_condition_with_page  # noqa: N815
+    getVertexById = get_vertex_by_id  # noqa: N815
+    getVertexByPage = get_vertex_by_page  # noqa: N815
+    getVerticesById = get_vertices_by_id  # noqa: N815
+    removeEdgeById = remove_edge_by_id  # noqa: N815
+    removeVertexById = remove_vertex_by_id  # noqa: N815

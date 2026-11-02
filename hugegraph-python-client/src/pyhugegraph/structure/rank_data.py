@@ -28,8 +28,8 @@ class NeighborRankStep:
     direction: str = "BOTH"
     labels: list[str] = field(default_factory=list)
     max_degree: int = 10000
-    skip_degree: int = 0
     top: int = 100
+    skip_degree: int = 0
 
     def dumps(self):
         return json.dumps(asdict(self))

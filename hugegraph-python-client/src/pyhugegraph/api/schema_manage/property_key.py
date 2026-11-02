@@ -189,3 +189,23 @@ class PropertyKey(HugeParamsBase):
             return f"delete PropertyKey success, Detail: {response!s}"
         log.error("delete PropertyKey failed, Detail: %s", str(response))
         return ""
+
+    # Legacy public names share the canonical implementations.
+    asBlob = as_blob  # noqa: N815
+    asBool = as_bool  # noqa: N815
+    asByte = as_byte  # noqa: N815
+    asDate = as_date  # noqa: N815
+    asDouble = as_double  # noqa: N815
+    asFloat = as_float  # noqa: N815
+    asInt = as_int  # noqa: N815
+    asLong = as_long  # noqa: N815
+    asObject = as_object  # noqa: N815
+    asText = as_text  # noqa: N815
+    calcMax = calc_max  # noqa: N815
+    calcMin = calc_min  # noqa: N815
+    calcOld = calc_old  # noqa: N815
+    calcSum = calc_sum  # noqa: N815
+    ifNotExist = if_not_exist  # noqa: N815
+    valueList = value_list  # noqa: N815
+    valueSet = value_set  # noqa: N815
+    valueSingle = value_single  # noqa: N815

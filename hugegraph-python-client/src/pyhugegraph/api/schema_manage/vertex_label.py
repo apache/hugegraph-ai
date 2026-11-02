@@ -149,3 +149,13 @@ class VertexLabel(HugeParamsBase):
             return f'eliminate VertexLabel success, Detail: "{response!s}"'
         log.error("eliminate VertexLabel failed, Detail: %s", str(response))
         return ""
+
+    # Legacy public names share the canonical implementations.
+    enableLabelIndex = enable_label_index  # noqa: N815
+    ifNotExist = if_not_exist  # noqa: N815
+    nullableKeys = nullable_keys  # noqa: N815
+    primaryKeys = primary_keys  # noqa: N815
+    useAutomaticId = use_automatic_id  # noqa: N815
+    useCustomizeNumberId = use_customize_number_id  # noqa: N815
+    useCustomizeStringId = use_customize_string_id  # noqa: N815
+    usePrimaryKeyId = use_primary_key_id  # noqa: N815

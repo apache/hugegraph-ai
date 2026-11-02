@@ -67,3 +67,9 @@ class EdgeData:
     def __repr__(self):
         res = f"{self.__outV}--{self.__label}-->{self.__inV}"
         return res
+
+    # Legacy public names share the canonical implementations.
+    inV = in_v  # noqa: N815
+    inVLabel = in_v_label  # noqa: N815
+    outV = out_v  # noqa: N815
+    outVLabel = out_v_label  # noqa: N815

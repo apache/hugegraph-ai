@@ -55,3 +55,8 @@ class IndexLabelData:
             f" {self.__base_type}, fields: {self.__fields}, index_type: {self.__index_type}"
         )
         return res
+
+    # Legacy public names share the canonical implementations.
+    baseType = base_type  # noqa: N815
+    baseValue = base_value  # noqa: N815
+    indexType = index_type  # noqa: N815

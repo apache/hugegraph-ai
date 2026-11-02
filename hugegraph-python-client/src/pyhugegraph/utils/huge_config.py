@@ -27,10 +27,13 @@ from pyhugegraph.utils.authentication import request_auth
 
 
 def normalize_timeout(timeout: float | tuple[float, float]) -> tuple[float, float]:
-    values = (timeout, timeout) if isinstance(timeout, (int, float)) else timeout
-    if len(values) != 2 or any(not math.isfinite(value) or value <= 0 for value in values):
-        raise ValueError("HTTP timeout must be positive and finite, or a pair of positive finite values")
-    return float(values[0]), float(values[1])
+    try:
+        values = (timeout, timeout) if isinstance(timeout, (int, float)) else timeout
+        if len(values) == 2 and all(math.isfinite(value) and value > 0 for value in values):
+            return float(values[0]), float(values[1])
+    except (TypeError, ValueError, OverflowError):
+        pass
+    raise ValueError("HTTP timeout must be positive and finite, or a pair of positive finite values")
 
 
 @dataclass

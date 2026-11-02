@@ -137,6 +137,75 @@ class ClientContractTest(unittest.TestCase):
         }
         self.assertEqual([], client_api.compare_openapi(document, contract))
 
+    def test_explicit_openapi_media_override_tracks_wildcard_annotations(self):
+        operation = {
+            "method": "POST",
+            "path": "traversers/count",
+            "query": [],
+            "body": True,
+            "content_type": "application/json",
+        }
+        contract = {"operations": {"count.post": operation}}
+        document = {
+            "paths": {
+                "/traversers/count": {
+                    "post": {"requestBody": {"content": {"*/*": {}}}},
+                }
+            }
+        }
+        self.assertEqual(
+            ["REQUEST MEDIA POST /traversers/count: added=['*/*'], missing=['application/json']"],
+            client_api.compare_openapi(document, contract),
+        )
+
+        operation["openapi_request_media"] = ["*/*"]
+        self.assertEqual([], client_api.compare_openapi(document, contract))
+
+        # If the server adds @Consumes later, the recorded publishing quirk must
+        # be revisited instead of silently accepting the changed export.
+        document["paths"]["/traversers/count"]["post"]["requestBody"]["content"] = {"application/json": {}}
+        self.assertEqual(
+            ["REQUEST MEDIA POST /traversers/count: added=['application/json'], missing=['*/*']"],
+            client_api.compare_openapi(document, contract),
+        )
+
+    def test_openapi_media_override_records_an_incomplete_overload_export(self):
+        contract = {
+            "operations": {
+                "graphs.create": {
+                    "method": "POST",
+                    "path": "graphs/{name}",
+                    "query": [],
+                    "body": True,
+                    "content_type": "application/json",
+                    "openapi_request_media": ["text/plain"],
+                },
+                "graphs.create_by_text": {
+                    "method": "POST",
+                    "path": "graphs/{name}",
+                    "query": [],
+                    "body": True,
+                    "content_type": "text/plain",
+                },
+            }
+        }
+        document = {
+            "paths": {
+                "/graphs/{graph_name}": {
+                    "post": {"requestBody": {"content": {"text/plain": {}}}},
+                }
+            }
+        }
+        self.assertEqual([], client_api.compare_openapi(document, contract))
+
+        document["paths"]["/graphs/{graph_name}"]["post"]["requestBody"]["content"]["application/json"] = {}
+        self.assertEqual(
+            ["REQUEST MEDIA POST /graphs/{}: added=['application/json'], missing=[]"],
+            client_api.compare_openapi(document, contract),
+        )
+        del contract["operations"]["graphs.create"]["openapi_request_media"]
+        self.assertEqual([], client_api.compare_openapi(document, contract))
+
     def test_openapi_path_level_parameters_and_explicit_platform_exclusions(self):
         contract = {
             "operations": {"list": {"method": "GET", "path": "vertices", "query": ["page"]}},

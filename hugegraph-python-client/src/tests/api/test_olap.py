@@ -57,3 +57,11 @@ def test_full_rest_body_and_metrics(client_utils):
     assert rest.gremlin.get(gremlin="1 + 2")["result"]["data"] == [3]
     assert isinstance(client.metrics().histograms(), dict)
     assert isinstance(client.metrics().all(), str)
+
+
+def test_async_gremlin_job_roundtrip(client_utils):
+    client = client_utils.client
+    receipt = client.gremlin().submit("x + 1", bindings={"x": 2})
+    task = client.task().wait(receipt["task_id"], timeout=30, poll_interval=0.05)
+    assert task["task_status"] == "success"
+    assert client.task().result(task) == 3

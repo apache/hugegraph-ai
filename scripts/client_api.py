@@ -45,17 +45,17 @@ def render_resources():
         license + '"""Explicit low-level REST resources for the pinned server contract.\n\n'
         "Common workflows are available on the client managers; these resources expose\n"
         'every REST operation, including deployment-specific extensions.\n"""\n\n'
-        "from typing import Any\n\nfrom pyhugegraph.api.common import RestResource\n\n"
+        "from typing import Any\n\nfrom pyhugegraph.api.common import _UNSET, RestResource\n\n"
     )
     for group, methods in groups.items():
         cls = "".join(x.title() for x in group.split("_")) + "API"
         out += "\nclass " + cls + "(RestResource):\n"
         for operation, name, op in methods:
             pp = [x for x in re.findall(r"{(\w+)}", op["path"]) if x not in {"graphspace", "graph"}]
-            # All operations accept an optional entity. Server-side validation remains authoritative.
+            # Preserve omitted bodies separately from explicit JSON null.
             args = ["self"] + [f"{x}: Any" for x in pp]
             args += ["*"] if op["body"] or op["query"] or op["headers"] else []
-            args += ["body: Any = None"] if op["body"] else []
+            args += ["body: Any = _UNSET"] if op["body"] else []
             args += ["authorization: str | None = None"] if op["headers"] else []
             args += [f"{q}: Any = None" for q in op["query"] if q not in pp]
             args += ["query: dict[str, Any] | None = None"] if op.get("query_passthrough") else []
@@ -130,7 +130,15 @@ def compare_openapi(document, contract):
     for spec in contract["operations"].values():
         key = (spec["method"].lower(), normalized(spec["path"]))
         body = bool(spec.get("body", False))
-        request_media = {spec["content_type"].split(";", 1)[0].strip().lower()} if body else set()
+        # Publishing overrides describe OpenAPI; serialization still uses content_type.
+        request_media = (
+            {
+                media_type.split(";", 1)[0].strip().lower()
+                for media_type in spec.get("openapi_request_media", [spec["content_type"]])
+            }
+            if body
+            else set()
+        )
         shape = expected.setdefault(key, {"query": set(), "body": False, "request_media": set()})
         shape["body"] = shape["body"] or body
         shape["request_media"].update(request_media)

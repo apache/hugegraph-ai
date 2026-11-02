@@ -46,9 +46,9 @@ if __name__ == "__main__":
     g.add_edge("ActedIn", p2.id, m2.id, {})
 
     # update property
-    # g.eliminateVertex("vertex_id", {"property_key": "property_value"})
+    # g.eliminate_vertex("vertex_id", {"property_key": "property_value"})
 
-    # g.removeVertexById("12:Al Pacino")
+    # g.remove_vertex_by_id("12:Al Pacino")
     client.close()
 
     """gremlin"""

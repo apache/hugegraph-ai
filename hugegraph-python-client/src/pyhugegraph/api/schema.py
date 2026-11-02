@@ -119,3 +119,22 @@ class SchemaManager(HugeParamsBase):
         if response := self.request("index_label.list", params={"names": names}):
             return [IndexLabelData(item) for item in response["indexlabels"]]
         return None
+
+    # Legacy public names share the canonical implementations.
+    edgeLabel = edge_label  # noqa: N815
+    getEdgeLabel = get_edge_label  # noqa: N815
+    getEdgeLabels = get_edge_labels  # noqa: N815
+    getIndexLabel = get_index_label  # noqa: N815
+    getIndexLabels = get_index_labels  # noqa: N815
+    getPropertyKey = get_property_key  # noqa: N815
+    getPropertyKeys = get_property_keys  # noqa: N815
+    getRelations = get_relations  # noqa: N815
+    getVertexLabel = get_vertex_label  # noqa: N815
+    getVertexLabels = get_vertex_labels  # noqa: N815
+    indexLabel = index_label  # noqa: N815
+    propertyKey = property_key  # noqa: N815
+    vertexLabel = vertex_label  # noqa: N815
+
+    def getSchema(self, _format: str = "json") -> dict | None:
+        """Keep the historical argument; supported schema exports remain JSON."""
+        return self.get_schema()

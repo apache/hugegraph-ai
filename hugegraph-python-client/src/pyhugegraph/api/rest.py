@@ -23,7 +23,7 @@ every REST operation, including deployment-specific extensions.
 
 from typing import Any
 
-from pyhugegraph.api.common import RestResource
+from pyhugegraph.api.common import _UNSET, RestResource
 
 
 class ArthasAPI(RestResource):
@@ -33,11 +33,11 @@ class ArthasAPI(RestResource):
 
 
 class AccessAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/accesses."""
         return self.request("access.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/auth/accesses/{id}."""
         return self.request("access.update", path_params={"id": id}, body=body)
 
@@ -55,11 +55,11 @@ class AccessAPI(RestResource):
 
 
 class BelongAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/belongs."""
         return self.request("belong.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/auth/belongs/{id}."""
         return self.request("belong.update", path_params={"id": id}, body=body)
 
@@ -77,11 +77,11 @@ class BelongAPI(RestResource):
 
 
 class GraphSpaceGroupAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/groups."""
         return self.request("graph_space_group.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/auth/groups/{id}."""
         return self.request("graph_space_group.update", path_params={"id": id}, body=body)
 
@@ -99,11 +99,11 @@ class GraphSpaceGroupAPI(RestResource):
 
 
 class GroupAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /auth/groups."""
         return self.request("group.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET) -> Any:
         """PUT /auth/groups/{id}."""
         return self.request("group.update", path_params={"id": id}, body=body)
 
@@ -121,7 +121,7 @@ class GroupAPI(RestResource):
 
 
 class LoginAPI(RestResource):
-    def login(self, *, body: Any = None) -> Any:
+    def login(self, *, body: Any = _UNSET) -> Any:
         """POST /auth/login."""
         return self.request("login.login", body=body)
 
@@ -135,7 +135,7 @@ class LoginAPI(RestResource):
 
 
 class ManagerAPI(RestResource):
-    def create_manager(self, *, body: Any = None) -> Any:
+    def create_manager(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/managers."""
         return self.request("manager.create_manager", body=body)
 
@@ -161,11 +161,11 @@ class ManagerAPI(RestResource):
 
 
 class ProjectAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/projects."""
         return self.request("project.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/auth/projects/{id}."""
         return self.request("project.update", path_params={"id": id}, params={"action": action}, body=body)
 
@@ -183,11 +183,11 @@ class ProjectAPI(RestResource):
 
 
 class TargetAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/targets."""
         return self.request("target.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/auth/targets/{id}."""
         return self.request("target.update", path_params={"id": id}, body=body)
 
@@ -205,11 +205,11 @@ class TargetAPI(RestResource):
 
 
 class UserAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/auth/users."""
         return self.request("user.create", body=body)
 
-    def update(self, id: Any, *, body: Any = None) -> Any:
+    def update(self, id: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/auth/users/{id}."""
         return self.request("user.update", path_params={"id": id}, body=body)
 
@@ -235,21 +235,21 @@ class CypherAPI(RestResource):
         """GET /graphspaces/{graphspace}/graphs/{graph}/cypher."""
         return self.request("cypher.query", params={"cypher": cypher})
 
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/cypher."""
         return self.request("cypher.post", body=body)
 
 
 class EdgeAPI(RestResource):
-    def create_batch(self, *, body: Any = None, check_vertex: Any = None) -> Any:
+    def create_batch(self, *, body: Any = _UNSET, check_vertex: Any = None) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/graph/edges/batch."""
         return self.request("edge.create_batch", params={"check_vertex": check_vertex}, body=body)
 
-    def update_batch(self, *, body: Any = None) -> Any:
+    def update_batch(self, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/graph/edges/batch."""
         return self.request("edge.update_batch", body=body)
 
-    def update_by_id(self, id: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update_by_id(self, id: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/graph/edges/{id}."""
         return self.request("edge.update_by_id", path_params={"id": id}, params={"action": action}, body=body)
 
@@ -288,21 +288,21 @@ class EdgeAPI(RestResource):
         """DELETE /graphspaces/{graphspace}/graphs/{graph}/graph/edges/{id}."""
         return self.request("edge.delete", path_params={"id": id}, params={"label": label})
 
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/graph/edges."""
         return self.request("edge.create", body=body)
 
 
 class VertexAPI(RestResource):
-    def create_batch(self, *, body: Any = None) -> Any:
+    def create_batch(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/graph/vertices/batch."""
         return self.request("vertex.create_batch", body=body)
 
-    def update_batch(self, *, body: Any = None) -> Any:
+    def update_batch(self, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/graph/vertices/batch."""
         return self.request("vertex.update_batch", body=body)
 
-    def update_by_id(self, id: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update_by_id(self, id: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/graph/vertices/{id}."""
         return self.request("vertex.update_by_id", path_params={"id": id}, params={"action": action}, body=body)
 
@@ -337,13 +337,13 @@ class VertexAPI(RestResource):
         """DELETE /graphspaces/{graphspace}/graphs/{graph}/graph/vertices/{id}."""
         return self.request("vertex.delete", path_params={"id": id}, params={"label": label})
 
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/graph/vertices."""
         return self.request("vertex.create", body=body)
 
 
 class GremlinAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /gremlin."""
         return self.request("gremlin.post", body=body)
 
@@ -353,19 +353,19 @@ class GremlinAPI(RestResource):
 
 
 class AlgorithmAPI(RestResource):
-    def post(self, name: Any, *, body: Any = None) -> Any:
+    def post(self, name: Any, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/jobs/algorithm/{name}."""
         return self.request("algorithm.post", path_params={"name": name}, body=body)
 
 
 class ComputerAPI(RestResource):
-    def post(self, name: Any, *, body: Any = None) -> Any:
+    def post(self, name: Any, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/jobs/computer/{name}."""
         return self.request("computer.post", path_params={"name": name}, body=body)
 
 
 class GremlinJobAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/jobs/gremlin."""
         return self.request("gremlin_job.post", body=body)
 
@@ -469,25 +469,25 @@ class GraphsAPI(RestResource):
         """DELETE /graphspaces/{graphspace}/graphs/{name}."""
         return self.request("graphs.drop", path_params={"name": name}, params={"confirm_message": confirm_message})
 
-    def manage(self, name: Any, *, body: Any = None) -> Any:
+    def manage(self, name: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{name}."""
         return self.request("graphs.manage", path_params={"name": name}, body=body)
 
-    def reload(self, *, body: Any = None) -> Any:
+    def reload(self, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/manage."""
         return self.request("graphs.reload", body=body)
 
-    def create(self, name: Any, *, body: Any = None, clone_graph_name: Any = None) -> Any:
+    def create(self, name: Any, *, body: Any = _UNSET, clone_graph_name: Any = None) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{name}."""
         return self.request(
             "graphs.create", path_params={"name": name}, params={"clone_graph_name": clone_graph_name}, body=body
         )
 
-    def clone_schema(self, name: Any, *, body: Any = None, source: Any = None) -> Any:
+    def clone_schema(self, name: Any, *, body: Any = _UNSET, source: Any = None) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{name}/schema-clone."""
         return self.request("graphs.clone_schema", path_params={"name": name}, params={"source": source}, body=body)
 
-    def create_by_text(self, name: Any, *, body: Any = None, clone_graph_name: Any = None) -> Any:
+    def create_by_text(self, name: Any, *, body: Any = _UNSET, clone_graph_name: Any = None) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{name}."""
         return self.request(
             "graphs.create_by_text",
@@ -516,7 +516,7 @@ class GraphsAPI(RestResource):
         """PUT /graphspaces/{graphspace}/graphs/{name}/compact."""
         return self.request("graphs.compact", path_params={"name": name})
 
-    def mode_set(self, name: Any, *, body: Any = None) -> Any:
+    def mode_set(self, name: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{name}/mode."""
         return self.request("graphs.mode_set", path_params={"name": name}, body=body)
 
@@ -528,11 +528,11 @@ class GraphsAPI(RestResource):
         """GET /graphspaces/{graphspace}/graphs/{name}/mode/owners."""
         return self.request("graphs.loading_mode_get", path_params={"name": name})
 
-    def loading_mode_set(self, name: Any, *, body: Any = None) -> Any:
+    def loading_mode_set(self, name: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{name}/mode/owners."""
         return self.request("graphs.loading_mode_set", path_params={"name": name}, body=body)
 
-    def graph_read_mode_set(self, name: Any, *, body: Any = None) -> Any:
+    def graph_read_mode_set(self, name: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{name}/graph_read_mode."""
         return self.request("graphs.graph_read_mode_set", path_params={"name": name}, body=body)
 
@@ -562,7 +562,7 @@ class WhiteIpListAPI(RestResource):
         """GET /whiteiplist."""
         return self.request("white_ip_list.list")
 
-    def update_white_ips(self, *, body: Any = None) -> Any:
+    def update_white_ips(self, *, body: Any = _UNSET) -> Any:
         """POST /whiteiplist."""
         return self.request("white_ip_list.update_white_ips", body=body)
 
@@ -598,11 +598,11 @@ class RaftAPI(RestResource):
 
 
 class EdgeLabelAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels."""
         return self.request("edge_label.create", body=body)
 
-    def update(self, name: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update(self, name: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/schema/edgelabels/{name}."""
         return self.request("edge_label.update", path_params={"name": name}, params={"action": action}, body=body)
 
@@ -620,11 +620,11 @@ class EdgeLabelAPI(RestResource):
 
 
 class IndexLabelAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels."""
         return self.request("index_label.create", body=body)
 
-    def update(self, name: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update(self, name: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/schema/indexlabels/{name}."""
         return self.request("index_label.update", path_params={"name": name}, params={"action": action}, body=body)
 
@@ -642,11 +642,11 @@ class IndexLabelAPI(RestResource):
 
 
 class PropertyKeyAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys."""
         return self.request("property_key.create", body=body)
 
-    def update(self, name: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update(self, name: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/schema/propertykeys/{name}."""
         return self.request("property_key.update", path_params={"name": name}, params={"action": action}, body=body)
 
@@ -670,11 +670,11 @@ class SchemaAPI(RestResource):
 
 
 class VertexLabelAPI(RestResource):
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels."""
         return self.request("vertex_label.create", body=body)
 
-    def update(self, name: Any, *, body: Any = None, action: Any = None) -> Any:
+    def update(self, name: Any, *, body: Any = _UNSET, action: Any = None) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/schema/vertexlabels/{name}."""
         return self.request("vertex_label.update", path_params={"name": name}, params={"action": action}, body=body)
 
@@ -700,7 +700,7 @@ class GraphSpaceAPI(RestResource):
         """GET /graphspaces/{graphspace}."""
         return self.request("graph_space.get")
 
-    def set_default_role(self, *, body: Any = None) -> Any:
+    def set_default_role(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/role."""
         return self.request("graph_space.set_default_role", body=body)
 
@@ -716,11 +716,11 @@ class GraphSpaceAPI(RestResource):
         """GET /graphspaces/profile."""
         return self.request("graph_space.list_profile", params={"prefix": prefix})
 
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces."""
         return self.request("graph_space.create", body=body)
 
-    def manage(self, name: Any, *, body: Any = None) -> Any:
+    def manage(self, name: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{name}."""
         return self.request("graph_space.manage", path_params={"name": name}, body=body)
 
@@ -738,7 +738,7 @@ class SchemaTemplateAPI(RestResource):
         """GET /graphspaces/{graphspace}/schematemplates/{name}."""
         return self.request("schema_template.get", path_params={"name": name})
 
-    def create(self, *, body: Any = None) -> Any:
+    def create(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/schematemplates."""
         return self.request("schema_template.create", body=body)
 
@@ -746,7 +746,7 @@ class SchemaTemplateAPI(RestResource):
         """DELETE /graphspaces/{graphspace}/schematemplates/{name}."""
         return self.request("schema_template.delete", path_params={"name": name})
 
-    def update(self, name: Any, *, body: Any = None) -> Any:
+    def update(self, name: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/schematemplates/{name}."""
         return self.request("schema_template.update", path_params={"name": name}, body=body)
 
@@ -810,7 +810,7 @@ class AllShortestPathsAPI(RestResource):
 
 
 class CountAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/count."""
         return self.request("count.post", body=body)
 
@@ -845,13 +845,13 @@ class CrosspointsAPI(RestResource):
 
 
 class CustomizedCrosspointsAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/customizedcrosspoints."""
         return self.request("customized_crosspoints.post", body=body)
 
 
 class CustomizedPathsAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/customizedpaths."""
         return self.request("customized_paths.post", body=body)
 
@@ -882,7 +882,7 @@ class EdgesAPI(RestResource):
 
 
 class FusiformSimilarityAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/fusiformsimilarity."""
         return self.request("fusiform_similarity.post", body=body)
 
@@ -897,7 +897,7 @@ class JaccardSimilarityAPI(RestResource):
             params={"vertex": vertex, "other": other, "direction": direction, "label": label, "max_degree": max_degree},
         )
 
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/jaccardsimilarity."""
         return self.request("jaccard_similarity.post", body=body)
 
@@ -928,7 +928,7 @@ class KneighborAPI(RestResource):
             },
         )
 
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/kneighbor."""
         return self.request("kneighbor.post", body=body)
 
@@ -963,19 +963,19 @@ class KoutAPI(RestResource):
             },
         )
 
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/kout."""
         return self.request("kout.post", body=body)
 
 
 class MultiNodeShortestPathAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/multinodeshortestpath."""
         return self.request("multi_node_shortest_path.post", body=body)
 
 
 class NeighborRankAPI(RestResource):
-    def neighbor_rank(self, *, body: Any = None) -> Any:
+    def neighbor_rank(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/neighborrank."""
         return self.request("neighbor_rank.neighbor_rank", body=body)
 
@@ -1008,13 +1008,13 @@ class PathsAPI(RestResource):
             },
         )
 
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/paths."""
         return self.request("paths.post", body=body)
 
 
 class PersonalRankAPI(RestResource):
-    def personal_rank(self, *, body: Any = None) -> Any:
+    def personal_rank(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/personalrank."""
         return self.request("personal_rank.personal_rank", body=body)
 
@@ -1132,13 +1132,13 @@ class SameNeighborsAPI(RestResource):
             },
         )
 
-    def same_neighbors(self, *, body: Any = None) -> Any:
+    def same_neighbors(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/sameneighbors."""
         return self.request("same_neighbors.same_neighbors", body=body)
 
 
 class SameNeighborsBatchAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/sameneighborsbatch."""
         return self.request("same_neighbors_batch.post", body=body)
 
@@ -1210,7 +1210,7 @@ class SingleSourceShortestPathAPI(RestResource):
 
 
 class TemplatePathsAPI(RestResource):
-    def post(self, *, body: Any = None) -> Any:
+    def post(self, *, body: Any = _UNSET) -> Any:
         """POST /graphspaces/{graphspace}/graphs/{graph}/traversers/templatepaths."""
         return self.request("template_paths.post", body=body)
 
@@ -1265,7 +1265,7 @@ class WeightedShortestPathAPI(RestResource):
 
 
 class VariablesAPI(RestResource):
-    def update(self, key: Any, *, body: Any = None) -> Any:
+    def update(self, key: Any, *, body: Any = _UNSET) -> Any:
         """PUT /graphspaces/{graphspace}/graphs/{graph}/variables/{key}."""
         return self.request("variables.update", path_params={"key": key}, body=body)
 
@@ -1287,7 +1287,7 @@ class ExceptionTraceAPI(RestResource):
         """GET /exception/trace."""
         return self.request("exception_trace.get")
 
-    def trace(self, *, body: Any = None) -> Any:
+    def trace(self, *, body: Any = _UNSET) -> Any:
         """PUT /exception/trace."""
         return self.request("exception_trace.trace", body=body)
 

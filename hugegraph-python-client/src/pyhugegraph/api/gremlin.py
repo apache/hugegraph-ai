@@ -48,7 +48,6 @@ class GremlinManager(HugeParamsBase):
                 "gremlin": gremlin,
                 "bindings": bindings or {},
                 "language": language,
-                "aliases": ServerAdapter(self.session.cfg).aliases(),
             },
         )
 

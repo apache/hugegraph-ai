@@ -1160,7 +1160,11 @@
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java",
+      "openapi_request_media": [
+        "*/*"
+      ],
+      "request_media_note": "No @Consumes annotation: server OpenAPI publishes */*, while the SDK serializes the request object as application/json."
     },
     "graphs.create": {
       "method": "POST",
@@ -1173,7 +1177,11 @@
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/profile/GraphsAPI.java",
+      "openapi_request_media": [
+        "text/plain"
+      ],
+      "request_media_note": "JSON and text/plain create overloads share this method and path, but server OpenAPI only publishes the text/plain variant."
     },
     "graphs.clone_schema": {
       "method": "POST",
@@ -1941,7 +1949,11 @@
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/CountAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/CountAPI.java",
+      "openapi_request_media": [
+        "*/*"
+      ],
+      "request_media_note": "No @Consumes annotation: server OpenAPI publishes */*, while the SDK serializes the request object as application/json."
     },
     "crosspoints.get": {
       "method": "GET",
@@ -2178,7 +2190,11 @@
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/NeighborRankAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/NeighborRankAPI.java",
+      "openapi_request_media": [
+        "*/*"
+      ],
+      "request_media_note": "No @Consumes annotation: server OpenAPI publishes */*, while the SDK serializes the request object as application/json."
     },
     "paths.get": {
       "method": "GET",
@@ -2223,7 +2239,11 @@
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/PersonalRankAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/PersonalRankAPI.java",
+      "openapi_request_media": [
+        "*/*"
+      ],
+      "request_media_note": "No @Consumes annotation: server OpenAPI publishes */*, while the SDK serializes the request object as application/json."
     },
     "rays.get": {
       "method": "GET",
@@ -2323,7 +2343,11 @@
       "headers": [],
       "vertex_query": [],
       "vertex_path": [],
-      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/SameNeighborsAPI.java"
+      "source": "hugegraph-server/hugegraph-api/src/main/java/org/apache/hugegraph/api/traversers/SameNeighborsAPI.java",
+      "openapi_request_media": [
+        "*/*"
+      ],
+      "request_media_note": "No @Consumes annotation: server OpenAPI publishes */*, while the SDK serializes the request object as application/json."
     },
     "same_neighbors_batch.post": {
       "method": "POST",

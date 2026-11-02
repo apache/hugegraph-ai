@@ -106,3 +106,8 @@ class IndexLabel(HugeParamsBase):
             return f'remove IndexLabel success, Detail: "{response!s}"'
         log.error(f'remove IndexLabel failed, Detail: "{response!s}"')
         return None
+
+    # Legacy public names share the canonical implementations.
+    ifNotExist = if_not_exist  # noqa: N815
+    onE = on_e  # noqa: N815
+    onV = on_v  # noqa: N815

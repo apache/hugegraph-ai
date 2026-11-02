@@ -27,10 +27,14 @@ import pytest
 import requests
 from pyhugegraph.api.auth import AuthManager
 from pyhugegraph.api.graph import GraphManager
+from pyhugegraph.api.graphs import GraphsManager
+from pyhugegraph.api.gremlin import GremlinManager
 from pyhugegraph.api.olap import OlapManager
 from pyhugegraph.api.rest import RestManager
+from pyhugegraph.api.schema import SchemaManager
 from pyhugegraph.api.task import TaskManager
 from pyhugegraph.client import PyHugeClient
+from pyhugegraph.structure.rank_data import NeighborRankStep
 from pyhugegraph.utils.exceptions import (
     ResponseParseError,
     ServerError,
@@ -121,6 +125,112 @@ def test_custom_algorithm_names_are_not_blocked_by_client_catalog():
     session, http = transport([{"task_id": 0}])
     assert OlapManager(session).submit("custom_algorithm") == {"task_id": 0}
     assert json.loads(http.calls[0][0].body) == {}
+
+
+def test_gremlin_jobs_leave_aliases_to_the_server():
+    session, http = transport([{"task_id": 9}, {}])
+    gremlin = GremlinManager(session)
+    assert gremlin.submit("x + 1", bindings={"x": 2}) == {"task_id": 9}
+    request = http.calls[0][0]
+    assert request.url.endswith("/jobs/gremlin")
+    assert json.loads(request.body) == {"gremlin": "x + 1", "bindings": {"x": 2}, "language": "gremlin-groovy"}
+    gremlin.query("x + 1", bindings={"x": 2})
+    assert json.loads(http.calls[1][0].body)["aliases"] == {"graph": "DEFAULT-g", "g": "__g_DEFAULT-g"}
+
+
+def test_neighbor_rank_step_preserves_positional_top():
+    step = NeighborRankStep("OUT", ["knows"], 1000, 10, skip_degree=2000)
+    assert json.loads(step.dumps()) == {
+        "direction": "OUT",
+        "labels": ["knows"],
+        "max_degree": 1000,
+        "top": 10,
+        "skip_degree": 2000,
+    }
+
+
+@pytest.mark.parametrize(
+    "method", ["get_vertex_by_page", "get_vertex_by_condition", "get_vertex_by_condition_with_page", "get_edge_by_page"]
+)
+def test_graph_helpers_distinguish_offsets_and_cursor_pages(method):
+    session, http = transport([{"vertices": [], "edges": []}] * 3)
+    query_graph = getattr(GraphManager(session), method)
+    query_graph(label="person", limit=10, offset=5)
+    assert query(http.calls[0][0]) == {"label": ["person"], "limit": ["10"], "offset": ["5"]}
+    query_graph(label="person", limit=10)
+    assert query(http.calls[1][0])["page"] == [""]
+    query_graph(label="person", limit=10, page="next", offset=0)
+    assert query(http.calls[2][0])["page"] == ["next"]
+    for page in ("", "next"):
+        with pytest.raises(ValueError, match="page and nonzero offset"):
+            query_graph(label="person", limit=10, offset=5, page=page)
+    assert len(http.calls) == 3
+
+
+def test_generated_resources_distinguish_missing_body_from_explicit_null():
+    session, http = transport()
+    graphs = RestManager(session).graphs
+    graphs.reload()
+    assert http.calls[0][0].body is None
+    graphs.reload(body=None)
+    assert http.calls[1][0].body == "null"
+    graphs.reload(body={"action": "reload"})
+    assert json.loads(http.calls[2][0].body) == {"action": "reload"}
+
+
+def test_legacy_schema_builder_names_preserve_the_wire_contract():
+    session, http = transport([{}, {"property_key": {"name": "name", "data_type": "TEXT"}}])
+    SchemaManager(session).propertyKey("name").asText().valueSingle().ifNotExist().create()
+    assert http.calls[0][0].method == "GET"
+    request = http.calls[1][0]
+    assert request.method == "POST"
+    assert request.url.endswith("/schema/propertykeys")
+    assert json.loads(request.body) == {"name": "name", "data_type": "TEXT", "cardinality": "SINGLE"}
+
+
+def test_legacy_graph_methods_and_edge_properties_keep_working():
+    session, http = transport(
+        [
+            {"id": "alice", "label": "person", "properties": {"name": "Alice"}},
+            {"id": "edge", "outV": "alice", "inV": 123, "outVLabel": "person", "inVLabel": "person"},
+        ]
+    )
+    graph = GraphManager(session)
+    vertex = graph.addVertex("person", {"name": "Alice"})
+    assert vertex.id == "alice"
+    assert json.loads(http.calls[0][0].body) == {"label": "person", "properties": {"name": "Alice"}}
+    edge = graph.getEdgeById("edge")
+    assert edge.outV == edge.out_v == "alice"
+    assert edge.inV == edge.in_v == 123
+    assert edge.outVLabel == edge.out_v_label == "person"
+    assert edge.inVLabel == edge.in_v_label == "person"
+
+
+@pytest.mark.parametrize("args, kwargs", [((), {}), (("json",), {}), (("groovy",), {}), ((), {"_format": "groovy"})])
+def test_legacy_schema_export_name_returns_the_native_json_schema(args, kwargs):
+    schema = {"propertykeys": [], "vertexlabels": [], "edgelabels": [], "indexlabels": []}
+    session, http = transport([schema])
+    assert SchemaManager(session).getSchema(*args, **kwargs) == schema
+    assert http.calls[0][0].url.endswith("/schema")
+
+
+@pytest.mark.parametrize(
+    "legacy, resource, native, args, payload",
+    [
+        ("get_all_graphs", "graphs", "list", (), {"graphs": ["g"]}),
+        ("get_version", "version", "list", (), {"versions": {"core": "1.8.0"}}),
+        ("get_graph_info", "graphs", "get", ("g",), {"name": "g", "backend": "rocksdb"}),
+    ],
+)
+def test_legacy_graph_helpers_keep_text_while_rest_returns_json(legacy, resource, native, args, payload):
+    session, http = transport([payload, payload])
+    old_result = getattr(GraphsManager(session), legacy)()
+    assert isinstance(old_result, str)
+    assert json.loads(old_result) == payload
+    new_result = getattr(getattr(RestManager(session), resource), native)(*args)
+    assert isinstance(new_result, dict)
+    assert new_result == payload
+    assert http.calls[0][0].url == http.calls[1][0].url
 
 
 class Clock:
@@ -236,6 +346,41 @@ def test_wait_disables_transport_retries_without_changing_later_requests():
             thread.join(timeout=2)
 
 
+def test_wait_reuses_http_connections_when_retries_are_disabled():
+    ports = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            ports.append(self.client_address[1])
+            body = json.dumps({"id": 7, "task_status": "running" if len(ports) == 1 else "success"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cfg = HGraphConfig(f"http://127.0.0.1:{server.server_port}", "admin", "password", "g", graphspace="DEFAULT")
+        http = requests.Session()
+        http.trust_env = False
+        session = HGraphSession(cfg, session=http)
+        try:
+            assert TaskManager(session).wait(7, timeout=2, poll_interval=0.001)["task_status"] == "success"
+            assert len(ports) == 3
+            assert len(set(ports)) == 1
+        finally:
+            session.close()
+            server.shutdown()
+            thread.join(timeout=2)
+
+
 def test_wait_rejects_malformed_task_state(clock):
     session, _ = transport([{}])
     with pytest.raises(ResponseParseError, match="task_status"):
@@ -329,7 +474,7 @@ def test_version_probe_uses_the_selected_authentication(monkeypatch, token):
     assert "proxy-token" not in repr(cfg)
 
 
-@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), (1, 0)])
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), float("nan"), (1, 0), (5, None), (1,), "invalid"])
 def test_invalid_http_timeout_fails_before_version_probe(monkeypatch, timeout):
     def unexpected_probe(*_args, **_kwargs):
         pytest.fail("Invalid HTTP timeout must fail before network access")

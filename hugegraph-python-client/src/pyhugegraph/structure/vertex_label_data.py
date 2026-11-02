@@ -67,3 +67,10 @@ class VertexLabelData:
     def __repr__(self):
         res = f"name: {self.__name}, primary_keys: {self.__primary_keys}, properties: {self.__properties}"
         return res
+
+    # Legacy public names share the canonical implementations.
+    enableLabelIndex = enable_label_index  # noqa: N815
+    idStrategy = id_strategy  # noqa: N815
+    indexLabels = index_labels  # noqa: N815
+    nullableKeys = nullable_keys  # noqa: N815
+    primaryKeys = primary_keys  # noqa: N815

@@ -37,6 +37,13 @@ _REQUEST_RETRIES: ContextVar[bool] = ContextVar("hugegraph_request_retries", def
 
 
 class _RetryAdapter(HTTPAdapter):
+    def __copy__(self):
+        # HTTPAdapter's pickle hooks recreate pools; bypass them for this
+        # request-local policy copy and retain the original pool ownership.
+        adapter = type(self).__new__(type(self))
+        adapter.__dict__.update(self.__dict__)
+        return adapter
+
     def send(self, request, *args, **kwargs):
         # Requests has no per-request retry option. A context-local policy and a
         # shallow adapter copy retain the same pools without mutating other calls.

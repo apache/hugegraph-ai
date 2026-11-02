@@ -81,3 +81,11 @@ class EdgeLabelData:
     def __repr__(self):
         res = f"name: {self.__name}, properties: {self.__properties}"
         return res
+
+    # Legacy public names share the canonical implementations.
+    enableLabelIndex = enable_label_index  # noqa: N815
+    indexLabels = index_labels  # noqa: N815
+    nullableKeys = nullable_keys  # noqa: N815
+    sortKeys = sort_keys  # noqa: N815
+    sourceLabel = source_label  # noqa: N815
+    targetLabel = target_label  # noqa: N815

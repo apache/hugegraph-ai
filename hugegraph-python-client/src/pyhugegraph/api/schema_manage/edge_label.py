@@ -170,3 +170,13 @@ class EdgeLabel(HugeParamsBase):
             return f'eliminate EdgeLabel success, Detail: "{response!s}"'
         log.error(f'eliminate EdgeLabel failed, Detail: "{response!s}"')
         return None
+
+    # Legacy public names share the canonical implementations.
+    enableLabelIndex = enable_label_index  # noqa: N815
+    ifNotExist = if_not_exist  # noqa: N815
+    multiTimes = multi_times  # noqa: N815
+    nullableKeys = nullable_keys  # noqa: N815
+    singleTime = single_time  # noqa: N815
+    sortKeys = sort_keys  # noqa: N815
+    sourceLabel = source_label  # noqa: N815
+    targetLabel = target_label  # noqa: N815

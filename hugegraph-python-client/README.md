@@ -19,7 +19,7 @@ source .venv/bin/activate
 from pyhugegraph.client import PyHugeClient
 
 with PyHugeClient("http://127.0.0.1:8080", "hugegraph", "admin", "admin") as client:
-    print(client.graphs().get_all_graphs())
+    print(client.graphs().list())
     print(client.olap().run("count_vertex", timeout=60))
 ```
 
@@ -131,6 +131,7 @@ print(client.cypher().post(body={"cypher": "MATCH (n) RETURN n LIMIT 5"}))
 
 See [all REST operations and query parameters](https://github.com/apache/hugegraph-ai/blob/main/hugegraph-python-client/API_COVERAGE.md).
 `client.rest()` exposes explicit resource methods, accepts complete request bodies, and shares authentication and transport.
+For JSON endpoints, an omitted `body` sends no entity; `body=None` explicitly sends JSON `null`.
 Operations preserve JSON/text responses; HTTP 204 returns an empty dictionary. Server errors are surfaced through
 the existing exception types. A configured Bearer token (`client.use_token(token)`) takes precedence over Basic auth;
 `client.use_token(None)` restores Basic. Login/verify/logout are explicit and never silently change credentials.
@@ -143,7 +144,11 @@ Graph configuration export returns source text and can be unavailable on graphs 
 
 ## Migration and server synchronization
 
-Public methods and object properties now use `snake_case`; CamelCase aliases and manager-level `close()` are removed.
+Use `snake_case` in new code. Existing public CamelCase method/property names remain direct aliases;
+new APIs only introduce snake_case names. Parameter and return-value changes still require migration.
+Managers no longer own `close()`.
+The existing `get_all_graphs()`, `get_version()` and `get_graph_info()` graph helpers retain JSON-string returns;
+use the corresponding REST resources for parsed dictionaries.
 Close the owning client. See [the migration table](https://github.com/apache/hugegraph-ai/blob/main/hugegraph-python-client/MIGRATION.md), including the corrected shortest-path signatures.
 
 The checked-in contract pins server commit `8e327b8f3d3ffcf61547be7fea1a15d3af2de8b4`.

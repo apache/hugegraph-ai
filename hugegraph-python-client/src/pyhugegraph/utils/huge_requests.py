@@ -178,7 +178,8 @@ class HGraphSession:
             raise RuntimeError("The HugeGraph client is closed")
         url = self.resolve(path)
         headers = CaseInsensitiveDict(self._headers)
-        headers.update(kwargs.pop("headers", {}))
+        request_headers = kwargs.pop("headers", None) or {}
+        headers.update({key: value for key, value in request_headers.items() if value is not None})
         auth = request_auth(headers, self._auth)
         timeout = kwargs.pop("timeout", self._timeout)
         policy = _REQUEST_RETRIES.set(retries)

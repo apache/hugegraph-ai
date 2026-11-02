@@ -104,7 +104,9 @@ and `client.rest()` when complete server request/response payloads are required.
 Schema export uses `get_schema()` (also available as `getSchema()`) and always returns the server JSON schema.
 The legacy `getSchema(_format=...)` call still accepts its historical argument; schema output remains JSON.
 It does not convert schema to Groovy. The canonical `get_schema()` has no format argument.
-`NeighborRankParameters` no longer requires an unsupported `label` field; edge labels belong to its steps.
+`NeighborRankParameters` no longer accepts the unsupported top-level `label`; edge labels belong to its steps.
+Only `source` may be positional. Pass `alpha`, `capacity` and `steps` by keyword so legacy
+`NeighborRankParameters(source, label)` calls fail explicitly instead of binding `label` to `alpha`.
 `NeighborRankStep` keeps `top` as its fourth positional argument; pass the new `skip_degree` by keyword.
 Older servers may ignore `with_result=false` and return the result during task polling.
 

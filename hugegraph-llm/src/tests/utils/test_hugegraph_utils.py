@@ -18,6 +18,9 @@
 import json
 import os
 import stat
+import subprocess
+import sys
+import textwrap
 from contextlib import contextmanager
 from datetime import datetime
 from unittest.mock import Mock
@@ -112,6 +115,70 @@ def test_atomic_backup_preserves_legacy_file_permissions(tmp_path):
     assert json.loads(target.read_text(encoding="utf-8")) == {"version": 2}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX umask is required")
+def test_concurrent_new_backups_do_not_change_process_umask(tmp_path):
+    script = textwrap.dedent("""
+        import os
+        import stat
+        import sys
+        import threading
+        from pathlib import Path
+        from hugegraph_llm.utils import hugegraph_utils
+
+        root = Path(sys.argv[1])
+        real_umask = os.umask
+        real_umask(0o077)
+        a_probed = threading.Event()
+        b_probed = threading.Event()
+        a_restored = threading.Event()
+        calls = {"A": 0, "B": 0}
+        errors = []
+
+        def interleave_umask(mode):
+            name = threading.current_thread().name
+            calls[name] += 1
+            if name == "B" and calls[name] == 1:
+                assert a_probed.wait(5)
+            previous = real_umask(mode)
+            if calls[name] == 1:
+                if name == "A":
+                    a_probed.set()
+                    assert b_probed.wait(5)
+                else:
+                    b_probed.set()
+                    assert a_restored.wait(5)
+            elif name == "A":
+                a_restored.set()
+            return previous
+
+        hugegraph_utils.os.umask = interleave_umask
+
+        def backup(name):
+            try:
+                directory = root / name
+                directory.mkdir()
+                hugegraph_utils.write_backup_file(None, directory, "schema.json", {"name": name}, True)
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(name=name, target=backup, args=(name,)) for name in ("A", "B")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(10)
+        assert not any(thread.is_alive() for thread in threads)
+        assert not errors, errors
+        unrelated = root / "unrelated.txt"
+        unrelated.write_text("probe", encoding="utf-8")
+        observed_umask = real_umask(0o077)
+        assert observed_umask == 0o077, oct(observed_umask)
+        for path in (root / "A/schema.json", root / "B/schema.json", unrelated):
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    """)
+    result = subprocess.run([sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True, timeout=25)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("failure", ["serialize", "close", "replace"])
 def test_schema_backup_failures_preserve_both_previous_files(tmp_path, monkeypatch, failure):
     target = tmp_path / "schema.json"
@@ -124,7 +191,7 @@ def test_schema_backup_failures_preserve_both_previous_files(tmp_path, monkeypat
         schema["invalid"] = object()
         expected_error = TypeError
     elif failure == "close":
-        original = hugegraph_utils.NamedTemporaryFile
+        original = open
 
         @contextmanager
         def failed_close(*args, **kwargs):
@@ -132,7 +199,7 @@ def test_schema_backup_failures_preserve_both_previous_files(tmp_path, monkeypat
                 yield stream
             raise OSError("close failed")
 
-        monkeypatch.setattr(hugegraph_utils, "NamedTemporaryFile", failed_close)
+        monkeypatch.setattr(hugegraph_utils, "open", failed_close, raising=False)
     else:
 
         def failed_replace(*_args):

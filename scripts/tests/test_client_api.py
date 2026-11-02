@@ -84,6 +84,38 @@ class ClientContractTest(unittest.TestCase):
         self.assertIn("REQUEST MEDIA POST /graphs: added=['application/json'], missing=['text/plain']", changes)
         self.assertIn("BODY GET /vertices/{}: expected=False, actual=True", changes)
 
+    def test_openapi_merges_media_types_for_same_method_and_path(self):
+        contract = {
+            "operations": {
+                "graphs.create": {
+                    "method": "POST",
+                    "path": "graphs/{name}",
+                    "query": [],
+                    "body": True,
+                    "content_type": "application/json",
+                },
+                "graphs.create_by_text": {
+                    "method": "POST",
+                    "path": "graphs/{name}",
+                    "query": [],
+                    "body": True,
+                    "content_type": "text/plain",
+                },
+            }
+        }
+        document = {
+            "paths": {
+                "/graphs/{graph_name}": {
+                    "post": {
+                        "requestBody": {
+                            "content": {"application/json": {}, "text/plain": {}},
+                        }
+                    }
+                }
+            }
+        }
+        self.assertEqual([], client_api.compare_openapi(document, contract))
+
     def test_openapi_media_type_ignores_charset(self):
         contract = {
             "operations": {

@@ -131,9 +131,9 @@ def compare_openapi(document, contract):
         key = (spec["method"].lower(), normalized(spec["path"]))
         body = bool(spec.get("body", False))
         request_media = {spec["content_type"].split(";", 1)[0].strip().lower()} if body else set()
-        shape = expected.setdefault(key, {"query": set(), "body": body, "request_media": request_media})
-        if shape["body"] != body or shape["request_media"] != request_media:
-            raise ValueError(f"Conflicting contract entries for {key[0].upper()} /{key[1]}")
+        shape = expected.setdefault(key, {"query": set(), "body": False, "request_media": set()})
+        shape["body"] = shape["body"] or body
+        shape["request_media"].update(request_media)
         shape["query"].update(spec.get("openapi_query", spec["query"]))
     actual = {}
     for path, item in document["paths"].items():

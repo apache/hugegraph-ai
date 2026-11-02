@@ -127,7 +127,7 @@ def _process_schema(schema, generator, sm):
         short_schema = True
         log.info("Try to get schema from graph '%s'", schema)
         generator.import_schema(from_hugegraph=schema)
-        schema = sm.schema.getSchema()
+        schema = sm.schema.get_schema()
     else:
         try:
             schema = json.loads(schema)

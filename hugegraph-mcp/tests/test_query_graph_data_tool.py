@@ -41,35 +41,35 @@ class FakeGraphManager:
     def __init__(self):
         self.calls = []
 
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         self.calls.append(("getVertexById", vertex_id))
         return Vertex()
 
-    def getVerticesById(self, vertex_ids):
+    def get_vertices_by_id(self, vertex_ids):
         self.calls.append(("getVerticesById", vertex_ids))
         return [Vertex()]
 
-    def getVertexByPage(self, label, limit, page=None, properties=None):
+    def get_vertex_by_page(self, label, limit, page=None, properties=None):
         self.calls.append(("getVertexByPage", label, limit, page, properties))
         return [Vertex()], "next-page"
 
-    def getVertexByCondition(self, label="", limit=0, page=None, properties=None):
+    def get_vertex_by_condition(self, label="", limit=0, page=None, properties=None):
         self.calls.append(("getVertexByCondition", label, limit, page, properties))
         return [Vertex()]
 
-    def getVertexByConditionWithPage(self, label="", limit=0, page=None, properties=None):
+    def get_vertex_by_condition_with_page(self, label="", limit=0, page=None, properties=None):
         self.calls.append(("getVertexByConditionWithPage", label, limit, page, properties))
         return [Vertex()], "condition-next"
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         self.calls.append(("getEdgeById", edge_id))
         return Edge()
 
-    def getEdgesById(self, edge_ids):
+    def get_edges_by_id(self, edge_ids):
         self.calls.append(("getEdgesById", edge_ids))
         return [Edge()]
 
-    def getEdgeByPage(
+    def get_edge_by_page(
         self,
         label=None,
         vertex_id=None,
@@ -365,7 +365,7 @@ def test_query_vertex_condition_returns_next_page(monkeypatch):
 
 def test_query_vertex_condition_supports_legacy_client_without_page(monkeypatch):
     class LegacyManager:
-        def getVertexByCondition(self, label="", limit=0, page=None, properties=None):
+        def get_vertex_by_condition(self, label="", limit=0, page=None, properties=None):
             return [Vertex()]
 
     monkeypatch.setattr(query_module, "_graph_manager", lambda: LegacyManager())
@@ -386,7 +386,7 @@ def test_query_vertex_condition_supports_legacy_client_without_page(monkeypatch)
 
 def test_query_no_index_returns_no_index(monkeypatch):
     class BrokenManager:
-        def getVertexByCondition(self, **kwargs):
+        def get_vertex_by_condition(self, **kwargs):
             raise RuntimeError("NoIndexException: no index")
 
     monkeypatch.setattr(query_module, "_graph_manager", lambda: BrokenManager())
@@ -407,7 +407,7 @@ def test_query_no_index_returns_no_index(monkeypatch):
 
 def test_query_not_indexed_message_returns_no_index(monkeypatch):
     class BrokenManager:
-        def getVertexByCondition(self, **kwargs):
+        def get_vertex_by_condition(self, **kwargs):
             raise RuntimeError("The property key 'name' is not indexed and may not match secondary condition")
 
     monkeypatch.setattr(query_module, "_graph_manager", lambda: BrokenManager())
@@ -440,7 +440,7 @@ def test_page_respects_configured_item_limit(monkeypatch, limit):
 def test_backend_over_limit_page_is_rejected_without_cursor(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_ITEMS", "2")
     manager = Mock()
-    manager.getVertexByPage.return_value = ([Vertex()] * 3, "would-skip-records")
+    manager.get_vertex_by_page.return_value = ([Vertex()] * 3, "would-skip-records")
     monkeypatch.setattr(query_module, "_graph_manager", lambda: manager)
     result = query_module.query_graph_data(target="vertex", operation="page", label="person")
     assert result["ok"] is False
@@ -452,7 +452,7 @@ def test_backend_over_limit_page_is_rejected_without_cursor(monkeypatch):
 def test_single_edge_respects_byte_limit(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_MAX_RESULT_BYTES", "1024")
     manager = Mock()
-    manager.getEdgeById.return_value = {"id": "edge-1", "properties": {"text": "x" * 2048}}
+    manager.get_edge_by_id.return_value = {"id": "edge-1", "properties": {"text": "x" * 2048}}
     monkeypatch.setattr(query_module, "_graph_manager", lambda: manager)
     result = query_module.query_graph_data(target="edge", operation="get_by_id", id="edge-1")
     assert result["ok"] is False

@@ -16,7 +16,7 @@ class FakeSchemaManager:
     def __init__(self, schema):
         self._schema = schema
 
-    def getSchema(self, _format: str = "json"):
+    def get_schema(self, _format: str = "json"):
         return self._schema
 
 

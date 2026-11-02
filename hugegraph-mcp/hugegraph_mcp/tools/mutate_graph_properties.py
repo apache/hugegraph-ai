@@ -273,7 +273,7 @@ def _read_schema_and_target(
 
     try:
         manager = _graph_manager()
-        raw_item = manager.getVertexById(id) if target == "vertex" else manager.getEdgeById(id)
+        raw_item = manager.get_vertex_by_id(id) if target == "vertex" else manager.get_edge_by_id(id)
     except Exception as exc:
         classification = classify_hugegraph_exception(exc)
         return (
@@ -535,6 +535,9 @@ def _plain_item(item: Any) -> dict[str, Any] | None:
         return None
     if isinstance(item, dict):
         return dict(item)
+    serializer = getattr(item, "to_dict", None)
+    if callable(serializer):
+        return serializer()
     result: dict[str, Any] = {}
     for name in (
         "id",

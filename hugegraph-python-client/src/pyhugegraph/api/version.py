@@ -16,10 +16,8 @@
 # under the License.
 
 from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
 
 
 class VersionManager(HugeParamsBase):
-    @router.http("GET", "/versions")
     def version(self):
-        return self._invoke_request()
+        return self.request("version.list")

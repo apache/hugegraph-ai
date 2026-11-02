@@ -52,7 +52,7 @@ class TestTraverserManager(unittest.TestCase):
 
     def test_traverser_operations(self):
         def first_vertex_id(label, properties):
-            vertices = self.graph.getVertexByCondition(label, properties=properties)
+            vertices = self.graph.get_vertex_by_condition(label, properties=properties)
             return vertices[0].id
 
         marko = first_vertex_id("person", {"name": "marko"})
@@ -77,10 +77,10 @@ class TestTraverserManager(unittest.TestCase):
         all_shortest_paths_result = self.traverser.all_shortest_paths(marko, ripple, 3)
         self.assertEqual(all_shortest_paths_result["paths"], [{"objects": ["1:marko", "1:josh", "2:ripple"]}])
 
-        weighted_shortest_path_result = self.traverser.weighted_shortest_path(marko, ripple, "weight", 3)
+        weighted_shortest_path_result = self.traverser.weighted_shortest_path(marko, ripple, "weight")
         self.assertEqual(weighted_shortest_path_result["vertices"], ["1:marko", "1:josh", "2:ripple"])
 
-        single_source_shortest_path_result = self.traverser.single_source_shortest_path(marko, 2)
+        single_source_shortest_path_result = self.traverser.single_source_shortest_path(marko)
         self.assertEqual(
             single_source_shortest_path_result["paths"],
             {
@@ -232,7 +232,7 @@ class TestTraverserManager(unittest.TestCase):
             ],
         )
 
-        edge_id = self.graph.getEdgeByPage("created", josh, "BOTH")[0][0]
+        edge_id = self.graph.get_edge_by_page("created", josh, "BOTH")[0][0]
         edges_result = self.traverser.edges(edge_id.id)
         # Use the dynamically retrieved edge ID instead of hardcoding format
         # to ensure compatibility with different HugeGraph versions (1.3.0, 1.7.0, etc.)

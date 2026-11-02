@@ -18,22 +18,17 @@
 import json
 
 from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
 
 
 class VariableManager(HugeParamsBase):
-    @router.http("PUT", "variables/{key}")
-    def set(self, key, value):  # pylint: disable=unused-argument
-        return self._invoke_request(data=json.dumps({"data": value}))
+    def set(self, key, value):
+        return self.request("variables.update", data=json.dumps({"data": value}), path_params={"key": key})
 
-    @router.http("GET", "variables/{key}")
-    def get(self, key):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def get(self, key):
+        return self.request("variables.get", path_params={"key": key})
 
-    @router.http("GET", "variables")
     def all(self):
-        return self._invoke_request()
+        return self.request("variables.list")
 
-    @router.http("DELETE", "variables/{key}")
-    def remove(self, key):  # pylint: disable=unused-argument
-        return self._invoke_request()
+    def remove(self, key):
+        return self.request("variables.delete", path_params={"key": key})

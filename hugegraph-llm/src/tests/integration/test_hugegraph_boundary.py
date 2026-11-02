@@ -101,15 +101,15 @@ QUALITY_COMMIT_DATA = {
 
 def _create_quality_schema(client):
     schema = client.schema()
-    schema.propertyKey("name").asText().ifNotExist().create()
-    schema.propertyKey("age").asInt().ifNotExist().create()
-    schema.propertyKey("lang").asText().ifNotExist().create()
-    schema.propertyKey("date").asText().ifNotExist().create()
-    schema.vertexLabel("quality_person").properties("name", "age").primaryKeys("name").ifNotExist().create()
-    schema.vertexLabel("quality_software").properties("name", "lang").primaryKeys("name").ifNotExist().create()
-    schema.edgeLabel("quality_created").sourceLabel("quality_person").targetLabel("quality_software").properties(
+    schema.property_key("name").as_text().if_not_exist().create()
+    schema.property_key("age").as_int().if_not_exist().create()
+    schema.property_key("lang").as_text().if_not_exist().create()
+    schema.property_key("date").as_text().if_not_exist().create()
+    schema.vertex_label("quality_person").properties("name", "age").primary_keys("name").if_not_exist().create()
+    schema.vertex_label("quality_software").properties("name", "lang").primary_keys("name").if_not_exist().create()
+    schema.edge_label("quality_created").source_label("quality_person").target_label("quality_software").properties(
         "date"
-    ).ifNotExist().create()
+    ).if_not_exist().create()
 
 
 def _commit_quality_graph():

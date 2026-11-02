@@ -39,11 +39,11 @@ class EdgeLabelData:
         return self.__name
 
     @property
-    def sourceLabel(self):
+    def source_label(self):
         return self.__source_label
 
     @property
-    def targetLabel(self):
+    def target_label(self):
         return self.__target_label
 
     @property
@@ -51,7 +51,7 @@ class EdgeLabelData:
         return self.__frequency
 
     @property
-    def sortKeys(self):
+    def sort_keys(self):
         return self.__sort_keys
 
     @property
@@ -59,7 +59,7 @@ class EdgeLabelData:
         return self.__properties
 
     @property
-    def nullableKeys(self):
+    def nullable_keys(self):
         return self.__nullable_keys
 
     @property
@@ -71,13 +71,21 @@ class EdgeLabelData:
         return res
 
     @property
-    def indexLabels(self):
+    def index_labels(self):
         return self.__index_labels
 
     @property
-    def enableLabelIndex(self):
+    def enable_label_index(self):
         return self.__enable_label_index
 
     def __repr__(self):
         res = f"name: {self.__name}, properties: {self.__properties}"
         return res
+
+    # Legacy public names share the canonical implementations.
+    enableLabelIndex = enable_label_index  # noqa: N815
+    indexLabels = index_labels  # noqa: N815
+    nullableKeys = nullable_keys  # noqa: N815
+    sortKeys = sort_keys  # noqa: N815
+    sourceLabel = source_label  # noqa: N815
+    targetLabel = target_label  # noqa: N815

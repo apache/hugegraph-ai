@@ -61,7 +61,7 @@ def inspect_schema(
 
     try:
         manager = _schema_manager()
-        raw_schema = manager.getSchema()
+        raw_schema = manager.get_schema()
         if raw_schema is None:
             return envelope_err(
                 ErrorType.CONNECTION_FAILED,
@@ -141,7 +141,7 @@ def _validate_filter(
 
 def _safe_get_relations(manager) -> list[str]:
     try:
-        relations = manager.getRelations()
+        relations = manager.get_relations()
     except Exception:
         return []
     return [str(item) for item in relations or []]

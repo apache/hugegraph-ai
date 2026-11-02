@@ -18,7 +18,6 @@
 
 from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.structure.services_data import ServiceCreateParameters
-from pyhugegraph.utils import huge_router as router
 
 
 class ServicesManager(HugeParamsBase):
@@ -48,7 +47,6 @@ class ServicesManager(HugeParamsBase):
             No return value expected; the operation's success is indicated by an HTTP 204 status code.
     """
 
-    @router.http("POST", "/graphspaces/{graphspace}/services")
     def create_services(
         self,
         graphspace: str,  # pylint: disable=unused-argument
@@ -63,9 +61,8 @@ class ServicesManager(HugeParamsBase):
         Returns:
             dict: A dictionary containing the response from the HTTP request.
         """
-        return self._invoke_request(data=body_params.dumps())
+        return self.session.request(f"/graphspaces/{graphspace}/services", "POST", data=body_params.dumps())
 
-    @router.http("GET", "/graphspaces/{graphspace}/services")
     def list_services(self, graphspace: str):  # pylint: disable=unused-argument
         """
         List all services in a specified graph space.
@@ -84,9 +81,8 @@ class ServicesManager(HugeParamsBase):
                 "services": ["service1", "service2"]
             }
         """
-        return self._invoke_request()
+        return self.session.request(f"/graphspaces/{graphspace}/services")
 
-    @router.http("GET", "/graphspaces/{graphspace}/services/{service}")
     def get_service(self, graphspace: str, service: str):  # pylint: disable=unused-argument
         """
         Retrieve the details of a specific service.
@@ -108,7 +104,7 @@ class ServicesManager(HugeParamsBase):
                 // ... other service details
             }
         """
-        return self._invoke_request()
+        return self.session.request(f"/graphspaces/{graphspace}/services/{service}")
 
     def delete_service(self, graphspace: str, service: str):  # pylint: disable=unused-argument
         """

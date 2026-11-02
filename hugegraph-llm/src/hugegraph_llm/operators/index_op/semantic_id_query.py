@@ -59,7 +59,7 @@ class SemanticIdQuery:
     def _exact_match_vids(self, keywords: List[str]) -> Tuple[List[str], List[str]]:
         assert keywords, "keywords can't be empty, please check the logic"
         # TODO: we should add a global GraphSchemaCache to avoid calling the server every time
-        vertex_label_num = len(self._client.schema().getVertexLabels())
+        vertex_label_num = len(self._client.schema().get_vertex_labels())
         possible_vids = set(keywords)
         for i in range(vertex_label_num):
             possible_vids.update([f"{i + 1}:{keyword}" for keyword in keywords])

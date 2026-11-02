@@ -19,7 +19,6 @@
 import json
 
 from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
 
 
 class AuthManager(HugeParamsBase):
@@ -34,14 +33,12 @@ class AuthManager(HugeParamsBase):
     """
 
     # User endpoints - graphspace-scoped
-    @router.http("GET", "/graphspaces/{graphspace}/auth/users")
-    def list_users(self, limit=None):
-        params = {"limit": limit} if limit is not None else {}
-        return self._invoke_request(params=params)
+    def list_users(self, limit=None, *, name=None):
+        return self.request("user.list", params={"limit": limit, "name": name})
 
-    @router.http("POST", "/graphspaces/{graphspace}/auth/users")
     def create_user(self, user_name, user_password, user_phone=None, user_email=None) -> dict | None:
-        return self._invoke_request(
+        return self.request(
+            "user.create",
             data=json.dumps(
                 {
                     "user_name": user_name,
@@ -49,23 +46,15 @@ class AuthManager(HugeParamsBase):
                     "user_phone": user_phone,
                     "user_email": user_email,
                 }
-            )
+            ),
         )
 
-    @router.http("DELETE", "/graphspaces/{graphspace}/auth/users/{user_id}")
     def delete_user(self, user_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("user.delete", path_params={"id": user_id})
 
-    @router.http("PUT", "/graphspaces/{graphspace}/auth/users/{user_id}")
-    def modify_user(
-        self,
-        user_id,
-        user_name=None,
-        user_password=None,
-        user_phone=None,
-        user_email=None,
-    ) -> dict | None:
-        return self._invoke_request(
+    def modify_user(self, user_id, user_name=None, user_password=None, user_phone=None, user_email=None) -> dict | None:
+        return self.request(
+            "user.update",
             data=json.dumps(
                 {
                     "user_name": user_name,
@@ -73,76 +62,56 @@ class AuthManager(HugeParamsBase):
                     "user_phone": user_phone,
                     "user_email": user_email,
                 }
-            )
+            ),
+            path_params={"id": user_id},
         )
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/users/{user_id}")
     def get_user(self, user_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("user.get", path_params={"id": user_id})
 
     # Group endpoints - server-level (not graphspace-scoped per Java client pattern)
-    @router.http("GET", "/auth/groups")
     def list_groups(self, limit=None) -> dict | None:
         params = {"limit": limit} if limit is not None else {}
-        return self._invoke_request(params=params)
+        return self.request("group.list", params=params)
 
-    @router.http("POST", "/auth/groups")
     def create_group(self, group_name, group_description=None) -> dict | None:
         data = {"group_name": group_name, "group_description": group_description}
-        return self._invoke_request(data=json.dumps(data))
+        return self.request("group.create", data=json.dumps(data))
 
-    @router.http("DELETE", "/auth/groups/{group_id}")
     def delete_group(self, group_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("group.delete", path_params={"id": group_id})
 
-    @router.http("PUT", "/auth/groups/{group_id}")
-    def modify_group(
-        self,
-        group_id,
-        group_name=None,
-        group_description=None,
-    ) -> dict | None:
+    def modify_group(self, group_id, group_name=None, group_description=None) -> dict | None:
         data = {"group_name": group_name, "group_description": group_description}
-        return self._invoke_request(data=json.dumps(data))
+        return self.request("group.update", data=json.dumps(data), path_params={"id": group_id})
 
-    @router.http("GET", "/auth/groups/{group_id}")
     def get_group(self, group_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("group.get", path_params={"id": group_id})
 
     # Access endpoints - graphspace-scoped
-    @router.http("POST", "/graphspaces/{graphspace}/auth/accesses")
     def grant_accesses(self, group_id, target_id, access_permission) -> dict | None:
-        return self._invoke_request(
-            data=json.dumps(
-                {
-                    "group": group_id,
-                    "target": target_id,
-                    "access_permission": access_permission,
-                }
-            )
+        return self.request(
+            "access.create",
+            data=json.dumps({"group": group_id, "target": target_id, "access_permission": access_permission}),
         )
 
-    @router.http("DELETE", "/graphspaces/{graphspace}/auth/accesses/{access_id}")
     def revoke_accesses(self, access_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("access.delete", path_params={"id": access_id})
 
-    @router.http("PUT", "/graphspaces/{graphspace}/auth/accesses/{access_id}")
     def modify_accesses(self, access_id, access_description) -> dict | None:
         data = {"access_description": access_description}
-        return self._invoke_request(data=json.dumps(data))
+        return self.request("access.update", data=json.dumps(data), path_params={"id": access_id})
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/accesses/{access_id}")
     def get_accesses(self, access_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("access.get", path_params={"id": access_id})
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/accesses")
-    def list_accesses(self) -> dict | None:
-        return self._invoke_request()
+    def list_accesses(self, *, group=None, target=None, limit=None) -> dict | None:
+        return self.request("access.list", params={"group": group, "target": target, "limit": limit})
 
     # Target endpoints - graphspace-scoped
-    @router.http("POST", "/graphspaces/{graphspace}/auth/targets")
     def create_target(self, target_name, target_graph, target_url, target_resources) -> dict | None:
-        return self._invoke_request(
+        return self.request(
+            "target.create",
             data=json.dumps(
                 {
                     "target_name": target_name,
@@ -150,23 +119,15 @@ class AuthManager(HugeParamsBase):
                     "target_url": target_url,
                     "target_resources": target_resources,
                 }
-            )
+            ),
         )
 
-    @router.http("DELETE", "/graphspaces/{graphspace}/auth/targets/{target_id}")
     def delete_target(self, target_id) -> None:
-        return self._invoke_request()
+        return self.request("target.delete", path_params={"id": target_id})
 
-    @router.http("PUT", "/graphspaces/{graphspace}/auth/targets/{target_id}")
-    def update_target(
-        self,
-        target_id,
-        target_name,
-        target_graph,
-        target_url,
-        target_resources,
-    ) -> dict | None:
-        return self._invoke_request(
+    def update_target(self, target_id, target_name, target_graph, target_url, target_resources) -> dict | None:
+        return self.request(
+            "target.update",
             data=json.dumps(
                 {
                     "target_name": target_name,
@@ -174,36 +135,45 @@ class AuthManager(HugeParamsBase):
                     "target_url": target_url,
                     "target_resources": target_resources,
                 }
-            )
+            ),
+            path_params={"id": target_id},
         )
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/targets/{target_id}")
     def get_target(self, target_id, response=None) -> dict | None:
-        return self._invoke_request()
+        return self.request("target.get", path_params={"id": target_id})
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/targets")
-    def list_targets(self) -> dict | None:
-        return self._invoke_request()
+    def list_targets(self, *, limit=None) -> dict | None:
+        return self.request("target.list", params={"limit": limit})
 
     # Belong endpoints - graphspace-scoped
-    @router.http("POST", "/graphspaces/{graphspace}/auth/belongs")
     def create_belong(self, user_id, group_id) -> dict | None:
         data = {"user": user_id, "group": group_id}
-        return self._invoke_request(data=json.dumps(data))
+        return self.request("belong.create", data=json.dumps(data))
 
-    @router.http("DELETE", "/graphspaces/{graphspace}/auth/belongs/{belong_id}")
     def delete_belong(self, belong_id) -> None:
-        return self._invoke_request()
+        return self.request("belong.delete", path_params={"id": belong_id})
 
-    @router.http("PUT", "/graphspaces/{graphspace}/auth/belongs/{belong_id}")
     def update_belong(self, belong_id, description) -> dict | None:
         data = {"belong_description": description}
-        return self._invoke_request(data=json.dumps(data))
+        return self.request("belong.update", data=json.dumps(data), path_params={"id": belong_id})
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/belongs/{belong_id}")
     def get_belong(self, belong_id) -> dict | None:
-        return self._invoke_request()
+        return self.request("belong.get", path_params={"id": belong_id})
 
-    @router.http("GET", "/graphspaces/{graphspace}/auth/belongs")
-    def list_belongs(self) -> dict | None:
-        return self._invoke_request()
+    def list_belongs(self, *, user=None, group=None, limit=None) -> dict | None:
+        return self.request("belong.list", params={"user": user, "group": group, "limit": limit})
+
+    def login(self, user_name: str, password: str, *, token_expire=None) -> dict:
+        body = {"user_name": user_name, "user_password": password}
+        if token_expire is not None:
+            body["token_expire"] = token_expire
+        return self.request("login.login", body=body)
+
+    def verify_token(self, token: str) -> dict:
+        return self.request("login.verify_token", headers={"Authorization": f"Bearer {token}"})
+
+    def logout(self, token: str):
+        return self.request("login.logout", headers={"Authorization": f"Bearer {token}"})
+
+    def get_user_role(self, user_id):
+        return self.request("user.role", path_params={"id": user_id})

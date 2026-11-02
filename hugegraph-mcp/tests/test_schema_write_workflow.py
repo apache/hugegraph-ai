@@ -46,11 +46,11 @@ class _PropertyBuilder:
         self.data_type = "TEXT"
         self.cardinality = "SINGLE"
 
-    def asInt(self):
+    def as_int(self):
         self.data_type = "INT"
         return self
 
-    def valueSingle(self):
+    def value_single(self):
         return self
 
     def create(self):
@@ -67,7 +67,7 @@ class _SchemaManager:
     def __init__(self, state):
         self.state = state
 
-    def propertyKey(self, name):
+    def property_key(self, name):
         builder = _PropertyBuilder(self.state)
         builder.name = name
         return builder

@@ -17,7 +17,6 @@
 
 
 from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
 
 
 class RebuildManager(HugeParamsBase):
@@ -35,8 +34,7 @@ class RebuildManager(HugeParamsBase):
             Rebuilds the specified EdgeLabel. Returns a dictionary with the task ID.
     """
 
-    @router.http("PUT", "jobs/rebuild/indexlabels/{indexlabel}")
-    def rebuild_indexlabels(self, indexlabel: str):  # pylint: disable=unused-argument
+    def rebuild_indexlabels(self, indexlabel: str):
         """
         Rebuild IndexLabel.
 
@@ -50,10 +48,9 @@ class RebuildManager(HugeParamsBase):
                       "task_id": 1 # Unique identifier for the task.
                   }
         """
-        return self._invoke_request()
+        return self.request("rebuild.index_label_rebuild", path_params={"name": indexlabel})
 
-    @router.http("PUT", "jobs/rebuild/vertexlabels/{vertexlabel}")
-    def rebuild_vertexlabels(self, vertexlabel: str):  # pylint: disable=unused-argument
+    def rebuild_vertexlabels(self, vertexlabel: str):
         """
         Rebuild VertexLabel.
 
@@ -67,10 +64,9 @@ class RebuildManager(HugeParamsBase):
                       "task_id": 1 # Unique identifier for the task.
                   }
         """
-        return self._invoke_request()
+        return self.request("rebuild.vertex_label_rebuild", path_params={"name": vertexlabel})
 
-    @router.http("PUT", "jobs/rebuild/edgelabels/{edgelabel}")
-    def rebuild_edgelabels(self, edgelabel: str):  # pylint: disable=unused-argument
+    def rebuild_edgelabels(self, edgelabel: str):
         """
         Rebuild EdgeLabel.
 
@@ -84,4 +80,4 @@ class RebuildManager(HugeParamsBase):
                       "task_id": 1 # Unique identifier for the task.
                   }
         """
-        return self._invoke_request()
+        return self.request("rebuild.edge_label_rebuild", path_params={"name": edgelabel})

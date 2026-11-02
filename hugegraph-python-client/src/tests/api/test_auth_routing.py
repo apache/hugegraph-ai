@@ -16,7 +16,6 @@
 # under the License.
 
 from unittest import mock
-from urllib.parse import urljoin
 
 import pytest
 import requests
@@ -25,14 +24,12 @@ from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.api.schema_manage.edge_label import EdgeLabel
 from pyhugegraph.api.services import ServicesManager
 from pyhugegraph.structure.services_data import ServiceCreateParameters
+from pyhugegraph.utils.compat import ServerAdapter
+from pyhugegraph.utils.exceptions import UnsupportedOperationError
 from pyhugegraph.utils.huge_config import HGraphConfig
 from pyhugegraph.utils.huge_requests import HGraphSession
-from pyhugegraph.utils.huge_router import http
 
 pytestmark = pytest.mark.contract
-
-# FIXME: cover real HGraphSession.resolve() with URL prefixes; this
-# DummySession duplicates production routing behavior.
 
 
 class DummyCfg:
@@ -44,22 +41,16 @@ class DummyCfg:
 
 
 class DummySession:
-    """Minimal session mimic implementing resolve and request used by router."""
+    """Capture requests while using the production route adapter."""
 
     def __init__(self, cfg: DummyCfg):
         self.cfg = cfg
         self.last = None
 
     def resolve(self, path: str) -> str:
-        base = f"{self.cfg.url.rstrip('/')}/"
-        if self.cfg.gs_supported:
-            base = urljoin(base, f"graphspaces/{self.cfg.graphspace}/graphs/{self.cfg.graph_name}/")
-        else:
-            base = urljoin(base, f"graphs/{self.cfg.graph_name}/")
-        return urljoin(base, path).strip("/")
+        return ServerAdapter(self.cfg).resolve(path)
 
     def request(self, path: str, method: str = "GET", validator=None, **kwargs):
-        # mirror behavior of real session.request used by router: resolve path
         self.last = self.resolve(path)
         return {"url": self.last, "method": method}
 
@@ -121,9 +112,8 @@ def test_auth_endpoints_use_legacy_paths_without_graphspace(method_call, args, e
 
 def test_legacy_auth_ignores_explicit_graphspace_placeholder_argument():
     class ExplicitGraphspaceAuth(HugeParamsBase):
-        @http("GET", "/graphspaces/{graphspace}/auth/users")
         def list_users(self, graphspace):
-            return self._invoke_request()
+            return self.request("user.list", path_params={"graphspace": graphspace})
 
     cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
     sess = DummySession(cfg)
@@ -148,12 +138,12 @@ def test_graphspace_auth_requires_graphspace_when_supported(method_call, args):
     cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=True, graph_name="g")
     sess = DummySession(cfg)
 
-    with pytest.raises(ValueError, match="graphspace is required for this endpoint"):
+    with pytest.raises(ValueError, match="graphspace is required"):
         getattr(AuthManager(sess), method_call)(*args)
 
 
-def test_services_use_explicit_graphspace_without_graphspace_session():
-    cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
+def test_services_use_explicit_graphspace_on_graphspace_session():
+    cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace="DEFAULT", gs_supported=True, graph_name="g")
     sess = DummySession(cfg)
     services = ServicesManager(sess)
 
@@ -166,6 +156,18 @@ def test_services_use_explicit_graphspace_without_graphspace_session():
     body = ServiceCreateParameters(name="svc", description="test service")
     services.create_services("SPACE_X", body)
     assert sess.last == "http://127.0.0.1:8080/graphspaces/SPACE_X/services"
+
+
+def test_services_reject_legacy_server_profile():
+    cfg = DummyCfg(url="http://127.0.0.1:8080", graphspace=None, gs_supported=False, graph_name="g")
+    services = ServicesManager(DummySession(cfg))
+    for method, args in (
+        (services.get_service, ("SPACE_X", "svc")),
+        (services.list_services, ("SPACE_X",)),
+        (services.create_services, ("SPACE_X", ServiceCreateParameters(name="svc", description="test"))),
+    ):
+        with pytest.raises(UnsupportedOperationError, match="graphspace-enabled"):
+            method(*args)
 
 
 def test_groups_are_server_level():
@@ -190,6 +192,9 @@ class _VersionResponse:
 
     def json(self):
         return {"versions": {"core": self._core}}
+
+    def raise_for_status(self):
+        pass
 
 
 def test_hgraph_config_does_not_auto_enable_graphspace_before_1_7(monkeypatch):
@@ -242,7 +247,7 @@ def test_edge_label_parent_emits_sub_edge_payload():
     edge_label.add_parameter("name", "knows_more")
     edge_label.add_parameter("not_exist", True)
 
-    edge_label.sourceLabel("person").targetLabel("person").parent("knows").create()
+    edge_label.source_label("person").target_label("person").parent("knows").create()
 
     request = sess.requests[-1]
     assert request["path"] == "schema/edgelabels"

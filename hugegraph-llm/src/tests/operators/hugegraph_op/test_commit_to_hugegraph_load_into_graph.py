@@ -145,7 +145,7 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         self.assertEqual(vertices[0]["id"], "1:Tom Hanks")
         self.assertEqual(vertices[1]["id"], "2:Forrest Gump")
         mock_handle_graph_creation.assert_any_call(
-            self.commit2graph.client.graph().addEdge,
+            self.commit2graph.client.graph().add_edge,
             "acted_in",
             "1:Tom Hanks",
             "2:Forrest Gump",
@@ -201,7 +201,7 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         self.commit2graph.load_into_graph(vertices, edges, schema)
 
         mock_handle_graph_creation.assert_any_call(
-            self.commit2graph.client.graph().addEdge,
+            self.commit2graph.client.graph().add_edge,
             "acted_in",
             "1:Tom!Hanks",
             "2:Forrest Gump",
@@ -250,19 +250,19 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         self.commit2graph.load_into_graph(vertices, edges, schema)
 
         mock_handle_graph_creation.assert_any_call(
-            self.commit2graph.client.graph().addVertex,
+            self.commit2graph.client.graph().add_vertex,
             "person",
             {"name": "Tom Hanks"},
             id="Tom Hanks",
         )
         mock_handle_graph_creation.assert_any_call(
-            self.commit2graph.client.graph().addVertex,
+            self.commit2graph.client.graph().add_vertex,
             "movie",
             {"title": "Forrest Gump"},
             id="Forrest Gump",
         )
         mock_handle_graph_creation.assert_any_call(
-            self.commit2graph.client.graph().addEdge,
+            self.commit2graph.client.graph().add_edge,
             "acted_in",
             "Tom Hanks",
             "Forrest Gump",
@@ -319,7 +319,7 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         self.commit2graph.load_into_graph(vertices, edges, self.schema)
 
         mock_handle_graph_creation.assert_any_call(
-            self.commit2graph.client.graph().addEdge,
+            self.commit2graph.client.graph().add_edge,
             "acted_in",
             "1:Tom Hanks",
             "2:Forrest Gump",

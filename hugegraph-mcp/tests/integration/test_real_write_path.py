@@ -50,7 +50,7 @@ def hugegraph_client(monkeypatch):
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            client.schema().getSchema()
+            client.schema().get_schema()
             break
         except Exception as exc:
             last_error = exc
@@ -162,7 +162,7 @@ def test_apply_schema_forwards_and_verifies_supported_fields(hugegraph_client):
         assert receipt["reason_code"] == "SCHEMA_CREATED"
         assert receipt["committed_at"] is not None
 
-    schema = hugegraph_client.schema().getSchema()
+    schema = hugegraph_client.schema().get_schema()
     raw_schema = schema.get("schema", schema)
     property_key = next(item for item in raw_schema["propertykeys"] if item.get("name") == property_name)
     vertex_label = next(item for item in raw_schema["vertexlabels"] if item.get("name") == label_name)
@@ -744,7 +744,7 @@ def test_edge_by_id_query_and_mutate_handles_real_hugegraph_edge_id(
     )
     assert dry_run["ok"] is True
     plan_context = dry_run["data"]["plan_context"]
-    before = hugegraph_client.graph().getEdgeById(edge_id).properties
+    before = hugegraph_client.graph().get_edge_by_id(edge_id).properties
     apply_result = server.mutate_graph_properties_tool(
         target="edge",
         operation="append",
@@ -760,22 +760,22 @@ def test_edge_by_id_query_and_mutate_handles_real_hugegraph_edge_id(
     assert apply_result["ok"] is False
     assert apply_result["error"]["type"] == "FEATURE_DISABLED"
     assert apply_result["error"]["details"]["write_attempted"] is False
-    assert hugegraph_client.graph().getEdgeById(edge_id).properties == before
+    assert hugegraph_client.graph().get_edge_by_id(edge_id).properties == before
 
 
 def test_collection_append_matches_real_vertex_list_and_edge_set(hugegraph_client):
     names = _schema_names("collection_append")
     _ensure_collection_schema(hugegraph_client, names)
     graph = hugegraph_client.graph()
-    alice = graph.addVertex(
+    alice = graph.add_vertex(
         names.vertex_label,
         {names.name_key: "Alice", names.list_key: ["a"]},
     )
-    bob = graph.addVertex(
+    bob = graph.add_vertex(
         names.vertex_label,
         {names.name_key: "Bob"},
     )
-    edge = graph.addEdge(
+    edge = graph.add_edge(
         names.edge_label,
         alice.id,
         bob.id,
@@ -809,7 +809,7 @@ def test_collection_append_matches_real_vertex_list_and_edge_set(hugegraph_clien
     assert vertex_result["ok"] is False
     assert vertex_result["error"]["type"] == "FEATURE_DISABLED"
     assert vertex_result["error"]["details"]["write_attempted"] is False
-    assert graph.getVertexById(alice.id).properties[names.list_key] == ["a"]
+    assert graph.get_vertex_by_id(alice.id).properties[names.list_key] == ["a"]
 
     edge_dry_run = server.mutate_graph_properties_tool(
         target="edge",
@@ -834,7 +834,7 @@ def test_collection_append_matches_real_vertex_list_and_edge_set(hugegraph_clien
     assert edge_result["ok"] is False
     assert edge_result["error"]["type"] == "FEATURE_DISABLED"
     assert edge_result["error"]["details"]["write_attempted"] is False
-    assert set(graph.getEdgeById(edge.id).properties[names.set_key]) == {"a"}
+    assert set(graph.get_edge_by_id(edge.id).properties[names.set_key]) == {"a"}
 
 
 def test_import_partial_scenario_is_preview_only_and_has_no_side_effects(
@@ -1019,42 +1019,44 @@ def _ensure_custom_id_schema(
     unique_name: bool = False,
 ) -> None:
     schema = client.schema()
-    schema.propertyKey(names.name_key).asText().ifNotExist().create()
-    schema.vertexLabel(names.vertex_label).properties(names.name_key).useCustomizeStringId().nullableKeys(
+    schema.property_key(names.name_key).as_text().if_not_exist().create()
+    schema.vertex_label(names.vertex_label).properties(names.name_key).use_customize_string_id().nullable_keys(
         names.name_key
-    ).ifNotExist().create()
-    schema.edgeLabel(names.edge_label).sourceLabel(names.vertex_label).targetLabel(names.vertex_label).properties(
+    ).if_not_exist().create()
+    schema.edge_label(names.edge_label).source_label(names.vertex_label).target_label(names.vertex_label).properties(
         names.name_key
-    ).nullableKeys(names.name_key).ifNotExist().create()
-    index = schema.indexLabel(names.name_index).onV(names.vertex_label).by(names.name_key)
+    ).nullable_keys(names.name_key).if_not_exist().create()
+    index = schema.index_label(names.name_index).on_v(names.vertex_label).by(names.name_key)
     if unique_name:
-        index.unique().ifNotExist().create()
+        index.unique().if_not_exist().create()
     else:
-        index.secondary().ifNotExist().create()
+        index.secondary().if_not_exist().create()
     _wait_for_schema_visibility(client, names, custom_id=True)
 
 
 def _ensure_primary_key_schema(client, names: _Names) -> None:
     schema = client.schema()
-    schema.propertyKey(names.name_key).asText().ifNotExist().create()
-    schema.vertexLabel(names.vertex_label).properties(names.name_key).primaryKeys(names.name_key).ifNotExist().create()
-    schema.edgeLabel(names.edge_label).sourceLabel(names.vertex_label).targetLabel(names.vertex_label).properties(
+    schema.property_key(names.name_key).as_text().if_not_exist().create()
+    schema.vertex_label(names.vertex_label).properties(names.name_key).primary_keys(
         names.name_key
-    ).nullableKeys(names.name_key).ifNotExist().create()
+    ).if_not_exist().create()
+    schema.edge_label(names.edge_label).source_label(names.vertex_label).target_label(names.vertex_label).properties(
+        names.name_key
+    ).nullable_keys(names.name_key).if_not_exist().create()
     _wait_for_schema_visibility(client, names)
 
 
 def _ensure_collection_schema(client, names: _Names) -> None:
     schema = client.schema()
-    schema.propertyKey(names.name_key).asText().ifNotExist().create()
-    schema.propertyKey(names.list_key).asText().valueList().ifNotExist().create()
-    schema.propertyKey(names.set_key).asText().valueSet().ifNotExist().create()
-    schema.vertexLabel(names.vertex_label).properties(names.name_key, names.list_key).primaryKeys(
+    schema.property_key(names.name_key).as_text().if_not_exist().create()
+    schema.property_key(names.list_key).as_text().value_list().if_not_exist().create()
+    schema.property_key(names.set_key).as_text().value_set().if_not_exist().create()
+    schema.vertex_label(names.vertex_label).properties(names.name_key, names.list_key).primary_keys(
         names.name_key
-    ).nullableKeys(names.list_key).ifNotExist().create()
-    schema.edgeLabel(names.edge_label).sourceLabel(names.vertex_label).targetLabel(names.vertex_label).properties(
+    ).nullable_keys(names.list_key).if_not_exist().create()
+    schema.edge_label(names.edge_label).source_label(names.vertex_label).target_label(names.vertex_label).properties(
         names.set_key
-    ).nullableKeys(names.set_key).ifNotExist().create()
+    ).nullable_keys(names.set_key).if_not_exist().create()
     _wait_for_schema_visibility(
         client,
         names,
@@ -1088,7 +1090,7 @@ def _wait_for_schema_visibility(
     last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            schema = client.schema().getSchema()
+            schema = client.schema().get_schema()
             schema_payload = schema.get("schema", schema) if isinstance(schema, dict) else {}
             property_keys = {
                 item.get("name") for item in schema_payload.get("propertykeys", []) if isinstance(item, dict)

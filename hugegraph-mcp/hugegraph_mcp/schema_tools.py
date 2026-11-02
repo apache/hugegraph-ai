@@ -59,7 +59,7 @@ def get_live_schema() -> dict[str, Any]:
     """
 
     client = _build_client()
-    raw_schema = client.schema().getSchema()
+    raw_schema = client.schema().get_schema()
 
     if raw_schema is None:
         raise ValueError("Failed to retrieve schema from HugeGraph server")

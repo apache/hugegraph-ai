@@ -16,7 +16,7 @@
 # under the License.
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import KW_ONLY, asdict, dataclass, field
 
 
 @dataclass
@@ -29,6 +29,7 @@ class NeighborRankStep:
     labels: list[str] = field(default_factory=list)
     max_degree: int = 10000
     top: int = 100
+    skip_degree: int = 0
 
     def dumps(self):
         return json.dumps(asdict(self))
@@ -41,7 +42,7 @@ class NeighborRankParameters:
     """
 
     source: str | int
-    label: str
+    _: KW_ONLY
     alpha: float = 0.85
     capacity: int = 10000000
     steps: list[NeighborRankStep] = field(default_factory=list)

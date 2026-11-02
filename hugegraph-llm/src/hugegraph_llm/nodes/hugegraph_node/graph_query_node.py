@@ -296,9 +296,9 @@ class GraphQueryNode(BaseNode):
             return self._schema
 
         schema = self._client.schema()
-        vertex_schema = schema.getVertexLabels()
-        edge_schema = schema.getEdgeLabels()
-        relationships = schema.getRelations()
+        vertex_schema = schema.get_vertex_labels()
+        edge_schema = schema.get_edge_labels()
+        relationships = schema.get_relations()
 
         self._schema = (
             f"Vertex properties: {vertex_schema}\nEdge properties: {edge_schema}\nRelationships: {relationships}\n"

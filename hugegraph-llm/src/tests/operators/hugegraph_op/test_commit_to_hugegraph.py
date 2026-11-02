@@ -228,10 +228,10 @@ class TestCommit2Graph(unittest.TestCase):
         mock_edge_label = MagicMock()
         mock_index_label = MagicMock()
 
-        self.commit2graph.schema.propertyKey = mock_property_key
-        self.commit2graph.schema.vertexLabel = mock_vertex_label
-        self.commit2graph.schema.edgeLabel = mock_edge_label
-        self.commit2graph.schema.indexLabel = mock_index_label
+        self.commit2graph.schema.property_key = mock_property_key
+        self.commit2graph.schema.vertex_label = mock_vertex_label
+        self.commit2graph.schema.edge_label = mock_edge_label
+        self.commit2graph.schema.index_label = mock_index_label
 
         # Create mock builders
         mock_property_builder = MagicMock()
@@ -241,36 +241,36 @@ class TestCommit2Graph(unittest.TestCase):
 
         # Setup method chaining for property
         mock_property_key.return_value = mock_property_builder
-        mock_property_builder.asText.return_value = mock_property_builder
-        mock_property_builder.ifNotExist.return_value = mock_property_builder
+        mock_property_builder.as_text.return_value = mock_property_builder
+        mock_property_builder.if_not_exist.return_value = mock_property_builder
         mock_property_builder.create.return_value = None
 
         # Setup method chaining for vertex
         mock_vertex_label.return_value = mock_vertex_builder
         mock_vertex_builder.properties.return_value = mock_vertex_builder
-        mock_vertex_builder.nullableKeys.return_value = mock_vertex_builder
-        mock_vertex_builder.usePrimaryKeyId.return_value = mock_vertex_builder
-        mock_vertex_builder.useCustomizeStringId.return_value = mock_vertex_builder
-        mock_vertex_builder.primaryKeys.return_value = mock_vertex_builder
-        mock_vertex_builder.ifNotExist.return_value = mock_vertex_builder
+        mock_vertex_builder.nullable_keys.return_value = mock_vertex_builder
+        mock_vertex_builder.use_primary_key_id.return_value = mock_vertex_builder
+        mock_vertex_builder.use_customize_string_id.return_value = mock_vertex_builder
+        mock_vertex_builder.primary_keys.return_value = mock_vertex_builder
+        mock_vertex_builder.if_not_exist.return_value = mock_vertex_builder
         mock_vertex_builder.create.return_value = None
 
         # Setup method chaining for edge
         mock_edge_label.return_value = mock_edge_builder
-        mock_edge_builder.sourceLabel.return_value = mock_edge_builder
-        mock_edge_builder.targetLabel.return_value = mock_edge_builder
+        mock_edge_builder.source_label.return_value = mock_edge_builder
+        mock_edge_builder.target_label.return_value = mock_edge_builder
         mock_edge_builder.properties.return_value = mock_edge_builder
-        mock_edge_builder.nullableKeys.return_value = mock_edge_builder
-        mock_edge_builder.ifNotExist.return_value = mock_edge_builder
+        mock_edge_builder.nullable_keys.return_value = mock_edge_builder
+        mock_edge_builder.if_not_exist.return_value = mock_edge_builder
         mock_edge_builder.create.return_value = None
 
         # Setup method chaining for index
         mock_index_label.return_value = mock_index_builder
-        mock_index_builder.onV.return_value = mock_index_builder
-        mock_index_builder.onE.return_value = mock_index_builder
+        mock_index_builder.on_v.return_value = mock_index_builder
+        mock_index_builder.on_e.return_value = mock_index_builder
         mock_index_builder.by.return_value = mock_index_builder
         mock_index_builder.secondary.return_value = mock_index_builder
-        mock_index_builder.ifNotExist.return_value = mock_index_builder
+        mock_index_builder.if_not_exist.return_value = mock_index_builder
         mock_index_builder.create.return_value = None
 
         return {
@@ -359,8 +359,8 @@ class TestCommit2Graph(unittest.TestCase):
         # Mock the client.graph() methods
         mock_graph = MagicMock()
         self.mock_client.graph.return_value = mock_graph
-        mock_graph.addVertex.return_value = MagicMock(id="vertex_id")
-        mock_graph.addEdge.return_value = MagicMock()
+        mock_graph.add_vertex.return_value = MagicMock(id="vertex_id")
+        mock_graph.add_edge.return_value = MagicMock()
 
         # Create sample triples data in the correct format
         triples = [["Tom Hanks", "acted_in", "Forrest Gump"], ["Forrest Gump", "released_in", "1994"]]
@@ -375,8 +375,8 @@ class TestCommit2Graph(unittest.TestCase):
         self.assertEqual(schema_mocks["index_label"].call_count, 2)
 
         # Verify that addVertex and addEdge were called for each triple
-        self.assertEqual(mock_graph.addVertex.call_count, 4)  # 2 subjects + 2 objects
-        self.assertEqual(mock_graph.addEdge.call_count, 2)  # 2 predicates
+        self.assertEqual(mock_graph.add_vertex.call_count, 4)  # 2 subjects + 2 objects
+        self.assertEqual(mock_graph.add_edge.call_count, 2)  # 2 predicates
 
     def test_schema_free_mode_empty_triples(self):
         """Test schema_free_mode method with empty triples."""
@@ -397,8 +397,8 @@ class TestCommit2Graph(unittest.TestCase):
         self.assertEqual(schema_mocks["index_label"].call_count, 2)
 
         # Verify that graph operations were not called
-        mock_graph.addVertex.assert_not_called()
-        mock_graph.addEdge.assert_not_called()
+        mock_graph.add_vertex.assert_not_called()
+        mock_graph.add_edge.assert_not_called()
 
     def test_schema_free_mode_single_triple(self):
         """Test schema_free_mode method with single triple."""
@@ -408,8 +408,8 @@ class TestCommit2Graph(unittest.TestCase):
         # Mock the client.graph() methods
         mock_graph = MagicMock()
         self.mock_client.graph.return_value = mock_graph
-        mock_graph.addVertex.return_value = MagicMock(id="vertex_id")
-        mock_graph.addEdge.return_value = MagicMock()
+        mock_graph.add_vertex.return_value = MagicMock(id="vertex_id")
+        mock_graph.add_edge.return_value = MagicMock()
 
         # Create single triple
         triples = [["Alice", "knows", "Bob"]]
@@ -424,8 +424,8 @@ class TestCommit2Graph(unittest.TestCase):
         self.assertEqual(schema_mocks["index_label"].call_count, 2)
 
         # Verify that addVertex and addEdge were called for single triple
-        self.assertEqual(mock_graph.addVertex.call_count, 2)  # 1 subject + 1 object
-        self.assertEqual(mock_graph.addEdge.call_count, 1)  # 1 predicate
+        self.assertEqual(mock_graph.add_vertex.call_count, 2)  # 1 subject + 1 object
+        self.assertEqual(mock_graph.add_edge.call_count, 1)  # 1 predicate
 
     def test_schema_free_mode_with_whitespace(self):
         """Test schema_free_mode method with triples containing whitespace."""
@@ -435,8 +435,8 @@ class TestCommit2Graph(unittest.TestCase):
         # Mock the client.graph() methods
         mock_graph = MagicMock()
         self.mock_client.graph.return_value = mock_graph
-        mock_graph.addVertex.return_value = MagicMock(id="vertex_id")
-        mock_graph.addEdge.return_value = MagicMock()
+        mock_graph.add_vertex.return_value = MagicMock(id="vertex_id")
+        mock_graph.add_edge.return_value = MagicMock()
 
         # Create triples with whitespace (should be stripped)
         triples = [["  Tom Hanks  ", "  acted_in  ", "  Forrest Gump  "]]
@@ -451,11 +451,11 @@ class TestCommit2Graph(unittest.TestCase):
         self.assertEqual(schema_mocks["index_label"].call_count, 2)
 
         # Verify that addVertex was called with stripped strings
-        mock_graph.addVertex.assert_any_call("vertex", {"name": "Tom Hanks"}, id="Tom Hanks")
-        mock_graph.addVertex.assert_any_call("vertex", {"name": "Forrest Gump"}, id="Forrest Gump")
+        mock_graph.add_vertex.assert_any_call("vertex", {"name": "Tom Hanks"}, id="Tom Hanks")
+        mock_graph.add_vertex.assert_any_call("vertex", {"name": "Forrest Gump"}, id="Forrest Gump")
 
         # Verify that addEdge was called with stripped predicate
-        mock_graph.addEdge.assert_called_once_with("edge", "vertex_id", "vertex_id", {"name": "acted_in"})
+        mock_graph.add_edge.assert_called_once_with("edge", "vertex_id", "vertex_id", {"name": "acted_in"})
 
     def test_schema_free_mode_invalid_triple_format(self):
         """Test schema_free_mode method with invalid triple format."""
@@ -465,8 +465,8 @@ class TestCommit2Graph(unittest.TestCase):
         # Mock the client.graph() methods
         mock_graph = MagicMock()
         self.mock_client.graph.return_value = mock_graph
-        mock_graph.addVertex.return_value = MagicMock(id="vertex_id")
-        mock_graph.addEdge.return_value = MagicMock()
+        mock_graph.add_vertex.return_value = MagicMock(id="vertex_id")
+        mock_graph.add_edge.return_value = MagicMock()
 
         # Create invalid triples (wrong length)
         invalid_triples = [["Alice", "knows"], ["Bob", "works_at", "Company", "extra"]]

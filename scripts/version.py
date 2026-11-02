@@ -107,7 +107,8 @@ def updates(root: Path) -> dict[Path, tuple[str, str]]:
         original = (root / path).read_text(encoding="utf-8")
         # Restrict the replacement to [project], rather than a tool's version field.
         updated = replace_one(original, r'(\[project\]\n(?:(?!\[).|\n)*?^version = ")[^"]+("[^\n]*)', version, path)
-        if module == "hugegraph-mcp":
+        dependencies = tomllib.loads(original)["project"].get("dependencies", [])
+        if any(dependency.startswith("hugegraph-python>=") for dependency in dependencies):
             updated = replace_one(updated, r'("hugegraph-python>=)[^"<]+(<2")', version + ",", path)
         if module == "hugegraph-llm":
             updated = replace_one(updated, r'("hugegraph-llm-sdk==)[^"]+(")', version, path)

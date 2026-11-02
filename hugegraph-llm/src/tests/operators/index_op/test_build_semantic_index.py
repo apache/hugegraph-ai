@@ -62,7 +62,7 @@ class TestBuildSemanticIndex(unittest.TestCase):
         self.mock_schema_manager_class = self.patcher2.start()
         self.mock_schema_manager = MagicMock()
         self.mock_schema_manager_class.return_value = self.mock_schema_manager
-        self.mock_schema_manager.schema.getSchema.return_value = {
+        self.mock_schema_manager.schema.get_schema.return_value = {
             "vertexlabels": [{"id_strategy": "PRIMARY_KEY"}, {"id_strategy": "PRIMARY_KEY"}]
         }
 
@@ -136,7 +136,7 @@ class TestBuildSemanticIndex(unittest.TestCase):
         for strategy in ("PRIMARY_KEY", "CUSTOMIZE"):
             with self.subTest(strategy=strategy):
                 self.mock_settings.graph_name = os.path.join(self.temp_dir, strategy)
-                self.mock_schema_manager.schema.getSchema.return_value = {"vertexlabels": [{"id_strategy": strategy}]}
+                self.mock_schema_manager.schema.get_schema.return_value = {"vertexlabels": [{"id_strategy": strategy}]}
                 second_batch_completed = threading.Event()
 
                 def embed_batch(batch):
@@ -189,7 +189,7 @@ class TestBuildSemanticIndex(unittest.TestCase):
 
     def test_run_without_primary_key_strategy(self):
         # Change schema to non-PRIMARY_KEY strategy
-        self.mock_schema_manager.schema.getSchema.return_value = {
+        self.mock_schema_manager.schema.get_schema.return_value = {
             "vertexlabels": [{"id_strategy": "AUTOMATIC"}, {"id_strategy": "CUSTOMIZE"}]
         }
 

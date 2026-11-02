@@ -224,9 +224,9 @@ client = PyHugeClient(
     pwd="admin",
 )
 graph = client.graph()
-alice = graph.addVertex(person_label, {name_key: "Alice"})
-bob = graph.addVertex(person_label, {name_key: "Bob"})
-edge = graph.addEdge(knows_label, alice.id, bob.id, {})
+alice = graph.add_vertex(person_label, {name_key: "Alice"})
+bob = graph.add_vertex(person_label, {name_key: "Bob"})
+edge = graph.add_edge(knows_label, alice.id, bob.id, {})
 print({"alice_id": alice.id, "bob_id": bob.id, "edge_id": edge.id})
 PY
 ```

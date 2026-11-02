@@ -15,43 +15,35 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from pyhugegraph.api.common import HugeParamsBase
-from pyhugegraph.utils import huge_router as router
+"""Server metrics, including their JSON and text representations."""
+
+from pyhugegraph.api.rest import MetricsAPI
 
 
-class MetricsManager(HugeParamsBase):
-    @router.http("GET", "/metrics/?type=json")
-    def get_all_basic_metrics(self) -> dict:
-        return self._invoke_request()
+class MetricsManager(MetricsAPI):
+    def get_all_basic_metrics(self):
+        return self.all(type="json")
 
-    @router.http("GET", "/metrics/gauges")
-    def get_gauges_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_gauges_metrics(self):
+        return self.gauges()
 
-    @router.http("GET", "/metrics/counters")
-    def get_counters_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_counters_metrics(self):
+        return self.counters()
 
-    @router.http("GET", "/metrics/gauges")
-    def get_histograms_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_histograms_metrics(self):
+        return self.histograms()
 
-    @router.http("GET", "/metrics/meters")
-    def get_meters_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_meters_metrics(self):
+        return self.meters()
 
-    @router.http("GET", "/metrics/timers")
-    def get_timers_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_timers_metrics(self):
+        return self.timers()
 
-    @router.http("GET", "/metrics/statistics/?type=json")
-    def get_statistics_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_statistics_metrics(self):
+        return self.statistics(type="json")
 
-    @router.http("GET", "/metrics/system")
-    def get_system_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_system_metrics(self):
+        return self.system()
 
-    @router.http("GET", "/metrics/backend")
-    def get_backend_metrics(self) -> dict:
-        return self._invoke_request()
+    def get_backend_metrics(self):
+        return self.backend()

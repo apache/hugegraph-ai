@@ -57,6 +57,54 @@ class ClientContractTest(unittest.TestCase):
         self.assertIn("MISSING GET /obsolete", changes)
         self.assertTrue(any("PARAMETERS GET /vertices/{}" in change and "page" in change for change in changes))
 
+    def test_openapi_changes_report_request_body_and_media_type(self):
+        contract = {
+            "operations": {
+                "graphs.create": {
+                    "method": "POST",
+                    "path": "graphs",
+                    "query": [],
+                    "body": True,
+                    "content_type": "text/plain; charset=UTF-8",
+                },
+                "vertex.get": {"method": "GET", "path": "vertices/{id}", "query": [], "body": False},
+            }
+        }
+        document = {
+            "paths": {
+                "/graphs": {
+                    "post": {"requestBody": {"content": {"application/json": {}}}},
+                },
+                "/vertices/{vertex_id}": {
+                    "get": {"requestBody": {"content": {"application/json": {}}}},
+                },
+            }
+        }
+        changes = client_api.compare_openapi(document, contract)
+        self.assertIn("REQUEST MEDIA POST /graphs: added=['application/json'], missing=['text/plain']", changes)
+        self.assertIn("BODY GET /vertices/{}: expected=False, actual=True", changes)
+
+    def test_openapi_media_type_ignores_charset(self):
+        contract = {
+            "operations": {
+                "graphs.create": {
+                    "method": "POST",
+                    "path": "graphs",
+                    "query": [],
+                    "body": True,
+                    "content_type": "application/json",
+                }
+            }
+        }
+        document = {
+            "paths": {
+                "/graphs": {
+                    "post": {"requestBody": {"content": {"application/json; charset=UTF-8": {}}}},
+                }
+            }
+        }
+        self.assertEqual([], client_api.compare_openapi(document, contract))
+
     def test_openapi_path_level_parameters_and_explicit_platform_exclusions(self):
         contract = {
             "operations": {"list": {"method": "GET", "path": "vertices", "query": ["page"]}},

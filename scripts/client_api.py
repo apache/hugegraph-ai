@@ -117,20 +117,38 @@ def normalized(path):
     return re.sub(r"{[^}]+}", "{}", path.strip("/"))
 
 
+def normalized_media_types(content):
+    if not isinstance(content, dict):
+        return set()
+    return {media_type.split(";", 1)[0].strip().lower() for media_type in content}
+
+
 def compare_openapi(document, contract):
     if not isinstance(document.get("paths"), dict):
         raise ValueError("OpenAPI document must contain a paths object")
     expected = {}
     for spec in contract["operations"].values():
         key = (spec["method"].lower(), normalized(spec["path"]))
-        expected.setdefault(key, set()).update(spec.get("openapi_query", spec["query"]))
+        body = bool(spec.get("body", False))
+        request_media = {spec["content_type"].split(";", 1)[0].strip().lower()} if body else set()
+        shape = expected.setdefault(key, {"query": set(), "body": body, "request_media": request_media})
+        if shape["body"] != body or shape["request_media"] != request_media:
+            raise ValueError(f"Conflicting contract entries for {key[0].upper()} /{key[1]}")
+        shape["query"].update(spec.get("openapi_query", spec["query"]))
     actual = {}
     for path, item in document["paths"].items():
         for method, operation in item.items():
             if method.lower() not in {"get", "post", "put", "delete", "patch", "head", "options"}:
                 continue
             params = item.get("parameters", []) + operation.get("parameters", [])
-            actual[(method.lower(), normalized(path))] = {p["name"] for p in params if p.get("in") == "query"}
+            request_body = operation.get("requestBody")
+            actual[(method.lower(), normalized(path))] = {
+                "query": {p["name"] for p in params if p.get("in") == "query"},
+                "body": request_body is not None,
+                "request_media": normalized_media_types(request_body.get("content", {}))
+                if isinstance(request_body, dict)
+                else set(),
+            }
     for spec in contract.get("platform_operations", []):
         actual.pop((spec["method"].lower(), normalized(spec["path"])), None)
     result = []
@@ -139,10 +157,24 @@ def compare_openapi(document, contract):
     for key in sorted(expected.keys() - actual.keys()):
         result.append(f"MISSING {key[0].upper()} /{key[1]}")
     for key in sorted(expected.keys() & actual.keys()):
-        if actual[key] != expected[key]:
+        expected_shape = expected[key]
+        actual_shape = actual[key]
+        if actual_shape["query"] != expected_shape["query"]:
             result.append(
-                f"PARAMETERS {key[0].upper()} /{key[1]}: added={sorted(actual[key] - expected[key])}, "
-                f"missing={sorted(expected[key] - actual[key])}"
+                f"PARAMETERS {key[0].upper()} /{key[1]}: "
+                f"added={sorted(actual_shape['query'] - expected_shape['query'])}, "
+                f"missing={sorted(expected_shape['query'] - actual_shape['query'])}"
+            )
+        if actual_shape["body"] != expected_shape["body"]:
+            result.append(
+                f"BODY {key[0].upper()} /{key[1]}: "
+                f"expected={expected_shape['body']}, actual={actual_shape['body']}"
+            )
+        if actual_shape["request_media"] != expected_shape["request_media"]:
+            result.append(
+                f"REQUEST MEDIA {key[0].upper()} /{key[1]}: "
+                f"added={sorted(actual_shape['request_media'] - expected_shape['request_media'])}, "
+                f"missing={sorted(expected_shape['request_media'] - actual_shape['request_media'])}"
             )
     return result
 

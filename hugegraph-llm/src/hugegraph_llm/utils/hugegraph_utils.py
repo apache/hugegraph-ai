@@ -19,6 +19,8 @@ import json
 import os
 import shutil
 from datetime import datetime
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit
 
 import requests
@@ -174,23 +176,36 @@ def backup_data():
 
 
 def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
-    with open(os.path.join(backup_subdir, filename), "w", encoding="utf-8") as f:
-        if filename == "edges.json":
-            data = client.gremlin().exec(query)["data"][0]["edges"]
+    if filename == "edges.json":
+        data = client.gremlin().exec(query)["data"][0]["edges"]
+    elif filename == "vertices.json":
+        vertices = client.gremlin().exec(query)["data"][0]["vertices"]
+        data = (
+            [{key: value for key, value in vertex.items() if key != "id"} for vertex in vertices]
+            if all_pk_flag
+            else vertices
+        )
+    elif filename == "schema.json":
+        data = query
+    else:
+        raise ValueError(f"Unsupported backup file: {filename}")
+
+    temporary = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=backup_subdir, prefix=f".{filename}.", delete=False
+        ) as f:
+            temporary = Path(f.name)
             json.dump(data, f, ensure_ascii=False)
-        elif filename == "vertices.json":
-            data_full = client.gremlin().exec(query)["data"][0]["vertices"]
-            data = (
-                [{key: value for key, value in vertex.items() if key != "id"} for vertex in data_full]
-                if all_pk_flag
-                else data_full
-            )
-            json.dump(data, f, ensure_ascii=False)
-        elif filename == "schema.json":
-            json.dump(query, f, ensure_ascii=False)
-            stale_schema = os.path.join(backup_subdir, "schema.groovy")
-            if os.path.isfile(stale_schema):
-                os.remove(stale_schema)
+        os.replace(temporary, Path(backup_subdir) / filename)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+    if filename == "schema.json":
+        stale_schema = Path(backup_subdir) / "schema.groovy"
+        if stale_schema.is_file():
+            stale_schema.unlink()
 
 
 def manage_backup_retention():

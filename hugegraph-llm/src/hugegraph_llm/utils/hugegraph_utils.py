@@ -18,6 +18,7 @@
 import json
 import os
 import shutil
+import stat
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -175,6 +176,16 @@ def backup_data():
         raise Exception("Failed to execute backup") from e
 
 
+def _backup_file_mode(target: Path) -> int:
+    if target.exists():
+        return stat.S_IMODE(target.stat().st_mode)
+    current_umask = os.umask(0)
+    try:
+        return 0o666 & ~current_umask
+    finally:
+        os.umask(current_umask)
+
+
 def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
     if filename == "edges.json":
         data = client.gremlin().exec(query)["data"][0]["edges"]
@@ -190,6 +201,8 @@ def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
     else:
         raise ValueError(f"Unsupported backup file: {filename}")
 
+    target = Path(backup_subdir) / filename
+    target_mode = _backup_file_mode(target)
     temporary = None
     try:
         with NamedTemporaryFile(
@@ -197,7 +210,9 @@ def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
         ) as f:
             temporary = Path(f.name)
             json.dump(data, f, ensure_ascii=False)
-        os.replace(temporary, Path(backup_subdir) / filename)
+        temporary.chmod(target_mode)
+        os.replace(temporary, target)
+        temporary = None
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

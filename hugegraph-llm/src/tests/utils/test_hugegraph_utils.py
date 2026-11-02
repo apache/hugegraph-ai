@@ -16,6 +16,8 @@
 # under the License.
 
 import json
+import os
+import stat
 from contextlib import contextmanager
 from datetime import datetime
 from unittest.mock import Mock
@@ -90,6 +92,24 @@ def test_schema_backup_replaces_current_json_before_scoped_legacy_cleanup(tmp_pa
     assert legacy.exists() == (legacy_kind == "directory")
     assert previous.read_text(encoding="utf-8") == "historical schema"
     assert list(current.glob(".schema.json.*")) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes are required")
+def test_atomic_backup_preserves_legacy_file_permissions(tmp_path):
+    old_umask = os.umask(0o002)
+    try:
+        target = tmp_path / "schema.json"
+        hugegraph_utils.write_backup_file(None, tmp_path, "schema.json", {"version": 1}, True)
+    finally:
+        os.umask(old_umask)
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o664
+
+    target.chmod(0o640)
+    hugegraph_utils.write_backup_file(None, tmp_path, "schema.json", {"version": 2}, True)
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+    assert json.loads(target.read_text(encoding="utf-8")) == {"version": 2}
 
 
 @pytest.mark.parametrize("failure", ["serialize", "close", "replace"])

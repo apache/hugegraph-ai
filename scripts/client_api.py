@@ -167,8 +167,7 @@ def compare_openapi(document, contract):
             )
         if actual_shape["body"] != expected_shape["body"]:
             result.append(
-                f"BODY {key[0].upper()} /{key[1]}: "
-                f"expected={expected_shape['body']}, actual={actual_shape['body']}"
+                f"BODY {key[0].upper()} /{key[1]}: expected={expected_shape['body']}, actual={actual_shape['body']}"
             )
         if actual_shape["request_media"] != expected_shape["request_media"]:
             result.append(

@@ -188,6 +188,9 @@ def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
             json.dump(data, f, ensure_ascii=False)
         elif filename == "schema.json":
             json.dump(query, f, ensure_ascii=False)
+            stale_schema = os.path.join(backup_subdir, "schema.groovy")
+            if os.path.isfile(stale_schema):
+                os.remove(stale_schema)
 
 
 def manage_backup_retention():

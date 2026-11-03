@@ -20,6 +20,7 @@ from typing import ClassVar, Optional
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
+from pydantic import field_validator
 
 from .models import BaseConfig, base_config
 
@@ -28,6 +29,17 @@ class HugeGraphConfig(BaseConfig):
     """HugeGraph settings"""
 
     allow_empty_environment: ClassVar[frozenset[str]] = frozenset({"graph_pwd"})
+
+    @field_validator("graph_url", mode="before")
+    @classmethod
+    def normalize_graph_url(cls, value):
+        if isinstance(value, str) and value.strip():
+            value = value.strip()
+            if "://" not in value:
+                value = "http://" + value
+            scheme, rest = value.split("://", 1)
+            return scheme.lower() + "://" + rest
+        return value
 
     @classmethod
     def _clears_file_password(cls):

@@ -189,7 +189,7 @@ def test_empty_typed_process_values_use_file_or_default(env_file, monkeypatch, f
 
 def test_empty_required_process_string_does_not_erase_default(env_file, monkeypatch):
     monkeypatch.setenv("GRAPH_URL", "")
-    assert HugeGraphConfig().graph_url == "127.0.0.1:8080"
+    assert HugeGraphConfig().graph_url == "http://127.0.0.1:8080"
 
 
 def test_cleared_file_password_survives_save_and_reload(env_file):
@@ -323,3 +323,48 @@ def test_endpoint_switch_does_not_reuse_password_from_old_file(env_file, monkeyp
     assert settings.environment_source("graph_pwd") == "GRAPH_URL"
     monkeypatch.setenv("GRAPH_URL", "http://old.example:8080/")
     assert HugeGraphConfig().graph_pwd == "old-private-password"
+
+
+def test_unchanged_managed_bare_graph_url_allows_other_ui_changes(env_file, monkeypatch):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    monkeypatch.setenv("GRAPH_URL", "graph-server:8080")
+    settings = HugeGraphConfig()
+    assert settings.graph_url == "http://graph-server:8080"
+    monkeypatch.setattr(configs_block, "huge_settings", settings)
+    monkeypatch.setattr(configs_block, "test_api_connection", lambda *args, **kwargs: 200)
+    monkeypatch.setattr(configs_block.gr, "Info", lambda *args: None)
+    assert (
+        configs_block.apply_graph_config(
+            settings.graph_url, "new-graph", settings.graph_user, settings.graph_pwd, settings.graph_space
+        )
+        == 200
+    )
+    assert dotenv_values(env_file) == {"GRAPH_NAME": "new-graph"}
+
+
+def test_runtime_operators_read_bundled_assets_and_write_index_to_data_root(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from hugegraph_llm.config.paths import PACKAGED_RESOURCES
+    from hugegraph_llm.indices.vector_index import faiss_vector_store
+    from hugegraph_llm.operators.index_op import gremlin_example_index_query
+    from hugegraph_llm.operators.llm_op import prompt_generate
+
+    root = tmp_path / 'fresh-data'
+    monkeypatch.setattr(prompt_generate, "resource_path", str(root))
+    examples = json.loads((PACKAGED_RESOURCES / 'prompt_examples' / 'prompt_examples.json').read_text())
+    assert prompt_generate.PromptGenerate(Mock())._load_few_shot_example(examples[0]['name']) == examples[0]
+    monkeypatch.setattr(gremlin_example_index_query, "resource_path", str(root))
+    monkeypatch.setattr(faiss_vector_store, "resource_path", str(root))
+    embedding = SimpleNamespace(
+        get_embedding_dim=lambda: 2, get_texts_embeddings=lambda texts: [[float(i), 1.0] for i, _ in enumerate(texts)]
+    )
+    query = gremlin_example_index_query.GremlinExampleIndexQuery(
+        faiss_vector_store.FaissVectorIndex, embedding=embedding
+    )
+    assert query.vector_index.index.ntotal > 0
+    assert (root / 'gremlin_examples' / 'index.faiss').is_file()
+    assert not (root / 'demo' / 'text2gremlin.csv').exists()

@@ -87,16 +87,12 @@ def locate_litellm_source() -> Path:
     if spec is None or spec.submodule_search_locations is None:
         raise FileNotFoundError("The litellm package is not installed")
 
-    candidates = [
-        Path(package_root) / _LITELLM_TARGET
-        for package_root in spec.submodule_search_locations
-    ]
+    candidates = [Path(package_root) / _LITELLM_TARGET for package_root in spec.submodule_search_locations]
     existing = [candidate for candidate in candidates if candidate.is_file()]
     if len(existing) != 1:
         rendered = ", ".join(str(candidate) for candidate in candidates) or "<none>"
         raise FileNotFoundError(
-            "Expected exactly one installed LiteLLM source file, "
-            f"found {len(existing)} among: {rendered}"
+            f"Expected exactly one installed LiteLLM source file, found {len(existing)} among: {rendered}"
         )
     return existing[0]
 

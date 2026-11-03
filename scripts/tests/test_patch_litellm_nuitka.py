@@ -13,17 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib.util
 import tempfile
 import unittest
+from importlib import util
 from pathlib import Path
 
 
 _MODULE_PATH = Path(__file__).resolve().parents[2] / "docker" / "patch_litellm_nuitka.py"
-_SPEC = importlib.util.spec_from_file_location("patch_litellm_nuitka", _MODULE_PATH)
+_SPEC = util.spec_from_file_location("patch_litellm_nuitka", _MODULE_PATH)
 if _SPEC is None or _SPEC.loader is None:
     raise RuntimeError(f"Unable to load compatibility patch module from {_MODULE_PATH}")
-patch = importlib.util.module_from_spec(_SPEC)
+patch = util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(patch)
 
 

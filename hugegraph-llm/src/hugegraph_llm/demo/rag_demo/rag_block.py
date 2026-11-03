@@ -24,7 +24,7 @@ import gradio as gr
 import pandas as pd
 from gradio.utils import NamedString
 
-from hugegraph_llm.config import llm_settings, prompt, resource_path
+from hugegraph_llm.config import llm_settings, prompt, resource_file, resource_path
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.decorators import with_task_id
@@ -361,7 +361,7 @@ def create_rag_block():
     # FIXME: "demo" might conflict with the graph name, it should be modified.
     answers_path = os.path.join(resource_path, "demo", "questions_answers.xlsx")
     questions_path = os.path.join(resource_path, "demo", "questions.xlsx")
-    questions_template_path = os.path.join(resource_path, "demo", "questions_template.xlsx")
+    questions_template_path = resource_file("demo", "questions_template.xlsx", root=resource_path)
 
     def read_file_to_excel(file: NamedString, line_count: Optional[int] = None):
         df = None
@@ -439,7 +439,7 @@ def create_rag_block():
         with gr.Column():
             questions_file = gr.File(file_types=[".xlsx", ".csv"], label="Questions File (.xlsx & csv)")
         with gr.Column():
-            test_template_file = os.path.join(resource_path, "demo", "questions_template.xlsx")
+            test_template_file = resource_file("demo", "questions_template.xlsx", root=resource_path)
             gr.File(value=test_template_file, label="Download Template File")
             answer_max_line_count = gr.Number(1, label="Max Lines To Show", minimum=1, maximum=40)
             answers_btn = gr.Button("Generate Answer (Batch)", variant="primary")

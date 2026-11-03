@@ -17,14 +17,53 @@
 
 
 from typing import Literal, Optional
+from urllib.parse import urlsplit
 
+from dotenv import dotenv_values
 from pydantic import AliasChoices, Field
 
-from .models import BaseConfig
+from .models import BaseConfig, base_config
 
 
 class LLMConfig(BaseConfig):
     """LLM settings"""
+
+    @classmethod
+    def _generic_key_is_scoped(cls, field):
+        source = super().environment_source(field)
+        if not field.endswith("_api_key") or not source or source.upper() != "OPENAI_API_KEY":
+            return True
+        base_field = field.removesuffix("_api_key") + "_api_base"
+        if super().environment_source(base_field):
+            return True
+        values = {key.upper(): value for key, value in dotenv_values(base_config.env_path).items()}
+        endpoint = values.get(base_field.upper()) or values.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+        parsed = urlsplit(endpoint)
+        return parsed.scheme == "https" and parsed.hostname == "api.openai.com" and parsed.port in (None, 443)
+
+    @classmethod
+    def environment_source(cls, field):
+        return super().environment_source(field) if cls._generic_key_is_scoped(field) else None
+
+    @classmethod
+    def settings_customise_sources(cls, *args, **kwargs):
+        sources = super().settings_customise_sources(*args, **kwargs)
+
+        def scoped_environment():
+            values = sources[1]()
+            file_values = sources[2]()
+            for role in ("chat", "extract", "text2gql"):
+                field = f"openai_{role}_api_key"
+                if not cls._generic_key_is_scoped(field):
+                    key = field.upper()
+                    if key not in file_values:
+                        raise ValueError(
+                            f"{key} is required for a file-configured custom endpoint; a generic process key cannot be forwarded there"
+                        )
+                    values.pop(key, None)
+            return values
+
+        return sources[0], scoped_environment, *sources[2:]
 
     language: Literal["EN", "CN"] = "EN"
     chat_llm_type: Literal["openai", "litellm", "ollama/local"] = "openai"

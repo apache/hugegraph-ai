@@ -19,6 +19,7 @@
 import os
 import tempfile
 from pathlib import Path
+from typing import ClassVar, get_args
 
 from dotenv import set_key
 from pydantic import AliasChoices, PrivateAttr
@@ -62,28 +63,54 @@ class BaseConfig(BaseSettings):
         env_file=env_path,
         case_sensitive=False,
         extra="ignore",
-        env_ignore_empty=True,
+        env_ignore_empty=False,
         populate_by_name=True,
     )
     _saved_values: dict = PrivateAttr(default_factory=dict)
+    allow_empty_environment: ClassVar[frozenset[str]] = frozenset()
+
+    @classmethod
+    def _allows_empty(cls, field: str, process: bool) -> bool:
+        annotation = cls.model_fields[field].annotation
+        optional_string = str in get_args(annotation)
+        return optional_string or (not process and annotation is str) or field in cls.allow_empty_environment
+
+    @classmethod
+    def settings_customise_sources(
+        cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
+    ):
+        def normalize(source, process):
+            values = source()
+            for field, definition in cls.model_fields.items():
+                if cls._allows_empty(field, process):
+                    continue
+                alias = definition.validation_alias
+                names = alias.choices if isinstance(alias, AliasChoices) else [alias or field]
+                for name in [field, *names]:
+                    if isinstance(name, str) and values.get(name) == "":
+                        values.pop(name)
+            return values
+
+        return (
+            init_settings,
+            lambda: normalize(env_settings, True),
+            lambda: normalize(dotenv_settings, False),
+            file_secret_settings,
+        )
 
     @classmethod
     def environment_source(cls, field: str) -> str | None:
         alias = cls.model_fields[field].validation_alias
         names = alias.choices if isinstance(alias, AliasChoices) else [alias or field]
         environment = {name.upper(): name for name in os.environ}
-        return next(
-            (environment[name.upper()] for name in names if isinstance(name, str) and name.upper() in environment), None
-        )
+        for name in names:
+            if isinstance(name, str) and (source := environment.get(name.upper())):
+                if os.environ[source] or cls._allows_empty(field, True):
+                    return source
+        return None
 
     def __init__(self, **data):
         try:
-            # Empty process strings explicitly clear credentials. Legacy empty
-            # dotenv entries still use defaults, as with env_ignore_empty=True.
-            for field in type(self).model_fields:
-                source = self.environment_source(field)
-                if source is not None and os.environ[source] == "":
-                    data.setdefault(field, "")
             data.setdefault("_env_file", env_path)
             super().__init__(**data)
             self._saved_values = self.model_dump()
@@ -114,7 +141,13 @@ class BaseConfig(BaseSettings):
                 Path(staging).write_bytes(target.read_bytes())
             for field, value in changed.items():
                 log.info("Update configuration field %s in %s", field.upper(), env_path)
-                set_key(staging, field.upper(), "" if value is None else str(value), quote_mode="always")
+                text = "" if value is None else str(value)
+                needs_quotes = (
+                    text != text.strip() or any(c in text for c in ("\n", "\r", " #")) or text.startswith(("'", '"'))
+                )
+                set_key(staging, field.upper(), text, quote_mode="always" if needs_quotes else "never")
+            if target.exists():
+                os.chmod(staging, target.stat().st_mode & 0o777)
             os.replace(staging, target)
         finally:
             Path(staging).unlink(missing_ok=True)

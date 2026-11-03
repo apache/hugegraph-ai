@@ -19,7 +19,6 @@
 """The writable resource root, independent of the installed Python package."""
 
 import os
-import shutil
 from pathlib import Path
 
 PACKAGED_RESOURCES = Path(__file__).resolve().parent.parent / "resources"
@@ -34,20 +33,11 @@ def resolve_resource_path() -> Path:
     return Path(value).expanduser()
 
 
-def ensure_resources() -> str:
-    target = resolve_resource_path()
-    if target.resolve() != PACKAGED_RESOURCES.resolve():
-        # Seed missing bundled examples only. Configuration is loaded/generated
-        # separately; existing user resources always win across image upgrades.
-        for source in PACKAGED_RESOURCES.rglob("*"):
-            relative = source.relative_to(PACKAGED_RESOURCES)
-            if not source.is_file() or relative.name in {".env", "config_prompt.yaml"}:
-                continue
-            destination = target / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with destination.open("xb") as output, source.open("rb") as input_file:
-                    shutil.copyfileobj(input_file, output)
-            except FileExistsError:
-                pass
-    return str(target)
+def resource_file(*parts: str, root: str | None = None) -> str:
+    """Read user-provided assets first, then immutable packaged examples.
+
+    Configuration and generated data stay at the resource root. Reading a
+    bundled example never copies files or requires a writable filesystem.
+    """
+    candidate = (Path(root) if root is not None else resolve_resource_path()).joinpath(*parts)
+    return str(candidate if candidate.is_file() else PACKAGED_RESOURCES.joinpath(*parts))

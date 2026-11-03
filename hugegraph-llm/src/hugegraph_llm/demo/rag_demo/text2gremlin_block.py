@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import gradio as gr
 import pandas as pd
 
-from hugegraph_llm.config import huge_settings, prompt, resource_path
+from hugegraph_llm.config import huge_settings, prompt, resource_file, resource_path
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.embedding_utils import get_index_folder_name
@@ -87,7 +87,7 @@ def build_example_vector_index(temp_file) -> dict:
     if not os.path.exists(index_path):
         os.makedirs(index_path)
     if temp_file is None:
-        full_path = os.path.join(resource_path, "demo", "text2gremlin.csv")
+        full_path = resource_file("demo", "text2gremlin.csv", root=resource_path)
     else:
         full_path = temp_file.name
         name, ext = os.path.splitext(temp_file.name)
@@ -245,7 +245,7 @@ def create_text2gremlin_block() -> Tuple:
     )
     with gr.Row():
         file = gr.File(
-            value=os.path.join(resource_path, "demo", "text2gremlin.csv"),
+            value=resource_file("demo", "text2gremlin.csv", root=resource_path),
             label="Upload Text-Gremlin Pairs File",
         )
         out = gr.Textbox(label="Result Message")

@@ -88,12 +88,6 @@ class TestConfig(unittest.TestCase):
         with patch.dict(environ, {base_config.ENV_PATH_ENV_VAR: str(custom_env)}):
             self.assertEqual(Path(base_config.resolve_env_path()), custom_env)
 
-    def test_demo_config_block_uses_shared_env_path(self):
-        from hugegraph_llm.config.models import base_config
-        from hugegraph_llm.demo.rag_demo import configs_block
-
-        self.assertEqual(configs_block.env_path, base_config.env_path)
-
 
 def test_failed_ui_config_update_restores_memory_without_persisting(monkeypatch):
     from hugegraph_llm.config import llm_settings

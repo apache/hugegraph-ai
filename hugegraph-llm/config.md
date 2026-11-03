@@ -33,8 +33,7 @@
 仍会覆盖文件里旧的专用 key。启动不改写 `.env`，也不将其注入 `os.environ`。
 
 使用 `HUGEGRAPH_LLM_RESOURCE_PATH=/var/lib/hugegraph-rag` 可以将 `.env`、
-`demo/config_prompt.yaml`、索引和生成文件放在同一个可写挂载目录中。应用仅补充
-缺少的示例文件，已有文件在镜像升级时保持不变。
+`demo/config_prompt.yaml`、索引和生成文件放在同一个可写挂载目录中。缺少的示例文件直接从镜像内置资源读取，启动不复制资源或生成缺失配置。只有显式保存或数据生成操作需要写入挂载卷。
 
 配置可以与数据分开挂载。设置 `HUGEGRAPH_LLM_ENV_PATH=/etc/rag/rag.env` 和
 `HUGEGRAPH_LLM_PROMPT_CONFIG_PATH=/etc/rag/config_prompt.yaml` 即可读取单独的文件，
@@ -328,3 +327,9 @@ print(f"数据库名称: {graph_config.graph_name}")
 ## 相关文档
 
 - [HugeGraph LLM README](README.md)
+
+通用 provider key 有端点保护边界：自定义端点来自 `.env`，而进程只提供通用 `OPENAI_API_KEY` 时，保留文件中与端点配套的 key，避免转发到另一服务。若文件没有配套 key，启动会要求显式提供该角色凭据。由 Kubernetes 管理 provider 时，应同时配置 base URL 和 key。
+
+空数字、布尔或枚举变量按未设置处理；`.env` 中显式空字符串会保留，`GRAPH_PWD` 的空进程值可清除旧密码。新建 `.env` 使用 0600，保存已有文件时保留权限；普通值不加引号，仅在需要时使用 dotenv 引号。
+
+图密码也绑定到端点：进程中的 `GRAPH_URL` 与文件端点不同时，不继承文件中的旧 `GRAPH_PWD`。通过进程/Secret 显式提供新端点的密码（或空密码）。同一端点的文件凭据仍可使用。

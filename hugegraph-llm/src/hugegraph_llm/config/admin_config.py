@@ -23,6 +23,8 @@ from .models import BaseConfig
 class AdminConfig(BaseConfig):
     """Admin settings"""
 
+    hugegraph_llm_enable_thin_writes: bool = False
+
     enable_login: Optional[str] = "False"
     user_token: Optional[str] = "4321"
     admin_token: Optional[str] = "xxxx"

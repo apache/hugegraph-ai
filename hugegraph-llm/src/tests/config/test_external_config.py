@@ -80,13 +80,14 @@ def test_save_preserves_external_edits_and_does_not_export_environment(env_file,
     settings = LLMConfig()
     # A user edits a different field between load and save.
     env_file.write_text("# keep comment\nWINDOW_SIZE=12\nLANGUAGE=EN\n")
+    mode_before = env_file.stat().st_mode & 0o777
     settings.language = "CN"
     settings.update_env()
     saved = dotenv_values(env_file)
     assert saved == {"WINDOW_SIZE": "12", "LANGUAGE": "CN"}
     assert "private-secret" not in env_file.read_text()
     assert "# keep comment" in env_file.read_text()
-    assert env_file.stat().st_mode & 0o777 == 0o600
+    assert env_file.stat().st_mode & 0o777 == mode_before
 
 
 def test_managed_ui_change_is_rejected_without_changing_file(env_file, monkeypatch):
@@ -135,26 +136,27 @@ def test_reload_validates_without_persisting_defaults(env_file):
     assert settings.count == 7
 
 
-def test_resource_root_moves_both_configuration_and_generated_data(tmp_path, monkeypatch):
+def test_resource_root_uses_assets_without_startup_copies(tmp_path, monkeypatch):
     from hugegraph_llm.config import paths
     from hugegraph_llm.config.models.base_prompt_config import resolve_prompt_yaml_path
 
     packaged = tmp_path / "packaged"
     (packaged / "demo").mkdir(parents=True)
     (packaged / "demo" / "example.txt").write_text("default")
-    target = tmp_path / "data"
+    target = packaged / "data"
     monkeypatch.setattr(paths, "PACKAGED_RESOURCES", packaged)
     monkeypatch.setenv("HUGEGRAPH_LLM_RESOURCE_PATH", str(target))
     monkeypatch.delenv("HUGEGRAPH_LLM_ENV_PATH", raising=False)
     monkeypatch.delenv("HUGEGRAPH_LLM_PROMPT_CONFIG_PATH", raising=False)
-    assert paths.ensure_resources() == str(target)
+    assert paths.resolve_resource_path() == target
+    assert paths.resource_file("demo", "example.txt") == str(packaged / "demo" / "example.txt")
+    assert not target.exists()
     assert base_config.resolve_env_path() == str(target / ".env")
     assert resolve_prompt_yaml_path() == str(target / "demo" / "config_prompt.yaml")
+    (target / "demo").mkdir(parents=True)
     example = target / "demo" / "example.txt"
-    assert example.read_text() == "default"
     example.write_text("user edit")
-    paths.ensure_resources()
-    assert example.read_text() == "user edit"
+    assert paths.resource_file("demo", "example.txt") == str(example)
 
 
 def test_managed_api_update_rolls_back_memory_and_disk(env_file, monkeypatch):
@@ -174,3 +176,150 @@ def test_managed_api_update_rolls_back_memory_and_disk(env_file, monkeypatch):
 def test_explicit_constructor_values_override_alias_environment(env_file, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "managed")
     assert LLMConfig(openai_chat_api_key="explicit").openai_chat_api_key == "explicit"
+
+
+@pytest.mark.parametrize("field", ["WINDOW_SIZE", "OPENAI_CHAT_TOKENS"])
+def test_empty_typed_process_values_use_file_or_default(env_file, monkeypatch, field):
+    env_file.write_text(f"{field}=12\n")
+    monkeypatch.setenv(field, "")
+    settings = LLMConfig()
+    assert getattr(settings, field.lower()) == 12
+    assert settings.environment_source(field.lower()) is None
+
+
+def test_empty_required_process_string_does_not_erase_default(env_file, monkeypatch):
+    monkeypatch.setenv("GRAPH_URL", "")
+    assert HugeGraphConfig().graph_url == "127.0.0.1:8080"
+
+
+def test_cleared_file_password_survives_save_and_reload(env_file):
+    settings = HugeGraphConfig()
+    settings.graph_pwd = ""
+    settings.update_env()
+    assert HugeGraphConfig().graph_pwd == ""
+
+
+def test_proxy_credentials_stay_paired_with_file_endpoint(env_file, monkeypatch):
+    env_file.write_text("OPENAI_CHAT_API_BASE=https://proxy.example/v1\nOPENAI_CHAT_API_KEY=proxy-key\n")
+    monkeypatch.setenv("OPENAI_API_KEY", "private-process-key")
+    settings = LLMConfig()
+    assert (settings.openai_chat_api_base, settings.openai_chat_api_key) == ("https://proxy.example/v1", "proxy-key")
+    assert settings.environment_source("openai_chat_api_key") is None
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    settings = LLMConfig()
+    assert (settings.openai_chat_api_base, settings.openai_chat_api_key) == (
+        "https://api.openai.com/v1",
+        "private-process-key",
+    )
+
+
+def test_generic_key_is_not_forwarded_to_uncredentialed_file_proxy(env_file, monkeypatch):
+    env_file.write_text("OPENAI_CHAT_API_BASE=https://proxy.example/v1\n")
+    monkeypatch.setenv("OPENAI_API_KEY", "private-process-key")
+    with pytest.raises(ValueError, match="custom endpoint"):
+        LLMConfig()
+
+
+def test_save_preserves_group_mode_and_plain_values(env_file):
+    env_file.write_text("LANGUAGE=EN\n")
+    env_file.chmod(0o640)
+    settings = LLMConfig()
+    settings.window_size = 7
+    settings.update_env()
+    assert env_file.stat().st_mode & 0o777 == 0o640
+    assert "WINDOW_SIZE=7\n" in env_file.read_text()
+
+
+def test_new_config_file_is_private(env_file):
+    settings = LLMConfig()
+    settings.window_size = 7
+    settings.update_env()
+    assert env_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_thin_write_flag_uses_file_and_process_precedence(env_file, monkeypatch):
+    from hugegraph_llm.api import thin_api
+
+    env_file.write_text("HUGEGRAPH_LLM_ENABLE_THIN_WRITES=true\n")
+    monkeypatch.setattr(thin_api.admin_settings, "enable_login", "true")
+    monkeypatch.delenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", raising=False)
+    assert thin_api._thin_write_disabled() is None
+    monkeypatch.setenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", "false")
+    assert thin_api._thin_write_disabled() is not None
+
+
+def test_missing_readonly_prompt_uses_memory_without_creating_files(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from hugegraph_llm.config.models import base_prompt_config
+    from hugegraph_llm.config.prompt_config import PromptConfig
+
+    path = tmp_path / 'read-only' / 'config_prompt.yaml'
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(path))
+    settings = PromptConfig(SimpleNamespace(language="EN"))
+    settings.ensure_yaml_file_exists()
+    assert settings.answer_prompt == settings.answer_prompt_EN
+    assert not path.parent.exists()
+
+
+@pytest.mark.parametrize("provider", ["openai", "litellm"])
+def test_chat_cascade_uses_effective_role_configuration(env_file, monkeypatch, provider):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    field = f"{provider}_extract_api_key"
+    monkeypatch.setenv(field.upper(), "managed-extraction-key")
+    settings = LLMConfig(extract_llm_type=provider)
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    assert configs_block._role_has_credentials("extract")
+    assert not env_file.exists()
+
+
+@pytest.mark.parametrize(
+    ("field", "label", "render_name", "configured", "requested"),
+    [
+        ("embedding_type", "Embedding", "embedding_settings", "openai", "ollama/local"),
+        ("reranker_type", "Reranker", "reranker_settings", "cohere", "siliconflow"),
+    ],
+)
+def test_managed_dropdown_cannot_poison_later_saves(
+    env_file, monkeypatch, field, label, render_name, configured, requested
+):
+    from fastapi.testclient import TestClient
+
+    from hugegraph_llm.demo.rag_demo import app, configs_block
+
+    monkeypatch.setenv(field.upper(), configured)
+    monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "false")
+    settings = LLMConfig()
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    ui = app.init_rag_ui()
+    selectors = [component for component in ui.blocks.values() if getattr(component, "label", None) == label]
+    assert selectors and selectors[0].interactive is False
+    render = next(
+        function
+        for function in ui.fns.values()
+        if getattr(getattr(getattr(function.fn, "__self__", None), "fn", None), "__name__", None) == render_name
+    )
+    monkeypatch.setattr(app, "init_rag_ui", lambda: ui)
+    client = TestClient(app.create_app())
+    try:
+        response = client.post(
+            f"/gradio_api/run/{render.api_name}", json={"data": [requested], "session_hash": "managed-selector"}
+        )
+        assert response.status_code == 200, response.text
+        assert getattr(settings, field) == configured
+        settings.window_size = 13
+        settings.update_env()
+        assert dotenv_values(env_file) == {"WINDOW_SIZE": "13"}
+    finally:
+        client.close()
+
+
+def test_endpoint_switch_does_not_reuse_password_from_old_file(env_file, monkeypatch):
+    env_file.write_text("GRAPH_URL=http://old.example:8080\nGRAPH_PWD=old-private-password\n")
+    monkeypatch.setenv("GRAPH_URL", "http://external.example:8080")
+    settings = HugeGraphConfig()
+    assert settings.graph_pwd == ""
+    assert settings.environment_source("graph_pwd") == "GRAPH_URL"
+    monkeypatch.setenv("GRAPH_URL", "http://old.example:8080/")
+    assert HugeGraphConfig().graph_pwd == "old-private-password"

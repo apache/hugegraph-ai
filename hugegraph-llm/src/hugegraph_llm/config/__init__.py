@@ -21,6 +21,7 @@ __all__ = [
     "admin_settings",
     "llm_settings",
     "resource_path",
+    "resource_file",
     "index_settings",
     "runtime_config_lock",
     "snapshot_llm_settings",
@@ -32,10 +33,10 @@ from .admin_config import AdminConfig
 from .hugegraph_config import HugeGraphConfig
 from .index_config import IndexConfig
 from .llm_config import LLMConfig
-from .paths import ensure_resources
+from .paths import resolve_resource_path, resource_file
 from .prompt_config import PromptConfig
 
-resource_path = ensure_resources()
+resource_path = str(resolve_resource_path())
 
 llm_settings = LLMConfig()
 prompt = PromptConfig(llm_settings)

@@ -127,8 +127,8 @@ class BasePromptConfig:
                     self.keywords_extract_prompt = self.keywords_extract_prompt_EN
                     self.doc_input_text = self.doc_input_text_EN
         else:
-            self.generate_yaml_file()
-            log.info("Prompt file '%s' doesn't exist, create it.", yaml_file_path)
+            self._set_language_defaults()
+            log.info("Prompt file %s is absent; using built-in defaults without writing", yaml_file_path)
 
     def save_to_yaml(self):
         def to_literal(val):
@@ -156,16 +156,7 @@ class BasePromptConfig:
         with open(yaml_file_path, "w", encoding="utf-8") as file:
             yaml.dump(data, file, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
-    def generate_yaml_file(self):
-        if os.path.exists(yaml_file_path):
-            log.info(
-                "%s already exists, do you want to override with the default configuration? (y/n)",
-                yaml_file_path,
-            )
-            update = input()
-            if update.lower() != "y":
-                return
-
+    def _set_language_defaults(self):
         if self.llm_settings.language.lower() == "cn":
             self.answer_prompt = self.answer_prompt_CN
             self.extract_graph_prompt = self.extract_graph_prompt_CN
@@ -178,6 +169,18 @@ class BasePromptConfig:
             self.gremlin_generate_prompt = self.gremlin_generate_prompt_EN
             self.keywords_extract_prompt = self.keywords_extract_prompt_EN
             self.doc_input_text = self.doc_input_text_EN
+
+    def generate_yaml_file(self):
+        if os.path.exists(yaml_file_path):
+            log.info(
+                "%s already exists, do you want to override with the default configuration? (y/n)",
+                yaml_file_path,
+            )
+            update = input()
+            if update.lower() != "y":
+                return
+
+        self._set_language_defaults()
         self.save_to_yaml()
         log.info("Prompt file '%s' has been generated with default values.", yaml_file_path)
 

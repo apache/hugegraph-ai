@@ -15,13 +15,51 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Optional
+import os
+from typing import ClassVar, Optional
+from urllib.parse import urlsplit
 
-from .models import BaseConfig
+from dotenv import dotenv_values
+
+from .models import BaseConfig, base_config
 
 
 class HugeGraphConfig(BaseConfig):
     """HugeGraph settings"""
+
+    allow_empty_environment: ClassVar[frozenset[str]] = frozenset({"graph_pwd"})
+
+    @classmethod
+    def _clears_file_password(cls):
+        source = super().environment_source("graph_url")
+        if not source or super().environment_source("graph_pwd"):
+            return False
+        values = {key.upper(): value for key, value in dotenv_values(base_config.env_path).items()}
+
+        def endpoint(value):
+            value = value or ""
+            parsed = urlsplit(value if "://" in value else "http://" + value)
+            return parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/")
+
+        return endpoint(os.environ[source]) != endpoint(values.get("GRAPH_URL"))
+
+    @classmethod
+    def environment_source(cls, field):
+        if field == "graph_pwd" and cls._clears_file_password():
+            return super().environment_source("graph_url")
+        return super().environment_source(field)
+
+    @classmethod
+    def settings_customise_sources(cls, *args, **kwargs):
+        sources = super().settings_customise_sources(*args, **kwargs)
+
+        def scoped_environment():
+            values = sources[1]()
+            if cls._clears_file_password():
+                values["graph_pwd"] = ""
+            return values
+
+        return sources[0], scoped_environment, *sources[2:]
 
     # graph server config
     graph_url: str = "127.0.0.1:8080"

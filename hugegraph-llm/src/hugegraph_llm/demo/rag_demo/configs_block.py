@@ -20,11 +20,9 @@ from typing import Optional
 
 import gradio as gr
 import requests
-from dotenv import dotenv_values
 from requests.auth import HTTPBasicAuth
 
 from hugegraph_llm.config import huge_settings, index_settings, llm_settings, runtime_config_lock
-from hugegraph_llm.config.models.base_config import env_path
 from hugegraph_llm.models.embeddings.litellm import LiteLLMEmbedding
 from hugegraph_llm.models.llms.litellm import LiteLLMClient
 from hugegraph_llm.utils.log import log
@@ -334,6 +332,14 @@ def apply_llm_config(
     return status_code
 
 
+def _role_has_credentials(role):
+    provider = getattr(llm_settings, f"{role}_llm_type")
+    if provider in ("openai", "litellm"):
+        field = f"{provider}_{role}_api_key"
+        return bool(getattr(llm_settings, field)) or bool(llm_settings.environment_source(field))
+    return bool(getattr(llm_settings, f"ollama_{role}_language_model"))
+
+
 # TODO: refactor the function to reduce the number of statements & separate the logic
 # pylint: disable=C0301,E1101
 def create_configs_block() -> list:
@@ -441,7 +447,7 @@ def create_configs_block() -> list:
                             label="host",
                         ),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("ollama_chat_port"),
                             value=str(getattr(llm_settings, "ollama_chat_port")),
                             label="port",
                         ),
@@ -482,13 +488,10 @@ def create_configs_block() -> list:
                     llm_config_input = [gr.Textbox(value="", visible=False) for _ in range(4)]
                 llm_config_button = gr.Button("Apply configuration")
                 llm_config_button.click(apply_llm_config_with_chat_op, inputs=llm_config_input)
-                # Determine whether there are Settings in the.env file
-                env_vars = dotenv_values(env_path)
-                api_extract_key = env_vars.get("OPENAI_EXTRACT_API_KEY")
-                api_text2sql_key = env_vars.get("OPENAI_TEXT2GQL_API_KEY")
-                if not api_extract_key:
+                # Cascade only when the effective role configuration has no key.
+                if not _role_has_credentials("text2gql"):
                     llm_config_button.click(apply_llm_config_with_text2gql_op, inputs=llm_config_input)
-                if not api_text2sql_key:
+                if not _role_has_credentials("extract"):
                     llm_config_button.click(apply_llm_config_with_extract_op, inputs=llm_config_input)
 
         with gr.Tab(label="mini_tasks"):
@@ -536,7 +539,7 @@ def create_configs_block() -> list:
                             label="host",
                         ),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("ollama_extract_port"),
                             value=str(getattr(llm_settings, "ollama_extract_port")),
                             label="port",
                         ),
@@ -623,7 +626,7 @@ def create_configs_block() -> list:
                             label="host",
                         ),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("ollama_text2gql_port"),
                             value=str(getattr(llm_settings, "ollama_text2gql_port")),
                             label="port",
                         ),
@@ -669,29 +672,33 @@ def create_configs_block() -> list:
         embedding_dropdown = gr.Dropdown(
             choices=["openai", "litellm", "ollama/local"],
             value=llm_settings.embedding_type,
+            interactive=not llm_settings.environment_source("embedding_type"),
             label="Embedding",
         )
 
         @gr.render(inputs=[embedding_dropdown])
         def embedding_settings(embedding_type):
             with runtime_config_lock:
-                llm_settings.embedding_type = embedding_type
+                if llm_settings.environment_source("embedding_type"):
+                    embedding_type = llm_settings.embedding_type
+                else:
+                    llm_settings.embedding_type = embedding_type
             if embedding_type == "openai":
                 with gr.Row():
                     embedding_config_input = [
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("openai_embedding_api_key"),
                             value=llm_settings.openai_embedding_api_key,
                             label="api_key",
                             type="password",
                         ),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("openai_embedding_api_base"),
                             value=llm_settings.openai_embedding_api_base,
                             label="api_base",
                         ),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("openai_embedding_model"),
                             value=llm_settings.openai_embedding_model,
                             label="model_name",
                         ),
@@ -699,10 +706,14 @@ def create_configs_block() -> list:
             elif embedding_type == "ollama/local":
                 with gr.Row():
                     embedding_config_input = [
-                        gr.Textbox(interactive=True, value=llm_settings.ollama_embedding_host, label="host"),
+                        gr.Textbox(
+                            interactive=not llm_settings.environment_source("ollama_embedding_host"),
+                            value=llm_settings.ollama_embedding_host,
+                            label="host",
+                        ),
                         gr.Textbox(interactive=True, value=str(llm_settings.ollama_embedding_port), label="port"),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("ollama_embedding_model"),
                             value=llm_settings.ollama_embedding_model,
                             label="model_name",
                         ),
@@ -748,30 +759,42 @@ def create_configs_block() -> list:
         reranker_dropdown = gr.Dropdown(
             choices=["cohere", "siliconflow", ("default/offline", "None")],
             value=llm_settings.reranker_type or "None",
+            interactive=not llm_settings.environment_source("reranker_type"),
             label="Reranker",
         )
 
         @gr.render(inputs=[reranker_dropdown])
         def reranker_settings(reranker_type):
             with runtime_config_lock:
-                llm_settings.reranker_type = reranker_type if reranker_type != "None" else None
+                if llm_settings.environment_source("reranker_type"):
+                    reranker_type = llm_settings.reranker_type or "None"
+                else:
+                    llm_settings.reranker_type = reranker_type if reranker_type != "None" else None
             if reranker_type == "cohere":
                 with gr.Row():
                     reranker_config_input = [
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("reranker_api_key"),
                             value=llm_settings.reranker_api_key,
                             label="api_key",
                             type="password",
                         ),
-                        gr.Textbox(interactive=True, value=llm_settings.reranker_model, label="model"),
-                        gr.Textbox(interactive=True, value=llm_settings.cohere_base_url, label="base_url"),
+                        gr.Textbox(
+                            interactive=not llm_settings.environment_source("reranker_model"),
+                            value=llm_settings.reranker_model,
+                            label="model",
+                        ),
+                        gr.Textbox(
+                            interactive=not llm_settings.environment_source("cohere_base_url"),
+                            value=llm_settings.cohere_base_url,
+                            label="base_url",
+                        ),
                     ]
             elif reranker_type == "siliconflow":
                 with gr.Row():
                     reranker_config_input = [
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("reranker_api_key"),
                             value=llm_settings.reranker_api_key,
                             label="api_key",
                             type="password",
@@ -816,11 +839,22 @@ def create_configs_block() -> list:
             if engine == "Milvus":
                 with gr.Row():
                     milvus_inputs = [
-                        gr.Textbox(interactive=True, value=index_settings.milvus_host, label="host"),
-                        gr.Textbox(interactive=True, value=str(index_settings.milvus_port), label="port"),
-                        gr.Textbox(interactive=True, value=index_settings.milvus_user, label="user"),
                         gr.Textbox(
-                            interactive=True, value=index_settings.milvus_password, label="password", type="password"
+                            interactive=not index_settings.environment_source("milvus_host"),
+                            value=index_settings.milvus_host,
+                            label="host",
+                        ),
+                        gr.Textbox(interactive=True, value=str(index_settings.milvus_port), label="port"),
+                        gr.Textbox(
+                            interactive=not index_settings.environment_source("milvus_user"),
+                            value=index_settings.milvus_user,
+                            label="user",
+                        ),
+                        gr.Textbox(
+                            interactive=not index_settings.environment_source("milvus_password"),
+                            value=index_settings.milvus_password,
+                            label="password",
+                            type="password",
                         ),
                     ]
                 apply_backend_button = gr.Button("Apply Configuration")
@@ -828,7 +862,11 @@ def create_configs_block() -> list:
             elif engine == "Qdrant":
                 with gr.Row():
                     qdrant_inputs = [
-                        gr.Textbox(interactive=True, value=index_settings.qdrant_host, label="host"),
+                        gr.Textbox(
+                            interactive=not index_settings.environment_source("qdrant_host"),
+                            value=index_settings.qdrant_host,
+                            label="host",
+                        ),
                         gr.Textbox(interactive=True, value=str(index_settings.qdrant_port), label="port"),
                         gr.Textbox(
                             interactive=True,

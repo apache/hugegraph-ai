@@ -236,7 +236,7 @@ After loading the extracted graph, open **Graph Tools** to run a Gremlin query:
 Configuration paths for source checkouts (see [external configuration](config.md#外部挂载与配置所有权)):
 
 - **Environment**: optional `hugegraph-llm/.env`; startup reads it without modifying it
-- **Prompts**: `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`
+- **Prompts**: optional `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`; absent files use built-in defaults
 
 Provider settings can also be edited in the web interface. This example uses a
 local model endpoint:

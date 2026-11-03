@@ -14,13 +14,13 @@
 # limitations under the License.
 
 import importlib.util
+import pathlib
 import tempfile
+import typing
 import unittest
-from pathlib import Path
-from typing import Any
 
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "patch_nuitka_compat.py"
+SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "patch_nuitka_compat.py"
 SPEC = importlib.util.spec_from_file_location("patch_nuitka_compat", SCRIPT_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"Unable to load compatibility helper from {SCRIPT_PATH}")
@@ -48,7 +48,7 @@ class ChunkProcessor:
 
 
 def evaluate(source: str, shape: str, role: str | None = None) -> str:
-    namespace: dict[str, Any] = {}
+    namespace: dict[str, typing.Any] = {}
     exec(compile(source, "<fixture>", "exec"), namespace)
 
     if shape == "object":
@@ -112,7 +112,7 @@ class TestNuitkaCompatibilityPatch(unittest.TestCase):
 
     def test_file_patch_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "streaming_chunk_builder_utils.py"
+            path = pathlib.Path(directory) / "streaming_chunk_builder_utils.py"
             path.write_text(SOURCE, encoding="utf-8")
 
             self.assertTrue(patch_nuitka_compat.patch_file(path))
@@ -121,7 +121,7 @@ class TestNuitkaCompatibilityPatch(unittest.TestCase):
             self.assertEqual(first, path.read_text(encoding="utf-8"))
 
     def test_docker_context_includes_the_compatibility_script(self):
-        repository = Path(__file__).resolve().parents[2]
+        repository = pathlib.Path(__file__).resolve().parents[2]
         dockerignore = (repository / ".dockerignore").read_text(encoding="utf-8")
 
         self.assertNotIn("\nscripts/\n", dockerignore)

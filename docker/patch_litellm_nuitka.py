@@ -36,12 +36,17 @@ _ORIGINAL_ROLE_MATCH = (
     '                return "assistant"\n'
 )
 
+# Keep the original OR-pattern's left-to-right and guard short-circuiting:
+# when the class alternative matches but captures an empty role, Python does
+# not try the mapping alternative; the case guard fails and the wildcard case
+# returns "assistant". Returning that fallback directly from the first split
+# case preserves this behavior even for an object matching both patterns.
 _PATCHED_ROLE_MATCH = (
     "    @staticmethod\n"
     "    def _role_of_choice(choice: object) -> str:\n"
     "        match choice:\n"
-    "            case StreamingChoices(delta=Delta(role=str() as role)) if role:\n"
-    "                return role\n"
+    "            case StreamingChoices(delta=Delta(role=str() as role)):\n"
+    '                return role if role else "assistant"\n'
     '            case {"delta": {"role": str() as role}} if role:\n'
     "                return role\n"
     "            case _:\n"
@@ -54,7 +59,7 @@ class UnsupportedLiteLLMSourceError(RuntimeError):
 
 
 def patch_source(source: str, *, filename: str = "<litellm>") -> tuple[str, bool]:
-    """Split the unsupported OR-pattern while preserving its behavior."""
+    """Remove the unsupported OR-pattern while preserving its exact behavior."""
 
     original_count = source.count(_ORIGINAL_ROLE_MATCH)
     patched_count = source.count(_PATCHED_ROLE_MATCH)

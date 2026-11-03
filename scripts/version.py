@@ -43,8 +43,8 @@ DOCS = (
     "hugegraph-llm-sdk/README.md",
 )
 DEPLOYMENT = (
-    "docker/charts/hg-llm/Chart.yaml",
-    "docker/charts/hg-llm/values.yaml",
+    "docker/charts/README.md",
+    "docker/rag-image.yaml",
     "docker/docker-compose-network.yml",
 )
 VERSION_PATTERN = r"\d+\.\d+\.\d+"

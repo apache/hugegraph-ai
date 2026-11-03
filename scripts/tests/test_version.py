@@ -60,8 +60,7 @@ class TestReleaseVersion(unittest.TestCase):
                 self.assertIn("hugegraph-python>=1.9.2,<2", project["dependencies"])
             if module == "hugegraph-llm":
                 self.assertIn("hugegraph-llm-sdk==1.9.2", project["dependencies"])
-        self.assertIn('appVersion: "1.9.2"', (self.root / version.DEPLOYMENT[0]).read_text())
-        self.assertIn("hugegraph/rag:1.9.2", (self.root / version.DEPLOYMENT[2]).read_text())
+        self.assertIn("hugegraph/rag:1.9.2", (self.root / version.DEPLOYMENT[0]).read_text())
         self.assertIn("hugegraph-mcp@1.9.2", (self.root / version.DOCS[0]).read_text())
         self.assertIn("hugegraph_llm_sdk-1.9.2-py3", (self.root / "hugegraph-llm-sdk/README.md").read_text())
         self.assertEqual(0, self.run_command("check"))

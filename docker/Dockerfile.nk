@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir uv
 COPY . .
 
 # 1.2 Install dependency
+# Temporary builder-only workaround: remove after a verified Nuitka release
+# compiles the upstream LiteLLM match-OR pattern unchanged.
 RUN apt update && \
     apt install -y --no-install-recommends build-essential patchelf && \
     uv venv && \

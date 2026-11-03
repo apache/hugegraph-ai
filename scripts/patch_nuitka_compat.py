@@ -27,34 +27,28 @@ import argparse
 import importlib.metadata
 from pathlib import Path
 
-LITELLM_STREAMING_UTILS = Path(
-    "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"
-)
+LITELLM_STREAMING_UTILS = Path("litellm/litellm_core_utils/streaming_chunk_builder_utils.py")
 
 # Nuitka 4.3.4 aborts in ReformulationMatchStatements._buildMatchOr when the
 # alternatives bind the same name through different pattern shapes. This exact
 # valid Python construct is present in LiteLLM 1.104.0 through 1.106.6.
 VULNERABLE_CASE = (
-    "            case StreamingChoices(delta=Delta(role=str() as role))"
-    ' | {"delta": {"role": str() as role}} if role:\n'
+    '            case StreamingChoices(delta=Delta(role=str() as role)) | {"delta": {"role": str() as role}} if role:\n'
 )
 VULNERABLE_BLOCK = VULNERABLE_CASE + "                return role\n"
 
 # Splitting the alternatives and returning the fallback inside each matched
 # case preserves the original guard semantics, including an empty role.
-PATCHED_BLOCK = '''            # Compatibility: Nuitka 4.3.4 crashes while lowering the equivalent
+PATCHED_BLOCK = """            # Compatibility: Nuitka 4.3.4 crashes while lowering the equivalent
             # OR-pattern above. Keep the two pattern shapes separate until the
             # compiler accepts the upstream form.
             case StreamingChoices(delta=Delta(role=str() as role)):
                 return role or "assistant"
             case {"delta": {"role": str() as role}}:
                 return role or "assistant"
-'''
+"""
 
-VULNERABLE_SIGNATURE = (
-    "StreamingChoices(delta=Delta(role=str() as role)) | "
-    '{"delta": {"role": str() as role}}'
-)
+VULNERABLE_SIGNATURE = 'StreamingChoices(delta=Delta(role=str() as role)) | {"delta": {"role": str() as role}}'
 PATCH_MARKER = "Compatibility: Nuitka 4.3.4 crashes while lowering"
 
 
@@ -75,9 +69,7 @@ def rewrite_litellm_source(source: str, *, filename: str = "<litellm>") -> tuple
         return updated, True
 
     if matches > 1:
-        raise CompatibilityPatchError(
-            f"{filename}: expected one LiteLLM match-OR block, found {matches}"
-        )
+        raise CompatibilityPatchError(f"{filename}: expected one LiteLLM match-OR block, found {matches}")
 
     if VULNERABLE_SIGNATURE in source:
         raise CompatibilityPatchError(

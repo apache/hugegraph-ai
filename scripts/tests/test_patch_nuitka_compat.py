@@ -16,11 +16,12 @@
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from scripts import patch_nuitka_compat
 
 
-SOURCE = '''
+SOURCE = """
 class Delta:
     def __init__(self, role):
         self.role = role
@@ -37,14 +38,21 @@ class ChunkProcessor:
                 return role
             case _:
                 return "assistant"
-'''
+"""
 
 
-def evaluate(source: str, choice: object) -> str:
-    namespace: dict[str, object] = {}
+def evaluate(source: str, shape: str, role: str | None = None) -> str:
+    namespace: dict[str, Any] = {}
     exec(compile(source, "<fixture>", "exec"), namespace)
-    processor = namespace["ChunkProcessor"]
-    return processor._role_of_choice(choice)  # type: ignore[attr-defined]
+
+    if shape == "object":
+        choice = namespace["StreamingChoices"](namespace["Delta"](role))
+    elif shape == "mapping":
+        choice = {"delta": {"role": role}}
+    else:
+        choice = None
+
+    return namespace["ChunkProcessor"]._role_of_choice(choice)
 
 
 class TestNuitkaCompatibilityPatch(unittest.TestCase):
@@ -58,21 +66,18 @@ class TestNuitkaCompatibilityPatch(unittest.TestCase):
 
     def test_patch_preserves_object_mapping_and_fallback_behavior(self):
         updated, _ = patch_nuitka_compat.rewrite_litellm_source(SOURCE)
-        namespace: dict[str, object] = {}
-        exec(compile(SOURCE, "<original>", "exec"), namespace)
-        delta = namespace["Delta"]
-        streaming = namespace["StreamingChoices"]
-
         cases = (
-            streaming(delta("system")),
-            streaming(delta("")),
-            {"delta": {"role": "tool"}},
-            {"delta": {"role": ""}},
-            None,
+            ("object", "system", "system"),
+            ("object", "", "assistant"),
+            ("mapping", "tool", "tool"),
+            ("mapping", "", "assistant"),
+            ("fallback", None, "assistant"),
         )
-        for choice in cases:
-            with self.subTest(choice=choice):
-                self.assertEqual(evaluate(SOURCE, choice), evaluate(updated, choice))
+
+        for shape, role, expected in cases:
+            with self.subTest(shape=shape, role=role):
+                self.assertEqual(expected, evaluate(SOURCE, shape, role))
+                self.assertEqual(expected, evaluate(updated, shape, role))
 
     def test_second_application_is_a_no_op(self):
         updated, changed = patch_nuitka_compat.rewrite_litellm_source(SOURCE)
@@ -108,6 +113,13 @@ class TestNuitkaCompatibilityPatch(unittest.TestCase):
             first = path.read_text(encoding="utf-8")
             self.assertFalse(patch_nuitka_compat.patch_file(path))
             self.assertEqual(first, path.read_text(encoding="utf-8"))
+
+    def test_docker_context_includes_the_compatibility_script(self):
+        repository = Path(__file__).resolve().parents[2]
+        dockerignore = (repository / ".dockerignore").read_text(encoding="utf-8")
+
+        self.assertNotIn("\nscripts/\n", dockerignore)
+        self.assertIn("\nscripts/*\n!scripts/patch_nuitka_compat.py\n", dockerignore)
 
 
 if __name__ == "__main__":

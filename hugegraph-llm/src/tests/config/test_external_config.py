@@ -277,6 +277,9 @@ def test_chat_cascade_uses_effective_role_configuration(env_file, monkeypatch, p
 @pytest.mark.parametrize(
     ("field", "label", "render_name", "configured", "requested"),
     [
+        ("chat_llm_type", "type", "chat_llm_settings", "openai", "ollama/local"),
+        ("extract_llm_type", "type", "extract_llm_settings", "openai", "ollama/local"),
+        ("text2gql_llm_type", "type", "text2gql_llm_settings", "openai", "ollama/local"),
         ("embedding_type", "Embedding", "embedding_settings", "openai", "ollama/local"),
         ("reranker_type", "Reranker", "reranker_settings", "cohere", "siliconflow"),
     ],
@@ -294,7 +297,7 @@ def test_managed_dropdown_cannot_poison_later_saves(
     monkeypatch.setattr(configs_block, "llm_settings", settings)
     ui = app.init_rag_ui()
     selectors = [component for component in ui.blocks.values() if getattr(component, "label", None) == label]
-    assert selectors and selectors[0].interactive is False
+    assert any(selector.interactive is False for selector in selectors)
     render = next(
         function
         for function in ui.fns.values()
@@ -390,3 +393,51 @@ def test_inactive_openai_role_does_not_require_proxy_credentials(env_file, monke
     other_role = "extract" if role == "chat" else "chat"
     assert getattr(settings, f"openai_{other_role}_api_key") == "private-process-key"
     assert env_file.read_text() == config
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
+@pytest.mark.parametrize("key_name", ["OPENAI_API_KEY", "role-specific"])
+def test_managed_key_blocks_endpoint_change_before_probe_and_remains_reloadable(env_file, monkeypatch, role, key_name):
+    from unittest.mock import Mock
+
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    source = f"OPENAI_{role.upper()}_API_KEY" if key_name == "role-specific" else key_name
+    monkeypatch.setenv(source, "private-managed-key")
+    settings = LLMConfig()
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    probe = Mock(return_value=200)
+    monkeypatch.setattr(configs_block, "test_api_connection", probe)
+    before = settings.model_dump()
+    assert settings.environment_source(f"openai_{role}_api_base") == source
+    with pytest.raises(ValueError, match="managed by environment"):
+        configs_block.apply_llm_config(role, "private-managed-key", "https://untrusted.example/v1", "model", 100)
+    probe.assert_not_called()
+    assert settings.model_dump() == before
+    assert not env_file.exists()
+    assert LLMConfig().model_dump() == before
+    # Direct persistence must enforce the same endpoint boundary.
+    setattr(settings, f"openai_{role}_api_base", "https://untrusted.example/v1")
+    with pytest.raises(ValueError, match="managed by environment"):
+        settings.update_env()
+    assert not env_file.exists()
+
+
+@pytest.mark.parametrize("provider", ["openai", "litellm"])
+def test_managed_embedding_key_also_owns_endpoint_before_probe(env_file, monkeypatch, provider):
+    from unittest.mock import Mock
+
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    monkeypatch.setenv(f"{provider.upper()}_EMBEDDING_API_KEY", "private-managed-key")
+    settings = LLMConfig(embedding_type=provider)
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    probe = Mock(return_value=200)
+    monkeypatch.setattr(configs_block, "test_api_connection", probe)
+    monkeypatch.setattr(configs_block, "test_litellm_embedding", probe)
+    before = settings.model_dump()
+    with pytest.raises(ValueError, match="managed by environment"):
+        configs_block.apply_embedding_config("private-managed-key", "https://untrusted.example/v1", "model")
+    probe.assert_not_called()
+    assert settings.model_dump() == before
+    assert not env_file.exists()

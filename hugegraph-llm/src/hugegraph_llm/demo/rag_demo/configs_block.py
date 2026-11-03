@@ -206,6 +206,7 @@ def apply_embedding_config(arg1, arg2, arg3, origin_call=None) -> int:
         llm_settings.openai_embedding_api_key = arg1
         llm_settings.openai_embedding_api_base = arg2
         llm_settings.openai_embedding_model = arg3
+        llm_settings.validate_update()
         test_url = llm_settings.openai_embedding_api_base + "/embeddings"
         headers = {"Authorization": f"Bearer {arg1}"}
         data = {"model": arg3, "input": "test"}
@@ -214,11 +215,13 @@ def apply_embedding_config(arg1, arg2, arg3, origin_call=None) -> int:
         llm_settings.ollama_embedding_host = arg1
         llm_settings.ollama_embedding_port = int(arg2)
         llm_settings.ollama_embedding_model = arg3
+        llm_settings.validate_update()
         status_code = test_api_connection(f"http://{arg1}:{arg2}", origin_call=origin_call)
     elif embedding_option == "litellm":
         llm_settings.litellm_embedding_api_key = arg1
         llm_settings.litellm_embedding_api_base = arg2
         llm_settings.litellm_embedding_model = arg3
+        llm_settings.validate_update()
         status_code = test_litellm_embedding(arg1, arg2, arg3)
     return status_code
 
@@ -310,6 +313,7 @@ def apply_llm_config(
     for role in roles:
         for field, value in fields.items():
             setattr(llm_settings, f"{prefix}_{role}_{field}", value)
+    llm_settings.validate_update()
 
     if llm_option == "openai":
         data = {
@@ -414,7 +418,10 @@ def create_configs_block() -> list:
             @gr.render(inputs=[chat_llm_dropdown])
             def chat_llm_settings(llm_type):
                 with runtime_config_lock:
-                    llm_settings.chat_llm_type = llm_type
+                    if llm_settings.environment_source("chat_llm_type"):
+                        llm_type = llm_settings.chat_llm_type
+                    else:
+                        llm_settings.chat_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
                         gr.Textbox(
@@ -506,7 +513,10 @@ def create_configs_block() -> list:
             @gr.render(inputs=[extract_llm_dropdown])
             def extract_llm_settings(llm_type):
                 with runtime_config_lock:
-                    llm_settings.extract_llm_type = llm_type
+                    if llm_settings.environment_source("extract_llm_type"):
+                        llm_type = llm_settings.extract_llm_type
+                    else:
+                        llm_settings.extract_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
                         gr.Textbox(
@@ -593,7 +603,10 @@ def create_configs_block() -> list:
             @gr.render(inputs=[text2gql_llm_dropdown])
             def text2gql_llm_settings(llm_type):
                 with runtime_config_lock:
-                    llm_settings.text2gql_llm_type = llm_type
+                    if llm_settings.environment_source("text2gql_llm_type"):
+                        llm_type = llm_settings.text2gql_llm_type
+                    else:
+                        llm_settings.text2gql_llm_type = llm_type
                 if llm_type == "openai":
                     llm_config_input = [
                         gr.Textbox(

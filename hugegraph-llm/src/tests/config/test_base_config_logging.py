@@ -19,6 +19,7 @@
 """Keep configuration values in storage, without copying them into diagnostics."""
 
 import logging
+import os
 from unittest.mock import Mock
 
 import pytest
@@ -58,6 +59,9 @@ def captured_logs(caplog, tmp_path):
 
 @pytest.fixture
 def isolated_settings(monkeypatch, tmp_path):
+    for name in list(os.environ):
+        if name.upper().startswith(("OPENAI_", "CO_API_URL", "COHERE_")):
+            monkeypatch.delenv(name)
     settings = LLMConfig.model_construct()
     for field in settings.model_dump():
         if field.endswith("api_key"):

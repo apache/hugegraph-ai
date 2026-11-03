@@ -43,7 +43,14 @@ class LLMConfig(BaseConfig):
 
     @classmethod
     def environment_source(cls, field):
-        return super().environment_source(field) if cls._generic_key_is_scoped(field) else None
+        source = super().environment_source(field) if cls._generic_key_is_scoped(field) else None
+        if not source and field.endswith("_api_base"):
+            key_field = field.removesuffix("_api_base") + "_api_key"
+            # A managed credential also owns its destination. File-scoped keys
+            # remain editable alongside the endpoint in the same file.
+            if cls._generic_key_is_scoped(key_field):
+                source = super().environment_source(key_field)
+        return source
 
     @classmethod
     def settings_customise_sources(cls, *args, **kwargs):

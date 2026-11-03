@@ -52,9 +52,11 @@ def load_query_examples(
         for name in names:
             try:
                 examples = json.loads((directory / name).read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError):
+                normalized = normalize_query_examples_json(examples)
+                if normalized:
+                    return normalized
+            except (FileNotFoundError, ValueError):
                 continue
-            return normalize_query_examples_json(examples)
     return "[]"
 
 
@@ -69,7 +71,9 @@ def load_schema_fewshot_examples(
     for root in roots:
         try:
             examples = json.loads((Path(root) / "prompt_examples" / "schema_examples.json").read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
+            normalized = normalize_few_shot_schema_json(examples)
+            if normalized:
+                return normalized
+        except (FileNotFoundError, ValueError):
             continue
-        return normalize_few_shot_schema_json(examples)
     return "[]"

@@ -118,7 +118,8 @@ class BaseConfig(BaseSettings):
             log.error("Failed to initialize %s from %s (%s)", type(self).__name__, env_path, type(exc).__name__)
             raise
 
-    def update_env(self):
+    def validate_update(self):
+        """Reject managed field changes before persistence or connection probes."""
         current = self.model_dump()
         changed = {
             key: value
@@ -128,6 +129,11 @@ class BaseConfig(BaseSettings):
         managed = [field for field in changed if self.environment_source(field)]
         if managed:
             raise ValueError("Configuration managed by environment: " + ", ".join(managed))
+        return changed
+
+    def update_env(self):
+        current = self.model_dump()
+        changed = self.validate_update()
         if not changed:
             return
         target = Path(env_path)

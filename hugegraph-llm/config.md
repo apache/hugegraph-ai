@@ -329,7 +329,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 - [HugeGraph LLM README](README.md)
 
-通用 provider key 有端点保护边界：自定义端点来自 `.env`，而进程只提供通用 `OPENAI_API_KEY` 时，保留文件中与端点配套的 key，避免转发到另一服务。若文件没有配套 key，启动会要求显式提供该角色凭据。由 Kubernetes 管理 provider 时，应同时配置 base URL 和 key。
+通用 provider key 有端点保护边界：自定义端点来自 `.env`，而进程只提供通用 `OPENAI_API_KEY` 时，保留文件中与端点配套的 key，避免转发到另一服务。若文件没有配套 key，启动会要求显式提供该角色凭据。由 Kubernetes 管理 provider 时，应同时配置 base URL 和 key。环境管理的 key 也锁定其目标端点；UI/API 会在连通性测试前拒绝改变端点，避免将该 key 发往其他服务。
 
 空数字、布尔或枚举变量按未设置处理；`.env` 中显式空字符串会保留，`GRAPH_PWD` 的空进程值可清除旧密码。新建 `.env` 使用 0600，保存已有文件时保留权限；普通值不加引号，仅在需要时使用 dotenv 引号。
 

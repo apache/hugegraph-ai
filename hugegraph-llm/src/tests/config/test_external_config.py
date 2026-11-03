@@ -368,3 +368,25 @@ def test_runtime_operators_read_bundled_assets_and_write_index_to_data_root(tmp_
     assert query.vector_index.index.ntotal > 0
     assert (root / 'gremlin_examples' / 'index.faiss').is_file()
     assert not (root / 'demo' / 'text2gremlin.csv').exists()
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
+@pytest.mark.parametrize("provider", ["ollama/local", "litellm"])
+@pytest.mark.parametrize("source", ["file", "process", "constructor"])
+def test_inactive_openai_role_does_not_require_proxy_credentials(env_file, monkeypatch, role, provider, source):
+    config = f"OPENAI_{role.upper()}_API_BASE=https://proxy.example/v1\n"
+    if source == "file":
+        config += f"{role.upper()}_LLM_TYPE={provider}\n"
+    env_file.write_text(config)
+    monkeypatch.setenv("OPENAI_API_KEY", "private-process-key")
+    if source == "process":
+        monkeypatch.setenv(f"{role.upper()}_LLM_TYPE", provider)
+    data = {f"{role}_llm_type": provider} if source == "constructor" else {}
+    settings = LLMConfig(**data)
+    assert getattr(settings, f"{role}_llm_type") == provider
+    assert getattr(settings, f"openai_{role}_api_key") is None
+    assert settings.environment_source(f"openai_{role}_api_key") is None
+    # The active roles still receive their own safe default-origin key.
+    other_role = "extract" if role == "chat" else "chat"
+    assert getattr(settings, f"openai_{other_role}_api_key") == "private-process-key"
+    assert env_file.read_text() == config

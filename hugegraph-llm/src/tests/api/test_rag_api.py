@@ -608,3 +608,106 @@ def test_text2gremlin_callback_exception_returns_stable_response():
 
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     assert response.json() == {"detail": "An unexpected error occurred during Gremlin generation."}
+
+
+@pytest.mark.parametrize("route", ["/rag", "/rag/graph"])
+def test_inference_uses_request_prompts_without_writing_mounted_configuration(tmp_path, monkeypatch, route):
+    from hugegraph_llm.config import prompt
+    from hugegraph_llm.config.models import base_prompt_config
+    from hugegraph_llm.demo.rag_demo import rag_block, text2gremlin_block
+
+    mounted = tmp_path / "config_prompt.yaml"
+    mounted.write_text("# operator-owned prompt\n")
+    mounted.chmod(0o444)
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(mounted))
+    before = dict(vars(prompt))
+    scheduler = Mock()
+    scheduler.schedule_flow.return_value = {"raw_answer": "stubbed response", "query": "request question"}
+    monkeypatch.setattr(rag_block.SchedulerSingleton, "get_instance", lambda: scheduler)
+    client, _ = _make_test_client(
+        rag_answer_func=rag_block.rag_answer,
+        graph_rag_recall_func=text2gremlin_block.graph_rag_recall,
+    )
+    with client:
+        response = client.post(
+            route,
+            json={
+                "query": "request question",
+                "raw_answer": True,
+                "answer_prompt": "request-local answer prompt",
+                "gremlin_prompt": "request-local gremlin prompt",
+            },
+        )
+    assert response.status_code == 200, response.text
+    scheduler.schedule_flow.assert_called_once()
+    assert scheduler.schedule_flow.call_args.kwargs["query"] == "request question"
+    assert scheduler.schedule_flow.call_args.kwargs["gremlin_prompt"] == "request-local gremlin prompt"
+    if route == "/rag":
+        assert scheduler.schedule_flow.call_args.kwargs["answer_prompt"] == "request-local answer prompt"
+    assert vars(prompt) == before
+    assert mounted.read_text() == "# operator-owned prompt\n"
+
+
+def test_streaming_inference_does_not_persist_request_prompts(tmp_path, monkeypatch):
+    import asyncio
+
+    from hugegraph_llm.config import prompt
+    from hugegraph_llm.config.models import base_prompt_config
+    from hugegraph_llm.demo.rag_demo import rag_block
+
+    mounted = tmp_path / "config_prompt.yaml"
+    mounted.write_text("# operator-owned prompt\n")
+    mounted.chmod(0o444)
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(mounted))
+    before = dict(vars(prompt))
+
+    async def stream(*args, **kwargs):
+        assert kwargs["query"] == "stream question"
+        assert kwargs["answer_prompt"] == "request-local prompt"
+        yield {"raw_answer": "stubbed stream"}
+
+    monkeypatch.setattr(rag_block.SchedulerSingleton, "get_instance", lambda: Mock(schedule_stream_flow=stream))
+
+    async def consume():
+        return [
+            item
+            async for item in rag_block.rag_answer_streaming(
+                "stream question",
+                True,
+                False,
+                False,
+                False,
+                0.5,
+                "bleu",
+                False,
+                "request-local information",
+                "request-local prompt",
+                "request-local keywords",
+            )
+        ]
+
+    assert asyncio.run(consume())
+    assert vars(prompt) == before
+    assert mounted.read_text() == "# operator-owned prompt\n"
+
+
+def test_batch_upload_creates_output_directory_on_fresh_volume(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import gradio as gr
+    import pandas as pd
+
+    from hugegraph_llm.demo.rag_demo import rag_block
+
+    root = tmp_path / "fresh-resource-root"
+    monkeypatch.setattr(rag_block, "resource_path", str(root))
+    with gr.Blocks() as ui:
+        rag_block.create_rag_block()
+    upload = next(function.fn for function in ui.fns.values() if function.fn.__name__ == "read_file_to_excel")
+    csv = tmp_path / "questions.csv"
+    csv.write_text("Question,Expected Answer,Basic,Vector,Graph,Combined\nquestion,expected,,,,\n")
+    assert not root.exists()
+    frame, count = upload(SimpleNamespace(name=str(csv)))
+    assert count == 1
+    assert frame.iloc[0, 0] == "question"
+    assert pd.read_excel(root / "demo/questions.xlsx").iloc[0, 0] == "question"

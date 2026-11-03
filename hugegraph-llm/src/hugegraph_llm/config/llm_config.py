@@ -52,11 +52,16 @@ class LLMConfig(BaseConfig):
         def scoped_environment():
             values = sources[1]()
             file_values = sources[2]()
+            init_values = sources[0]()
             for role in ("chat", "extract", "text2gql"):
                 field = f"openai_{role}_api_key"
                 if not cls._generic_key_is_scoped(field):
                     key = field.upper()
-                    if key not in file_values:
+                    provider_field = f"{role}_llm_type"
+                    provider = init_values.get(
+                        provider_field, values.get(provider_field, file_values.get(provider_field, "openai"))
+                    )
+                    if key not in file_values and provider == "openai":
                         raise ValueError(
                             f"{key} is required for a file-configured custom endpoint; a generic process key cannot be forwarded there"
                         )

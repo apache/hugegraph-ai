@@ -69,18 +69,6 @@ class GremlinResult:
         )
 
 
-def store_schema(schema, question, gremlin_prompt):
-    if (
-        prompt.text2gql_graph_schema != schema
-        or prompt.default_question != question
-        or prompt.gremlin_generate_prompt != gremlin_prompt
-    ):
-        prompt.text2gql_graph_schema = schema
-        prompt.default_question = question
-        prompt.gremlin_generate_prompt = gremlin_prompt
-        prompt.update_yaml_file()
-
-
 def build_example_vector_index(temp_file) -> dict:
     folder_name = get_index_folder_name(huge_settings.graph_name, huge_settings.graph_space)
     index_path = os.path.join(resource_path, folder_name, "gremlin_examples")
@@ -316,7 +304,6 @@ def graph_rag_recall(
     topk_per_keyword: int,
     get_vertex_only: bool = False,
 ) -> dict:
-    store_schema(prompt.text2gql_graph_schema, query, gremlin_prompt)
     context = SchedulerSingleton.get_instance().schedule_flow(
         FlowName.RAG_GRAPH_ONLY,
         query=query,

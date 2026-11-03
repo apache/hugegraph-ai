@@ -54,16 +54,9 @@ def rag_answer(
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
     """
-    graph_search, gremlin_prompt, vector_search = update_ui_configs(
-        answer_prompt,
-        custom_related_information,
-        graph_only_answer,
-        graph_vector_answer,
-        gremlin_prompt,
-        keywords_extract_prompt,
-        text,
-        vector_only_answer,
-    )
+    gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
+    vector_search = vector_only_answer or graph_vector_answer
+    graph_search = graph_only_answer or graph_vector_answer
     if raw_answer is False and not vector_search and not graph_search:
         gr.Warning("Please select at least one generate mode.")
         return "", "", "", ""
@@ -120,36 +113,6 @@ def rag_answer(
         raise gr.Error(f"An unexpected error occurred: {str(e)}")
 
 
-def update_ui_configs(
-    answer_prompt,
-    custom_related_information,
-    graph_only_answer,
-    graph_vector_answer,
-    gremlin_prompt,
-    keywords_extract_prompt,
-    text,
-    vector_only_answer,
-):
-    gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
-    should_update_prompt = (
-        prompt.default_question != text
-        or prompt.answer_prompt != answer_prompt
-        or prompt.keywords_extract_prompt != keywords_extract_prompt
-        or prompt.gremlin_generate_prompt != gremlin_prompt
-        or prompt.custom_rerank_info != custom_related_information
-    )
-    if should_update_prompt:
-        prompt.custom_rerank_info = custom_related_information
-        prompt.default_question = text
-        prompt.answer_prompt = answer_prompt
-        prompt.keywords_extract_prompt = keywords_extract_prompt
-        prompt.gremlin_generate_prompt = gremlin_prompt
-        prompt.update_yaml_file()
-    vector_search = vector_only_answer or graph_vector_answer
-    graph_search = graph_only_answer or graph_vector_answer
-    return graph_search, gremlin_prompt, vector_search
-
-
 async def rag_answer_streaming(
     text: str,
     raw_answer: bool,
@@ -169,16 +132,9 @@ async def rag_answer_streaming(
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
     """
-    graph_search, gremlin_prompt, vector_search = update_ui_configs(
-        answer_prompt,
-        custom_related_information,
-        graph_only_answer,
-        graph_vector_answer,
-        gremlin_prompt,
-        keywords_extract_prompt,
-        text,
-        vector_only_answer,
-    )
+    gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
+    vector_search = vector_only_answer or graph_vector_answer
+    graph_search = graph_only_answer or graph_vector_answer
     if raw_answer is False and not vector_search and not graph_search:
         gr.Warning("Please select at least one generate mode.")
         yield "", "", "", ""
@@ -371,6 +327,7 @@ def create_rag_block():
             df = pd.read_excel(file.name, nrows=line_count) if file else pd.DataFrame()
         elif file.name.endswith(".csv"):
             df = pd.read_csv(file.name, nrows=line_count) if file else pd.DataFrame()
+        os.makedirs(os.path.dirname(questions_path), exist_ok=True)
         df.to_excel(questions_path, index=False)
         if df.empty:
             df = pd.DataFrame([[""] * len(tests_df_headers)], columns=tests_df_headers)

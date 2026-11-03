@@ -15,9 +15,10 @@
 
 import tempfile
 import unittest
+from collections.abc import Callable
 from importlib import util
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 _MODULE_PATH = Path(__file__).resolve().parents[2] / "docker" / "patch_litellm_nuitka.py"
 _SPEC = util.spec_from_file_location("patch_litellm_nuitka", _MODULE_PATH)

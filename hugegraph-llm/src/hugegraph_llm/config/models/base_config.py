@@ -17,14 +17,15 @@
 
 
 import os
+import tempfile
 from pathlib import Path
 
-from dotenv import dotenv_values, set_key
-from pydantic_settings import BaseSettings
+from dotenv import set_key
+from pydantic import AliasChoices, PrivateAttr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from hugegraph_llm.utils.log import log
 
-dir_name = os.path.dirname
 ENV_PATH_ENV_VAR = "HUGEGRAPH_LLM_ENV_PATH"
 
 
@@ -33,131 +34,106 @@ def _source_project_root() -> Path | None:
     if package_root.parent.name != "src":
         return None
     project_root = package_root.parent.parent
-    if (project_root / "pyproject.toml").exists():
-        return project_root
-    return None
+    return project_root if (project_root / "pyproject.toml").exists() else None
 
 
 def resolve_env_path() -> str:
-    explicit_env_path = os.getenv(ENV_PATH_ENV_VAR)
-    if explicit_env_path:
-        return str(Path(explicit_env_path).expanduser())
-
-    project_root = _source_project_root()
-    if project_root is not None:
-        return str(project_root / ".env")
-
-    return str(Path.cwd() / ".env")
+    explicit = os.getenv(ENV_PATH_ENV_VAR)
+    if explicit is not None:
+        if not explicit.strip():
+            raise ValueError(f"{ENV_PATH_ENV_VAR} must not be empty")
+        return str(Path(explicit).expanduser())
+    if resources := os.getenv("HUGEGRAPH_LLM_RESOURCE_PATH"):
+        return str(Path(resources).expanduser() / ".env")
+    return str((_source_project_root() or Path.cwd()) / ".env")
 
 
 env_path = resolve_env_path()
 
 
 class BaseConfig(BaseSettings):
-    class Config:
-        env_file = env_path
-        case_sensitive = False
-        extra = "ignore"  # ignore extra fields to avoid ValidationError
-        env_ignore_empty = True
+    """Read configuration without mutating the environment or mounted files.
 
-    def generate_env(self):
-        if os.path.exists(env_path):
-            log.info(
-                "%s already exists, do you want to override with the default configuration? (y/n)",
-                env_path,
-            )
-            update = input()
-            if update.lower() != "y":
-                return
-            self.update_env()
-        else:
-            config_dict = self.model_dump()
-            config_dict = {k.upper(): v for k, v in config_dict.items()}
-            with open(env_path, "w", encoding="utf-8") as f:
-                for k, v in config_dict.items():
-                    if v is None:
-                        f.write(f"{k}=\n")
-                    else:
-                        f.write(f"{k}={v}\n")
-            log.info("Generate %s successfully!", env_path)
+    Pydantic resolves explicit constructor values, process env, dotenv, defaults
+    in that order. UI saves persist only changed fields, never env-owned fields.
+    """
 
-    def update_env(self):
-        config_dict = self.model_dump()
-        config_dict = {k.upper(): v for k, v in config_dict.items()}
-        env_config = dotenv_values(f"{env_path}")
+    model_config = SettingsConfigDict(
+        env_file=env_path,
+        case_sensitive=False,
+        extra="ignore",
+        env_ignore_empty=True,
+        populate_by_name=True,
+    )
+    _saved_values: dict = PrivateAttr(default_factory=dict)
 
-        # dotenv_values make None to '', while pydantic make None to None
-        # dotenv_values make integer to string, while pydantic make integer to integer
-        for k, v in config_dict.items():
-            if k in env_config:
-                if not (env_config[k] or v):
-                    continue
-                if env_config[k] == str(v):
-                    continue
-            # Any configuration value can contain credentials, regardless of its field name.
-            log.info("Update configuration field %s in %s", k, env_path)
-            set_key(env_path, k, v if v else "", quote_mode="never")
-
-    def check_env(self):
-        """Synchronize configs between .env file and object.
-
-        This method performs two steps:
-        1. Updates object attributes from .env file values when they differ
-        2. Adds missing configuration items to the .env file
-        """
-        try:
-            # Read the.env file and prepare object config
-            env_config = dotenv_values(env_path)
-            config_dict = {k.upper(): v for k, v in self.model_dump().items()}
-
-            # Step 1: Update the object from .env when values differ
-            self._sync_env_to_object(env_config, config_dict)
-            # Step 2: Add missing config items to .env
-            self._sync_object_to_env(env_config, config_dict)
-        except Exception as e:
-            log.error("Failed to synchronize configuration file %s (%s)", env_path, type(e).__name__)
-            raise
-
-    def _sync_env_to_object(self, env_config, config_dict):
-        """Update object attributes from .env file values when they differ."""
-        for env_key, env_value in env_config.items():
-            if env_key in config_dict:
-                obj_value = config_dict[env_key]
-                obj_value_str = str(obj_value) if obj_value is not None else ""
-
-                if env_value != obj_value_str:
-                    log.info("Load configuration field %s from %s", env_key, env_path)
-                    # Update the object attribute (using lowercase key)
-                    setattr(self, env_key.lower(), env_value)
-
-    def _sync_object_to_env(self, env_config, config_dict):
-        """Add missing configuration items to the .env file."""
-        for obj_key, obj_value in config_dict.items():
-            if obj_key not in env_config:
-                obj_value_str = str(obj_value) if obj_value is not None else ""
-                log.info("Add configuration field %s to %s", obj_key, env_path)
-                # Add to .env
-                set_key(env_path, obj_key, obj_value_str, quote_mode="never")
+    @classmethod
+    def environment_source(cls, field: str) -> str | None:
+        alias = cls.model_fields[field].validation_alias
+        names = alias.choices if isinstance(alias, AliasChoices) else [alias or field]
+        environment = {name.upper(): name for name in os.environ}
+        return next(
+            (environment[name.upper()] for name in names if isinstance(name, str) and name.upper() in environment), None
+        )
 
     def __init__(self, **data):
         try:
-            file_exists = os.path.exists(env_path)
-            # Step 1: Load environment variables if file exists
-            if file_exists:
-                env_config = dotenv_values(env_path)
-                for k, v in env_config.items():
-                    os.environ[k] = v
-
-            # Step 2: Init the parent class with loaded environment variables
+            # Empty process strings explicitly clear credentials. Legacy empty
+            # dotenv entries still use defaults, as with env_ignore_empty=True.
+            for field in type(self).model_fields:
+                source = self.environment_source(field)
+                if source is not None and os.environ[source] == "":
+                    data.setdefault(field, "")
+            data.setdefault("_env_file", env_path)
             super().__init__(**data)
-            # Step 3: Handle environment file operations after initialization
-            if not file_exists:
-                self.generate_env()
-            else:
-                # Synchronize configurations between the object and .env file
-                self.check_env()
-
-            log.info("The %s file was loaded. Class: %s", env_path, self.__class__.__name__)
-        except Exception as e:
-            log.error("Failed to initialize %s from %s (%s)", self.__class__.__name__, env_path, type(e).__name__)
+            self._saved_values = self.model_dump()
+        except Exception as exc:
+            log.error("Failed to initialize %s from %s (%s)", type(self).__name__, env_path, type(exc).__name__)
             raise
+
+    def update_env(self):
+        current = self.model_dump()
+        changed = {
+            key: value
+            for key, value in current.items()
+            if key not in self._saved_values or value != self._saved_values[key]
+        }
+        managed = [field for field in changed if self.environment_source(field)]
+        if managed:
+            raise ValueError("Configuration managed by environment: " + ", ".join(managed))
+        if not changed:
+            return
+        target = Path(env_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Stage all changes together. Failed writes leave the original intact;
+        # restrictive permissions also apply when the file contains UI secrets.
+        fd, staging = tempfile.mkstemp(prefix=".env-", dir=target.parent)
+        os.close(fd)
+        try:
+            if target.exists():
+                Path(staging).write_bytes(target.read_bytes())
+            for field, value in changed.items():
+                log.info("Update configuration field %s in %s", field.upper(), env_path)
+                set_key(staging, field.upper(), "" if value is None else str(value), quote_mode="always")
+            os.replace(staging, target)
+        finally:
+            Path(staging).unlink(missing_ok=True)
+        self._saved_values = current
+
+    def check_env(self):
+        """Explicitly reload validated settings; startup never writes defaults."""
+        try:
+            loaded = type(self)()
+            for field, value in loaded.model_dump().items():
+                setattr(self, field, value)
+            self._saved_values = self.model_dump()
+        except Exception as exc:
+            log.error("Failed to reload configuration file %s (%s)", env_path, type(exc).__name__)
+            raise
+
+    def generate_env(self):
+        """Explicit CLI export; do not export credentials supplied by env."""
+        if Path(env_path).exists() and input(f"Replace configuration in {env_path}? (y/n) ").lower() != "y":
+            return
+        self._saved_values = {key: value for key, value in self.model_dump().items() if self.environment_source(key)}
+        self.update_env()

@@ -157,11 +157,10 @@ def test_file_to_memory_sync_does_not_log_old_or_new_value(isolated_settings, ca
 
     assert settings.openai_chat_api_key == new_value
     assert dotenv_values(env_file)["OPENAI_CHAT_API_KEY"] == new_value
-    assert "OPENAI_CHAT_API_KEY" in captured_logs[0].text
     assert_values_absent(captured_logs, old_value, new_value)
 
 
-def test_missing_config_field_is_saved_without_logging_value(isolated_settings, captured_logs):
+def test_reload_does_not_backfill_missing_configuration(isolated_settings, captured_logs):
     settings, env_file = isolated_settings
     value = "synthetic-private-missing"
     settings.openai_chat_api_key = value
@@ -169,9 +168,8 @@ def test_missing_config_field_is_saved_without_logging_value(isolated_settings, 
 
     settings.check_env()
 
-    assert settings.openai_chat_api_key == value
-    assert dotenv_values(env_file)["OPENAI_CHAT_API_KEY"] == value
-    assert "OPENAI_CHAT_API_KEY" in captured_logs[0].text
+    assert settings.openai_chat_api_key is None
+    assert "OPENAI_CHAT_API_KEY" not in dotenv_values(env_file)
     assert_values_absent(captured_logs, value)
 
 

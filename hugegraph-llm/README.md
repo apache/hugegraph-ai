@@ -163,7 +163,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/apache/hugegraph-ai.git
 cd hugegraph-ai
 
-# Configure environment (see config.md for detailed options), .env will auto create if not exists
+# Configure environment if needed (see config.md); absent .env uses defaults
 
 # 4. Install dependencies and activate environment
 # NOTE: If download is slow, uncomment mirror lines in ../pyproject.toml or use: uv config --global index.url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -233,9 +233,9 @@ After loading the extracted graph, open **Graph Tools** to run a Gremlin query:
 
 ## 🔧 Configuration
 
-After running the demo, configuration files are automatically generated:
+Configuration paths for source checkouts (see [external configuration](config.md#外部挂载与配置所有权)):
 
-- **Environment**: `hugegraph-llm/.env`
+- **Environment**: optional `hugegraph-llm/.env`; startup reads it without modifying it
 - **Prompts**: `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`
 
 Provider settings can also be edited in the web interface. This example uses a
@@ -256,7 +256,7 @@ The system supports both English and Chinese prompts. To switch languages:
 - `LANGUAGE=CN` - Chinese prompts (中文提示词)
 
 > [!NOTE]
-> Configuration changes are automatically saved when using the web interface. For manual changes, simply refresh the page to load updates.
+> Configuration changes are automatically saved when using the web interface. For externally managed settings, edit the source configuration and restart. Environment-managed fields cannot be overridden by UI saves.
 
 ### Legacy Thin API writes
 

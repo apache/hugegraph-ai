@@ -16,8 +16,9 @@
 # under the License.
 
 
-import os
 from typing import Literal, Optional
+
+from pydantic import AliasChoices, Field
 
 from .models import BaseConfig
 
@@ -36,23 +37,42 @@ class LLMConfig(BaseConfig):
     hybrid_llm_weights: Optional[float] = 0.5
     # TODO: divide RAG part if necessary
     # 1. OpenAI settings
-    openai_chat_api_base: Optional[str] = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    openai_chat_api_key: Optional[str] = os.environ.get("OPENAI_API_KEY")
+    openai_chat_api_base: Optional[str] = Field(
+        "https://api.openai.com/v1", validation_alias=AliasChoices("OPENAI_CHAT_API_BASE", "OPENAI_BASE_URL")
+    )
+    openai_chat_api_key: Optional[str] = Field(
+        None, validation_alias=AliasChoices("OPENAI_CHAT_API_KEY", "OPENAI_API_KEY")
+    )
     openai_chat_language_model: Optional[str] = "gpt-4.1-mini"
-    openai_extract_api_base: Optional[str] = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    openai_extract_api_key: Optional[str] = os.environ.get("OPENAI_API_KEY")
+    openai_extract_api_base: Optional[str] = Field(
+        "https://api.openai.com/v1", validation_alias=AliasChoices("OPENAI_EXTRACT_API_BASE", "OPENAI_BASE_URL")
+    )
+    openai_extract_api_key: Optional[str] = Field(
+        None, validation_alias=AliasChoices("OPENAI_EXTRACT_API_KEY", "OPENAI_API_KEY")
+    )
     openai_extract_language_model: Optional[str] = "gpt-4.1-mini"
-    openai_text2gql_api_base: Optional[str] = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    openai_text2gql_api_key: Optional[str] = os.environ.get("OPENAI_API_KEY")
+    openai_text2gql_api_base: Optional[str] = Field(
+        "https://api.openai.com/v1", validation_alias=AliasChoices("OPENAI_TEXT2GQL_API_BASE", "OPENAI_BASE_URL")
+    )
+    openai_text2gql_api_key: Optional[str] = Field(
+        None, validation_alias=AliasChoices("OPENAI_TEXT2GQL_API_KEY", "OPENAI_API_KEY")
+    )
     openai_text2gql_language_model: Optional[str] = "gpt-4.1-mini"
-    openai_embedding_api_base: Optional[str] = os.environ.get("OPENAI_EMBEDDING_BASE_URL", "https://api.openai.com/v1")
-    openai_embedding_api_key: Optional[str] = os.environ.get("OPENAI_EMBEDDING_API_KEY")
+    openai_embedding_api_base: Optional[str] = Field(
+        "https://api.openai.com/v1",
+        validation_alias=AliasChoices("OPENAI_EMBEDDING_API_BASE", "OPENAI_EMBEDDING_BASE_URL"),
+    )
+    openai_embedding_api_key: Optional[str] = Field(
+        None, validation_alias=AliasChoices("OPENAI_EMBEDDING_API_KEY", "OPENAI_EMBEDDING_API_KEY")
+    )
     openai_embedding_model: Optional[str] = "text-embedding-3-small"
     openai_chat_tokens: int = 8192
     openai_extract_tokens: int = 256
     openai_text2gql_tokens: int = 4096
     # 2. Rerank settings
-    cohere_base_url: Optional[str] = os.environ.get("CO_API_URL", "https://api.cohere.com/v1/rerank")
+    cohere_base_url: Optional[str] = Field(
+        "https://api.cohere.com/v1/rerank", validation_alias=AliasChoices("COHERE_BASE_URL", "CO_API_URL")
+    )
     reranker_api_key: Optional[str] = None
     reranker_model: Optional[str] = None
     # 3. Ollama settings

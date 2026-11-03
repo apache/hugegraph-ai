@@ -25,6 +25,32 @@
 
 `.env` 文件位于 `hugegraph-llm/` 目录下，包含了系统运行所需的所有配置项。
 
+### 外部挂载与配置所有权
+
+启动配置优先级：进程环境变量（包括 Secret） > `.env` > 内置默认值。
+同一来源内，字段专用变量优先于通用 provider 变量。例如
+`OPENAI_CHAT_API_KEY` 优先于同来源的 `OPENAI_API_KEY`；进程中的通用 key
+仍会覆盖文件里旧的专用 key。启动不改写 `.env`，也不将其注入 `os.environ`。
+
+使用 `HUGEGRAPH_LLM_RESOURCE_PATH=/var/lib/hugegraph-rag` 可以将 `.env`、
+`demo/config_prompt.yaml`、索引和生成文件放在同一个可写挂载目录中。应用仅补充
+缺少的示例文件，已有文件在镜像升级时保持不变。
+
+配置可以与数据分开挂载。设置 `HUGEGRAPH_LLM_ENV_PATH=/etc/rag/rag.env` 和
+`HUGEGRAPH_LLM_PROMPT_CONFIG_PATH=/etc/rag/config_prompt.yaml` 即可读取单独的文件，
+支持 Docker bind mount、Kubernetes Secret/ConfigMap 等只读挂载；无需进入容器编辑。
+修改外部配置后重启应用，不依赖热更新。
+
+UI/API 保存只写入实际改动的字段，并拒绝覆盖环境变量负责的字段；环境中的 Secret
+和派生默认值不会自动写进 `.env`。可写文件中的用户改动通过原子替换保存，保留其他
+字段和注释；使用只读配置挂载时，应通过部署源文件修改，UI 保存会报错。
+Prompt 的 UI 保存仍需可写文件；启动时不再重写已有 prompt 文件。
+UI 手工输入的凭据会保存在配置文件中，请按敏感文件管理。
+
+从旧版本升级时，已有 `.env` 仍会作为配置输入。请检查其中曾自动保存的凭据和默认值，
+按需删除过期项。切换 Server 时，可显式设置 `GRAPH_PWD` 为空来阻止沿用旧密码；
+Helm 自动配置模式会负责这一步。
+
 ### 基础配置
 
 | 配置项                    | 类型                                                     | 默认值    | 说明                                    |

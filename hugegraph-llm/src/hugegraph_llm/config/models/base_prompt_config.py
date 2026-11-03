@@ -47,6 +47,9 @@ def resolve_prompt_yaml_path() -> str:
     if explicit_prompt_path:
         return str(Path(explicit_prompt_path).expanduser())
 
+    if resources := os.getenv("HUGEGRAPH_LLM_RESOURCE_PATH"):
+        return str(Path(resources).expanduser() / "demo" / F_NAME)
+
     source_prompt_path = _source_prompt_yaml_path()
     if source_prompt_path is not None:
         return str(source_prompt_path)

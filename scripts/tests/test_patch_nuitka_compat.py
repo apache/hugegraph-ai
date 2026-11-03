@@ -16,7 +16,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
 
 from scripts import patch_nuitka_compat
 
@@ -42,7 +41,7 @@ class ChunkProcessor:
 
 
 def evaluate(source: str, shape: str, role: str | None = None) -> str:
-    namespace: dict[str, Any] = {}
+    namespace: dict[str, object] = {}
     exec(compile(source, "<fixture>", "exec"), namespace)
 
     if shape == "object":

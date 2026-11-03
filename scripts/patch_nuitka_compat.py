@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.metadata
+import sys
 from pathlib import Path
 
 LITELLM_STREAMING_UTILS = Path("litellm/litellm_core_utils/streaming_chunk_builder_utils.py")
@@ -120,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     changed = patch_file(source)
     version = importlib.metadata.version("litellm") if args.source is None else "fixture"
     action = "patched" if changed else "no patch required"
-    print(f"LiteLLM {version}: {action}: {source}")
+    sys.stdout.write(f"LiteLLM {version}: {action}: {source}\n")
     return 0
 
 

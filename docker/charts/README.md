@@ -101,7 +101,9 @@ for persistent configuration and the approved exposure boundaries.
 
 The canonical chart mounts a writable resource volume at `/var/lib/hugegraph-rag`.
 The application uses this root for its editable `.env`, `demo/config_prompt.yaml`,
-indexes and generated files. Existing resources are preserved; no files are
+indexes and generated files. Persistence inherits the top-level setting unless
+`rag.persistence.enabled` is explicitly set; use `true` for durable resources
+when the existing release disables global persistence. Existing resources are preserved; no files are
 copied out automatically from a legacy release.
 
 For operator-owned settings, manage a local env file and prompt YAML, create a
@@ -110,7 +112,8 @@ Kubernetes Secret and ConfigMap from them, and mount them through `rag.envFrom`,
 `.env` and set `HUGEGRAPH_LLM_ENV_PATH` to its path. Set
 `HUGEGRAPH_LLM_PROMPT_CONFIG_PATH` for a separate prompt mount. Read-only
 configuration mounts are supported; keep them separate from the writable data
-volume. The canonical RAG guide has a complete overlay example.
+volume. The canonical RAG guide has a complete overlay example. Its resource-root contract
+requires both AI #96 and Helm #367, not the earlier #365 image/templates alone.
 
 Configuration precedence is process environment/Secret > mounted `.env` > defaults.
 UI/API saves only persist changed fields, and cannot override environment-managed
@@ -143,9 +146,11 @@ rag:
 YAML
 
 helm template hugegraph ./helm/hugegraph -n hugegraph \
+  -f helm/hugegraph/values-rag.yaml \
   -f hugegraph-existing-values.yaml -f rag-addition.yaml > /tmp/hugegraph-preview.yaml
 # Review the diff against the currently deployed manifests before upgrading.
 helm upgrade hugegraph ./helm/hugegraph -n hugegraph \
+  -f helm/hugegraph/values-rag.yaml \
   -f hugegraph-existing-values.yaml -f rag-addition.yaml
 ```
 

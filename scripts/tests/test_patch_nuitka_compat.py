@@ -19,7 +19,6 @@ import tempfile
 import typing
 import unittest
 
-
 SCRIPT_PATH = pathlib.Path(__file__).resolve().parents[1] / "patch_nuitka_compat.py"
 SPEC = importlib.util.spec_from_file_location("patch_nuitka_compat", SCRIPT_PATH)
 if SPEC is None or SPEC.loader is None:

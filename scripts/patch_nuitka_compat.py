@@ -93,7 +93,7 @@ def locate_litellm_source() -> Path:
             "LiteLLM is not installed; run this script after `uv sync --extra nk-llm`"
         ) from exc
 
-    source = Path(distribution.locate_file(LITELLM_STREAMING_UTILS)).resolve()
+    source = Path(str(distribution.locate_file(LITELLM_STREAMING_UTILS))).resolve()
     if not source.is_file():
         raise CompatibilityPatchError(f"LiteLLM source file not found: {source}")
     return source

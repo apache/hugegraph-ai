@@ -43,13 +43,7 @@ class StreamingChoices(dict):
 class TestLiteLLMNuitkaPatch(unittest.TestCase):
     @staticmethod
     def source(block: str) -> str:
-        return (
-            "from __future__ import annotations\n\n"
-            "# before\n"
-            "class ChunkProcessor:\n"
-            + block
-            + "\n# after\n"
-        )
+        return "from __future__ import annotations\n\n# before\nclass ChunkProcessor:\n" + block + "\n# after\n"
 
     @staticmethod
     def role_function(block: str):
@@ -98,9 +92,7 @@ class TestLiteLLMNuitkaPatch(unittest.TestCase):
         self.assertEqual(source, updated)
 
     def test_rejects_unreviewed_litellm_source(self):
-        source = self.source(
-            patch._ORIGINAL_ROLE_MATCH.replace("if role:", "if role is not None:")
-        )
+        source = self.source(patch._ORIGINAL_ROLE_MATCH.replace("if role:", "if role is not None:"))
 
         with self.assertRaisesRegex(
             patch.UnsupportedLiteLLMSourceError,

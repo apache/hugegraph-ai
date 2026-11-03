@@ -27,6 +27,19 @@ patch = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(patch)
 
 
+class Delta:
+    def __init__(self, role):
+        self.role = role
+
+
+class StreamingChoices(dict):
+    """Test object that can deliberately match both class and mapping patterns."""
+
+    def __init__(self, class_role, mapping_role):
+        super().__init__(delta={"role": mapping_role})
+        self.delta = Delta(class_role)
+
+
 class TestLiteLLMNuitkaPatch(unittest.TestCase):
     @staticmethod
     def source(block: str) -> str:
@@ -38,7 +51,16 @@ class TestLiteLLMNuitkaPatch(unittest.TestCase):
             + "\n# after\n"
         )
 
-    def test_splits_mixed_or_pattern_into_two_equivalent_cases(self):
+    @staticmethod
+    def role_function(block: str):
+        namespace = {
+            "Delta": Delta,
+            "StreamingChoices": StreamingChoices,
+        }
+        exec(TestLiteLLMNuitkaPatch.source(block), namespace)
+        return namespace["ChunkProcessor"]._role_of_choice
+
+    def test_removes_mixed_or_pattern_and_keeps_valid_syntax(self):
         source = self.source(patch._ORIGINAL_ROLE_MATCH)
 
         updated, changed = patch.patch_source(source)
@@ -49,6 +71,23 @@ class TestLiteLLMNuitkaPatch(unittest.TestCase):
         self.assertTrue(updated.startswith("from __future__ import annotations\n"))
         self.assertTrue(updated.endswith("# after\n"))
         compile(updated, "<test-litellm>", "exec")
+
+    def test_preserves_or_pattern_order_and_guard_short_circuiting(self):
+        original = self.role_function(patch._ORIGINAL_ROLE_MATCH)
+        rewritten = self.role_function(patch._PATCHED_ROLE_MATCH)
+        choices = (
+            StreamingChoices("class-role", "mapping-role"),
+            # The class alternative matches first but its guard is false. The
+            # original OR-pattern therefore does not retry the mapping side.
+            StreamingChoices("", "mapping-role"),
+            {"delta": {"role": "mapping-role"}},
+            {"delta": {"role": ""}},
+            object(),
+        )
+
+        for choice in choices:
+            with self.subTest(choice=choice):
+                self.assertEqual(original(choice), rewritten(choice))
 
     def test_already_patched_source_is_idempotent(self):
         source = self.source(patch._PATCHED_ROLE_MATCH)

@@ -12,7 +12,7 @@ then, ASF `master` cannot install RAG using the instructions below; the fork's
 feature branch is a development preview, not a durable deployment target.
 The replacement also requires [AI configuration PR #96](https://github.com/hugegraph/hugegraph-ai/pull/96)
 and its published `latest`/1.8 RAG image, together with
-[the chart simplification](https://github.com/hugegraph/hugegraph/pull/367).
+[the canonical chart integration](https://github.com/hugegraph/hugegraph/pull/365).
 Release order is: application configuration support and image publication,
 canonical chart integration, then standalone chart retirement. An older image
 cannot implement the new externally mounted configuration contract.
@@ -113,7 +113,7 @@ Kubernetes Secret and ConfigMap from them, and mount them through `rag.envFrom`,
 `HUGEGRAPH_LLM_PROMPT_CONFIG_PATH` for a separate prompt mount. Read-only
 configuration mounts are supported; keep them separate from the writable data
 volume. The canonical RAG guide has a complete overlay example. Its resource-root contract
-requires both AI #96 and Helm #367, not the earlier #365 image/templates alone.
+requires both AI #96 and Helm #365, not the earlier #365 image/templates alone.
 
 Configuration precedence is process environment/Secret > mounted `.env` > defaults.
 UI/API saves only persist changed fields, and cannot override environment-managed

@@ -1,9 +1,17 @@
+---
+version: 1.8.0
+appVersion: "1.8.0"
+---
+
 # Kubernetes deployment
 
 HugeGraph RAG is deployed through the canonical HugeGraph Helm chart in the
 [`apache/hugegraph`](https://github.com/apache/hugegraph/tree/master/helm/hugegraph)
 repository. The former `docker/charts/hg-llm` chart duplicated the system topology
 and has been retired.
+
+The front matter above remains synchronized by `scripts/version.py` so release
+metadata stays testable without retaining a second Helm chart.
 
 The integration is introduced by
 [`hugegraph/hugegraph#365`](https://github.com/hugegraph/hugegraph/pull/365).

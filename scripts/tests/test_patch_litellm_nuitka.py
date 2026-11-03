@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from importlib import util
 from pathlib import Path
+from typing import Any, Callable, cast
 
 _MODULE_PATH = Path(__file__).resolve().parents[2] / "docker" / "patch_litellm_nuitka.py"
 _SPEC = util.spec_from_file_location("patch_litellm_nuitka", _MODULE_PATH)
@@ -45,13 +46,13 @@ class TestLiteLLMNuitkaPatch(unittest.TestCase):
         return "from __future__ import annotations\n\n# before\nclass ChunkProcessor:\n" + block + "\n# after\n"
 
     @staticmethod
-    def role_function(block: str):
-        namespace = {
+    def role_function(block: str) -> Callable[[object], str]:
+        namespace: dict[str, Any] = {
             "Delta": Delta,
             "StreamingChoices": StreamingChoices,
         }
         exec(TestLiteLLMNuitkaPatch.source(block), namespace)
-        return namespace["ChunkProcessor"]._role_of_choice
+        return cast(Callable[[object], str], namespace["ChunkProcessor"]._role_of_choice)
 
     def test_removes_mixed_or_pattern_and_keeps_valid_syntax(self):
         source = self.source(patch._ORIGINAL_ROLE_MATCH)

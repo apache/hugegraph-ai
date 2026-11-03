@@ -16,6 +16,7 @@ RUN apt update && \
     uv venv && \
     . .venv/bin/activate && \
     uv sync --extra nk-llm && \
+    python scripts/patch_nuitka_compat.py && \
     cd hugegraph-llm/src && \
     export PYTHONPATH=/build/hugegraph-llm/src && \
     python -m nuitka --follow-imports --standalone --include-package-data=safehttpx,groovy,gradio,litellm,jieba --include-module=hugegraph_llm.demo.rag_demo.app,litellm.litellm_core_utils.tokenizers --include-data-dir=./hugegraph_llm/resources=hugegraph_llm/resources ./hugegraph_llm/demo/rag_demo/app.py && \

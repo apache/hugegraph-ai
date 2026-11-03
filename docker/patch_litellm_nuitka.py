@@ -108,6 +108,8 @@ def patch_file(path: Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Patch the selected LiteLLM source and report the resulting state."""
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--path",

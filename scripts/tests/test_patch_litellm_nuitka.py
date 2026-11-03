@@ -29,6 +29,8 @@ _SPEC.loader.exec_module(patch)
 
 
 class Delta:
+    """Minimal role carrier for exercising LiteLLM's class pattern."""
+
     def __init__(self, role):
         self.role = role
 
@@ -44,10 +46,14 @@ class StreamingChoices(dict):
 class TestLiteLLMNuitkaPatch(unittest.TestCase):
     @staticmethod
     def source(block: str) -> str:
+        """Wrap one role-matching block in an executable test module."""
+
         return "from __future__ import annotations\n\n# before\nclass ChunkProcessor:\n" + block + "\n# after\n"
 
     @staticmethod
     def role_function(block: str) -> Callable[[object], str]:
+        """Compile a role-matching block and return its static method."""
+
         namespace: dict[str, Any] = {
             "Delta": Delta,
             "StreamingChoices": StreamingChoices,
@@ -100,6 +106,21 @@ class TestLiteLLMNuitkaPatch(unittest.TestCase):
             "Expected exactly one reviewed",
         ):
             patch.patch_source(source)
+
+    def test_installed_litellm_source_matches_reviewed_contract(self):
+        """Fail early when the installed LiteLLM source drifts from the reviewed forms."""
+
+        try:
+            path = patch.locate_litellm_source()
+        except FileNotFoundError as exc:
+            self.skipTest(str(exc))
+
+        source = path.read_text(encoding="utf-8")
+        updated, _ = patch.patch_source(source, filename=str(path))
+
+        self.assertNotIn(patch._ORIGINAL_ROLE_MATCH, updated)
+        self.assertEqual(1, updated.count(patch._PATCHED_ROLE_MATCH))
+        compile(updated, str(path), "exec")
 
     def test_patch_file_changes_only_the_reviewed_block(self):
         with tempfile.TemporaryDirectory() as directory:

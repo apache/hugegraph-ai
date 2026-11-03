@@ -18,7 +18,6 @@ import unittest
 from importlib import util
 from pathlib import Path
 
-
 _MODULE_PATH = Path(__file__).resolve().parents[2] / "docker" / "patch_litellm_nuitka.py"
 _SPEC = util.spec_from_file_location("patch_litellm_nuitka", _MODULE_PATH)
 if _SPEC is None or _SPEC.loader is None:

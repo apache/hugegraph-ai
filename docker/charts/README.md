@@ -10,6 +10,13 @@ The canonical integration is [apache/hugegraph#3450](https://github.com/apache/h
 available on ASF `master` **before** this chart retirement is merged. Until
 then, ASF `master` cannot install RAG using the instructions below; the fork's
 feature branch is a development preview, not a durable deployment target.
+The replacement also requires [AI configuration PR #96](https://github.com/hugegraph/hugegraph-ai/pull/96)
+and its published `latest`/1.8 RAG image, together with
+[the chart simplification](https://github.com/hugegraph/hugegraph/pull/367).
+Release order is: application configuration support and image publication,
+canonical chart integration, then standalone chart retirement. An older image
+cannot implement the new externally mounted configuration contract.
+
 The following installation and migration commands apply only **after**
 the canonical chart is available. Do not retire a working legacy release first.
 
@@ -90,6 +97,33 @@ through `rag.env`/`rag.envFrom`, not plaintext in a values file. See
 [canonical RAG documentation](https://github.com/apache/hugegraph/blob/master/helm/hugegraph/docs/rag.md)
 for persistent configuration and the approved exposure boundaries.
 
+## Configure RAG outside the container
+
+The canonical chart mounts a writable resource volume at `/var/lib/hugegraph-rag`.
+The application uses this root for its editable `.env`, `demo/config_prompt.yaml`,
+indexes and generated files. Existing resources are preserved; no files are
+copied out automatically from a legacy release.
+
+For operator-owned settings, manage a local env file and prompt YAML, create a
+Kubernetes Secret and ConfigMap from them, and mount them through `rag.envFrom`,
+`rag.extraVolumes` and `rag.extraVolumeMounts`. Alternatively, mount a complete
+`.env` and set `HUGEGRAPH_LLM_ENV_PATH` to its path. Set
+`HUGEGRAPH_LLM_PROMPT_CONFIG_PATH` for a separate prompt mount. Read-only
+configuration mounts are supported; keep them separate from the writable data
+volume. The canonical RAG guide has a complete overlay example.
+
+Configuration precedence is process environment/Secret > mounted `.env` > defaults.
+UI/API saves only persist changed fields, and cannot override environment-managed
+fields. Startup leaves existing config files unchanged. Update the external
+Secret/ConfigMap or volume files and restart RAG to apply changes; entering the
+container is unnecessary. UI saves require writable configuration files.
+
+During legacy migration, inspect the old `.env` for automatically saved Secrets
+and obsolete provider values. Transfer only settings that should remain
+file-managed. Kubernetes-managed credentials should be supplied through Secrets;
+when an external graph endpoint requires no password, explicitly clear `GRAPH_PWD`
+so a file password from the previous endpoint cannot be reused.
+
 ## Add RAG to an existing canonical `hugegraph` release
 
 **Never reapply `values-single.yaml` or `values-cluster.yaml` blindly** to an
@@ -124,7 +158,7 @@ application and PVC backups as appropriate.
 
 | Former key | Canonical chart | Migration note |
 | --- | --- | --- |
-| `image.repository`, `image.tag`, `image.pullPolicy` | `rag.image.*` | Keep an appropriate existing image/tag |
+| `image.repository`, `image.tag`, `image.pullPolicy` | `rag.image.*` | Use the updated `latest`/1.8 image containing AI #96; do not blindly reuse an old image |
 | `replicaCount` | `rag.replicas` | Only `1` is supported; do not carry a higher value |
 | `imagePullSecrets` | top-level `imagePullSecrets` | Shared with other HugeGraph components; review scope |
 | `service.type` | `rag.service.type` | Old default `NodePort`; new default **`ClusterIP`** for safety |

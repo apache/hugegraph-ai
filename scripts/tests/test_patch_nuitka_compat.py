@@ -13,12 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
-from scripts import patch_nuitka_compat
 
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "patch_nuitka_compat.py"
+SPEC = importlib.util.spec_from_file_location("patch_nuitka_compat", SCRIPT_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError(f"Unable to load compatibility helper from {SCRIPT_PATH}")
+patch_nuitka_compat = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(patch_nuitka_compat)
 
 SOURCE = """
 class Delta:
@@ -41,7 +48,7 @@ class ChunkProcessor:
 
 
 def evaluate(source: str, shape: str, role: str | None = None) -> str:
-    namespace: dict[str, object] = {}
+    namespace: dict[str, Any] = {}
     exec(compile(source, "<fixture>", "exec"), namespace)
 
     if shape == "object":

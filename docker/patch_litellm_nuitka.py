@@ -120,11 +120,11 @@ def main(argv: list[str] | None = None) -> int:
         target = args.path or locate_litellm_source()
         changed = patch_file(target)
     except (OSError, RuntimeError, SyntaxError) as exc:
-        print(f"LiteLLM Nuitka compatibility patch failed: {exc}", file=sys.stderr)
+        sys.stderr.write(f"LiteLLM Nuitka compatibility patch failed: {exc}\n")
         return 1
 
     state = "patched" if changed else "already patched"
-    print(f"LiteLLM Nuitka compatibility source {state}: {target}")
+    sys.stdout.write(f"LiteLLM Nuitka compatibility source {state}: {target}\n")
     return 0
 
 

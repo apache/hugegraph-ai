@@ -118,3 +118,28 @@ def test_explicit_nltk_data_precedes_packaged_and_resource_defaults(tmp_path, mo
     assert helper.stopwords("english") == ["custom-english"]
     assert helper.stopwords("chinese") == ["custom-chinese"]
     assert nltk_helper.nltk.data.path[:2] == list(map(str, roots))
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize("language", ["english", "chinese"])
+def test_user_zip_stopwords_override_with_per_language_fallback(tmp_path, monkeypatch, language):
+    import zipfile
+
+    from hugegraph_llm.operators.common_op import nltk_helper
+
+    root = tmp_path / "nltk"
+    (root / "corpora").mkdir(parents=True)
+    archive = root / "corpora/stopwords.zip"
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr(f"stopwords/{language}", "operator-zip-word\n")
+    before = archive.read_bytes()
+    monkeypatch.setenv("NLTK_DATA", str(root))
+    monkeypatch.setattr(nltk_helper.nltk.data, "path", [])
+    monkeypatch.setattr(nltk_helper, "resource_path", str(tmp_path / "resources"))
+    monkeypatch.setattr(nltk_helper.NLTKHelper, "_stopwords", {})
+    monkeypatch.setattr(nltk_helper.nltk, "download", Mock(side_effect=AssertionError("offline")))
+    helper = nltk_helper.NLTKHelper()
+    assert helper.stopwords(language) == ["operator-zip-word"]
+    other = "chinese" if language == "english" else "english"
+    assert ("the" if other == "english" else "的") in helper.stopwords(other)
+    assert archive.read_bytes() == before

@@ -45,13 +45,15 @@ class LLMConfig(BaseConfig):
     }
 
     @classmethod
-    def _endpoint_fields(cls, credential):
+    def _endpoint_fields(cls, credential, values=None):
         if credential == "reranker_api_key":
             source = cls._direct_environment_source("reranker_type")
-            provider = os.environ[source] if source else cls._file_value("reranker_type")
+            provider = (values or {}).get(
+                "reranker_type", os.environ[source] if source else cls._file_value("reranker_type")
+            )
             if provider == "siliconflow":
                 return ("reranker_type",)
-        return super()._endpoint_fields(credential)
+        return super()._endpoint_fields(credential, values)
 
     @classmethod
     def _generic_key_is_scoped(cls, field):

@@ -323,7 +323,7 @@ def test_endpoint_switch_does_not_reuse_password_from_old_file(env_file, monkeyp
     monkeypatch.setenv("GRAPH_URL", "http://external.example:8080")
     settings = HugeGraphConfig()
     assert settings.graph_pwd == ""
-    assert settings.environment_source("graph_pwd") == "GRAPH_URL"
+    assert settings.environment_source("graph_pwd") is None
     monkeypatch.setenv("GRAPH_URL", "http://old.example:8080/")
     assert HugeGraphConfig().graph_pwd == "old-private-password"
 

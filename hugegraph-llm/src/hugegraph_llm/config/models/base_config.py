@@ -86,14 +86,14 @@ class BaseConfig(BaseSettings):
         return annotation is str or str in get_args(annotation)
 
     @classmethod
-    def _file_value(cls, field, values=None):
+    def _file_value(cls, field, values=None, *, use_default=True):
         if values is None:
             values = {key.upper(): value for key, value in dotenv_values(env_path).items()}
         for name in cls._source_names(field):
             value = values.get(name.upper())
             if value is not None and (value != "" or cls._allows_empty(field, False)):
                 return value
-        return cls.model_fields[field].default
+        return cls.model_fields[field].default if use_default else None
 
     @staticmethod
     def _endpoint_identity(field, value):
@@ -125,7 +125,7 @@ class BaseConfig(BaseSettings):
             return object()
 
     @classmethod
-    def _endpoint_fields(cls, credential):
+    def _endpoint_fields(cls, credential, values=None):
         return cls.credential_endpoints[credential]
 
     @classmethod
@@ -142,32 +142,37 @@ class BaseConfig(BaseSettings):
         return cls._direct_environment_source(field)
 
     @classmethod
-    def _changed_endpoint_source(cls, credential):
+    def _changed_endpoint_source(cls, credential, current=None):
         if cls._credential_source(credential):
             return None
-        fields = cls._endpoint_fields(credential)
+        fields = cls._endpoint_fields(credential, current)
         sources = {field: cls._direct_environment_source(field) for field in fields}
         if not any(sources.values()):
             return None
         values = {key.upper(): value for key, value in dotenv_values(env_path).items()}
-        if not any(values.get(name.upper()) for name in cls._source_names(credential)):
+        if not cls._file_value(credential, values, use_default=False):
             return None
         for field, source in sources.items():
             previous = cls._file_value(field, values)
-            effective = os.environ[source] if source else previous
+            effective = next(
+                (current[name] for name in cls._source_names(field) if current and name in current),
+                os.environ[source] if source else previous,
+            )
             if cls._endpoint_identity(field, effective) != cls._endpoint_identity(field, previous):
                 return next(source for source in sources.values() if source)
         return None
 
-    @classmethod
-    def environment_source(cls, field: str) -> str | None:
-        """A managed secret owns its target; a changed target isolates old secrets."""
+    def environment_source(self, field: str) -> str | None:
+        """Only injected values are read-only; an injected key owns its target."""
+        cls = type(self)
         if field in cls.credential_endpoints:
-            return cls._credential_source(field) or cls._changed_endpoint_source(field)
+            return cls._credential_source(field)
         if source := cls._direct_environment_source(field):
             return source
         for credential in cls.credential_endpoints:
-            if field in cls._endpoint_fields(credential) and (source := cls._credential_source(credential)):
+            if field in cls._endpoint_fields(credential, self.model_dump()) and (
+                source := cls._credential_source(credential)
+            ):
                 return source
         return None
 
@@ -194,7 +199,7 @@ class BaseConfig(BaseSettings):
         def scoped_environment():
             values = normalize(env_settings, True)
             for credential in cls.credential_endpoints:
-                if source := cls._changed_endpoint_source(credential):
+                if source := cls._changed_endpoint_source(credential, init_settings()):
                     values[cls._source_names(credential)[0]] = (
                         "" if cls.model_fields[credential].annotation is str else None
                     )
@@ -241,9 +246,9 @@ class BaseConfig(BaseSettings):
         to_write = dict(changed)
         for credential in self.credential_endpoints:
             if credential in changed:
-                endpoints = self._endpoint_fields(credential)
+                endpoints = self._endpoint_fields(credential, current)
                 if any(self._direct_environment_source(field) for field in endpoints):
-                    to_write.update({field: current[field] for field in endpoints})
+                    to_write.update({field: current[field] for field in endpoints if current[field] is not None})
         target = Path(env_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         # Stage all changes together. Failed writes leave the original intact;

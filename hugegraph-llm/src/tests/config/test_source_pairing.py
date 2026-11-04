@@ -75,7 +75,7 @@ def test_graph_password_uses_effective_canonical_endpoint(env_file, monkeypatch,
     monkeypatch.setenv("GRAPH_URL", process_url)
     settings = HugeGraphConfig()
     assert settings.graph_pwd == ("file-graph-key" if preserved else "")
-    assert settings.environment_source("graph_pwd") == (None if preserved else "GRAPH_URL")
+    assert settings.environment_source("graph_pwd") is None
     assert env_file.read_text() == text
 
 
@@ -108,7 +108,7 @@ def test_process_model_endpoint_does_not_inherit_another_endpoint_key(
     expected = "process-provider-key" if paired_process_key else (None if changed else "file-provider-key")
     assert getattr(settings, key) == expected
     if changed and not paired_process_key:
-        assert settings.environment_source(key) == variable
+        assert settings.environment_source(key) is None
     assert env_file.read_text() == text
 
 
@@ -273,7 +273,7 @@ def test_reranker_provider_change_does_not_transfer_file_key(env_file, monkeypat
     settings = LLMConfig()
     assert settings.reranker_type == effective
     assert settings.reranker_api_key is None
-    assert settings.environment_source("reranker_api_key") == "RERANKER_TYPE"
+    assert settings.environment_source("reranker_api_key") is None
 
 
 def test_managed_reranker_key_also_owns_provider_before_probe(env_file, monkeypatch):
@@ -327,7 +327,7 @@ def test_reranker_only_uses_its_active_endpoint(env_file, monkeypatch, provider)
     monkeypatch.setenv("COHERE_BASE_URL", "https://new.example/rerank")
     settings = LLMConfig()
     assert settings.reranker_api_key == (None if provider == "cohere" else "file-key")
-    assert settings.environment_source("reranker_api_key") == ("COHERE_BASE_URL" if provider == "cohere" else None)
+    assert settings.environment_source("reranker_api_key") is None
 
 
 @pytest.mark.parametrize("role", ["chat", "extract", "text2gql", "embedding"])
@@ -349,7 +349,7 @@ def test_litellm_model_destination_is_paired_with_key(env_file, monkeypatch, rol
             settings.validate_update()
     else:
         assert getattr(settings, key) is None
-        assert settings.environment_source(key) == model.upper()
+        assert settings.environment_source(key) is None
     assert env_file.read_text() == text
 
 
@@ -417,3 +417,90 @@ def test_managed_litellm_model_change_is_rejected_before_probe(env_file, monkeyp
     probe.assert_not_called()
     assert settings.litellm_chat_language_model == "openai/gpt-4.1-mini"
     assert not env_file.exists()
+
+
+@pytest.mark.parametrize(("previous", "selected"), [("siliconflow", "cohere"), ("cohere", "siliconflow")])
+def test_ui_reranker_switch_retains_new_key_after_reload(env_file, monkeypatch, previous, selected):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    env_file.write_text(f"RERANKER_TYPE={previous}\nRERANKER_API_KEY=old-key\n")
+    monkeypatch.setenv("COHERE_BASE_URL", "https://cohere.example/v2/rerank")
+    settings = LLMConfig()
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    probe = Mock(return_value=200)
+    monkeypatch.setattr(configs_block, "test_api_connection", probe)
+    settings.reranker_type = selected
+    assert configs_block.apply_reranker_config("replacement-key", "new-model", settings.cohere_base_url) == 200
+    probe.assert_called_once()
+    loaded = LLMConfig()
+    assert loaded.reranker_type == selected
+    assert loaded.reranker_api_key == "replacement-key"
+    if selected == "cohere":
+        assert loaded.cohere_base_url == "https://cohere.example/v2/rerank"
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
+def test_empty_specific_file_key_hides_generic_alias_without_locking_input(env_file, monkeypatch, role):
+    key = f"openai_{role}_api_key"
+    env_file.write_text(f"{key.upper()}=\nOPENAI_API_KEY=hidden-generic-key\n")
+    monkeypatch.setenv(f"OPENAI_{role.upper()}_API_BASE", "https://new.example/v1")
+    settings = LLMConfig()
+    assert getattr(settings, key) == ""
+    assert settings.environment_source(key) is None
+    setattr(settings, key, "new-key")
+    settings.update_env()
+    assert getattr(LLMConfig(), key) == "new-key"
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql", "embedding"])
+def test_saving_key_keeps_unset_litellm_base_unset(env_file, monkeypatch, role):
+    model = f"litellm_{role}_" + ("model" if role == "embedding" else "language_model")
+    base = f"litellm_{role}_api_base"
+    key = f"litellm_{role}_api_key"
+    monkeypatch.setenv(model.upper(), "openai/test-model")
+    settings = LLMConfig()
+    assert getattr(settings, base) is None
+    setattr(settings, key, "user-key")
+    settings.update_env()
+    loaded = LLMConfig()
+    assert getattr(loaded, base) is None
+    assert getattr(loaded, key) == "user-key"
+    assert base.upper() not in env_file.read_text()
+
+
+def test_isolated_file_password_can_be_replaced_for_managed_endpoint(env_file, monkeypatch):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    env_file.write_text("GRAPH_URL=http://old.example:8080\nGRAPH_PWD=old-key\n")
+    monkeypatch.setenv("GRAPH_URL", "http://new.example:8080")
+    settings = HugeGraphConfig()
+    assert settings.graph_pwd == ""
+    monkeypatch.setattr(configs_block, "huge_settings", settings)
+    probe = Mock(return_value=200)
+    monkeypatch.setattr(configs_block, "test_api_connection", probe)
+    assert configs_block.apply_graph_config(settings.graph_url, "hugegraph", "admin", "new-key", None) == 200
+    assert probe.call_args.kwargs["auth"].password == "new-key"
+    assert HugeGraphConfig().graph_pwd == "new-key"
+
+
+def test_constructor_provider_owns_its_managed_key_destination(env_file, monkeypatch):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    env_file.write_text("RERANKER_TYPE=siliconflow\n")
+    monkeypatch.setenv("RERANKER_API_KEY", "managed-key")
+    settings = LLMConfig(reranker_type="cohere")
+    assert settings.environment_source("cohere_base_url") == "RERANKER_API_KEY"
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    probe = Mock(return_value=200)
+    monkeypatch.setattr(configs_block, "test_api_connection", probe)
+    with pytest.raises(ValueError, match="managed by environment"):
+        configs_block.apply_reranker_config("managed-key", "model", "https://other.example/rerank")
+    probe.assert_not_called()
+
+
+def test_constructor_provider_precedes_process_provider_when_pairing_file_key(env_file, monkeypatch):
+    env_file.write_text("RERANKER_TYPE=cohere\nRERANKER_API_KEY=file-key\n")
+    monkeypatch.setenv("RERANKER_TYPE", "siliconflow")
+    settings = LLMConfig(reranker_type="cohere")
+    assert settings.reranker_type == "cohere"
+    assert settings.reranker_api_key == "file-key"

@@ -48,7 +48,7 @@ class NLTKHelper:
         # A partial external corpus must not hide another language's fallback.
         for directory in nltk.data.path:
             try:
-                root = nltk.data.find("corpora/stopwords", paths=[directory])
+                root = nltk.data.find("corpora/stopwords/", paths=[directory])
                 return WordListCorpusReader(root, [lang], encoding="utf-8").words(lang)
             except (LookupError, OSError):
                 continue

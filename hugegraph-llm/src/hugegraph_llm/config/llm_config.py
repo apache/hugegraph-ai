@@ -50,6 +50,8 @@ class LLMConfig(BaseConfig):
             # remain editable alongside the endpoint in the same file.
             if cls._generic_key_is_scoped(key_field):
                 source = super().environment_source(key_field)
+        if not source and field == "cohere_base_url":
+            source = super().environment_source("reranker_api_key")
         return source
 
     @classmethod

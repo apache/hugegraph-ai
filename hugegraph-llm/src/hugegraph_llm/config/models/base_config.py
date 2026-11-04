@@ -16,6 +16,7 @@
 # under the License.
 
 
+import errno
 import os
 import tempfile
 from pathlib import Path
@@ -154,7 +155,17 @@ class BaseConfig(BaseSettings):
                 set_key(staging, field.upper(), text, quote_mode="always" if needs_quotes else "never")
             if target.exists():
                 os.chmod(staging, target.stat().st_mode & 0o777)
-            os.replace(staging, target)
+            try:
+                os.replace(staging, target)
+            except OSError as exc:
+                if exc.errno != errno.EBUSY or not target.exists():
+                    raise
+                log.warning(
+                    "Atomic replacement is unavailable for bind-mounted configuration %s; "
+                    "falling back to an in-place update",
+                    env_path,
+                )
+                target.write_bytes(Path(staging).read_bytes())
         finally:
             Path(staging).unlink(missing_ok=True)
         self._saved_values = current

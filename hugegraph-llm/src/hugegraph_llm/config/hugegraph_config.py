@@ -57,9 +57,14 @@ class HugeGraphConfig(BaseConfig):
 
     @classmethod
     def environment_source(cls, field):
+        source = super().environment_source(field)
         if field == "graph_pwd" and cls._clears_file_password():
             return super().environment_source("graph_url")
-        return super().environment_source(field)
+        if field == "graph_url" and not source:
+            # A process-managed password must never be probed against a UI/API-
+            # selected endpoint. The secret and its network target form one unit.
+            return super().environment_source("graph_pwd")
+        return source
 
     @classmethod
     def settings_customise_sources(cls, *args, **kwargs):

@@ -147,24 +147,49 @@ def apply_vector_engine_backend(  # pylint: disable=too-many-branches
     api_key: Optional[str] = None,
     origin_call=None,
 ) -> int:
-    """Test connection and persist per-engine connection settings"""
+    """Validate, probe, and persist one vector backend configuration."""
     status_code = -1
 
-    # Test connection first
+    if engine == "Milvus":
+        if host is not None:
+            index_settings.milvus_host = host
+        if port is not None and str(port).strip():
+            index_settings.milvus_port = int(port)  # type: ignore[arg-type]
+        index_settings.milvus_user = user or ""
+        index_settings.milvus_password = password or ""
+    elif engine == "Qdrant":
+        if host is not None:
+            index_settings.qdrant_host = host
+        if port is not None and str(port).strip():
+            index_settings.qdrant_port = int(port)  # type: ignore[arg-type]
+        index_settings.qdrant_api_key = api_key or None
+    else:
+        raise ValueError(f"Unsupported vector engine: {engine}")
+
+    # Reject a managed secret/target change before any credentialed connection.
+    index_settings.validate_update()
+
     try:
         if engine == "Milvus":
             from pymilvus import connections, utility
 
-            connections.connect(host=host, port=int(port or 19530), user=user or "", password=password or "")
-            # Test if we can list collections
+            connections.connect(
+                host=index_settings.milvus_host,
+                port=index_settings.milvus_port,
+                user=index_settings.milvus_user,
+                password=index_settings.milvus_password,
+            )
             _ = utility.list_collections()
             connections.disconnect("default")
             status_code = 200
         elif engine == "Qdrant":
             from qdrant_client import QdrantClient
 
-            client = QdrantClient(host=host, port=int(port or 6333), api_key=api_key)
-            # Test if we can get collections
+            client = QdrantClient(
+                host=index_settings.qdrant_host,
+                port=index_settings.qdrant_port,
+                api_key=index_settings.qdrant_api_key,
+            )
             _ = client.get_collections()
             status_code = 200
     except ImportError as e:
@@ -178,22 +203,6 @@ def apply_vector_engine_backend(  # pylint: disable=too-many-branches
         if origin_call is None:
             raise gr.Error(msg) from e
         return -1
-
-    # Persist settings after successful test
-    if engine == "Milvus":
-        if host is not None:
-            index_settings.milvus_host = host
-        if port is not None and str(port).strip():
-            index_settings.milvus_port = int(port)  # type: ignore[arg-type]
-        index_settings.milvus_user = user or ""
-        index_settings.milvus_password = password or ""
-    elif engine == "Qdrant":
-        if host is not None:
-            index_settings.qdrant_host = host
-        if port is not None and str(port).strip():
-            index_settings.qdrant_port = int(port)  # type: ignore[arg-type]
-        # Empty string treated as None for api key
-        index_settings.qdrant_api_key = api_key or None
 
     return status_code
 
@@ -239,6 +248,7 @@ def apply_reranker_config(
         llm_settings.reranker_api_key = reranker_api_key
         llm_settings.reranker_model = reranker_model
         llm_settings.cohere_base_url = cohere_base_url
+        llm_settings.validate_update()
         headers = {"Authorization": f"Bearer {reranker_api_key}"}
         status_code = test_api_connection(
             cohere_base_url.rsplit("/", 1)[0] + "/check-api-key",
@@ -249,6 +259,7 @@ def apply_reranker_config(
     elif reranker_option == "siliconflow":
         llm_settings.reranker_api_key = reranker_api_key
         llm_settings.reranker_model = reranker_model
+        llm_settings.validate_update()
         from pyhugegraph.utils.constants import Constants
 
         headers = {
@@ -274,6 +285,7 @@ def apply_graph_config(url, name, user, pwd, gs, origin_call=None) -> int:
     huge_settings.graph_user = user
     huge_settings.graph_pwd = pwd
     huge_settings.graph_space = gs
+    huge_settings.validate_update()
     # Test graph connection (Auth)
     if gs and gs.strip():
         test_url = f"{url}/graphspaces/{gs}/graphs/{name}/schema"
@@ -724,7 +736,11 @@ def create_configs_block() -> list:
                             value=llm_settings.ollama_embedding_host,
                             label="host",
                         ),
-                        gr.Textbox(interactive=True, value=str(llm_settings.ollama_embedding_port), label="port"),
+                        gr.Textbox(
+                            interactive=not llm_settings.environment_source("ollama_embedding_port"),
+                            value=str(llm_settings.ollama_embedding_port),
+                            label="port",
+                        ),
                         gr.Textbox(
                             interactive=not llm_settings.environment_source("ollama_embedding_model"),
                             value=llm_settings.ollama_embedding_model,
@@ -813,7 +829,7 @@ def create_configs_block() -> list:
                             type="password",
                         ),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not llm_settings.environment_source("reranker_model"),
                             value="BAAI/bge-reranker-v2-m3",
                             label="model",
                             info="Please refer to https://siliconflow.cn/pricing",
@@ -857,7 +873,11 @@ def create_configs_block() -> list:
                             value=index_settings.milvus_host,
                             label="host",
                         ),
-                        gr.Textbox(interactive=True, value=str(index_settings.milvus_port), label="port"),
+                        gr.Textbox(
+                            interactive=not index_settings.environment_source("milvus_port"),
+                            value=str(index_settings.milvus_port),
+                            label="port",
+                        ),
                         gr.Textbox(
                             interactive=not index_settings.environment_source("milvus_user"),
                             value=index_settings.milvus_user,
@@ -880,9 +900,13 @@ def create_configs_block() -> list:
                             value=index_settings.qdrant_host,
                             label="host",
                         ),
-                        gr.Textbox(interactive=True, value=str(index_settings.qdrant_port), label="port"),
                         gr.Textbox(
-                            interactive=True,
+                            interactive=not index_settings.environment_source("qdrant_port"),
+                            value=str(index_settings.qdrant_port),
+                            label="port",
+                        ),
+                        gr.Textbox(
+                            interactive=not index_settings.environment_source("qdrant_api_key"),
                             value=(index_settings.qdrant_api_key or ""),
                             label="api_key",
                             type="password",

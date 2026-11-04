@@ -24,6 +24,22 @@ from .models import BaseConfig
 class IndexConfig(BaseConfig):
     """LLM settings"""
 
+    @classmethod
+    def environment_source(cls, field):
+        source = super().environment_source(field)
+        if source:
+            return source
+        endpoint_credentials = {
+            "qdrant_host": ("qdrant_api_key",),
+            "qdrant_port": ("qdrant_api_key",),
+            "milvus_host": ("milvus_password", "milvus_user"),
+            "milvus_port": ("milvus_password", "milvus_user"),
+        }
+        for credential in endpoint_credentials.get(field, ()):
+            if source := super().environment_source(credential):
+                return source
+        return None
+
     qdrant_host: Optional[str] = os.environ.get("QDRANT_HOST", None)
     qdrant_port: int = int(os.environ.get("QDRANT_PORT", "6333"))
     qdrant_api_key: Optional[str] = os.environ.get("QDRANT_API_KEY") if os.environ.get("QDRANT_API_KEY") else None

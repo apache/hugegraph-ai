@@ -56,17 +56,23 @@ def env_file(tmp_path, monkeypatch):
 def test_bind_mounted_dotenv_falls_back_to_in_place_write(env_file, monkeypatch):
     env_file.write_text("LANGUAGE=EN\n", encoding="utf-8")
     env_file.chmod(0o640)
+    original_inode = env_file.stat().st_ino
     settings = LLMConfig()
     settings.language = "CN"
+    replace = base_config.os.replace
 
-    def busy_replace(*_args):
-        raise OSError(errno.EBUSY, "Device or resource busy")
+    def busy_replace(source, target, *args, **kwargs):
+        if os.fspath(target) == str(env_file):
+            raise OSError(errno.EBUSY, "Device or resource busy")
+        # python-dotenv also replaces its own temporary file while staging.
+        return replace(source, target, *args, **kwargs)
 
     monkeypatch.setattr(base_config.os, "replace", busy_replace)
     settings.update_env()
 
     assert dotenv_values(env_file) == {"LANGUAGE": "CN"}
     assert env_file.stat().st_mode & 0o777 == 0o640
+    assert env_file.stat().st_ino == original_inode
     assert list(env_file.parent.glob(".env-*")) == []
 
 
@@ -181,3 +187,46 @@ def test_managed_milvus_password_owns_target_before_connect(env_file, monkeypatc
     connect.assert_not_called()
     assert settings.model_dump() == before
     assert not env_file.exists()
+
+
+@pytest.mark.parametrize("configured_model", ["operator/custom-reranker", None])
+def test_siliconflow_render_uses_effective_model_and_allows_key_update(env_file, monkeypatch, configured_model):
+    from fastapi.testclient import TestClient
+
+    from hugegraph_llm.demo.rag_demo import app, configs_block
+
+    if configured_model is not None:
+        monkeypatch.setenv("RERANKER_MODEL", configured_model)
+    monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "false")
+    settings = LLMConfig(reranker_type="siliconflow")
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    monkeypatch.setattr(configs_block.gr, "Info", lambda *_args: None)
+    ui = app.init_rag_ui()
+    render = next(
+        function
+        for function in ui.fns.values()
+        if getattr(getattr(getattr(function.fn, "__self__", None), "fn", None), "__name__", None) == "reranker_settings"
+    )
+    monkeypatch.setattr(app, "init_rag_ui", lambda: ui)
+    client = TestClient(app.create_app())
+    try:
+        response = client.post(
+            f"/gradio_api/run/{render.api_name}",
+            json={"data": ["siliconflow"], "session_hash": "managed-siliconflow"},
+        )
+        assert response.status_code == 200, response.text
+        components = response.json()["render_config"]["components"]
+        model = next(component["props"] for component in components if component["props"].get("label") == "model")
+        assert model["value"] == (configured_model or "BAAI/bge-reranker-v2-m3")
+        assert model["interactive"] is (configured_model is None)
+        probe = Mock(return_value=200)
+        monkeypatch.setattr(configs_block, "test_api_connection", probe)
+        assert configs_block.apply_reranker_config("new-user-key", model["value"], None) == 200
+    finally:
+        client.close()
+    probe.assert_called_once()
+    saved = dotenv_values(env_file)
+    assert saved["RERANKER_API_KEY"] == "new-user-key"
+    if configured_model is not None:
+        assert "RERANKER_MODEL" not in saved
+        assert LLMConfig().reranker_model == configured_model

@@ -830,7 +830,7 @@ def create_configs_block() -> list:
                         ),
                         gr.Textbox(
                             interactive=not llm_settings.environment_source("reranker_model"),
-                            value="BAAI/bge-reranker-v2-m3",
+                            value=llm_settings.reranker_model or "BAAI/bge-reranker-v2-m3",
                             label="model",
                             info="Please refer to https://siliconflow.cn/pricing",
                         ),

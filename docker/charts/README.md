@@ -100,7 +100,7 @@ for persistent configuration and the approved exposure boundaries.
 ## Configure RAG outside the container
 
 The canonical chart mounts a writable resource volume at `/var/lib/hugegraph-rag`.
-The application uses this root for its editable `.env`, `demo/config_prompt.yaml`,
+The application uses this root for its saved `settings.yaml`, optional bootstrap `.env`, `demo/config_prompt.yaml`,
 indexes and generated files. Persistence inherits the top-level setting unless
 `rag.persistence.enabled` is explicitly set; use `true` for durable resources
 when the existing release disables global persistence. Existing resources are preserved; no files are
@@ -115,11 +115,23 @@ configuration mounts are supported; keep them separate from the writable data
 volume. The canonical RAG guide has a complete overlay example. Its resource-root contract
 requires both AI #96 and Helm #365, not the earlier #365 image/templates alone.
 
-Configuration precedence is process environment/Secret > mounted `.env` > defaults.
-UI/API saves only persist changed fields, and cannot override environment-managed
-fields. Startup leaves existing config files unchanged. Update the external
-Secret/ConfigMap or volume files and restart RAG to apply changes; entering the
-container is unnecessary. UI saves require writable configuration files.
+The UI/API is the primary model configuration entry point. Saved complete
+connections in `settings.yaml` override process environment/Secret, mounted `.env`
+and built-in defaults across restarts and Helm upgrades. Those deployment inputs
+remain bootstrap fallbacks. Save validates format without requiring the model
+service to be reachable; testing the saved connection is separate and never
+rolls back a save. Blank/omitted keys keep the saved key; an explicit clear removes
+it. Keys are not echoed. Unconfigured extraction/Text2GQL dynamically follow Chat;
+embedding/reranker stay independent.
+
+Read-only bootstrap mounts can coexist with a writable resource PVC holding
+`settings.yaml`. Use `HUGEGRAPH_LLM_SETTINGS_PATH` for a separate saved settings
+path. To edit offline, update the saved YAML and restart; delete the relevant
+connection group to return to deployment defaults. Startup does not rewrite
+configuration. Persist and protect the resource volume because it contains
+user-saved credentials. Helm supplies defaults and mounts without configuration
+rewriting or migration hooks. Login/tokens and Thin API write opt-in remain
+operator-owned deployment controls.
 
 During legacy migration, inspect the old `.env` for automatically saved Secrets
 and obsolete provider values. Transfer only settings that should remain
@@ -197,8 +209,8 @@ HugeGraph release are separate. Helm will not remove the old release for you.
 
 1. Record `helm get values <old-release> -n <old-namespace> -o yaml`, current
    Service/Ingress names, Secrets, ConfigMaps, volumes and external consumers.
-   Back up any `.env`, prompt edits, indexes and other writable RAG data;
-   treat `.env` and PVC backups as sensitive.
+   Back up any `settings.yaml`, `.env`, prompt edits, indexes and other writable RAG data;
+   treat `settings.yaml`, `.env` and PVC backups as sensitive.
 2. Prepare the canonical HugeGraph chart and convert all applicable old keys
    using the table above. For existing HugeGraph clusters, follow the
    *existing-release* upgrade procedure rather than applying a topology preset.

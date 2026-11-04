@@ -37,8 +37,8 @@
 `settings.yaml`，后续请求立即生效，重启和 Helm 升级也保留该连接。修改 Helm 默认值不会覆盖已保存的连接。
 **Test saved connection** 单独发起网络测试；保存只校验格式，不要求模型服务在线，测试失败不会撤销保存。
 已有 key 不回显；输入留空或 API 省略 `api_key` 时保留原 key，勾选 **Clear API key** 或传
-`clear_api_key: true` 才删除。修改目标 URL（或 LiteLLM 路由模型）时，须输入新 key 或明确清除，
-不会把原 key 静默转发到新服务。无 key 的本地服务也可保存和测试。
+`clear_api_key: true` 才删除。修改目标 URL（或 LiteLLM 的 provider）时，须输入新 key 或明确清除，
+不会把原 key 静默转发到新服务。同一 provider 下更换模型可保留 key；LiteLLM 推荐使用 `provider/model` 显式声明路由。无 key 的本地服务也可保存和测试。
 
 信息抽取与 Text2GQL 默认动态复用 Chat，Chat 更新后它们一起更新，不复制 key。
 保存子功能连接后，该功能独立使用自己的连接；**Use Chat connection** 可恢复继承。

@@ -183,8 +183,13 @@ def _saved_key(group, key_field, supplied, destination_fields, clear=False):
     if supplied:
         return supplied
     previous = llm_settings._saved_values
-    if any(getattr(llm_settings, field) != previous.get(field) for field in destination_fields):
-        if previous.get(key_field):
+    for field in destination_fields:
+        old, new = previous.get(field), getattr(llm_settings, field)
+        if field.startswith("litellm_") and field.endswith(("_language_model", "_model")):
+            # A provider/model name can change within one provider without changing
+            # where its key goes. An unqualified name remains an explicit route.
+            old, new = str(old or "").split("/", 1)[0], str(new or "").split("/", 1)[0]
+        if old != new and previous.get(key_field):
             raise ValueError("Changing the model destination requires a new API key or explicit clear")
     return previous.get(key_field)
 

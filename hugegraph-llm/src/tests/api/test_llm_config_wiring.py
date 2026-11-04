@@ -238,3 +238,22 @@ def test_web_form_saves_selected_provider_and_updates_inheritance_control(saved_
     finally:
         client.close()
         ui.close()
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql", "embedding"])
+def test_same_litellm_provider_model_change_keeps_key(saved_config, role):
+    _, _, client = saved_config
+    route = "/config/embedding" if role == "embedding" else "/config/llm"
+    payload = {
+        "llm_type": "litellm",
+        "role": "chat" if role == "embedding" else role,
+        "api_base": "http://proxy.invalid/v1",
+        "language_model": "openai/first",
+        "api_key": "synthetic-key",
+    }
+    assert client.post(route, json=payload).status_code == 201
+    assert client.post(route, json={**payload, "language_model": "openai/second", "api_key": ""}).status_code == 201
+    loaded = LLMConfig()
+    assert getattr(loaded, f"litellm_{role}_api_key") == "synthetic-key"
+    model_field = f"litellm_{role}_model" if role == "embedding" else f"litellm_{role}_language_model"
+    assert getattr(loaded, model_field) == "openai/second"

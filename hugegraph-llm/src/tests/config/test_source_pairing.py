@@ -41,6 +41,7 @@ def env_file(tmp_path, monkeypatch):
             (
                 "GRAPH_",
                 "OPENAI_",
+                "OLLAMA_",
                 "LITELLM_",
                 "QDRANT_",
                 "MILVUS_",
@@ -318,3 +319,101 @@ def test_explicit_empty_role_configuration_prevents_chat_cascade(env_file, monke
     monkeypatch.setattr(configs_block, "llm_settings", settings)
     assert getattr(settings, field) == ""
     assert configs_block._role_has_credentials(role)
+
+
+@pytest.mark.parametrize("provider", ["cohere", "siliconflow"])
+def test_reranker_only_uses_its_active_endpoint(env_file, monkeypatch, provider):
+    env_file.write_text(f"RERANKER_TYPE={provider}\nRERANKER_API_KEY=file-key\n")
+    monkeypatch.setenv("COHERE_BASE_URL", "https://new.example/rerank")
+    settings = LLMConfig()
+    assert settings.reranker_api_key == (None if provider == "cohere" else "file-key")
+    assert settings.environment_source("reranker_api_key") == ("COHERE_BASE_URL" if provider == "cohere" else None)
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql", "embedding"])
+@pytest.mark.parametrize("managed_key", [False, True])
+def test_litellm_model_destination_is_paired_with_key(env_file, monkeypatch, role, managed_key):
+    model = f"litellm_{role}_" + ("model" if role == "embedding" else "language_model")
+    key = f"litellm_{role}_api_key"
+    text = f"{model.upper()}=openai/old\n{key.upper()}=file-key\n"
+    env_file.write_text(text)
+    if managed_key:
+        monkeypatch.setenv(key.upper(), "managed-key")
+    else:
+        monkeypatch.setenv(model.upper(), "anthropic/new")
+    settings = LLMConfig()
+    if managed_key:
+        assert settings.environment_source(model) == key.upper()
+        setattr(settings, model, "anthropic/new")
+        with pytest.raises(ValueError, match="managed by environment"):
+            settings.validate_update()
+    else:
+        assert getattr(settings, key) is None
+        assert settings.environment_source(key) == model.upper()
+    assert env_file.read_text() == text
+
+
+@pytest.mark.parametrize(
+    ("model", "endpoint", "credential", "target"),
+    [
+        (HugeGraphConfig, "graph_url", "graph_pwd", "http://new.example:8080"),
+        (IndexConfig, "qdrant_host", "qdrant_api_key", "new.example"),
+        (IndexConfig, "milvus_host", "milvus_password", "new.example"),
+        (LLMConfig, "openai_chat_api_base", "openai_chat_api_key", "https://new.example/v1"),
+    ],
+)
+@pytest.mark.parametrize("existing_file", [False, True])
+def test_endpoint_without_stored_secret_leaves_credential_editable(
+    env_file, monkeypatch, model, endpoint, credential, target, existing_file
+):
+    if existing_file:
+        env_file.write_text("# unrelated config\n")
+    monkeypatch.setenv(endpoint.upper(), target)
+    settings = model()
+    assert settings.environment_source(credential) is None
+    assert getattr(settings, credential) == model.model_fields[credential].default
+    setattr(settings, credential, "new-user-key")
+    settings.update_env()
+    assert getattr(model(), credential) == "new-user-key"
+    assert model().environment_source(credential) is None
+
+
+@pytest.mark.parametrize("bad", ["http://host:99999", "http://host:8080x", "http://[invalid"])
+@pytest.mark.parametrize("process_bad", [False, True])
+def test_bad_url_does_not_abort_config_sources(env_file, monkeypatch, bad, process_bad):
+    text = f"GRAPH_URL={'http://old.example' if process_bad else bad}\nGRAPH_PWD=file-key\n"
+    env_file.write_text(text)
+    monkeypatch.setenv("GRAPH_URL", bad if process_bad else "http://new.example")
+    settings = HugeGraphConfig()
+    assert settings.graph_pwd == ""
+    assert env_file.read_text() == text
+
+
+def test_generic_process_base_overrides_file_specific_base_without_leaking_key(env_file, monkeypatch):
+    env_file.write_text("OPENAI_CHAT_API_BASE=https://file.example/v1\nOPENAI_CHAT_API_KEY=file-key\n")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://process.example/v1")
+    settings = LLMConfig()
+    assert settings.openai_chat_api_base == "https://process.example/v1"
+    assert settings.openai_chat_api_key is None
+
+
+def test_same_file_generic_key_and_custom_endpoint_are_operator_configuration(env_file):
+    env_file.write_text("OPENAI_CHAT_API_BASE=https://file.example/v1\nOPENAI_API_KEY=operator-key\n")
+    settings = LLMConfig()
+    assert settings.openai_chat_api_base == "https://file.example/v1"
+    assert settings.openai_chat_api_key == "operator-key"
+
+
+def test_managed_litellm_model_change_is_rejected_before_probe(env_file, monkeypatch):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    monkeypatch.setenv("LITELLM_CHAT_API_KEY", "managed-key")
+    settings = LLMConfig(chat_llm_type="litellm")
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    probe = Mock(return_value=200)
+    monkeypatch.setattr(configs_block, "test_litellm_chat", probe)
+    with pytest.raises(ValueError, match="managed by environment"):
+        configs_block.apply_llm_config("chat", "managed-key", None, "anthropic/new", 8192)
+    probe.assert_not_called()
+    assert settings.litellm_chat_language_model == "openai/gpt-4.1-mini"
+    assert not env_file.exists()

@@ -281,8 +281,8 @@ print(f"数据库名称: {graph_config.graph_name}")
    - `LIMIT_PROPERTY` 和 `ENABLE_LOGIN` 是字符串类型（\"False\"/\"True\"），不是布尔类型
    - `LANGUAGE`、`CHAT_LLM_TYPE` 等字段使用 Literal 类型限制可选值
    - 大部分字段都是 Optional 类型，支持 None 值，表示未设置
-7. **环境变量 Fallback**：
-   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 环境变量作为 fallback
+7. **环境变量别名与优先级**：
+   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 通用别名；同一来源中角色专用名称优先，进程来源整体优先于文件（包括文件中的专用名称）
    - OpenAI Embedding 支持独立的环境变量 `OPENAI_EMBEDDING_BASE_URL` 和 `OPENAI_EMBEDDING_API_KEY`
    - Cohere 支持 `CO_API_URL` 环境变量
 8. **Ollama 配置完整性**：
@@ -346,3 +346,9 @@ print(f"数据库名称: {graph_config.graph_name}")
 Thin API 写入必须同时启用登录，并将 `HUGEGRAPH_LLM_ENABLE_THIN_WRITES` 显式设为 `true`；其他值保持关闭。
 
 未配置的角色可自动沿用 chat 的配置；显式清空的角色 key 或本地模型名不会被 Chat Apply 自动补全。
+
+若文件没有存储凭据，仅在进程中设置端点不会锁定凭据输入。用户通过 UI/API 保存新凭据时，会一并记录其当前端点，用于下次启动时核对配对关系；进程中的端点仍优先，环境管理的 key 不会导出。LiteLLM 的模型名也参与目标绑定，因为模型前缀决定 provider；SiliconFlow 的 reranker key 不受无关的 Cohere URL 影响。
+
+同一 `.env` 中的通用 `OPENAI_API_KEY` 与自定义 base URL 视为操作者配套配置。若旧文件用 `KEY=` 作为未配置占位符，希望角色重新自动沿用 chat，请删除对应空项；显式空项继续表示清空，不引入旧版兼容标记或自动迁移。
+
+停止词逐语言查找：显式 `NLTK_DATA`（多个目录按系统路径分隔符分开）优先，其次是外部资源目录、打包资源、其他缓存路径。外部 corpus 只提供部分语言时，缺少的语言仍能使用打包词表；不会为此复制资源或下载数据。

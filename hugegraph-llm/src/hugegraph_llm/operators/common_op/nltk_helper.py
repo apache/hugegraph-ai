@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 from urllib.error import HTTPError, URLError
 
 import nltk
-from nltk.corpus import stopwords
+from nltk.corpus.reader import WordListCorpusReader
 
 from hugegraph_llm.config import resource_path
 from hugegraph_llm.config.paths import PACKAGED_RESOURCES
@@ -31,7 +31,8 @@ from hugegraph_llm.utils.log import log
 
 def _add_resource_search_paths():
     """Search user corpora first, then the immutable packaged fallback."""
-    preferred = [os.path.join(root, "nltk_data") for root in (resource_path, PACKAGED_RESOURCES)]
+    preferred = [path for path in os.environ.get("NLTK_DATA", "").split(os.pathsep) if path]
+    preferred += [os.path.join(root, "nltk_data") for root in (resource_path, PACKAGED_RESOURCES)]
     nltk.data.path[:] = list(dict.fromkeys(preferred + nltk.data.path))
 
 
@@ -41,38 +42,37 @@ class NLTKHelper:
         "chinese": None,
     }
 
+    @staticmethod
+    def _read_stopwords(lang: str) -> List[str] | None:
+        # NLTK's global corpus loader selects one directory for all languages.
+        # A partial external corpus must not hide another language's fallback.
+        for directory in nltk.data.path:
+            try:
+                root = nltk.data.find("corpora/stopwords", paths=[directory])
+                return WordListCorpusReader(root, [lang], encoding="utf-8").words(lang)
+            except (LookupError, OSError):
+                continue
+        return None
+
     def stopwords(self, lang: str = "chinese") -> List[str]:
-        """Get stopwords."""
+        """Load each language from explicit NLTK_DATA, resources, then fallback."""
         _add_resource_search_paths()
         if self._stopwords.get(lang) is None:
-            cache_dir = self.get_cache_dir()
-            nltk_data_dir = os.environ.get("NLTK_DATA", cache_dir)
-
-            # update nltk path for nltk so that it finds the data
-            if nltk_data_dir not in nltk.data.path:
-                nltk.data.path.append(nltk_data_dir)
-
-            try:
-                nltk.data.find("corpora/stopwords")
-            except LookupError:
+            words = self._read_stopwords(lang)
+            if words is None:
+                cache_dir = self.get_cache_dir()
+                if cache_dir not in nltk.data.path:
+                    nltk.data.path.append(cache_dir)
                 try:
                     log.info("Start download nltk package stopwords")
-                    nltk.download("stopwords", download_dir=nltk_data_dir, quiet=False)
-                    log.debug("NLTK package stopwords is already downloaded")
-                except (URLError, HTTPError, PermissionError) as e:
-                    log.warning("Can't download package stopwords as error: %s", e)
-        try:
-            self._stopwords[lang] = stopwords.words(lang)
-        except LookupError as e:
-            log.error("NLTK stopwords for lang=%s not found: %s; using empty list", lang, e)
-            self._stopwords[lang] = []
-
-        # final check
-        final_stopwords = self._stopwords[lang]
-        if final_stopwords is None:
-            return []
-
-        return self._stopwords[lang]
+                    nltk.download("stopwords", download_dir=cache_dir, quiet=False)
+                    words = self._read_stopwords(lang)
+                except (URLError, HTTPError, PermissionError) as exc:
+                    log.warning("Can't download package stopwords as error: %s", exc)
+            if words is None:
+                log.error("NLTK stopwords for lang=%s not found; using empty list", lang)
+            self._stopwords[lang] = words or []
+        return self._stopwords[lang] or []
 
     def check_nltk_data(self):
         _add_resource_search_paths()

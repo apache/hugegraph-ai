@@ -16,6 +16,7 @@
 # under the License.
 
 
+import os
 from typing import ClassVar, Literal, Optional
 from urllib.parse import urlsplit
 
@@ -30,12 +31,27 @@ class LLMConfig(BaseConfig):
 
     credential_endpoints: ClassVar[dict[str, tuple[str, ...]]] = {
         **{
-            f"{provider}_{role}_api_key": (f"{provider}_{role}_api_base",)
-            for provider in ("openai", "litellm")
+            f"openai_{role}_api_key": (f"openai_{role}_api_base",)
+            for role in ("chat", "extract", "text2gql", "embedding")
+        },
+        **{
+            f"litellm_{role}_api_key": (
+                f"litellm_{role}_api_base",
+                f"litellm_{role}_" + ("model" if role == "embedding" else "language_model"),
+            )
             for role in ("chat", "extract", "text2gql", "embedding")
         },
         "reranker_api_key": ("reranker_type", "cohere_base_url"),
     }
+
+    @classmethod
+    def _endpoint_fields(cls, credential):
+        if credential == "reranker_api_key":
+            source = cls._direct_environment_source("reranker_type")
+            provider = os.environ[source] if source else cls._file_value("reranker_type")
+            if provider == "siliconflow":
+                return ("reranker_type",)
+        return super()._endpoint_fields(credential)
 
     @classmethod
     def _generic_key_is_scoped(cls, field):
@@ -47,8 +63,11 @@ class LLMConfig(BaseConfig):
             return True
         values = {key.upper(): value for key, value in dotenv_values(base_config.env_path).items()}
         endpoint = values.get(base_field.upper()) or values.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
-        parsed = urlsplit(endpoint)
-        return parsed.scheme == "https" and parsed.hostname == "api.openai.com" and parsed.port in (None, 443)
+        try:
+            parsed = urlsplit(endpoint)
+            return parsed.scheme == "https" and parsed.hostname == "api.openai.com" and parsed.port in (None, 443)
+        except ValueError:
+            return False
 
     @classmethod
     def _credential_source(cls, field):

@@ -104,10 +104,29 @@ class BaseConfig(BaseSettings):
         value = str(value).strip()
         if field.endswith("_host"):
             return value.lower()
-        parsed = urlsplit(value if "://" in value else "http://" + value)
-        scheme = parsed.scheme.lower()
-        port = parsed.port if parsed.port is not None else {"http": 80, "https": 443}.get(scheme)
-        return (scheme, parsed.hostname, port, parsed.path.rstrip("/"), parsed.query, parsed.username, parsed.password)
+        if not field.endswith(("_url", "_base")):
+            return value
+        try:
+            parsed = urlsplit(value if "://" in value else "http://" + value)
+            scheme = parsed.scheme.lower()
+            port = parsed.port if parsed.port is not None else {"http": 80, "https": 443}.get(scheme)
+            return (
+                scheme,
+                parsed.hostname,
+                port,
+                parsed.path.rstrip("/"),
+                parsed.query,
+                parsed.username,
+                parsed.password,
+            )
+        except ValueError:
+            # An invalid URL can never establish that a stored secret is safe
+            # to reuse. Leave connection validation to the existing caller.
+            return object()
+
+    @classmethod
+    def _endpoint_fields(cls, credential):
+        return cls.credential_endpoints[credential]
 
     @classmethod
     def _direct_environment_source(cls, field):
@@ -126,11 +145,13 @@ class BaseConfig(BaseSettings):
     def _changed_endpoint_source(cls, credential):
         if cls._credential_source(credential):
             return None
-        fields = cls.credential_endpoints[credential]
+        fields = cls._endpoint_fields(credential)
         sources = {field: cls._direct_environment_source(field) for field in fields}
         if not any(sources.values()):
             return None
         values = {key.upper(): value for key, value in dotenv_values(env_path).items()}
+        if not any(values.get(name.upper()) for name in cls._source_names(credential)):
+            return None
         for field, source in sources.items():
             previous = cls._file_value(field, values)
             effective = os.environ[source] if source else previous
@@ -145,8 +166,8 @@ class BaseConfig(BaseSettings):
             return cls._credential_source(field) or cls._changed_endpoint_source(field)
         if source := cls._direct_environment_source(field):
             return source
-        for credential, endpoints in cls.credential_endpoints.items():
-            if field in endpoints and (source := cls._credential_source(credential)):
+        for credential in cls.credential_endpoints:
+            if field in cls._endpoint_fields(credential) and (source := cls._credential_source(credential)):
                 return source
         return None
 
@@ -215,6 +236,14 @@ class BaseConfig(BaseSettings):
         changed = self.validate_update()
         if not changed:
             return
+        # A user-saved credential belongs to the effective target. Record that
+        # target too, so a later reload does not mistake it for an old secret.
+        to_write = dict(changed)
+        for credential in self.credential_endpoints:
+            if credential in changed:
+                endpoints = self._endpoint_fields(credential)
+                if any(self._direct_environment_source(field) for field in endpoints):
+                    to_write.update({field: current[field] for field in endpoints})
         target = Path(env_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         # Stage all changes together. Failed writes leave the original intact;
@@ -224,7 +253,7 @@ class BaseConfig(BaseSettings):
         try:
             if target.exists():
                 Path(staging).write_bytes(target.read_bytes())
-            for field, value in changed.items():
+            for field, value in to_write.items():
                 log.info("Update configuration field %s in %s", field.upper(), env_path)
                 text = "" if value is None else str(value)
                 needs_quotes = (

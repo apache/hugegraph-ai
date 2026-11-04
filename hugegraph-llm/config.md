@@ -329,9 +329,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 - **JSON 示例文件**：`resources/` 目录下的各种 JSON 文件
   - 包含示例数据、查询样本等
 
-## 相关文档
-
-- [HugeGraph LLM README](README.md)
+## 外部配置与凭据规则
 
 通用 provider key 有端点保护边界：自定义端点来自 `.env`，而进程只提供通用 `OPENAI_API_KEY` 时，保留文件中与端点配套的 key，避免转发到另一服务。若文件没有配套 key，启动会要求显式提供该角色凭据。由 Kubernetes 管理 provider 时，应同时配置 base URL 和 key。环境管理的 key 也锁定其目标端点；UI/API 会在连通性测试前拒绝改变端点，避免将该 key 发往其他服务。
 
@@ -352,3 +350,7 @@ Thin API 写入必须同时启用登录，并将 `HUGEGRAPH_LLM_ENABLE_THIN_WRIT
 同一 `.env` 中的通用 `OPENAI_API_KEY` 与自定义 base URL 视为操作者配套配置。若旧文件用 `KEY=` 作为未配置占位符，希望角色重新自动沿用 chat，请删除对应空项；显式空项继续表示清空，不引入旧版兼容标记或自动迁移。
 
 停止词逐语言查找：显式 `NLTK_DATA`（多个目录按系统路径分隔符分开）优先，其次是外部资源目录、打包资源、其他缓存路径。外部 corpus 只提供部分语言时，缺少的语言仍能使用打包词表；不会为此复制资源或下载数据。
+
+## 相关文档
+
+- [HugeGraph LLM README](README.md)

@@ -31,10 +31,8 @@ from hugegraph_llm.utils.log import log
 
 def _add_resource_search_paths():
     """Search user corpora first, then the immutable packaged fallback."""
-    for root in (resource_path, PACKAGED_RESOURCES):
-        directory = os.path.join(root, "nltk_data")
-        if directory not in nltk.data.path:
-            nltk.data.path.append(directory)
+    preferred = [os.path.join(root, "nltk_data") for root in (resource_path, PACKAGED_RESOURCES)]
+    nltk.data.path[:] = list(dict.fromkeys(preferred + nltk.data.path))
 
 
 class NLTKHelper:

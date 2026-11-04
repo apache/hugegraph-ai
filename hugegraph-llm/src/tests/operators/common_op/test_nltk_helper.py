@@ -34,7 +34,10 @@ class TestNLTKHelper(unittest.TestCase):
 @pytest.mark.contract
 @pytest.mark.parametrize("language", ["english", "chinese"])
 @pytest.mark.parametrize("user_override", [False, True])
-def test_external_root_keeps_bundled_stopwords_available_offline(tmp_path, monkeypatch, language, user_override):
+@pytest.mark.parametrize("existing_cache", [False, True])
+def test_external_root_keeps_bundled_stopwords_available_offline(
+    tmp_path, monkeypatch, language, user_override, existing_cache
+):
     from nltk.corpus.reader import WordListCorpusReader
     from nltk.corpus.util import LazyCorpusLoader
 
@@ -47,7 +50,14 @@ def test_external_root_keeps_bundled_stopwords_available_offline(tmp_path, monke
         (corpus / language).write_text("operator-stopword\n", encoding="utf-8")
     before = sorted(root.rglob("*"))
     monkeypatch.setattr(nltk_helper, "resource_path", str(root))
-    monkeypatch.setattr(nltk_helper.nltk.data, "path", [])
+    cached_root = tmp_path / "existing-nltk"
+    cached = cached_root / "corpora/stopwords"
+    cached.mkdir(parents=True)
+    (cached / language).write_text("cached-stopword\n", encoding="utf-8")
+    user_path = str(root / "nltk_data")
+    packaged_path = str(nltk_helper.PACKAGED_RESOURCES / "nltk_data")
+    existing = [str(cached_root), packaged_path, user_path, str(cached_root)] if existing_cache else []
+    monkeypatch.setattr(nltk_helper.nltk.data, "path", existing)
     monkeypatch.setattr(nltk_helper.NLTKHelper, "_stopwords", {"english": None, "chinese": None})
     monkeypatch.setattr(
         nltk_helper, "stopwords", LazyCorpusLoader("stopwords", WordListCorpusReader, r".*", encoding="utf-8")
@@ -65,3 +75,10 @@ def test_external_root_keeps_bundled_stopwords_available_offline(tmp_path, monke
         assert ("the" if language == "english" else "的") in words
     download.assert_not_called()
     assert sorted(root.rglob("*")) == before
+    assert nltk_helper.nltk.data.path[:2] == [user_path, packaged_path]
+    if existing_cache:
+        assert nltk_helper.nltk.data.path.count(str(cached_root)) == 1
+    paths = list(nltk_helper.nltk.data.path)
+    nltk_helper._add_resource_search_paths()
+    assert nltk_helper.nltk.data.path == paths
+    assert len(paths) == len(set(paths))

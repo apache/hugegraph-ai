@@ -349,11 +349,12 @@ def apply_llm_config(
 
 
 def _role_has_credentials(role):
+    """An explicit empty value is configured and must not be auto-filled."""
     provider = getattr(llm_settings, f"{role}_llm_type")
     if provider in ("openai", "litellm"):
         field = f"{provider}_{role}_api_key"
-        return bool(getattr(llm_settings, field)) or bool(llm_settings.environment_source(field))
-    return bool(getattr(llm_settings, f"ollama_{role}_language_model"))
+        return getattr(llm_settings, field) is not None or bool(llm_settings.environment_source(field))
+    return getattr(llm_settings, f"ollama_{role}_language_model") is not None
 
 
 # TODO: refactor the function to reduce the number of statements & separate the logic

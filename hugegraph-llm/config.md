@@ -335,7 +335,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 通用 provider key 有端点保护边界：自定义端点来自 `.env`，而进程只提供通用 `OPENAI_API_KEY` 时，保留文件中与端点配套的 key，避免转发到另一服务。若文件没有配套 key，启动会要求显式提供该角色凭据。由 Kubernetes 管理 provider 时，应同时配置 base URL 和 key。环境管理的 key 也锁定其目标端点；UI/API 会在连通性测试前拒绝改变端点，避免将该 key 发往其他服务。
 
-空进程变量（包括可选字符串、模型名和 key）按未设置处理；空的角色专用 key 不会遮蔽非空通用 key。`.env` 中显式空字符串会保留，只有显式允许的 `GRAPH_PWD` 空进程值可清除旧密码。新建 `.env` 使用 0600，保存已有文件时保留权限；普通值不加引号，仅在需要时使用 dotenv 引号。
+空进程变量（包括可选字符串、模型名和 key）按未设置处理；空的角色专用 key 不会遮蔽非空通用 key。`.env` 中字符串字段的显式空值会保留；数字、布尔和枚举字段的空值按未设置处理。只有显式允许的 `GRAPH_PWD` 空进程值可清除旧密码。新建 `.env` 使用 0600，保存已有文件时保留权限；普通值不加引号，仅在需要时使用 dotenv 引号。
 
 图密码也绑定到端点：进程中的 `GRAPH_URL` 与文件端点不同时，不继承文件中的旧 `GRAPH_PWD`。通过进程/Secret 显式提供新端点的密码（或空密码）。同一端点的文件凭据仍可使用。
 
@@ -344,3 +344,5 @@ print(f"数据库名称: {graph_config.graph_name}")
 由环境管理的 chat key 不会通过 Chat Apply 自动复制到 extract/Text2GQL 的 `.env` 项。需要共用进程配置时，可提供通用 `OPENAI_API_KEY` 和配套端点；角色专用 key 只用于该角色。
 
 Thin API 写入必须同时启用登录，并将 `HUGEGRAPH_LLM_ENABLE_THIN_WRITES` 显式设为 `true`；其他值保持关闭。
+
+未配置的角色可自动沿用 chat 的配置；显式清空的角色 key 或本地模型名不会被 Chat Apply 自动补全。

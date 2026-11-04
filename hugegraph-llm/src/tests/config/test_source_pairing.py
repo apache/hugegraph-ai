@@ -177,12 +177,17 @@ def test_thin_writes_only_accept_explicit_true_without_validation_errors(env_fil
     assert (thin_api._thin_write_disabled() is None) == (value.strip().lower() == "true")
 
 
-def test_chat_apply_does_not_export_managed_key_through_cascade(env_file, monkeypatch):
+@pytest.mark.parametrize("managed_chat", [True, False])
+def test_chat_apply_preserves_managed_keys_and_explicit_role_clears(env_file, monkeypatch, managed_chat):
     from fastapi.testclient import TestClient
 
     from hugegraph_llm.demo.rag_demo import app, configs_block
 
-    monkeypatch.setenv("OPENAI_CHAT_API_KEY", "managed-chat-key")
+    if managed_chat:
+        monkeypatch.setenv("OPENAI_CHAT_API_KEY", "managed-chat-key")
+    else:
+        env_file.write_text("OPENAI_CHAT_API_KEY=chat-key\nOPENAI_EXTRACT_API_KEY=\nOPENAI_TEXT2GQL_API_KEY=\n")
+    before = env_file.read_bytes() if env_file.exists() else None
     monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "false")
     settings = LLMConfig()
     monkeypatch.setattr(configs_block, "llm_settings", settings)
@@ -215,9 +220,13 @@ def test_chat_apply_does_not_export_managed_key_through_cascade(env_file, monkey
                 json={"data": [values[field] for field in dependency["inputs"]], "session_hash": "chat-save"},
             )
             assert result.status_code == 200, result.text
-        assert settings.openai_extract_api_key is None
-        assert settings.openai_text2gql_api_key is None
-        assert not env_file.exists() or "managed-chat-key" not in env_file.read_text()
+        expected = None if managed_chat else ""
+        assert settings.openai_extract_api_key == expected
+        assert settings.openai_text2gql_api_key == expected
+        if before is None:
+            assert not env_file.exists() or "managed-chat-key" not in env_file.read_text()
+        else:
+            assert env_file.read_bytes() == before
     finally:
         client.close()
 
@@ -280,3 +289,32 @@ def test_managed_reranker_key_also_owns_provider_before_probe(env_file, monkeypa
         configs_block.apply_reranker_config("managed-provider-key", "model", None)
     probe.assert_not_called()
     assert not env_file.exists()
+
+
+@pytest.mark.parametrize("backend", ["qdrant", "milvus"])
+@pytest.mark.parametrize("changed", [False, True])
+def test_empty_file_port_uses_default_during_endpoint_comparison(env_file, monkeypatch, backend, changed):
+    credentials = (
+        f"{backend.upper()}_API_KEY=key\n" if backend == "qdrant" else "MILVUS_USER=user\nMILVUS_PASSWORD=key\n"
+    )
+    text = f"{backend.upper()}_HOST=vector.example\n{backend.upper()}_PORT=\n" + credentials
+    env_file.write_text(text)
+    monkeypatch.setenv(f"{backend.upper()}_HOST", "new.example" if changed else "vector.example")
+    settings = IndexConfig()
+    assert getattr(settings, f"{backend}_port") == (6333 if backend == "qdrant" else 19530)
+    key = settings.qdrant_api_key if backend == "qdrant" else settings.milvus_password
+    assert key == ((None if backend == "qdrant" else "") if changed else "key")
+    assert env_file.read_text() == text
+
+
+@pytest.mark.parametrize("role", ["extract", "text2gql"])
+@pytest.mark.parametrize("provider", ["openai", "litellm", "ollama/local"])
+def test_explicit_empty_role_configuration_prevents_chat_cascade(env_file, monkeypatch, role, provider):
+    from hugegraph_llm.demo.rag_demo import configs_block
+
+    field = f"ollama_{role}_language_model" if provider == "ollama/local" else f"{provider}_{role}_api_key"
+    env_file.write_text(f"{field.upper()}=\n")
+    settings = LLMConfig(**{f"{role}_llm_type": provider})
+    monkeypatch.setattr(configs_block, "llm_settings", settings)
+    assert getattr(settings, field) == ""
+    assert configs_block._role_has_credentials(role)

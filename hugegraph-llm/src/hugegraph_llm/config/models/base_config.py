@@ -90,7 +90,8 @@ class BaseConfig(BaseSettings):
         if values is None:
             values = {key.upper(): value for key, value in dotenv_values(env_path).items()}
         for name in cls._source_names(field):
-            if (value := values.get(name.upper())) is not None:
+            value = values.get(name.upper())
+            if value is not None and (value != "" or cls._allows_empty(field, False)):
                 return value
         return cls.model_fields[field].default
 

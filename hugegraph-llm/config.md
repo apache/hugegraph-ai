@@ -2,7 +2,7 @@
 
 本文档详细说明了 HugeGraph LLM 项目中所有的配置选项。配置分为以下几类：
 
-1. **基础配置**：通过 `.env` 文件管理
+1. **连接配置**：网页/API 保存到 `settings.yaml`，`.env` 提供部署默认值
 2. **Prompt 配置**：通过 `config_prompt.yaml` 文件管理
 3. **Docker 配置**：通过 Docker 和 Helm 配置文件管理
 4. **项目配置**：通过 `pyproject.toml` 和 `JSON` 文件管理
@@ -25,35 +25,70 @@
 
 `.env` 文件位于 `hugegraph-llm/` 目录下，包含了系统运行所需的所有配置项。
 
-### 外部挂载与配置所有权
+### 网页/API 配置与部署默认值
 
-启动配置优先级：进程环境变量（包括 Secret） > `.env` > 内置默认值。
-同一来源内，字段专用变量优先于通用 provider 变量。例如
-`OPENAI_CHAT_API_KEY` 优先于同来源的 `OPENAI_API_KEY`。当端点是官方 OpenAI
-端点，或端点由进程环境变量管理时，进程中的通用 key 会覆盖文件里的旧专用 key。
-对于仅由 `.env` 配置的自定义端点，保留文件中的配套专用 key；缺少时不转发通用 key，
-实际启用 OpenAI 的角色会拒绝启动。反方向也受保护：进程修改端点但未提供新凭据时，
-不会沿用另一个文件端点的旧凭据。详见文末的端点保护边界。
-启动不改写 `.env`，也不将其注入 `os.environ`。
+网页/API 是模型连接的主要管理入口，离线文件编辑也可用。模型连接按完整组选择来源：
+已保存的应用配置 `settings.yaml` > 进程环境变量/Secret > `.env` > 内置默认值。
+同一来源内，专用变量（如 `OPENAI_CHAT_API_KEY`）优先于通用变量（`OPENAI_API_KEY`）。
+一组连接不会拼接低优先级文件的 key 与高优先级来源的 URL；部署时请在同一来源提供完整连接。
+程序显式传入的配置用于请求快照和测试，优先于这些来源。登录、访问令牌和 Thin API 写入开关仍由部署配置负责，网页模型配置不能修改它们。
 
-使用 `HUGEGRAPH_LLM_RESOURCE_PATH=/var/lib/hugegraph-rag` 可以将 `.env`、
-`demo/config_prompt.yaml`、索引和生成文件放在同一个可写挂载目录中。缺少的示例文件直接从镜像内置资源读取，启动不复制资源或生成缺失配置。只有显式保存或数据生成操作需要写入挂载卷。
+点击 **Save configuration** 后，应用把 provider、URL、model、key 等当前连接完整保存到
+`settings.yaml`，后续请求立即生效，重启和 Helm 升级也保留该连接。修改 Helm 默认值不会覆盖已保存的连接。
+**Test saved connection** 单独发起网络测试；保存只校验格式，不要求模型服务在线，测试失败不会撤销保存。
+已有 key 不回显；输入留空或 API 省略 `api_key` 时保留原 key，勾选 **Clear API key** 或传
+`clear_api_key: true` 才删除。修改目标 URL（或 LiteLLM 路由模型）时，须输入新 key 或明确清除，
+不会把原 key 静默转发到新服务。无 key 的本地服务也可保存和测试。
 
-配置可以与数据分开挂载。设置 `HUGEGRAPH_LLM_ENV_PATH=/etc/rag/rag.env` 和
-`HUGEGRAPH_LLM_PROMPT_CONFIG_PATH=/etc/rag/config_prompt.yaml` 即可读取单独的文件，
-支持 Docker bind mount、Kubernetes Secret/ConfigMap 等只读挂载；无需进入容器编辑。
-修改外部配置后重启应用，不依赖热更新。
+信息抽取与 Text2GQL 默认动态复用 Chat，Chat 更新后它们一起更新，不复制 key。
+保存子功能连接后，该功能独立使用自己的连接；**Use Chat connection** 可恢复继承。
+Embedding 和 reranker 分别配置，不跟随 Chat。
 
-UI/API 保存需要文件及其父目录可写；只写入实际改动的字段，并拒绝覆盖环境变量负责的字段；环境中的 Secret
-和派生默认值不会自动写进 `.env`。普通可写文件通过原子替换保存改动；Linux 单文件可写 bind mount 返回 `EBUSY` 时，
-原位更新同一文件。保存保留其他字段和注释；使用只读配置挂载时，应通过部署源文件修改，UI 保存会报错。
-普通问答及请求内的提示词覆盖不会保存问题或改写全局提示词。
-显式的文档/图构建配置保存仍需可写 prompt 文件；启动时不再重写已有文件。
-UI 手工输入的凭据会保存在配置文件中，请按敏感文件管理。
+使用 `HUGEGRAPH_LLM_RESOURCE_PATH=/var/lib/hugegraph-rag` 将 `settings.yaml`、prompt、索引和生成文件放在可写持久卷中。
+可用 `HUGEGRAPH_LLM_SETTINGS_PATH` 单独指定应用配置文件。`.env` 和 prompt 可另外通过
+`HUGEGRAPH_LLM_ENV_PATH`、`HUGEGRAPH_LLM_PROMPT_CONFIG_PATH` 挂载，包括只读 ConfigMap/Secret；
+模型网页保存写入可写 `settings.yaml`，不改写这些部署源文件或 `os.environ`。
+启动不创建配置、不复制打包资源；缺少资源时从镜像读取默认值。数据生成和显式保存才需要写权限。
 
-从旧版本升级时，已有 `.env` 仍会作为配置输入。请检查其中曾自动保存的凭据和默认值，
-按需删除过期项。切换 Server 时，可显式设置 `GRAPH_PWD` 为空来阻止沿用旧密码；
-Helm 自动配置模式会负责这一步。
+离线可修改同一个 `settings.yaml`，然后重启应用。删除其中的 `llm.chat` 组可恢复使用部署默认值；
+删除 `llm.extract`/`llm.text2gql` 组可恢复部署定义或默认继承。不要在应用保存时同时编辑文件。
+普通目录保存通过原子替换；可写单文件 bind mount 返回 `EBUSY` 时原位保存，不能保证中断写入的原子性，优先挂载可写目录/PVC。
+新配置权限为 0600，已有文件保留权限；其中包含用户主动保存的 key，请限制卷和备份的访问权限。
+
+普通问答和请求内提示词覆盖不保存问题或改写全局 prompt。prompt 的显式保存需其文件可写。
+Graph/向量库仍有各自的连接配置入口；本文的“保存与测试分开”指模型连接。
+
+### API 示例
+
+```json
+{
+  "role": "chat",
+  "llm_type": "openai",
+  "api_base": "https://model.example/v1",
+  "language_model": "my-model",
+  "api_key": "your-key"
+}
+```
+
+提交到 `POST /config/llm` 保存（`role` 默认 `chat`，也支持 `extract`、`text2gql`）。
+使用 `POST /config/model/chat/test` 单独测试；其他可测试角色为 `extract`、`text2gql`、`embedding`、`reranker`。
+使用 `POST /config/llm/extract/use-chat` 或 `/config/llm/text2gql/use-chat` 恢复继承。
+Embedding 使用 `POST /config/embedding`；reranker 使用 `POST /config/rerank`。
+沿用应用现有登录/访问控制，请勿将未认证配置入口暴露到公网。
+
+应用保存的最小示例（字段名与配置类一致；实际保存包含当前连接的完整字段）：
+
+```yaml
+llm:
+  chat:
+    chat_llm_type: openai
+    openai_chat_api_base: https://model.example/v1
+    openai_chat_language_model: my-model
+    openai_chat_api_key: your-key
+    openai_chat_tokens: 8192
+  extract:
+    extract_use_chat: true
+```
 
 ### 基础配置
 
@@ -310,7 +345,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 - **位置**：`hugegraph-llm/src/hugegraph_llm/config/`
 - **基类**：
-  - BaseConfig：用于 .env 文件管理的配置类
+  - BaseConfig：读取部署默认值与保存应用配置的配置类
   - BasePromptConfig：用于 YAML 文件管理的提示词配置类
 - **UI 配置管理**：`src/hugegraph_llm/demo/rag_demo/configs_block.py`
   - Gradio 界面的配置管理组件
@@ -319,7 +354,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 - **Docker 环境模板**：`docker/env.template`
   - 用于 Docker 容器部署的环境变量模板
-- **Helm Chart 配置**：`docker/charts/hg-llm/values.yaml`
+- **Helm Chart 配置**：Server 仓库 `helm/hugegraph/values.yaml`
   - Kubernetes 部署配置，包含副本数、镜像、服务等设置
 
 ### 项目配置文件
@@ -329,25 +364,13 @@ print(f"数据库名称: {graph_config.graph_name}")
 - **JSON 示例文件**：`resources/` 目录下的各种 JSON 文件
   - 包含示例数据、查询样本等
 
-## 外部配置与凭据规则
+## 空值与打包资源
 
-通用 provider key 有端点保护边界：自定义端点来自 `.env`，而进程只提供通用 `OPENAI_API_KEY` 时，保留文件中与端点配套的 key，避免转发到另一服务。若文件没有配套 key，启动会要求显式提供该角色凭据。由 Kubernetes 管理 provider 时，应同时配置 base URL 和 key。环境管理的 key 也锁定其目标端点；UI/API 会在连通性测试前拒绝改变端点，避免将该 key 发往其他服务。
-
-空进程变量（包括可选字符串、模型名和 key）按未设置处理；空的角色专用 key 不会遮蔽非空通用 key。`.env` 中字符串字段的显式空值会保留；数字、布尔和枚举字段的空值按未设置处理。只有显式允许的 `GRAPH_PWD` 空进程值可清除旧密码。新建 `.env` 使用 0600，保存已有文件时保留权限；普通值不加引号，仅在需要时使用 dotenv 引号。
-
-图密码也绑定到端点：进程中的 `GRAPH_URL` 与文件端点不同时，不继承文件中的旧 `GRAPH_PWD`。通过进程/Secret 显式提供新端点的密码（或空密码）。同一端点的文件凭据仍可使用。
-
-进程端点覆盖与凭据配套：Graph、模型服务和向量库使用同一来源规则。端点实际改变且未显式提供新凭据时，应用忽略旧文件凭据并记录不含秘密值的提示；请同时更新进程/Secret 中的端点和凭据。相同端点仍可使用文件凭据；HTTP/HTTPS 的默认端口、尾部斜杠与缺失文件端点的默认值都会规范化后比较。
-
-由环境管理的 chat key 不会通过 Chat Apply 自动复制到 extract/Text2GQL 的 `.env` 项。需要共用进程配置时，可提供通用 `OPENAI_API_KEY` 和配套端点；角色专用 key 只用于该角色。
+部署环境和 `.env` 的空占位项按未设置处理；`GRAPH_PWD` 的显式空值用于空密码。
+网页/API 的空 key 表示保留，明确清除保存为 YAML `null`，之后不会重新回退到部署 key。
+生成 `.env` 不再给缺失 key 创建 `KEY=` 占位符。只有当前支持的 latest/1.8 行为在此范围内。
 
 Thin API 写入必须同时启用登录，并将 `HUGEGRAPH_LLM_ENABLE_THIN_WRITES` 显式设为 `true`；其他值保持关闭。
-
-未配置的角色可自动沿用 chat 的配置；显式清空的角色 key 或本地模型名不会被 Chat Apply 自动补全。
-
-只有进程显式注入的凭据才只读；端点变更导致旧文件凭据失效时，应用在加载时清除旧值，UI/API 仍可输入新端点的替代凭据。用户通过 UI/API 保存新凭据时，会按当前实例的 provider 记录端点配对，用于下次启动时核对；未设置的可选端点不会生成空占位项。进程中的端点仍优先，环境管理的 key 不会导出。LiteLLM 的模型名也参与目标绑定，因为模型前缀决定 provider；SiliconFlow 的 reranker key 不受无关的 Cohere URL 影响。
-
-同一 `.env` 中的通用 `OPENAI_API_KEY` 与自定义 base URL 视为操作者配套配置。若旧文件用 `KEY=` 作为未配置占位符，希望角色重新自动沿用 chat，请删除对应空项；显式空项继续表示清空，不引入旧版兼容标记或自动迁移。
 
 停止词逐语言查找：显式 `NLTK_DATA`（多个目录按系统路径分隔符分开）优先，其次是外部资源目录、打包资源、其他缓存路径。外部 corpus 支持目录或 NLTK ZIP 格式；只提供部分语言时，缺少的语言仍能使用打包词表；不会为此复制资源或下载数据。
 

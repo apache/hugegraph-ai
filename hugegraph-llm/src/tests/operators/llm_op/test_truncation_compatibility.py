@@ -24,6 +24,7 @@ pytestmark = pytest.mark.contract
 @pytest.mark.parametrize("provider", ["openai", "litellm"])
 def test_legacy_keyword_extraction_parses_truncated_sdk_response(monkeypatch, provider):
     """Keep the real operator, configured extract factory and client wrapper."""
+    monkeypatch.setattr(llm_settings, "extract_use_chat", False)
     monkeypatch.setattr(llm_settings, "extract_llm_type", provider)
     monkeypatch.setattr(llm_settings, f"{provider}_extract_api_key", "test-key")
     monkeypatch.setattr(llm_settings, f"{provider}_extract_api_base", "http://model.invalid/v1")

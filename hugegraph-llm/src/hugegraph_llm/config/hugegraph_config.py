@@ -26,7 +26,10 @@ class HugeGraphConfig(BaseConfig):
     """HugeGraph settings"""
 
     allow_empty_environment: ClassVar[frozenset[str]] = frozenset({"graph_pwd"})
-    credential_endpoints: ClassVar[dict[str, tuple[str, ...]]] = {"graph_pwd": ("graph_url",)}
+    section: ClassVar[str] = "graph"
+    connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {
+        'connection': ('graph_url', 'graph_name', 'graph_user', 'graph_pwd', 'graph_space')
+    }
 
     @field_validator("graph_url", mode="before")
     @classmethod

@@ -44,7 +44,7 @@ def get_embedding(llm_configs: LLMConfig):
     if llm_configs.embedding_type == "litellm":
         return LiteLLMEmbedding(
             model_name=llm_configs.litellm_embedding_model,
-            api_key=llm_configs.litellm_embedding_api_key,
+            api_key=llm_configs.litellm_embedding_api_key or "EMPTY",
             api_base=llm_configs.litellm_embedding_api_base,
         )
 
@@ -52,12 +52,9 @@ def get_embedding(llm_configs: LLMConfig):
 
 
 class Embeddings:
-    def __init__(self):
-        self.embedding_type = llm_settings.embedding_type
-
     def get_embedding(self):
         """Get embedding instance and dynamically determine dimension if needed."""
-        if self.embedding_type == "openai":
+        if llm_settings.embedding_type == "openai":
             # Create with default dimension first
             embedding = OpenAIEmbedding(
                 model_name=llm_settings.openai_embedding_model,
@@ -71,7 +68,7 @@ class Embeddings:
             except Exception:  # pylint: disable=broad-except
                 pass  # Keep default dimension
             return embedding
-        if self.embedding_type == "ollama/local":
+        if llm_settings.embedding_type == "ollama/local":
             # Create with default dimension first
             embedding = OllamaEmbedding(
                 model=llm_settings.ollama_embedding_model,
@@ -85,13 +82,13 @@ class Embeddings:
             except Exception:  # pylint: disable=broad-except
                 pass  # Keep default dimension
             return embedding
-        if self.embedding_type == "litellm":
+        if llm_settings.embedding_type == "litellm":
             # For LiteLLM, we need to get dimension dynamically
             # Create a temporary instance to test dimension
             temp_embedding = LiteLLMEmbedding(
                 embedding_dimension=1536,  # Temporary default
                 model_name=llm_settings.litellm_embedding_model,
-                api_key=llm_settings.litellm_embedding_api_key,
+                api_key=llm_settings.litellm_embedding_api_key or "EMPTY",
                 api_base=llm_settings.litellm_embedding_api_base,
             )
             # Get actual dimension
@@ -105,7 +102,7 @@ class Embeddings:
             embedding = LiteLLMEmbedding(
                 embedding_dimension=actual_dim,
                 model_name=llm_settings.litellm_embedding_model,
-                api_key=llm_settings.litellm_embedding_api_key,
+                api_key=llm_settings.litellm_embedding_api_key or "EMPTY",
                 api_base=llm_settings.litellm_embedding_api_base,
             )
             return embedding  # type: ignore

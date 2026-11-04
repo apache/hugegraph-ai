@@ -107,24 +107,27 @@ class GraphRAGRequest(BaseModel):
 
 
 class LLMConfigRequest(BaseModel):
+    role: Literal["chat", "extract", "text2gql"] = "chat"
+    clear_api_key: bool = False
     llm_type: LLMProviderType
     # The common parameters shared by OpenAI, LiteLLM,
     # and OLLAMA platforms.
-    api_key: str
-    api_base: str
+    api_key: Optional[str] = None
+    api_base: Optional[str] = None
     language_model: str
     # Openai-only properties
-    max_tokens: str = None
+    max_tokens: Optional[int] = Field(default=None, ge=1)
     # ollama-only properties
     # TODO: replace to url later
-    host: str = None
-    port: str = None
+    host: Optional[str] = None
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
 
 
 class RerankerConfigRequest(BaseModel):
+    clear_api_key: bool = False
     reranker_model: str
     reranker_type: RerankerProviderType
-    api_key: str
+    api_key: Optional[str] = None
     cohere_base_url: Optional[str] = None
 
 

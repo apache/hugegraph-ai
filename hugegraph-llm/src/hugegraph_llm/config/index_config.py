@@ -23,10 +23,10 @@ from .models import BaseConfig
 class IndexConfig(BaseConfig):
     """LLM settings"""
 
-    credential_endpoints: ClassVar[dict[str, tuple[str, ...]]] = {
-        "qdrant_api_key": ("qdrant_host", "qdrant_port"),
-        "milvus_user": ("milvus_host", "milvus_port"),
-        "milvus_password": ("milvus_host", "milvus_port"),
+    section: ClassVar[str] = "index"
+    connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {
+        'qdrant': ('qdrant_host', 'qdrant_port', 'qdrant_api_key'),
+        'milvus': ('milvus_host', 'milvus_port', 'milvus_user', 'milvus_password'),
     }
 
     qdrant_host: Optional[str] = None

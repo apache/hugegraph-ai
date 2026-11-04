@@ -19,21 +19,12 @@
 
 import asyncio
 import logging
-import traceback
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from dotenv import dotenv_values
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
 from litellm.exceptions import APIError, BudgetExceededError, RateLimitError
 
-from hugegraph_llm import config
-from hugegraph_llm.api import rag_api
-from hugegraph_llm.config.llm_config import LLMConfig
-from hugegraph_llm.config.models import base_config
-from hugegraph_llm.demo.rag_demo import configs_block
 from hugegraph_llm.models.llms import litellm as litellm_module
 
 pytestmark = pytest.mark.contract
@@ -179,103 +170,3 @@ def test_litellm_success_keeps_content_callbacks_and_transport_without_raw_chunk
         expected["stream"] = True
     sdk_call.assert_called_once_with(**expected)
     assert_private_values_absent(captured_logs)
-
-
-@pytest.fixture
-def isolated_config(monkeypatch, tmp_path):
-    settings = LLMConfig.model_construct()
-    for field in settings.model_dump():
-        if field.endswith("api_key"):
-            setattr(settings, field, "synthetic-old-key")
-    for role in ROLES:
-        setattr(settings, f"{role}_llm_type", "ollama/local")
-        setattr(settings, f"litellm_{role}_api_base", "https://old.invalid/v1")
-        setattr(settings, f"litellm_{role}_language_model", "old-model")
-    for module in (config, rag_api, configs_block):
-        monkeypatch.setattr(module, "llm_settings", settings)
-    path = tmp_path / ".env"
-    monkeypatch.setattr(base_config, "env_path", str(path))
-    path.write_text(
-        "".join(
-            f"{key.upper()}={value if value is not None else ''}\n" for key, value in settings.model_dump().items()
-        ),
-        encoding="utf-8",
-    )
-    return settings, path
-
-
-def configure(entry, settings):
-    if entry == "ui":
-        settings.chat_llm_type = "litellm"
-        return configs_block.apply_llm_config("chat", PRIVATE_KEY, PRIVATE_URL, MODEL, 43)
-    router = APIRouter()
-    rag_api.rag_http_api(
-        router,
-        Mock(),
-        Mock(),
-        Mock(),
-        configs_block.apply_llm_config,
-        configs_block.apply_embedding_config,
-        configs_block.apply_reranker_config,
-        Mock(),
-    )
-    app = FastAPI()
-    app.include_router(router)
-    with TestClient(app, raise_server_exceptions=False) as client:
-        return client.post(
-            "/config/llm",
-            json={"llm_type": "litellm", "api_key": PRIVATE_KEY, "api_base": PRIVATE_URL, "language_model": MODEL},
-        )
-
-
-@pytest.mark.parametrize("entry", ["http", "ui"])
-@pytest.mark.parametrize("error_type", [APIError, BudgetExceededError])
-def test_real_litellm_config_failure_rolls_back_and_hides_credentials_and_ui_traceback(
-    isolated_config, monkeypatch, captured_logs, entry, error_type
-):
-    settings, path = isolated_config
-    if entry == "ui":
-        settings.chat_llm_type = "litellm"  # The UI dropdown precedes the apply transaction.
-    before, file_before = settings.model_dump(), path.read_bytes()
-    error = provider_error(error_type)
-    sdk_call = Mock(side_effect=error)
-    monkeypatch.setattr(litellm_module, "completion", sdk_call)
-    if entry == "http":
-        response = configure(entry, settings)
-        assert response.status_code == 500
-        visible_output = response.text
-    else:
-        with pytest.raises(configs_block.gr.Error) as caught:
-            configure(entry, settings)
-        assert error_type.__name__ in str(caught.value)
-        assert caught.value.__suppress_context__
-        visible_output = "".join(traceback.format_exception(caught.type, caught.value, caught.tb))
-    assert sdk_call.call_count == (2 if error_type is APIError else 1)
-    assert sdk_call.call_args.kwargs["api_key"] == PRIVATE_KEY
-    assert sdk_call.call_args.kwargs["base_url"] == PRIVATE_URL
-    assert settings.model_dump() == before
-    assert path.read_bytes() == file_before
-    assert_private_values_absent(captured_logs, visible_output)
-
-
-@pytest.mark.parametrize("entry", ["http", "ui"])
-def test_real_litellm_config_success_persists_credentials_without_logging_them(
-    isolated_config, monkeypatch, captured_logs, entry
-):
-    settings, path = isolated_config
-    response = SimpleNamespace(
-        usage={"prompt_tokens": 1}, choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
-    )
-    sdk_call = Mock(return_value=response)
-    monkeypatch.setattr(litellm_module, "completion", sdk_call)
-
-    result = configure(entry, settings)
-
-    assert (result.status_code if entry == "http" else result) == (201 if entry == "http" else 200)
-    sdk_call.assert_called_once()
-    disk = dotenv_values(path)
-    for role in ROLES if entry == "http" else ("chat",):
-        assert getattr(settings, f"litellm_{role}_api_key") == PRIVATE_KEY
-        assert disk[f"LITELLM_{role.upper()}_API_KEY"] == PRIVATE_KEY
-        assert disk[f"LITELLM_{role.upper()}_API_BASE"] == PRIVATE_URL
-    assert_private_values_absent(captured_logs, result.text if entry == "http" else "")

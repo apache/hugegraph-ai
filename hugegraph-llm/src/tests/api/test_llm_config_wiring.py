@@ -15,177 +15,226 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""Exercise the production route and callback together, replacing external I/O only."""
+
+"""Exercise deployment configuration through the real settings sources and files."""
 
 from unittest.mock import Mock
 
 import pytest
-import requests
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
 
-from hugegraph_llm.api.rag_api import rag_http_api
-from hugegraph_llm.config import llm_settings
 from hugegraph_llm.config.llm_config import LLMConfig
+from hugegraph_llm.config.models import base_config
 from hugegraph_llm.demo.rag_demo import configs_block
+from hugegraph_llm.models.llms import init_llm
+from tests.fixtures.saved_config import save_chat
 
 pytestmark = pytest.mark.contract
-ROLES = ("chat", "extract", "text2gql")
-PROVIDERS = ("openai", "litellm", "ollama/local")
 
 
-@pytest.fixture
-def config_io(monkeypatch):
-    # Preserve every field the real callback can update, with distinct role
-    # tokens to detect accidental replacement when the optional field is absent.
-    for role_index, role in enumerate(ROLES):
-        monkeypatch.setattr(llm_settings, f"{role}_llm_type", PROVIDERS[role_index])
-        for provider in ("openai", "litellm"):
-            for suffix, value in {
-                "api_key": f"old-{role}-key",
-                "api_base": f"http://old-{role}.invalid/v1",
-                "language_model": f"old-{role}-model",
-                "tokens": (role_index + 1) * 100,
-            }.items():
-                monkeypatch.setattr(llm_settings, f"{provider}_{role}_{suffix}", value)
-        for suffix, value in {
-            "host": f"old-{role}.invalid",
-            "port": 11000 + role_index,
-            "language_model": f"old-{role}-model",
-        }.items():
-            monkeypatch.setattr(llm_settings, f"ollama_{role}_{suffix}", value)
-    persisted = []
-    persist = Mock(side_effect=lambda: persisted.append(llm_settings.model_dump()))
-    monkeypatch.setattr(LLMConfig, "update_env", lambda _self: persist())
-    monkeypatch.setattr(configs_block.gr, "Info", Mock())
-    http = Mock(return_value=Mock(status_code=200, text="ok"))
-    monkeypatch.setattr(configs_block.requests, "post", http)
-    monkeypatch.setattr(configs_block.requests, "get", http)
-    generate = Mock(return_value="ok")
-    monkeypatch.setattr(configs_block.LiteLLMClient, "generate", generate)
-    return {"http": http, "generate": generate, "persist": persist, "persisted": persisted}
-
-
-@pytest.fixture
-def client():
-    router = APIRouter()
-    # This is exactly the callback registered by demo/rag_demo/app.py, without
-    # an adapter that could hide a missing role argument at the call boundary.
-    rag_http_api(router, *(Mock() for _ in range(3)), configs_block.apply_llm_config, *(Mock() for _ in range(3)))
-    app = FastAPI()
-    app.include_router(router)
-    with TestClient(app, raise_server_exceptions=False) as test_client:
-        yield test_client
-
-
-def payload(provider, *, tokens=True):
-    result = {
-        "llm_type": provider,
-        "api_key": "new-key",
-        "api_base": "http://new-model.invalid/v1",
-        "language_model": "new-model",
-        "host": "new-ollama.invalid",
-        "port": "12000",
-    }
-    if tokens:
-        result["max_tokens"] = "777"
-    return result
-
-
-def assert_model_fields(config, provider, role):
-    prefix = "ollama" if provider == "ollama/local" else provider
-    assert config[f"{role}_llm_type"] == provider
-    assert config[f"{prefix}_{role}_language_model"] == "new-model"
-    if provider == "ollama/local":
-        assert config[f"ollama_{role}_host"] == "new-ollama.invalid"
-        assert config[f"ollama_{role}_port"] == 12000
-    else:
-        assert config[f"{provider}_{role}_api_key"] == "new-key"
-        assert config[f"{provider}_{role}_api_base"] == "http://new-model.invalid/v1"
-
-
-@pytest.mark.parametrize("provider", PROVIDERS)
-@pytest.mark.parametrize("tokens", [True, False])
-def test_real_callback_updates_all_roles_once_and_preserves_omitted_tokens(client, config_io, provider, tokens):
-    before = llm_settings.model_dump()
-    response = client.post("/config/llm", json=payload(provider, tokens=tokens))
-
+@pytest.mark.parametrize("provider", ["openai", "litellm", "ollama/local"])
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
+def test_save_api_persists_complete_role_without_any_network(saved_config, monkeypatch, role, provider):
+    settings, _, client = saved_config
+    probe = Mock(side_effect=AssertionError("Save must not contact a model service"))
+    monkeypatch.setattr(configs_block, "test_api_connection", probe)
+    monkeypatch.setattr(init_llm.OpenAIClient, "generate", probe)
+    monkeypatch.setattr(init_llm.LiteLLMClient, "generate", probe)
+    monkeypatch.setattr(init_llm.OllamaClient, "generate", probe)
+    response = save_chat(client, role=role, llm_type=provider, host="127.0.0.1", port=11434)
     assert response.status_code == 201
-    assert response.json() == {"message": "Connection successful. Configured finished."}
-    current = llm_settings.model_dump()
-    for role in ROLES:
-        assert_model_fields(current, provider, role)
-        for token_provider in ("openai", "litellm"):
-            key = f"{token_provider}_{role}_tokens"
-            expected = 777 if tokens and token_provider == provider else before[key]
-            assert current[key] == expected
-    probe = config_io["generate" if provider == "litellm" else "http"]
-    probe.assert_called_once()
-    config_io["http" if provider == "litellm" else "generate"].assert_not_called()
-    config_io["persist"].assert_called_once()
-    assert config_io["persisted"] == [current]
+    assert response.json() == {"message": "Configuration saved."}
+    reloaded = LLMConfig()
+    assert reloaded.group_values(role) == settings.group_values(role)
+    assert getattr(reloaded, f"{role}_llm_type") == provider
+    if role != "chat":
+        assert not getattr(reloaded, f"{role}_use_chat")
+    probe.assert_not_called()
 
 
-@pytest.mark.parametrize("provider", ["openai", "ollama/local"])
-def test_failed_http_probe_rolls_back_all_roles_without_persisting(client, config_io, provider):
-    before = llm_settings.model_dump()
-    config_io["http"].return_value = Mock(status_code=503, text="unavailable")
-
-    response = client.post("/config/llm", json=payload(provider))
-
-    assert response.status_code == 503
-    assert llm_settings.model_dump() == before
-    config_io["http"].assert_called_once()
-    config_io["persist"].assert_not_called()
-
-
-@pytest.mark.parametrize("provider", PROVIDERS)
-def test_probe_exception_rolls_back_all_roles_without_persisting(client, config_io, provider):
-    before = llm_settings.model_dump()
-    if provider == "litellm":
-        config_io["generate"].side_effect = RuntimeError("model unavailable")
-    else:
-        config_io["http"].side_effect = requests.exceptions.ConnectionError("model unavailable")
-
-    response = client.post("/config/llm", json=payload(provider))
-
-    assert response.status_code == (500 if provider == "litellm" else 400)
-    assert llm_settings.model_dump() == before
-    config_io["generate" if provider == "litellm" else "http"].assert_called_once()
-    config_io["persist"].assert_not_called()
-
-
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
 @pytest.mark.parametrize("provider", ["openai", "litellm"])
-def test_invalid_token_conversion_does_not_probe_or_persist(client, config_io, provider):
-    before = llm_settings.model_dump()
-    body = payload(provider)
-    body["max_tokens"] = "invalid"
+def test_blank_key_retains_and_explicit_clear_survives_restart(saved_config, role, provider, monkeypatch):
+    settings, _, client = saved_config
+    assert save_chat(client, role=role, llm_type=provider).status_code == 201
+    assert save_chat(client, role=role, llm_type=provider, api_key="").status_code == 201
+    field = f"{provider}_{role}_api_key"
+    assert getattr(settings, field) == "synthetic-user-key"
+    assert save_chat(client, role=role, llm_type=provider, api_key=None, clear_api_key=True).status_code == 201
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-return")
+    assert getattr(LLMConfig(), field) is None
+    factory = {
+        "chat": init_llm.get_chat_llm,
+        "extract": init_llm.get_extract_llm,
+        "text2gql": init_llm.get_text2gql_llm,
+    }[role]
+    client_mock = Mock()
+    monkeypatch.setattr(init_llm, "LiteLLMClient" if provider == "litellm" else "OpenAIClient", client_mock)
+    factory(LLMConfig())
+    if provider == "litellm":
+        assert client_mock.call_args.kwargs["api_key"] == "EMPTY"
 
-    response = client.post("/config/llm", json=body)
 
-    assert response.status_code == 500
-    assert llm_settings.model_dump() == before
-    for name in ("http", "generate", "persist"):
-        config_io[name].assert_not_called()
+@pytest.mark.parametrize("kind", ["embedding", "reranker"])
+def test_embedding_reranker_save_clear_are_independent(saved_config, kind):
+    settings, _, client = saved_config
+    url = "/config/embedding" if kind == "embedding" else "/config/rerank"
+    payload = (
+        {"llm_type": "openai", "api_base": "http://embed.invalid/v1", "language_model": "embed"}
+        if kind == "embedding"
+        else {"reranker_type": "siliconflow", "reranker_model": "rerank"}
+    )
+    assert client.post(url, json={**payload, "api_key": "synthetic-other-key"}).status_code == 201
+    assert client.post(url, json=payload).status_code == 201
+    key = "openai_embedding_api_key" if kind == "embedding" else "reranker_api_key"
+    assert getattr(LLMConfig(), key) == "synthetic-other-key"
+    assert client.post(url, json={**payload, "clear_api_key": True}).status_code == 201
+    assert getattr(LLMConfig(), key) is None
+    assert not base_config.settings_path().read_text().count("synthetic-other-key")
+    assert settings.extract_use_chat and settings.text2gql_use_chat
 
 
-@pytest.mark.parametrize("provider", PROVIDERS)
-@pytest.mark.parametrize("role", ROLES)
-def test_ui_callback_changes_only_selected_role(config_io, monkeypatch, provider, role):
-    monkeypatch.setattr(llm_settings, f"{role}_llm_type", provider)
-    before = llm_settings.model_dump()
-    request = payload(provider)
-    arg1 = request["host"] if provider == "ollama/local" else request["api_key"]
-    arg2 = request["port"] if provider == "ollama/local" else request["api_base"]
+@pytest.mark.parametrize("role", ["extract", "text2gql"])
+def test_role_dynamically_follows_chat_and_can_opt_out_and_restore(saved_config, monkeypatch, role):
+    _, _, client = saved_config
+    factory = init_llm.get_extract_llm if role == "extract" else init_llm.get_text2gql_llm
+    constructor = Mock()
+    monkeypatch.setattr(init_llm, "OpenAIClient", constructor)
+    save_chat(client)
+    for name in ("first-chat", "updated-chat"):
+        save_chat(client, api_key="", language_model=name)
+        factory(LLMConfig())
+        assert constructor.call_args.kwargs["model_name"] == name
+    save_chat(client, role=role, language_model="independent")
+    save_chat(client, api_key="", language_model="latest-chat")
+    factory(LLMConfig())
+    assert constructor.call_args.kwargs["model_name"] == "independent"
+    assert client.post(f"/config/llm/{role}/use-chat").status_code == 200
+    factory(LLMConfig())
+    assert constructor.call_args.kwargs["model_name"] == "latest-chat"
+    assert "synthetic-user-key" not in str(LLMConfig().group_values(role))
 
-    result = configs_block.apply_llm_config(role, arg1, arg2, request["language_model"], request["max_tokens"])
 
-    assert result == 200
-    current = llm_settings.model_dump()
-    assert_model_fields(current, provider, role)
-    prefixes = tuple(f"{p}_{role}_" for p in ("openai", "ollama", "litellm"))
-    assert {k: v for k, v in current.items() if not k.startswith(prefixes)} == {
-        k: v for k, v in before.items() if not k.startswith(prefixes)
-    }
-    config_io["generate" if provider == "litellm" else "http"].assert_called_once()
-    config_io["persist"].assert_called_once()
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"api_base": "broken"},
+        {"language_model": ""},
+        {"max_tokens": 0},
+        {"api_base": "http://host:bad"},
+        {"api_base": "https://user:secret@host"},
+        {"api_key": "", "clear_api_key": False, "api_base": "http://changed.invalid"},
+        {"api_key": "new", "clear_api_key": True},
+    ],
+)
+def test_invalid_save_keeps_last_good_connection(saved_config, bad):
+    settings, _, client = saved_config
+    save_chat(client)
+    before, disk = settings.model_dump(), base_config.settings_path().read_bytes()
+    response = save_chat(client, **bad)
+    assert response.status_code in (400, 422)
+    assert settings.model_dump() == before and base_config.settings_path().read_bytes() == disk
+
+
+def test_litellm_model_routing_change_requires_new_key_or_clear(saved_config):
+    _, _, client = saved_config
+    save_chat(client, llm_type="litellm", language_model="openai/old")
+    assert save_chat(client, llm_type="litellm", language_model="anthropic/new", api_key="").status_code == 400
+    assert (
+        save_chat(
+            client, llm_type="litellm", language_model="anthropic/new", api_key=None, clear_api_key=True
+        ).status_code
+        == 201
+    )
+
+
+def test_render_model_form_does_not_activate_provider_or_echo_key(saved_config, monkeypatch):
+    settings, _, client = saved_config
+    save_chat(client)
+    before = settings.model_dump()
+    fields = []
+
+    class Widget:
+        def __init__(self, **kwargs):
+            fields.append(kwargs)
+
+        def click(self, *_args, **_kwargs):
+            pass
+
+    for name in ("Textbox", "Checkbox"):
+        monkeypatch.setattr(configs_block.gr, name, Widget)
+    monkeypatch.setattr(configs_block.gr, "Button", lambda *_: Widget())
+    configs_block._model_form("chat", "litellm")
+    assert settings.model_dump() == before
+    assert all(f.get("value") != "synthetic-user-key" for f in fields)
+
+
+@pytest.mark.parametrize("role", ["chat", "extract", "text2gql", "embedding", "reranker"])
+def test_empty_provider_response_is_a_failed_test_without_undoing_save(saved_config, monkeypatch, role):
+    _, _, client = saved_config
+    save_chat(client)
+    from hugegraph_llm.models.embeddings import init_embedding
+    from hugegraph_llm.models.rerankers.cohere import CohereReranker
+
+    if role == "embedding":
+        monkeypatch.setattr(init_embedding.OpenAIEmbedding, "get_text_embedding", lambda *_: [])
+    elif role == "reranker":
+        client.post(
+            "/config/rerank",
+            json={"reranker_type": "cohere", "reranker_model": "rerank", "cohere_base_url": "http://rerank.invalid/v1"},
+        )
+        monkeypatch.setattr(CohereReranker, "get_rerank_lists", lambda *_: [])
+    else:
+        monkeypatch.setattr(init_llm.OpenAIClient, "generate", lambda *_args, **_kwargs: "")
+    before = base_config.settings_path().read_bytes()
+    assert client.post(f"/config/model/{role}/test").status_code == 502
+    assert base_config.settings_path().read_bytes() == before
+
+
+def test_web_form_saves_selected_provider_and_updates_inheritance_control(saved_config, monkeypatch):
+    from functools import partial
+
+    from fastapi.testclient import TestClient
+
+    from hugegraph_llm.demo.rag_demo import app
+
+    settings, _, _ = saved_config
+    monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "false")
+    monkeypatch.setattr(app.admin_settings, "enable_login", "false")
+    ui = app.init_rag_ui()
+    render = next(
+        function
+        for function in ui.fns.values()
+        if getattr(getattr(getattr(function.fn, "__self__", None), "fn", None), "__name__", None)
+        == "extract_llm_settings"
+    )
+    monkeypatch.setattr(app, "init_rag_ui", lambda: ui)
+    client = TestClient(app.create_app())
+    try:
+        response = client.post(
+            f"/gradio_api/run/{render.api_name}", json={"data": ["litellm"], "session_hash": "scope-web-save"}
+        )
+        assert response.status_code == 200
+        save = next(
+            function
+            for function in ui.state_holder["scope-web-save"].blocks_config.fns.values()
+            if isinstance(function.fn, partial)
+            and function.fn.func is configs_block.save_model_form
+            and function.fn.args == ("extract", "litellm")
+        )
+        response = client.post(
+            f"/gradio_api/run/{save.api_name}",
+            json={
+                "data": ["synthetic-web-key", "http://127.0.0.1:9/v1", "openai/web", "100", False],
+                "session_hash": "scope-web-save",
+            },
+        )
+        assert response.status_code == 200 and response.json()["data"] == [False], response.text
+        loaded = LLMConfig()
+        assert not settings.extract_use_chat and not loaded.extract_use_chat
+        assert loaded.extract_llm_type == "litellm" and loaded.litellm_extract_language_model == "openai/web"
+        assert loaded.litellm_extract_api_key == "synthetic-web-key"
+        assert settings.chat_llm_type == "openai"
+        assert "synthetic-web-key" not in response.text
+    finally:
+        client.close()
+        ui.close()

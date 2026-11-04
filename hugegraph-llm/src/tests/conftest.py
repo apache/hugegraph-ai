@@ -32,6 +32,8 @@ sys.path.insert(0, src_path)
 
 from tests.fixtures.hugegraph_service import hugegraph_service  # noqa: E402
 
+pytest_plugins = ["tests.fixtures.saved_config"]
+
 __all__ = ["hugegraph_client", "hugegraph_service"]
 
 

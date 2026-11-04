@@ -21,16 +21,13 @@ from hugegraph_llm.models.rerankers.siliconflow import SiliconReranker
 
 
 class Rerankers:
-    def __init__(self):
-        self.reranker_type = llm_settings.reranker_type
-
     def get_reranker(self):
-        if self.reranker_type == "cohere":
+        if llm_settings.reranker_type == "cohere":
             return CohereReranker(
                 api_key=llm_settings.reranker_api_key,
                 base_url=llm_settings.cohere_base_url,
                 model=llm_settings.reranker_model,
             )
-        if self.reranker_type == "siliconflow":
+        if llm_settings.reranker_type == "siliconflow":
             return SiliconReranker(api_key=llm_settings.reranker_api_key, model=llm_settings.reranker_model)
         raise Exception("Reranker type is not supported!")

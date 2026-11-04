@@ -16,94 +16,88 @@
 # under the License.
 
 
-import os
 from typing import ClassVar, Literal, Optional
 from urllib.parse import urlsplit
 
-from dotenv import dotenv_values
 from pydantic import AliasChoices, Field
 
-from .models import BaseConfig, base_config
+from .models import BaseConfig
 
 
 class LLMConfig(BaseConfig):
     """LLM settings"""
 
-    credential_endpoints: ClassVar[dict[str, tuple[str, ...]]] = {
-        **{
-            f"openai_{role}_api_key": (f"openai_{role}_api_base",)
-            for role in ("chat", "extract", "text2gql", "embedding")
-        },
-        **{
-            f"litellm_{role}_api_key": (
-                f"litellm_{role}_api_base",
-                f"litellm_{role}_" + ("model" if role == "embedding" else "language_model"),
+    section: ClassVar[str] = "llm"
+    connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {}
+    extract_use_chat: bool = True
+    text2gql_use_chat: bool = True
+
+    @classmethod
+    def _canonical(cls, source):
+        values = super()._canonical(source)
+        raw_names = {k.lower() for k in getattr(source, "env_vars", source())}
+        for role in ("extract", "text2gql"):
+            explicit = {f for f in cls.connection_groups.get(role, ()) if not f.endswith(("tokens", "use_chat"))}
+            if any(f.lower() in raw_names and values.get(f) not in (None, "") for f in explicit):
+                values.setdefault(f"{role}_use_chat", False)
+        return values
+
+    def group_values(self, group):
+        if group in ("extract", "text2gql") and getattr(self, f"{group}_use_chat"):
+            return {f"{group}_use_chat": True}
+        provider = getattr(
+            self,
+            "embedding_type"
+            if group == "embedding"
+            else "reranker_type"
+            if group == "reranker"
+            else f"{group}_llm_type",
+        )
+        prefix = "ollama" if provider == "ollama/local" else provider
+        return {
+            f: getattr(self, f)
+            for f in self.connection_groups[group]
+            if f.startswith(f"{prefix}_{group}_")
+            or f
+            in (
+                f"{group}_llm_type",
+                f"{group}_use_chat",
+                "embedding_type",
+                "reranker_type",
+                "reranker_api_key",
+                "reranker_model",
             )
-            for role in ("chat", "extract", "text2gql", "embedding")
-        },
-        "reranker_api_key": ("reranker_type", "cohere_base_url"),
-    }
+            or (group == "reranker" and provider == "cohere" and f == "cohere_base_url")
+        }
 
-    @classmethod
-    def _endpoint_fields(cls, credential, values=None):
-        if credential == "reranker_api_key":
-            source = cls._direct_environment_source("reranker_type")
-            provider = (values or {}).get(
-                "reranker_type", os.environ[source] if source else cls._file_value("reranker_type")
-            )
-            if provider == "siliconflow":
-                return ("reranker_type",)
-        return super()._endpoint_fields(credential, values)
+    def validate_connection(self, group):
+        if group in ("extract", "text2gql") and getattr(self, f"{group}_use_chat"):
+            return
+        values = self.group_values(group)
+        provider = values.get(f"{group}_llm_type", values.get("embedding_type", values.get("reranker_type")))
+        if provider is None and group == "reranker":
+            return
+        for field, value in values.items():
+            if field.endswith(("_language_model", "_model", "_host")) and not str(value or "").strip():
+                raise ValueError("A model and destination are required")
+            if field.endswith("_port") and (value is None or not 1 <= int(value) <= 65535):
+                raise ValueError("Invalid port")
+            if field.endswith(("_api_base", "_base_url")):
+                if not value and provider == "litellm":
+                    continue  # LiteLLM can resolve the destination from its model name.
+                parsed = urlsplit(str(value or ""))
+                if (
+                    parsed.scheme not in ("http", "https")
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                    or parsed.fragment
+                ):
+                    raise ValueError("An absolute HTTP(S) URL without embedded credentials is required")
+                _ = parsed.port
 
-    @classmethod
-    def _generic_key_is_scoped(cls, field):
-        source = cls._direct_environment_source(field)
-        if not field.endswith("_api_key") or not source or source.upper() != "OPENAI_API_KEY":
-            return True
-        base_field = field.removesuffix("_api_key") + "_api_base"
-        if cls._direct_environment_source(base_field):
-            return True
-        values = {key.upper(): value for key, value in dotenv_values(base_config.env_path).items()}
-        endpoint = values.get(base_field.upper()) or values.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
-        try:
-            parsed = urlsplit(endpoint)
-            return parsed.scheme == "https" and parsed.hostname == "api.openai.com" and parsed.port in (None, 443)
-        except ValueError:
-            return False
-
-    @classmethod
-    def _credential_source(cls, field):
-        return cls._direct_environment_source(field) if cls._generic_key_is_scoped(field) else None
-
-    @classmethod
-    def settings_customise_sources(cls, *args, **kwargs):
-        sources = super().settings_customise_sources(*args, **kwargs)
-
-        def scoped_environment():
-            values = sources[1]()
-            file_values = sources[2]()
-            init_values = sources[0]()
-            for role in ("chat", "extract", "text2gql"):
-                field = f"openai_{role}_api_key"
-                if not cls._generic_key_is_scoped(field):
-                    key = field.upper()
-                    provider_field = f"{role}_llm_type"
-                    provider = init_values.get(
-                        provider_field, values.get(provider_field, file_values.get(provider_field, "openai"))
-                    )
-                    if (
-                        key not in file_values
-                        and key not in init_values
-                        and field not in init_values
-                        and provider == "openai"
-                    ):
-                        raise ValueError(
-                            f"{key} is required for a file-configured custom endpoint; a generic process key cannot be forwarded there"
-                        )
-                    values.pop(key, None)
-            return values
-
-        return sources[0], scoped_environment, *sources[2:]
+    def effective_role(self, role):
+        return "chat" if role in ("extract", "text2gql") and getattr(self, f"{role}_use_chat") else role
 
     language: Literal["EN", "CN"] = "EN"
     chat_llm_type: Literal["openai", "litellm", "ollama/local"] = "openai"
@@ -145,9 +139,9 @@ class LLMConfig(BaseConfig):
         None, validation_alias=AliasChoices("OPENAI_EMBEDDING_API_KEY", "OPENAI_EMBEDDING_API_KEY")
     )
     openai_embedding_model: Optional[str] = "text-embedding-3-small"
-    openai_chat_tokens: int = 8192
-    openai_extract_tokens: int = 256
-    openai_text2gql_tokens: int = 4096
+    openai_chat_tokens: int = Field(8192, ge=1)
+    openai_extract_tokens: int = Field(256, ge=1)
+    openai_text2gql_tokens: int = Field(4096, ge=1)
     # 2. Rerank settings
     cohere_base_url: Optional[str] = Field(
         "https://api.cohere.com/v1/rerank", validation_alias=AliasChoices("COHERE_BASE_URL", "CO_API_URL")
@@ -171,15 +165,25 @@ class LLMConfig(BaseConfig):
     litellm_chat_api_key: Optional[str] = None
     litellm_chat_api_base: Optional[str] = None
     litellm_chat_language_model: Optional[str] = "openai/gpt-4.1-mini"
-    litellm_chat_tokens: int = 8192
+    litellm_chat_tokens: int = Field(8192, ge=1)
     litellm_extract_api_key: Optional[str] = None
     litellm_extract_api_base: Optional[str] = None
     litellm_extract_language_model: Optional[str] = "openai/gpt-4.1-mini"
-    litellm_extract_tokens: int = 256
+    litellm_extract_tokens: int = Field(256, ge=1)
     litellm_text2gql_api_key: Optional[str] = None
     litellm_text2gql_api_base: Optional[str] = None
     litellm_text2gql_language_model: Optional[str] = "openai/gpt-4.1-mini"
-    litellm_text2gql_tokens: int = 4096
+    litellm_text2gql_tokens: int = Field(4096, ge=1)
     litellm_embedding_api_key: Optional[str] = None
     litellm_embedding_api_base: Optional[str] = None
     litellm_embedding_model: Optional[str] = "openai/text-embedding-3-small"
+
+
+LLMConfig.connection_groups = {
+    **{
+        role: tuple(f for f in LLMConfig.model_fields if f.startswith(f"{role}_") or f"_{role}_" in f)
+        for role in ("chat", "extract", "text2gql")
+    },
+    "embedding": tuple(f for f in LLMConfig.model_fields if f.startswith("embedding_") or "_embedding_" in f),
+    "reranker": tuple(f for f in LLMConfig.model_fields if f.startswith(("reranker_", "cohere_"))),
+}

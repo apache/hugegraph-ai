@@ -256,7 +256,7 @@ The system supports both English and Chinese prompts. To switch languages:
 - `LANGUAGE=CN` - Chinese prompts (中文提示词)
 
 > [!NOTE]
-> Configuration changes are automatically saved when using the web interface. For externally managed settings, edit the source configuration and restart. Environment-managed fields cannot be overridden by UI saves.
+> Save model connections in the web interface or API; test connectivity separately. Saved complete connections in `settings.yaml` override deployment defaults across restarts/upgrades. Blank keys retain the saved key; use the explicit clear action to remove it. Unconfigured extraction/Text2GQL follow Chat. Persist the writable resource directory (or `HUGEGRAPH_LLM_SETTINGS_PATH`); readonly `.env`/Secret mounts remain supported as bootstrap defaults. See [configuration rules](config.md#网页api-配置与部署默认值).
 
 ### Legacy Thin API writes
 

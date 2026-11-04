@@ -25,7 +25,16 @@ import nltk
 from nltk.corpus import stopwords
 
 from hugegraph_llm.config import resource_path
+from hugegraph_llm.config.paths import PACKAGED_RESOURCES
 from hugegraph_llm.utils.log import log
+
+
+def _add_resource_search_paths():
+    """Search user corpora first, then the immutable packaged fallback."""
+    for root in (resource_path, PACKAGED_RESOURCES):
+        directory = os.path.join(root, "nltk_data")
+        if directory not in nltk.data.path:
+            nltk.data.path.append(directory)
 
 
 class NLTKHelper:
@@ -36,9 +45,7 @@ class NLTKHelper:
 
     def stopwords(self, lang: str = "chinese") -> List[str]:
         """Get stopwords."""
-        _hugegraph_source_dir = os.path.join(resource_path, "nltk_data")
-        if _hugegraph_source_dir not in nltk.data.path:
-            nltk.data.path.append(_hugegraph_source_dir)
+        _add_resource_search_paths()
         if self._stopwords.get(lang) is None:
             cache_dir = self.get_cache_dir()
             nltk_data_dir = os.environ.get("NLTK_DATA", cache_dir)
@@ -70,9 +77,7 @@ class NLTKHelper:
         return self._stopwords[lang]
 
     def check_nltk_data(self):
-        _hugegraph_source_dir = os.path.join(resource_path, "nltk_data")
-        if _hugegraph_source_dir not in nltk.data.path:
-            nltk.data.path.append(_hugegraph_source_dir)
+        _add_resource_search_paths()
 
         cache_dir = self.get_cache_dir()
         nltk_data_dir = os.environ.get("NLTK_DATA", cache_dir)

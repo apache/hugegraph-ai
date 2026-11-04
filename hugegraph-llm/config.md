@@ -29,8 +29,11 @@
 
 启动配置优先级：进程环境变量（包括 Secret） > `.env` > 内置默认值。
 同一来源内，字段专用变量优先于通用 provider 变量。例如
-`OPENAI_CHAT_API_KEY` 优先于同来源的 `OPENAI_API_KEY`；进程中的通用 key
-仍会覆盖文件里旧的专用 key。启动不改写 `.env`，也不将其注入 `os.environ`。
+`OPENAI_CHAT_API_KEY` 优先于同来源的 `OPENAI_API_KEY`。当端点是官方 OpenAI
+端点，或端点由进程环境变量管理时，进程中的通用 key 会覆盖文件里的旧专用 key。
+对于仅由 `.env` 配置的自定义端点，保留文件中的配套专用 key；缺少时不转发通用 key，
+实际启用 OpenAI 的角色会拒绝启动。详见文末的端点保护边界。
+启动不改写 `.env`，也不将其注入 `os.environ`。
 
 使用 `HUGEGRAPH_LLM_RESOURCE_PATH=/var/lib/hugegraph-rag` 可以将 `.env`、
 `demo/config_prompt.yaml`、索引和生成文件放在同一个可写挂载目录中。缺少的示例文件直接从镜像内置资源读取，启动不复制资源或生成缺失配置。只有显式保存或数据生成操作需要写入挂载卷。

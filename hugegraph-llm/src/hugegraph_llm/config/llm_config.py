@@ -16,7 +16,7 @@
 # under the License.
 
 
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
@@ -28,13 +28,22 @@ from .models import BaseConfig, base_config
 class LLMConfig(BaseConfig):
     """LLM settings"""
 
+    credential_endpoints: ClassVar[dict[str, tuple[str, ...]]] = {
+        **{
+            f"{provider}_{role}_api_key": (f"{provider}_{role}_api_base",)
+            for provider in ("openai", "litellm")
+            for role in ("chat", "extract", "text2gql", "embedding")
+        },
+        "reranker_api_key": ("reranker_type", "cohere_base_url"),
+    }
+
     @classmethod
     def _generic_key_is_scoped(cls, field):
-        source = super().environment_source(field)
+        source = cls._direct_environment_source(field)
         if not field.endswith("_api_key") or not source or source.upper() != "OPENAI_API_KEY":
             return True
         base_field = field.removesuffix("_api_key") + "_api_base"
-        if super().environment_source(base_field):
+        if cls._direct_environment_source(base_field):
             return True
         values = {key.upper(): value for key, value in dotenv_values(base_config.env_path).items()}
         endpoint = values.get(base_field.upper()) or values.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
@@ -42,17 +51,8 @@ class LLMConfig(BaseConfig):
         return parsed.scheme == "https" and parsed.hostname == "api.openai.com" and parsed.port in (None, 443)
 
     @classmethod
-    def environment_source(cls, field):
-        source = super().environment_source(field) if cls._generic_key_is_scoped(field) else None
-        if not source and field.endswith("_api_base"):
-            key_field = field.removesuffix("_api_base") + "_api_key"
-            # A managed credential also owns its destination. File-scoped keys
-            # remain editable alongside the endpoint in the same file.
-            if cls._generic_key_is_scoped(key_field):
-                source = super().environment_source(key_field)
-        if not source and field == "cohere_base_url":
-            source = super().environment_source("reranker_api_key")
-        return source
+    def _credential_source(cls, field):
+        return cls._direct_environment_source(field) if cls._generic_key_is_scoped(field) else None
 
     @classmethod
     def settings_customise_sources(cls, *args, **kwargs):
@@ -70,7 +70,12 @@ class LLMConfig(BaseConfig):
                     provider = init_values.get(
                         provider_field, values.get(provider_field, file_values.get(provider_field, "openai"))
                     )
-                    if key not in file_values and provider == "openai":
+                    if (
+                        key not in file_values
+                        and key not in init_values
+                        and field not in init_values
+                        and provider == "openai"
+                    ):
                         raise ValueError(
                             f"{key} is required for a file-configured custom endpoint; a generic process key cannot be forwarded there"
                         )

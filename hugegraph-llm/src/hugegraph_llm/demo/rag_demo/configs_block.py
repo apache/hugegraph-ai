@@ -507,11 +507,15 @@ def create_configs_block() -> list:
                     llm_config_input = [gr.Textbox(value="", visible=False) for _ in range(4)]
                 llm_config_button = gr.Button("Apply configuration")
                 llm_config_button.click(apply_llm_config_with_chat_op, inputs=llm_config_input)
-                # Cascade only when the effective role configuration has no key.
-                if not _role_has_credentials("text2gql"):
-                    llm_config_button.click(apply_llm_config_with_text2gql_op, inputs=llm_config_input)
-                if not _role_has_credentials("extract"):
-                    llm_config_button.click(apply_llm_config_with_extract_op, inputs=llm_config_input)
+                # A process-owned chat key must not become file-owned in another role.
+                chat_key_managed = llm_type in ("openai", "litellm") and llm_settings.environment_source(
+                    f"{llm_type}_chat_api_key"
+                )
+                if not chat_key_managed:
+                    if not _role_has_credentials("text2gql"):
+                        llm_config_button.click(apply_llm_config_with_text2gql_op, inputs=llm_config_input)
+                    if not _role_has_credentials("extract"):
+                        llm_config_button.click(apply_llm_config_with_extract_op, inputs=llm_config_input)
 
         with gr.Tab(label="mini_tasks"):
             extract_llm_dropdown = gr.Dropdown(

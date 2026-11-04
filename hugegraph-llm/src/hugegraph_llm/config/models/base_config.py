@@ -21,8 +21,9 @@ import os
 import tempfile
 from pathlib import Path
 from typing import ClassVar, get_args
+from urllib.parse import urlsplit
 
-from dotenv import set_key
+from dotenv import dotenv_values, set_key
 from pydantic import AliasChoices, PrivateAttr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -69,46 +70,122 @@ class BaseConfig(BaseSettings):
     )
     _saved_values: dict = PrivateAttr(default_factory=dict)
     allow_empty_environment: ClassVar[frozenset[str]] = frozenset()
+    credential_endpoints: ClassVar[dict[str, tuple[str, ...]]] = {}
+
+    @classmethod
+    def _source_names(cls, field):
+        alias = cls.model_fields[field].validation_alias
+        names = alias.choices if isinstance(alias, AliasChoices) else [alias or field]
+        return tuple(dict.fromkeys([*names, field]))
 
     @classmethod
     def _allows_empty(cls, field: str, process: bool) -> bool:
+        if process:
+            return field in cls.allow_empty_environment
         annotation = cls.model_fields[field].annotation
-        optional_string = str in get_args(annotation)
-        return optional_string or (not process and annotation is str) or field in cls.allow_empty_environment
+        return annotation is str or str in get_args(annotation)
+
+    @classmethod
+    def _file_value(cls, field, values=None):
+        if values is None:
+            values = {key.upper(): value for key, value in dotenv_values(env_path).items()}
+        for name in cls._source_names(field):
+            if (value := values.get(name.upper())) is not None:
+                return value
+        return cls.model_fields[field].default
+
+    @staticmethod
+    def _endpoint_identity(field, value):
+        if value is None:
+            return None
+        if field.endswith("_port"):
+            return int(value)
+        value = str(value).strip()
+        if field.endswith("_host"):
+            return value.lower()
+        parsed = urlsplit(value if "://" in value else "http://" + value)
+        scheme = parsed.scheme.lower()
+        port = parsed.port if parsed.port is not None else {"http": 80, "https": 443}.get(scheme)
+        return (scheme, parsed.hostname, port, parsed.path.rstrip("/"), parsed.query, parsed.username, parsed.password)
+
+    @classmethod
+    def _direct_environment_source(cls, field):
+        environment = {name.upper(): name for name in os.environ}
+        for name in cls._source_names(field):
+            if source := environment.get(name.upper()):
+                if os.environ[source] or cls._allows_empty(field, True):
+                    return source
+        return None
+
+    @classmethod
+    def _credential_source(cls, field):
+        return cls._direct_environment_source(field)
+
+    @classmethod
+    def _changed_endpoint_source(cls, credential):
+        if cls._credential_source(credential):
+            return None
+        fields = cls.credential_endpoints[credential]
+        sources = {field: cls._direct_environment_source(field) for field in fields}
+        if not any(sources.values()):
+            return None
+        values = {key.upper(): value for key, value in dotenv_values(env_path).items()}
+        for field, source in sources.items():
+            previous = cls._file_value(field, values)
+            effective = os.environ[source] if source else previous
+            if cls._endpoint_identity(field, effective) != cls._endpoint_identity(field, previous):
+                return next(source for source in sources.values() if source)
+        return None
+
+    @classmethod
+    def environment_source(cls, field: str) -> str | None:
+        """A managed secret owns its target; a changed target isolates old secrets."""
+        if field in cls.credential_endpoints:
+            return cls._credential_source(field) or cls._changed_endpoint_source(field)
+        if source := cls._direct_environment_source(field):
+            return source
+        for credential, endpoints in cls.credential_endpoints.items():
+            if field in endpoints and (source := cls._credential_source(credential)):
+                return source
+        return None
 
     @classmethod
     def settings_customise_sources(
         cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
     ):
+        # Remove placeholders before AliasChoices selects a value, so an empty
+        # specific process name cannot hide a nonempty generic process alias.
+        allowed = {name.upper() for field in cls.allow_empty_environment for name in cls._source_names(field)}
+        env_settings.env_vars = {
+            name: value for name, value in env_settings.env_vars.items() if value != "" or name.upper() in allowed
+        }
+
         def normalize(source, process):
             values = source()
-            for field, definition in cls.model_fields.items():
-                if cls._allows_empty(field, process):
-                    continue
-                alias = definition.validation_alias
-                names = alias.choices if isinstance(alias, AliasChoices) else [alias or field]
-                for name in [field, *names]:
-                    if isinstance(name, str) and values.get(name) == "":
-                        values.pop(name)
+            for field in cls.model_fields:
+                if not cls._allows_empty(field, process):
+                    for name in cls._source_names(field):
+                        if values.get(name) == "":
+                            values.pop(name)
             return values
 
-        return (
-            init_settings,
-            lambda: normalize(env_settings, True),
-            lambda: normalize(dotenv_settings, False),
-            file_secret_settings,
-        )
+        def scoped_environment():
+            values = normalize(env_settings, True)
+            for credential in cls.credential_endpoints:
+                if source := cls._changed_endpoint_source(credential):
+                    values[cls._source_names(credential)[0]] = (
+                        "" if cls.model_fields[credential].annotation is str else None
+                    )
+                    if cls._file_value(credential):
+                        log.warning(
+                            "Ignoring stored %s because its endpoint changed through %s; "
+                            "configure the new credential explicitly",
+                            credential.upper(),
+                            source,
+                        )
+            return values
 
-    @classmethod
-    def environment_source(cls, field: str) -> str | None:
-        alias = cls.model_fields[field].validation_alias
-        names = alias.choices if isinstance(alias, AliasChoices) else [alias or field]
-        environment = {name.upper(): name for name in os.environ}
-        for name in names:
-            if isinstance(name, str) and (source := environment.get(name.upper())):
-                if os.environ[source] or cls._allows_empty(field, True):
-                    return source
-        return None
+        return init_settings, scoped_environment, lambda: normalize(dotenv_settings, False), file_secret_settings
 
     def __init__(self, **data):
         try:

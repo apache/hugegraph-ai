@@ -103,8 +103,8 @@ class BaseConfig(BaseSettings):
     """Load deployment defaults and explicit saved connections without startup writes.
 
     Constructor values win, followed by saved application settings, process env,
-    dotenv and defaults. A connection comes wholly from one source: its key can
-    never be silently combined with a lower-priority destination.
+    dotenv and defaults. Deployment credentials may accompany file endpoints;
+    a higher-priority destination never inherits a lower-priority credential.
     """
 
     model_config = SettingsConfigDict(
@@ -115,9 +115,22 @@ class BaseConfig(BaseSettings):
         populate_by_name=True,
     )
     _saved_values: dict = PrivateAttr(default_factory=dict)
+    _explicit_secret_updates: set[str] = PrivateAttr(default_factory=set)
+    _cleared_secrets: set[str] = PrivateAttr(default_factory=set)
     section: ClassVar[str] = ""
     connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {}
     allow_empty_environment: ClassVar[frozenset[str]] = frozenset()
+
+    @staticmethod
+    def _is_secret(field):
+        return field.endswith(("_api_key", "_pwd", "_password"))
+
+    @staticmethod
+    def _is_destination(field):
+        return field.endswith(("_api_base", "_base_url", "_url", "_host", "_port", "_llm_type")) or field in (
+            "embedding_type",
+            "reranker_type",
+        )
 
     @classmethod
     def _source_names(cls, field):
@@ -144,15 +157,30 @@ class BaseConfig(BaseSettings):
         if not isinstance(section, dict) or any(not isinstance(v, dict) for v in section.values()):
             raise ValueError("Invalid saved configuration section")
         values = {}
-        for name, group in section.items():
+        for name, stored_group in section.items():
+            group = dict(stored_group)
+            refs = group.pop("_env_secrets", {})
             allowed = (
                 set(cls.connection_groups.get(name, ()))
                 if name != "options"
                 else set(cls.model_fields) - {f for fields in cls.connection_groups.values() for f in fields}
             )
-            if set(group) - allowed:
+            if set(group) - allowed or not isinstance(refs, dict) or set(refs) - allowed:
                 raise ValueError("Unknown field in saved configuration")
             values.update(group)
+            for field, env_name in refs.items():
+                if (
+                    not cls._is_secret(field)
+                    or not isinstance(env_name, str)
+                    or env_name.lower() not in {n.lower() for n in cls._source_names(field)}
+                    or field in group
+                ):
+                    raise ValueError("Invalid environment secret reference")
+                # A removed Secret must never revive an older dotenv credential.
+                value = next((v for k, v in os.environ.items() if k.lower() == env_name.lower()), None)
+                values[field] = (
+                    value if value is not None else ("" if isinstance(cls.model_fields[field].default, str) else None)
+                )
         return values
 
     @classmethod
@@ -173,11 +201,37 @@ class BaseConfig(BaseSettings):
                 cls._canonical(file_secret_settings),
             ]
             for fields in cls.connection_groups.values():
-                owner = next((i for i, layer in enumerate(layers) if any(f in layer for f in fields)), None)
+                # Saved app connections own their non-secret fields and explicit
+                # credential/reference. Deployment defaults combine by field.
+                owner = next((i for i in (0, 1) if any(f in layers[i] for f in fields)), None)
                 if owner is not None:
                     for layer in layers[owner + 1 :]:
                         for field in fields:
                             layer.pop(field, None)
+                else:
+                    # An environment endpoint override must not receive a key
+                    # intended for a lower-priority file endpoint.
+                    destinations = [
+                        f
+                        for f in fields
+                        if f in layers[2]
+                        and cls._is_destination(f)
+                        and layers[2][f]
+                        != next((layer[f] for layer in layers[3:] if f in layer), cls.model_fields[f].default)
+                    ]
+                    for field in fields:
+                        if not cls._is_secret(field) or field in layers[2]:
+                            continue
+                        provider = field.split("_", 1)[0]
+                        if any(
+                            d.endswith("_llm_type")
+                            or d in ("embedding_type", "reranker_type")
+                            or d.split("_", 1)[0] == provider
+                            or cls.section in ("graph", "index")
+                            for d in destinations
+                        ):
+                            for layer in layers[3:]:
+                                layer.pop(field, None)
             values = {}
             for layer in reversed(layers):
                 values.update(layer)
@@ -189,11 +243,38 @@ class BaseConfig(BaseSettings):
         data.setdefault("_env_file", env_path)
         super().__init__(**data)
         self._saved_values = self.model_dump()
+        self._refresh_cleared_secrets()
+
+    def _refresh_cleared_secrets(self):
+        section = _read_settings().get(self.section, {}) if self.section else {}
+        self._cleared_secrets = {
+            field
+            for group in section.values()
+            if isinstance(group, dict)
+            for field, value in group.items()
+            if self._is_secret(field) and value in (None, "")
+        }
+        env = {name.lower(): value for name, value in os.environ.items()}
+        for group in section.values():
+            if isinstance(group, dict):
+                for field, name in group.get("_env_secrets", {}).items():
+                    if not env.get(name.lower()):
+                        self._cleared_secrets.add(field)
+
+    def secret_is_explicitly_cleared(self, field: str) -> bool:
+        return field in self._cleared_secrets
+
+    def mark_secret_update(self, field: str):
+        self._explicit_secret_updates.add(field)
 
     @classmethod
     def _process_source(cls, field):
-        names = {name.lower() for name in cls._source_names(field)}
-        return next((name for name, value in os.environ.items() if name.lower() in names and value), None)
+        env = {name.lower(): (name, value) for name, value in os.environ.items()}
+        for name in cls._source_names(field):
+            match = env.get(name.lower())
+            if match and (match[1] or field in cls.allow_empty_environment):
+                return match[0]
+        return None
 
     def environment_source(self, field: str) -> str | None:
         # Saved application connections can override bootstrap environment;
@@ -229,18 +310,39 @@ class BaseConfig(BaseSettings):
                 grouped.update(fields)
                 if group == connection_group or set(changed).intersection(fields):
                     self.validate_connection(group)
-                    section[group] = self.group_values(group)
+                    values = self.group_values(group)
+                    previous = section.get(group, {})
+                    old_refs = previous.get("_env_secrets", {})
+                    refs = {}
+                    for field in list(values):
+                        if not self._is_secret(field):
+                            continue
+                        explicit = field in changed or field in self._explicit_secret_updates
+                        if not explicit and field in old_refs:
+                            refs[field] = old_refs[field]
+                            values.pop(field)
+                        elif not explicit and field not in previous and (source := self._process_source(field)):
+                            refs[field] = source
+                            values.pop(field)
+                        elif not explicit and field not in previous and values[field] is None:
+                            values.pop(field)
+                    if refs:
+                        values["_env_secrets"] = refs
+                    section[group] = values
             options = {k: getattr(self, k) for k in changed if k not in grouped}
             if options:
                 section.setdefault("options", {}).update(options)
             _write_file(settings_path(), yaml.safe_dump(document, allow_unicode=True, sort_keys=False))
         self._saved_values = self.model_dump()
+        self._explicit_secret_updates.clear()
+        self._refresh_cleared_secrets()
 
     def check_env(self):
         loaded = type(self)()
         for field, value in loaded.model_dump().items():
             setattr(self, field, value)
         self._saved_values = self.model_dump()
+        self._refresh_cleared_secrets()
 
     def generate_env(self):
         """Explicit export, omitting unset fields and process-injected secrets."""

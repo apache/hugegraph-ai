@@ -40,10 +40,12 @@ def _transactional_config_update(settings_getter, connection_group=None):
             settings = settings_getter()
             with runtime_config_lock:
                 original_values = settings.model_dump()
+                original_secret_updates = settings._explicit_secret_updates.copy()
                 try:
                     status_code = func(*args, **kwargs)
                     if not 200 <= status_code < 300:
                         _restore_config(settings, original_values)
+                        settings._explicit_secret_updates = original_secret_updates
                         return status_code
                     if connection_group is None:
                         settings.update_env()
@@ -52,6 +54,7 @@ def _transactional_config_update(settings_getter, connection_group=None):
                         settings.update_env(connection_group=group)
                 except Exception:
                     _restore_config(settings, original_values)
+                    settings._explicit_secret_updates = original_secret_updates
                     raise
                 gr.Info("Configured!")
                 return status_code
@@ -179,17 +182,29 @@ def _saved_key(group, key_field, supplied, destination_fields, clear=False):
     if clear:
         if supplied:
             raise ValueError("Supply a key or clear it, not both")
+        llm_settings.mark_secret_update(key_field)
         return None
     if supplied:
+        llm_settings.mark_secret_update(key_field)
         return supplied
     previous = llm_settings._saved_values
+    provider_field = (
+        "embedding_type" if group == "embedding" else "reranker_type" if group == "reranker" else f"{group}_llm_type"
+    )
+    old_provider = previous.get(provider_field)
+    old_key = "reranker_api_key" if group == "reranker" else f"{old_provider}_{group}_api_key"
+    # LiteLLM may pick up provider credentials directly from the environment,
+    # even when its role-specific key field is empty.
+    might_have_key = bool(previous.get(old_key)) or old_provider == "litellm"
+    if old_provider == getattr(llm_settings, provider_field):
+        might_have_key = might_have_key or bool(previous.get(key_field))
     for field in destination_fields:
         old, new = previous.get(field), getattr(llm_settings, field)
         if field.startswith("litellm_") and field.endswith(("_language_model", "_model")):
             # A provider/model name can change within one provider without changing
             # where its key goes. An unqualified name remains an explicit route.
             old, new = str(old or "").split("/", 1)[0], str(new or "").split("/", 1)[0]
-        if old != new and previous.get(key_field):
+        if old != new and might_have_key:
             raise ValueError("Changing the model destination requires a new API key or explicit clear")
     return previous.get(key_field)
 
@@ -253,6 +268,14 @@ def apply_graph_config(url, name, user, pwd, gs, origin_call=None) -> int:
     # Add URL prefix automatically to improve the user experience
     if url and not (url.startswith("http://") or url.startswith("https://")):
         url = f"http://{url}"
+
+    previous = huge_settings._saved_values
+    if not pwd:
+        if previous.get("graph_pwd") and url != previous.get("graph_url"):
+            raise ValueError("Changing the graph destination requires re-entering its password")
+        pwd = previous.get("graph_pwd", "")
+    else:
+        huge_settings.mark_secret_update("graph_pwd")
 
     huge_settings.graph_url = url
     huge_settings.graph_name = name
@@ -463,10 +486,10 @@ def create_configs_block() -> list:
                 ),
                 gr.Textbox(
                     interactive=True,
-                    value=huge_settings.graph_pwd,
+                    value="",
                     label="pwd",
                     type="password",
-                    info="Password for graph server auth",
+                    info="Leave blank to keep the current password; re-enter it when changing the server address.",
                 ),
                 gr.Textbox(
                     interactive=True,

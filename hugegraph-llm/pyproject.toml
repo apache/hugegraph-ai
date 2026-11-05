@@ -44,7 +44,7 @@ dependencies = [
     "regex>=2026.9",
 
     # LLM specific dependencies
-    "openai>=2.20,<3", # LiteLLM currently requires OpenAI 2.x.
+    "openai>=2.20,<3",
     "ollama>=0.6.3,<1",
     "tenacity>=9.2,<10",
     "tiktoken>=0.14,<1",
@@ -59,7 +59,6 @@ dependencies = [
     "openpyxl>=3.1.5,<4",
     "pydantic-settings>=2.16,<3",
     "apscheduler>=3.11,<4",
-    "litellm>=1.106.5,<2",
     "fastapi>=0.136,<1",
     "httpx>=0.28,<1",
     "starlette>=1.0.1,<2",

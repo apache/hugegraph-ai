@@ -15,13 +15,32 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Optional
+from typing import ClassVar, Optional
+
+from pydantic import field_validator
 
 from .models import BaseConfig
 
 
 class HugeGraphConfig(BaseConfig):
     """HugeGraph settings"""
+
+    allow_empty_environment: ClassVar[frozenset[str]] = frozenset({"graph_pwd"})
+    section: ClassVar[str] = "graph"
+    connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {
+        'connection': ('graph_url', 'graph_name', 'graph_user', 'graph_pwd', 'graph_space')
+    }
+
+    @field_validator("graph_url", mode="before")
+    @classmethod
+    def normalize_graph_url(cls, value):
+        if isinstance(value, str) and value.strip():
+            value = value.strip()
+            if "://" not in value:
+                value = "http://" + value
+            scheme, rest = value.split("://", 1)
+            return scheme.lower() + "://" + rest
+        return value
 
     # graph server config
     graph_url: str = "127.0.0.1:8080"

@@ -345,3 +345,35 @@ def test_old_prompt_config_without_schema_generator_examples_still_loads(
 
     assert config.schema_generator_query_examples == ""
     assert config.schema_generator_few_shot_examples == ""
+
+
+@pytest.mark.parametrize("invalid", ["{}", "null", '"wrong shape"'])
+def test_invalid_external_query_shape_uses_packaged_examples(tmp_path, invalid):
+    from hugegraph_llm.document.schema_examples import load_query_examples
+
+    mounted = tmp_path / "mounted"
+    bundled = tmp_path / "bundled"
+    mounted.mkdir()
+    bundled.mkdir()
+    _write_bundled_examples(mounted)
+    _write_bundled_examples(bundled)
+    (mounted / "prompt_examples/query_examples.json").write_text(invalid)
+    result = load_query_examples(resource_path=str(mounted), fallback_resource_path=str(bundled))
+    assert json.loads(result)[0]["description"] == "Find all persons"
+    assert (mounted / "prompt_examples/query_examples.json").read_text() == invalid
+
+
+@pytest.mark.parametrize("invalid", ["[]", "null", '"wrong shape"'])
+def test_invalid_external_schema_shape_uses_packaged_examples(tmp_path, invalid):
+    from hugegraph_llm.document.schema_examples import load_schema_fewshot_examples
+
+    mounted = tmp_path / "mounted"
+    bundled = tmp_path / "bundled"
+    mounted.mkdir()
+    bundled.mkdir()
+    _write_bundled_examples(mounted)
+    _write_bundled_examples(bundled)
+    (mounted / "prompt_examples/schema_examples.json").write_text(invalid)
+    result = load_schema_fewshot_examples(resource_path=str(mounted), fallback_resource_path=str(bundled))
+    assert json.loads(result) == {"vertexlabels": [], "edgelabels": []}
+    assert (mounted / "prompt_examples/schema_examples.json").read_text() == invalid

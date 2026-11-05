@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
 import time
 from typing import Any
 from uuid import uuid4
@@ -30,6 +29,7 @@ from hugegraph_llm.api.models.rag_requests import (
 )
 from hugegraph_llm.api.models.rag_response import ThinAPIResponse
 from hugegraph_llm.config import admin_settings, huge_settings, prompt, runtime_config_lock
+from hugegraph_llm.config.admin_config import AdminConfig
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.log import log
@@ -113,8 +113,7 @@ def _wrap_flow_call(flow_name: FlowName, *args: Any, **kwargs: Any) -> dict[str,
 def _thin_write_disabled() -> dict[str, Any] | None:
     """Keep legacy write endpoints fail-closed unless authenticated and enabled."""
     login_enabled = admin_settings.is_login_enabled()
-    configured_write_flag = os.getenv("HUGEGRAPH_LLM_ENABLE_THIN_WRITES", "false")
-    writes_enabled = str(configured_write_flag).strip().lower() == "true"
+    writes_enabled = AdminConfig().hugegraph_llm_enable_thin_writes
     if login_enabled and writes_enabled:
         return None
     return _envelope_err(

@@ -479,14 +479,11 @@ def install_sdk_responses(monkeypatch, provider, steps):
             usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
         )
 
-    if provider == "openai":
-        monkeypatch.setattr(Completions, "create", lambda _self, **kwargs: completion(**kwargs))
-    else:
-        monkeypatch.setattr("hugegraph_llm.models.llms.litellm.completion", completion)
+    monkeypatch.setattr(Completions, "create", lambda _self, **kwargs: completion(**kwargs))
     return requests
 
 
-@pytest.mark.parametrize("provider", ["openai", "litellm"])
+@pytest.mark.parametrize("provider", ["openai"])
 @pytest.mark.parametrize(
     ("stage", "steps", "counts", "retained_name"),
     [
@@ -533,7 +530,7 @@ def test_sdk_length_reason_reaches_http_with_latest_graph(
     )
 
 
-@pytest.mark.parametrize("provider", ["openai", "litellm"])
+@pytest.mark.parametrize("provider", ["openai"])
 def test_sdk_limit_is_preserved_for_legacy_but_omitted_for_reviewed_requests(client, monkeypatch, provider):
     requests = install_sdk_responses(
         monkeypatch,
@@ -552,7 +549,7 @@ def test_sdk_limit_is_preserved_for_legacy_but_omitted_for_reviewed_requests(cli
     )
 
 
-@pytest.mark.parametrize("provider", ["openai", "litellm"])
+@pytest.mark.parametrize("provider", ["openai"])
 @pytest.mark.parametrize("options", [{}, {"review_options": None}])
 @pytest.mark.parametrize(
     ("truncated_content", "expected_names"),

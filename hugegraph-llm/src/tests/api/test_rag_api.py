@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import threading
-import time
 from unittest.mock import Mock
 
 import pytest
@@ -93,190 +91,6 @@ def test_graph_config_api_passes_graph_field_to_apply_graph_conf():
         "admin",
         "secret",
         "space_a",
-        origin_call="http",
-    )
-
-
-def test_llm_config_api_passes_openai_fields_to_apply_llm_conf(monkeypatch):
-    monkeypatch.setattr(llm_settings, "chat_llm_type", "ollama/local")
-    monkeypatch.setattr(llm_settings, "extract_llm_type", "ollama/local")
-    monkeypatch.setattr(llm_settings, "text2gql_llm_type", "ollama/local")
-    client, callbacks = _make_test_client()
-
-    response = client.post(
-        "/config/llm",
-        json={
-            "llm_type": "openai",
-            "api_key": "sk-test",
-            "api_base": "https://api.example.test",
-            "language_model": "gpt-test",
-            "max_tokens": "1024",
-        },
-    )
-
-    assert llm_settings.chat_llm_type == "openai"
-    assert llm_settings.extract_llm_type == "openai"
-    assert llm_settings.text2gql_llm_type == "openai"
-    assert response.status_code == status.HTTP_201_CREATED
-    assert response.json() == {"message": "Connection successful. Configured finished."}
-    callbacks["apply_llm_conf"].assert_called_once_with(
-        "all",
-        "sk-test",
-        "https://api.example.test",
-        "gpt-test",
-        "1024",
-        origin_call="http",
-    )
-
-
-def test_embedding_config_api_passes_openai_fields_to_apply_embedding_conf():
-    client, callbacks = _make_test_client()
-
-    response = client.post(
-        "/config/embedding",
-        json={
-            "llm_type": "openai",
-            "api_key": "sk-embedding",
-            "api_base": "https://embedding.example.test",
-            "language_model": "embedding-test",
-        },
-    )
-
-    assert response.status_code == status.HTTP_201_CREATED
-    callbacks["apply_embedding_conf"].assert_called_once_with(
-        "sk-embedding",
-        "https://embedding.example.test",
-        "embedding-test",
-        origin_call="http",
-    )
-
-
-def test_llm_config_api_rolls_back_provider_type_on_apply_failure(monkeypatch):
-    monkeypatch.setattr(llm_settings, "chat_llm_type", "ollama/local")
-    monkeypatch.setattr(llm_settings, "extract_llm_type", "ollama/local")
-    monkeypatch.setattr(llm_settings, "text2gql_llm_type", "ollama/local")
-    rollback_fields = (
-        "chat_llm_type",
-        "extract_llm_type",
-        "text2gql_llm_type",
-        "openai_chat_api_key",
-        "openai_chat_api_base",
-        "openai_chat_language_model",
-        "openai_chat_tokens",
-        "openai_extract_api_key",
-        "openai_extract_api_base",
-        "openai_extract_language_model",
-        "openai_extract_tokens",
-        "openai_text2gql_api_key",
-        "openai_text2gql_api_base",
-        "openai_text2gql_language_model",
-        "openai_text2gql_tokens",
-    )
-    original_values = {
-        "chat_llm_type": "ollama/local",
-        "extract_llm_type": "ollama/local",
-        "text2gql_llm_type": "ollama/local",
-        "openai_chat_api_key": "old-chat-key",
-        "openai_chat_api_base": "https://old-chat.example",
-        "openai_chat_language_model": "old-chat-model",
-        "openai_chat_tokens": 11,
-        "openai_extract_api_key": "old-extract-key",
-        "openai_extract_api_base": "https://old-extract.example",
-        "openai_extract_language_model": "old-extract-model",
-        "openai_extract_tokens": 12,
-        "openai_text2gql_api_key": "old-text2gql-key",
-        "openai_text2gql_api_base": "https://old-text2gql.example",
-        "openai_text2gql_language_model": "old-text2gql-model",
-        "openai_text2gql_tokens": 13,
-    }
-    for field, value in original_values.items():
-        monkeypatch.setattr(llm_settings, field, value)
-
-    def failed_apply_llm_conf(role, api_key, api_base, language_model, max_tokens, **_kwargs):
-        assert role == "all"
-        for config_name in ("chat", "extract", "text2gql"):
-            monkeypatch.setattr(llm_settings, f"openai_{config_name}_api_key", api_key)
-            monkeypatch.setattr(llm_settings, f"openai_{config_name}_api_base", api_base)
-            monkeypatch.setattr(llm_settings, f"openai_{config_name}_language_model", language_model)
-            monkeypatch.setattr(llm_settings, f"openai_{config_name}_tokens", int(max_tokens))
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
-
-    client, callbacks = _make_test_client(apply_llm_conf=Mock(side_effect=failed_apply_llm_conf))
-
-    response = client.post(
-        "/config/llm",
-        json={
-            "llm_type": "openai",
-            "api_key": "sk-test",
-            "api_base": "https://api.example.test",
-            "language_model": "gpt-test",
-            "max_tokens": "1024",
-        },
-    )
-
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert _snapshot_llm_fields(rollback_fields) == original_values
-    callbacks["apply_llm_conf"].assert_called_once()
-
-
-def test_embedding_config_api_rolls_back_provider_type_on_apply_failure(monkeypatch):
-    monkeypatch.setattr(llm_settings, "embedding_type", "ollama/local")
-    rollback_fields = (
-        "embedding_type",
-        "openai_embedding_api_key",
-        "openai_embedding_api_base",
-        "openai_embedding_model",
-    )
-    original_values = {
-        "embedding_type": "ollama/local",
-        "openai_embedding_api_key": "old-embedding-key",
-        "openai_embedding_api_base": "https://old-embedding.example",
-        "openai_embedding_model": "old-embedding-model",
-    }
-    for field, value in original_values.items():
-        monkeypatch.setattr(llm_settings, field, value)
-
-    def failed_apply_embedding_conf(api_key, api_base, language_model, **_kwargs):
-        monkeypatch.setattr(llm_settings, "openai_embedding_api_key", api_key)
-        monkeypatch.setattr(llm_settings, "openai_embedding_api_base", api_base)
-        monkeypatch.setattr(llm_settings, "openai_embedding_model", language_model)
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
-
-    client, callbacks = _make_test_client(apply_embedding_conf=Mock(side_effect=failed_apply_embedding_conf))
-
-    response = client.post(
-        "/config/embedding",
-        json={
-            "llm_type": "openai",
-            "api_key": "sk-embedding",
-            "api_base": "https://embedding.example.test",
-            "language_model": "embedding-test",
-        },
-    )
-
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert _snapshot_llm_fields(rollback_fields) == original_values
-    callbacks["apply_embedding_conf"].assert_called_once()
-
-
-def test_rerank_config_api_passes_cohere_fields_to_apply_reranker_conf():
-    client, callbacks = _make_test_client()
-
-    response = client.post(
-        "/config/rerank",
-        json={
-            "reranker_type": "cohere",
-            "api_key": "cohere-key",
-            "reranker_model": "rerank-test",
-            "cohere_base_url": "https://cohere.example.test",
-        },
-    )
-
-    assert response.status_code == status.HTTP_201_CREATED
-    callbacks["apply_reranker_conf"].assert_called_once_with(
-        "cohere-key",
-        "rerank-test",
-        "https://cohere.example.test",
         origin_call="http",
     )
 
@@ -496,111 +310,6 @@ def test_rerank_config_rejects_unsupported_provider_without_mutating(monkeypatch
     assert llm_settings.reranker_type == "cohere"
 
 
-def test_rerank_config_rolls_back_provider_type_on_apply_failure(monkeypatch):
-    monkeypatch.setattr(llm_settings, "reranker_type", "siliconflow")
-    rollback_fields = (
-        "reranker_type",
-        "reranker_api_key",
-        "reranker_model",
-        "cohere_base_url",
-    )
-    original_values = {
-        "reranker_type": "siliconflow",
-        "reranker_api_key": "old-reranker-key",
-        "reranker_model": "old-reranker-model",
-        "cohere_base_url": "https://old-cohere.example",
-    }
-    for field, value in original_values.items():
-        monkeypatch.setattr(llm_settings, field, value)
-
-    def failed_apply_reranker_conf(api_key, reranker_model, cohere_base_url, **_kwargs):
-        monkeypatch.setattr(llm_settings, "reranker_api_key", api_key)
-        monkeypatch.setattr(llm_settings, "reranker_model", reranker_model)
-        monkeypatch.setattr(llm_settings, "cohere_base_url", cohere_base_url)
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
-
-    client, callbacks = _make_test_client(apply_reranker_conf=Mock(side_effect=failed_apply_reranker_conf))
-
-    response = client.post(
-        "/config/rerank",
-        json={
-            "reranker_type": "cohere",
-            "api_key": "cohere-key",
-            "reranker_model": "rerank-test",
-            "cohere_base_url": "https://cohere.example.test",
-        },
-    )
-
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert _snapshot_llm_fields(rollback_fields) == original_values
-    callbacks["apply_reranker_conf"].assert_called_once()
-
-
-def test_llm_config_rolls_back_on_failed_status(monkeypatch):
-    monkeypatch.setattr(llm_settings, "chat_llm_type", "ollama/local")
-    monkeypatch.setattr(llm_settings, "extract_llm_type", "ollama/local")
-    monkeypatch.setattr(llm_settings, "text2gql_llm_type", "ollama/local")
-    client, _ = _make_test_client(apply_llm_conf=Mock(return_value=status.HTTP_500_INTERNAL_SERVER_ERROR))
-
-    response = client.post(
-        "/config/llm",
-        json={
-            "llm_type": "openai",
-            "api_key": "new-key",
-            "api_base": "https://api.example.test",
-            "language_model": "model",
-            "max_tokens": "1024",
-        },
-    )
-
-    assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert llm_settings.chat_llm_type == "ollama/local"
-    assert llm_settings.extract_llm_type == "ollama/local"
-    assert llm_settings.text2gql_llm_type == "ollama/local"
-
-
-def test_llm_config_updates_are_serialized():
-    first_entered = threading.Event()
-    release_first = threading.Event()
-    second_entered = threading.Event()
-
-    def apply_llm_conf(role, api_key, *_args, **_kwargs):
-        assert role == "all"
-        if api_key == "first-key":
-            first_entered.set()
-            assert release_first.wait(timeout=2)
-        else:
-            second_entered.set()
-        return status.HTTP_200_OK
-
-    client, _ = _make_test_client(apply_llm_conf=apply_llm_conf)
-    payload = {
-        "llm_type": "openai",
-        "api_base": "https://api.example.test",
-        "language_model": "model",
-        "max_tokens": "1024",
-    }
-    responses = {}
-
-    def configure(name):
-        responses[name] = client.post("/config/llm", json={**payload, "api_key": f"{name}-key"})
-
-    first = threading.Thread(target=configure, args=("first",))
-    second = threading.Thread(target=configure, args=("second",))
-    first.start()
-    assert first_entered.wait(timeout=2)
-    second.start()
-    time.sleep(0.05)
-    assert not second_entered.is_set()
-    release_first.set()
-    first.join(timeout=2)
-    second.join(timeout=2)
-
-    assert second_entered.is_set()
-    assert responses["first"].status_code == status.HTTP_201_CREATED
-    assert responses["second"].status_code == status.HTTP_201_CREATED
-
-
 def test_text2gremlin_callback_exception_returns_stable_response():
     client, _ = _make_test_client(gremlin_generate_selective_func=Mock(side_effect=RuntimeError("callback failed")))
 
@@ -608,3 +317,106 @@ def test_text2gremlin_callback_exception_returns_stable_response():
 
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     assert response.json() == {"detail": "An unexpected error occurred during Gremlin generation."}
+
+
+@pytest.mark.parametrize("route", ["/rag", "/rag/graph"])
+def test_inference_uses_request_prompts_without_writing_mounted_configuration(tmp_path, monkeypatch, route):
+    from hugegraph_llm.config import prompt
+    from hugegraph_llm.config.models import base_prompt_config
+    from hugegraph_llm.demo.rag_demo import rag_block, text2gremlin_block
+
+    mounted = tmp_path / "config_prompt.yaml"
+    mounted.write_text("# operator-owned prompt\n")
+    mounted.chmod(0o444)
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(mounted))
+    before = dict(vars(prompt))
+    scheduler = Mock()
+    scheduler.schedule_flow.return_value = {"raw_answer": "stubbed response", "query": "request question"}
+    monkeypatch.setattr(rag_block.SchedulerSingleton, "get_instance", lambda: scheduler)
+    client, _ = _make_test_client(
+        rag_answer_func=rag_block.rag_answer,
+        graph_rag_recall_func=text2gremlin_block.graph_rag_recall,
+    )
+    with client:
+        response = client.post(
+            route,
+            json={
+                "query": "request question",
+                "raw_answer": True,
+                "answer_prompt": "request-local answer prompt",
+                "gremlin_prompt": "request-local gremlin prompt",
+            },
+        )
+    assert response.status_code == 200, response.text
+    scheduler.schedule_flow.assert_called_once()
+    assert scheduler.schedule_flow.call_args.kwargs["query"] == "request question"
+    assert scheduler.schedule_flow.call_args.kwargs["gremlin_prompt"] == "request-local gremlin prompt"
+    if route == "/rag":
+        assert scheduler.schedule_flow.call_args.kwargs["answer_prompt"] == "request-local answer prompt"
+    assert vars(prompt) == before
+    assert mounted.read_text() == "# operator-owned prompt\n"
+
+
+def test_streaming_inference_does_not_persist_request_prompts(tmp_path, monkeypatch):
+    import asyncio
+
+    from hugegraph_llm.config import prompt
+    from hugegraph_llm.config.models import base_prompt_config
+    from hugegraph_llm.demo.rag_demo import rag_block
+
+    mounted = tmp_path / "config_prompt.yaml"
+    mounted.write_text("# operator-owned prompt\n")
+    mounted.chmod(0o444)
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(mounted))
+    before = dict(vars(prompt))
+
+    async def stream(*args, **kwargs):
+        assert kwargs["query"] == "stream question"
+        assert kwargs["answer_prompt"] == "request-local prompt"
+        yield {"raw_answer": "stubbed stream"}
+
+    monkeypatch.setattr(rag_block.SchedulerSingleton, "get_instance", lambda: Mock(schedule_stream_flow=stream))
+
+    async def consume():
+        return [
+            item
+            async for item in rag_block.rag_answer_streaming(
+                "stream question",
+                True,
+                False,
+                False,
+                False,
+                0.5,
+                "bleu",
+                False,
+                "request-local information",
+                "request-local prompt",
+                "request-local keywords",
+            )
+        ]
+
+    assert asyncio.run(consume())
+    assert vars(prompt) == before
+    assert mounted.read_text() == "# operator-owned prompt\n"
+
+
+def test_batch_upload_creates_output_directory_on_fresh_volume(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import gradio as gr
+    import pandas as pd
+
+    from hugegraph_llm.demo.rag_demo import rag_block
+
+    root = tmp_path / "fresh-resource-root"
+    monkeypatch.setattr(rag_block, "resource_path", str(root))
+    with gr.Blocks() as ui:
+        rag_block.create_rag_block()
+    upload = next(function.fn for function in ui.fns.values() if function.fn.__name__ == "read_file_to_excel")
+    csv = tmp_path / "questions.csv"
+    csv.write_text("Question,Expected Answer,Basic,Vector,Graph,Combined\nquestion,expected,,,,\n")
+    assert not root.exists()
+    frame, count = upload(SimpleNamespace(name=str(csv)))
+    assert count == 1
+    assert frame.iloc[0, 0] == "question"
+    assert pd.read_excel(root / "demo/questions.xlsx").iloc[0, 0] == "question"

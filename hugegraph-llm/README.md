@@ -47,8 +47,7 @@ Pydantic 2, NumPy 2 and current provider libraries. Unused PyArrow and igraph
 requirements and root-level ML constraints have been removed; ML remains outside
 the workspace.
 
-A few upstream compatibility limits remain: LiteLLM requires OpenAI 2.x and its
-Botocore dependency requires dateutil below 3. Jieba uses its built-in resource
+A few upstream compatibility limits remain: Jieba uses its built-in resource
 fallback without requiring setuptools. `pycgraph` stays on 3.2.2 because 3.3.0 has no
 CPython 3.14 Linux wheel or source distribution on PyPI. These limits do not prevent using
 Python 3.12, 3.13 or 3.14.
@@ -163,7 +162,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/apache/hugegraph-ai.git
 cd hugegraph-ai
 
-# Configure environment (see config.md for detailed options), .env will auto create if not exists
+# Configure environment if needed (see config.md); absent .env uses defaults
 
 # 4. Install dependencies and activate environment
 # NOTE: If download is slow, uncomment mirror lines in ../pyproject.toml or use: uv config --global index.url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -233,10 +232,10 @@ After loading the extracted graph, open **Graph Tools** to run a Gremlin query:
 
 ## 🔧 Configuration
 
-After running the demo, configuration files are automatically generated:
+Configuration paths for source checkouts (see [external configuration](config.md#外部挂载与配置所有权)):
 
-- **Environment**: `hugegraph-llm/.env`
-- **Prompts**: `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`
+- **Environment**: optional `hugegraph-llm/.env`; startup reads it without modifying it
+- **Prompts**: optional `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`; absent files use built-in defaults
 
 Provider settings can also be edited in the web interface. This example uses a
 local model endpoint:
@@ -256,7 +255,7 @@ The system supports both English and Chinese prompts. To switch languages:
 - `LANGUAGE=CN` - Chinese prompts (中文提示词)
 
 > [!NOTE]
-> Configuration changes are automatically saved when using the web interface. For manual changes, simply refresh the page to load updates.
+> Save model connections in the web interface or API; test connectivity separately. Saved complete connections in `settings.yaml` override deployment defaults across restarts/upgrades. Blank keys retain the saved key; use the explicit clear action to remove it. Unconfigured extraction/Text2GQL follow Chat. Persist the writable resource directory (or `HUGEGRAPH_LLM_SETTINGS_PATH`); readonly `.env`/Secret mounts remain supported as bootstrap defaults. See [configuration rules](config.md#网页api-配置与部署默认值).
 
 ### Legacy Thin API writes
 
@@ -268,7 +267,7 @@ replace the default `USER_TOKEN=4321` with a strong random secret, and set
 Bearer token. Prefer the HugeGraph MCP guarded write tools for user-facing
 workflows.
 
-**LLM Provider Support**: This project uses [LiteLLM](https://docs.litellm.ai/docs/providers) for multi-provider LLM support.
+**LLM Provider Support**: Configure an OpenAI-compatible endpoint, model name, and API key, or use the built-in Ollama client. Provider support depends on the endpoint implementing the APIs and request parameters used by the application; an OpenAI-compatible URL alone does not guarantee compatibility.
 
 ### Programmatic Examples (new workflow engine)
 

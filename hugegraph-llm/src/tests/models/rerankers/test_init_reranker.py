@@ -24,44 +24,48 @@ from hugegraph_llm.models.rerankers.siliconflow import SiliconReranker
 
 
 class TestRerankers(unittest.TestCase):
-    @patch("hugegraph_llm.models.rerankers.init_reranker.llm_settings")
-    def test_get_cohere_reranker(self, mock_settings):
-        # Configure mock settings for Cohere
-        mock_settings.reranker_type = "cohere"
-        mock_settings.reranker_api_key = "test_api_key"
-        mock_settings.cohere_base_url = "https://api.cohere.ai/v1/rerank"
-        mock_settings.reranker_model = "rerank-english-v2.0"
+    @patch("hugegraph_llm.models.rerankers.init_reranker.snapshot_llm_settings")
+    def test_get_cohere_reranker(self, mock_snapshot):
+        # Configure one complete runtime snapshot for Cohere
+        settings = mock_snapshot.return_value
+        settings.reranker_type = "cohere"
+        settings.reranker_api_key = "test_api_key"
+        settings.cohere_base_url = "https://api.cohere.ai/v1/rerank"
+        settings.reranker_model = "rerank-english-v2.0"
 
         # Initialize reranker
         rerankers = Rerankers()
         reranker = rerankers.get_reranker()
 
         # Assertions
+        mock_snapshot.assert_called_once_with()
         self.assertIsInstance(reranker, CohereReranker)
         self.assertEqual(reranker.api_key, "test_api_key")
         self.assertEqual(reranker.base_url, "https://api.cohere.ai/v1/rerank")
         self.assertEqual(reranker.model, "rerank-english-v2.0")
 
-    @patch("hugegraph_llm.models.rerankers.init_reranker.llm_settings")
-    def test_get_siliconflow_reranker(self, mock_settings):
-        # Configure mock settings for SiliconFlow
-        mock_settings.reranker_type = "siliconflow"
-        mock_settings.reranker_api_key = "test_api_key"
-        mock_settings.reranker_model = "bge-reranker-large"
+    @patch("hugegraph_llm.models.rerankers.init_reranker.snapshot_llm_settings")
+    def test_get_siliconflow_reranker(self, mock_snapshot):
+        # Configure one complete runtime snapshot for SiliconFlow
+        settings = mock_snapshot.return_value
+        settings.reranker_type = "siliconflow"
+        settings.reranker_api_key = "test_api_key"
+        settings.reranker_model = "bge-reranker-large"
 
         # Initialize reranker
         rerankers = Rerankers()
         reranker = rerankers.get_reranker()
 
         # Assertions
+        mock_snapshot.assert_called_once_with()
         self.assertIsInstance(reranker, SiliconReranker)
         self.assertEqual(reranker.api_key, "test_api_key")
         self.assertEqual(reranker.model, "bge-reranker-large")
 
-    @patch("hugegraph_llm.models.rerankers.init_reranker.llm_settings")
-    def test_unsupported_reranker_type(self, mock_settings):
-        # Configure mock settings with unsupported reranker type
-        mock_settings.reranker_type = "unsupported_type"
+    @patch("hugegraph_llm.models.rerankers.init_reranker.snapshot_llm_settings")
+    def test_unsupported_reranker_type(self, mock_snapshot):
+        # Configure one snapshot with an unsupported reranker type
+        mock_snapshot.return_value.reranker_type = "unsupported_type"
 
         # Initialize reranker
         rerankers = Rerankers()
@@ -70,4 +74,5 @@ class TestRerankers(unittest.TestCase):
         with self.assertRaises(Exception) as cm:
             rerankers.get_reranker()
 
+        mock_snapshot.assert_called_once_with()
         self.assertTrue("Reranker type is not supported!" in str(cm.exception))

@@ -16,7 +16,7 @@
 # under the License.
 
 
-from hugegraph_llm.config import LLMConfig, llm_settings
+from hugegraph_llm.config import LLMConfig, llm_settings, snapshot_llm_settings
 from hugegraph_llm.models.embeddings.litellm import LiteLLMEmbedding
 from hugegraph_llm.models.embeddings.ollama import OllamaEmbedding
 from hugegraph_llm.models.embeddings.openai import OpenAIEmbedding
@@ -53,13 +53,14 @@ def get_embedding(llm_configs: LLMConfig):
 
 class Embeddings:
     def get_embedding(self):
-        """Get embedding instance and dynamically determine dimension if needed."""
-        if llm_settings.embedding_type == "openai":
+        """Build one embedding client from a complete runtime snapshot."""
+        settings = snapshot_llm_settings()
+        if settings.embedding_type == "openai":
             # Create with default dimension first
             embedding = OpenAIEmbedding(
-                model_name=llm_settings.openai_embedding_model,
-                api_key=llm_settings.openai_embedding_api_key,
-                api_base=llm_settings.openai_embedding_api_base,
+                model_name=settings.openai_embedding_model,
+                api_key=settings.openai_embedding_api_key,
+                api_base=settings.openai_embedding_api_base,
             )
             # Dynamically get actual dimension
             try:
@@ -68,12 +69,12 @@ class Embeddings:
             except Exception:  # pylint: disable=broad-except
                 pass  # Keep default dimension
             return embedding
-        if llm_settings.embedding_type == "ollama/local":
+        if settings.embedding_type == "ollama/local":
             # Create with default dimension first
             embedding = OllamaEmbedding(
-                model=llm_settings.ollama_embedding_model,
-                host=llm_settings.ollama_embedding_host,
-                port=llm_settings.ollama_embedding_port,
+                model=settings.ollama_embedding_model,
+                host=settings.ollama_embedding_host,
+                port=settings.ollama_embedding_port,
             )
             # Dynamically get actual dimension
             try:
@@ -82,14 +83,14 @@ class Embeddings:
             except Exception:  # pylint: disable=broad-except
                 pass  # Keep default dimension
             return embedding
-        if llm_settings.embedding_type == "litellm":
+        if settings.embedding_type == "litellm":
             # For LiteLLM, we need to get dimension dynamically
             # Create a temporary instance to test dimension
             temp_embedding = LiteLLMEmbedding(
                 embedding_dimension=1536,  # Temporary default
-                model_name=llm_settings.litellm_embedding_model,
-                api_key=llm_settings.litellm_embedding_api_key or "EMPTY",
-                api_base=llm_settings.litellm_embedding_api_base,
+                model_name=settings.litellm_embedding_model,
+                api_key=settings.litellm_embedding_api_key or "EMPTY",
+                api_base=settings.litellm_embedding_api_base,
             )
             # Get actual dimension
             try:
@@ -101,9 +102,9 @@ class Embeddings:
             # Create final instance with correct dimension
             embedding = LiteLLMEmbedding(
                 embedding_dimension=actual_dim,
-                model_name=llm_settings.litellm_embedding_model,
-                api_key=llm_settings.litellm_embedding_api_key or "EMPTY",
-                api_base=llm_settings.litellm_embedding_api_base,
+                model_name=settings.litellm_embedding_model,
+                api_key=settings.litellm_embedding_api_key or "EMPTY",
+                api_base=settings.litellm_embedding_api_base,
             )
             return embedding  # type: ignore
 

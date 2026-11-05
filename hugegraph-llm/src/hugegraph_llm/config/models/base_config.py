@@ -256,33 +256,27 @@ class BaseConfig(BaseSettings):
             for name in self._source_names(field):
                 aliases.setdefault(name.upper(), set()).add(field)
 
-        # Preserve unrelated lines verbatim. Keep an existing owned line only
-        # when it uniquely identifies a field and already represents its
-        # effective value; this retains dotenv references without freezing the
-        # values they point to or leaking resolved secrets into the file.
-        counts = {}
-        for binding in bindings:
-            fields = aliases.get(binding.key.upper(), set()) if binding.key else set()
-            if len(fields) == 1:
-                field = next(iter(fields))
-                counts[field] = counts.get(field, 0) + 1
+        # Preserve unrelated lines verbatim. Retain an existing owned line when
+        # it still represents an effective field, including shared aliases:
+        # otherwise a generic ${SECRET} reference would be expanded and copied
+        # into multiple role-specific keys on disk.
         preserved = set()
         lines = []
         for binding in bindings:
             fields = aliases.get(binding.key.upper(), set()) if binding.key else set()
             if not fields:
                 lines.append(binding.original.string)
-            elif len(fields) == 1:
-                field = next(iter(fields))
-                value = getattr(self, field)
-                if (
-                    counts[field] == 1
-                    and value is not None
+            else:
+                matching = {
+                    field
+                    for field in fields
+                    if getattr(self, field) is not None
                     and not self._process_source(field)
-                    and effective.get(binding.key) == str(value)
-                ):
+                    and effective.get(binding.key) == str(getattr(self, field))
+                }
+                if matching:
                     lines.append(binding.original.string)
-                    preserved.add(field)
+                    preserved.update(matching)
 
         content = "".join(lines)
         if content and not content.endswith("\n"):

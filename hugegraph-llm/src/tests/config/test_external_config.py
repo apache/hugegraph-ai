@@ -218,6 +218,26 @@ def test_export_rewrites_an_explicitly_changed_owned_value(saved_config, monkeyp
     assert dotenv_values(env)["GRAPH_URL"] == "http://after.invalid"
 
 
+def test_export_preserves_generic_secret_and_endpoint_references(saved_config, monkeypatch):
+    _, env, _ = saved_config
+    env.write_text("OPENAI_API_KEY=${SOURCE_SECRET}\nOPENAI_BASE_URL=${HOST}/v1\n")
+    monkeypatch.setenv("SOURCE_SECRET", "synthetic-original-secret")
+    monkeypatch.setenv("HOST", "https://before.invalid")
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+
+    LLMConfig().generate_env()
+
+    text = env.read_text()
+    assert "OPENAI_API_KEY=${SOURCE_SECRET}\n" in text
+    assert "OPENAI_BASE_URL=${HOST}/v1\n" in text
+    assert "synthetic-original-secret" not in text
+    monkeypatch.setenv("SOURCE_SECRET", "synthetic-rotated-secret")
+    monkeypatch.setenv("HOST", "https://after.invalid")
+    loaded = LLMConfig()
+    assert loaded.openai_chat_api_key == "synthetic-rotated-secret"
+    assert loaded.openai_chat_api_base == "https://after.invalid/v1"
+
+
 def test_generate_command_keeps_all_sections(saved_config, monkeypatch):
     from hugegraph_llm.config.admin_config import AdminConfig
 

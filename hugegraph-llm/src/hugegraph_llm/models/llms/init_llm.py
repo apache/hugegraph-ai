@@ -48,21 +48,23 @@ def get_chat_llm(llm_configs: LLMConfig, *, limit_output: bool = True, raise_on_
     raise Exception("chat llm type is not supported !")
 
 
-def get_extract_llm(llm_configs: LLMConfig):
+def get_extract_llm(llm_configs: LLMConfig, *, raise_on_truncation: bool = False):
     if llm_configs.effective_role("extract") == "chat":
-        return get_chat_llm(llm_configs)
+        return get_chat_llm(llm_configs, raise_on_truncation=raise_on_truncation)
     if llm_configs.extract_llm_type == "openai":
         return OpenAIClient(
             api_key=llm_configs.openai_extract_api_key,
             api_base=llm_configs.openai_extract_api_base,
             model_name=llm_configs.openai_extract_language_model,
             max_tokens=llm_configs.openai_extract_tokens,
+            raise_on_truncation=raise_on_truncation,
         )
     if llm_configs.extract_llm_type == "ollama/local":
         return OllamaClient(
             model=llm_configs.ollama_extract_language_model,
             host=llm_configs.ollama_extract_host,
             port=llm_configs.ollama_extract_port,
+            raise_on_truncation=raise_on_truncation,
         )
     if llm_configs.extract_llm_type == "litellm":
         return LiteLLMClient(
@@ -70,25 +72,28 @@ def get_extract_llm(llm_configs: LLMConfig):
             api_base=llm_configs.litellm_extract_api_base,
             model_name=llm_configs.litellm_extract_language_model,
             max_tokens=llm_configs.litellm_extract_tokens,
+            raise_on_truncation=raise_on_truncation,
         )
     raise Exception("extract llm type is not supported !")
 
 
-def get_text2gql_llm(llm_configs: LLMConfig):
+def get_text2gql_llm(llm_configs: LLMConfig, *, raise_on_truncation: bool = False):
     if llm_configs.effective_role("text2gql") == "chat":
-        return get_chat_llm(llm_configs)
+        return get_chat_llm(llm_configs, raise_on_truncation=raise_on_truncation)
     if llm_configs.text2gql_llm_type == "openai":
         return OpenAIClient(
             api_key=llm_configs.openai_text2gql_api_key,
             api_base=llm_configs.openai_text2gql_api_base,
             model_name=llm_configs.openai_text2gql_language_model,
             max_tokens=llm_configs.openai_text2gql_tokens,
+            raise_on_truncation=raise_on_truncation,
         )
     if llm_configs.text2gql_llm_type == "ollama/local":
         return OllamaClient(
             model=llm_configs.ollama_text2gql_language_model,
             host=llm_configs.ollama_text2gql_host,
             port=llm_configs.ollama_text2gql_port,
+            raise_on_truncation=raise_on_truncation,
         )
     if llm_configs.text2gql_llm_type == "litellm":
         return LiteLLMClient(
@@ -96,6 +101,7 @@ def get_text2gql_llm(llm_configs: LLMConfig):
             api_base=llm_configs.litellm_text2gql_api_base,
             model_name=llm_configs.litellm_text2gql_language_model,
             max_tokens=llm_configs.litellm_text2gql_tokens,
+            raise_on_truncation=raise_on_truncation,
         )
     raise Exception("text2gql llm type is not supported !")
 
@@ -103,14 +109,14 @@ def get_text2gql_llm(llm_configs: LLMConfig):
 class LLMs:
     """Resolve live settings for every new client, including inherited roles."""
 
-    def get_chat_llm(self):
-        return get_chat_llm(snapshot_llm_settings())
+    def get_chat_llm(self, *, raise_on_truncation: bool = False):
+        return get_chat_llm(snapshot_llm_settings(), raise_on_truncation=raise_on_truncation)
 
-    def get_extract_llm(self):
-        return get_extract_llm(snapshot_llm_settings())
+    def get_extract_llm(self, *, raise_on_truncation: bool = False):
+        return get_extract_llm(snapshot_llm_settings(), raise_on_truncation=raise_on_truncation)
 
-    def get_text2gql_llm(self):
-        return get_text2gql_llm(snapshot_llm_settings())
+    def get_text2gql_llm(self, *, raise_on_truncation: bool = False):
+        return get_text2gql_llm(snapshot_llm_settings(), raise_on_truncation=raise_on_truncation)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ import errno
 
 import pytest
 import yaml
+from dotenv import dotenv_values
 
 from hugegraph_llm.config.hugegraph_config import HugeGraphConfig
 from hugegraph_llm.config.llm_config import LLMConfig
@@ -168,6 +169,53 @@ def test_export_omits_process_secrets(saved_config, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "deployment-secret")
     LLMConfig().generate_env()
     assert "deployment-secret" not in env.read_text()
+
+
+def test_export_preserves_unrelated_lines_and_dynamic_references(saved_config, monkeypatch):
+    _, env, _ = saved_config
+    env.write_text(
+        "# Deployment owned values\n"
+        "CUSTOM_ENDPOINT=${HOST}/v1\n"
+        "export UNRELATED_SECRET=${SOURCE_SECRET}\n"
+        "GRAPH_URL=${HOST}\n"
+        "GRAPH_PWD=${SOURCE_SECRET}\n"
+    )
+    monkeypatch.setenv("HOST", "http://first.invalid")
+    monkeypatch.setenv("SOURCE_SECRET", "synthetic-original-secret")
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+
+    LLMConfig().generate_env()
+    HugeGraphConfig().generate_env()
+
+    text = env.read_text()
+    assert "# Deployment owned values\n" in text
+    assert "CUSTOM_ENDPOINT=${HOST}/v1\n" in text
+    assert "export UNRELATED_SECRET=${SOURCE_SECRET}\n" in text
+    assert "GRAPH_URL=${HOST}\n" in text
+    assert "GRAPH_PWD=${SOURCE_SECRET}\n" in text
+    assert "synthetic-original-secret" not in text
+    monkeypatch.setenv("HOST", "http://second.invalid")
+    monkeypatch.setenv("SOURCE_SECRET", "synthetic-rotated-secret")
+    values = dotenv_values(env)
+    assert values["CUSTOM_ENDPOINT"] == "http://second.invalid/v1"
+    assert values["UNRELATED_SECRET"] == "synthetic-rotated-secret"
+    assert values["GRAPH_URL"] == "http://second.invalid"
+    assert values["GRAPH_PWD"] == "synthetic-rotated-secret"
+
+
+def test_export_rewrites_an_explicitly_changed_owned_value(saved_config, monkeypatch):
+    _, env, _ = saved_config
+    env.write_text("# retained\nGRAPH_URL=${HOST}\n")
+    monkeypatch.setenv("HOST", "http://before.invalid")
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    graph = HugeGraphConfig()
+    graph.graph_url = "http://after.invalid"
+
+    graph.generate_env()
+
+    text = env.read_text()
+    assert "# retained\n" in text and "GRAPH_URL=${HOST}" not in text
+    assert dotenv_values(env)["GRAPH_URL"] == "http://after.invalid"
 
 
 def test_generate_command_keeps_all_sections(saved_config, monkeypatch):

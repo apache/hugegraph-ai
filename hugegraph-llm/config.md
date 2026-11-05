@@ -27,14 +27,14 @@
 
 ### 网页/API 配置与部署默认值
 
-网页/API 是模型连接的主要管理入口，离线文件编辑也可用。模型连接按完整组选择来源：
-已保存的应用配置 `settings.yaml` > 进程环境变量/Secret > `.env` > 内置默认值。
+网页/API 是模型连接的主要管理入口，离线文件编辑也可用。已保存的应用配置优先于部署默认值；
+首次配置时，进程环境变量/Secret 和 `.env` 可组合，例如从 `.env` 读取地址和模型，从 Secret 读取 key。
 同一来源内，专用变量（如 `OPENAI_CHAT_API_KEY`）优先于通用变量（`OPENAI_API_KEY`）。
-一组连接不会拼接低优先级文件的 key 与高优先级来源的 URL；部署时请在同一来源提供完整连接。
 程序显式传入的配置用于请求快照和测试，优先于这些来源。登录、访问令牌和 Thin API 写入开关仍由部署配置负责，网页模型配置不能修改它们。
 
-点击 **Save configuration** 后，应用把 provider、URL、model、key 等当前连接完整保存到
-`settings.yaml`，后续请求立即生效，重启和 Helm 升级也保留该连接。修改 Helm 默认值不会覆盖已保存的连接。
+点击 **Save configuration** 后，应用把 provider、URL、model 及用户明确输入的 key 保存到
+`settings.yaml`，后续请求立即生效，重启和 Helm 升级也保留该连接。修改 Helm 默认值不会覆盖已保存的连接字段。
+如果已有 key 来自部署 Secret，且保存时没有替换 key，则继续使用 Secret 中的值；以环境变量注入的 Secret 更新后需重建 Pod。
 **Test saved connection** 单独发起网络测试；保存只校验格式，不要求模型服务在线，测试失败不会撤销保存。
 已有 key 不回显；输入留空或 API 省略 `api_key` 时保留原 key，勾选 **Clear API key** 或传
 `clear_api_key: true` 才删除。修改目标 URL（或 LiteLLM 的 provider）时，须输入新 key 或明确清除，
@@ -76,7 +76,7 @@ Graph/向量库仍有各自的连接配置入口；本文的“保存与测试�
 Embedding 使用 `POST /config/embedding`；reranker 使用 `POST /config/rerank`。
 沿用应用现有登录/访问控制，请勿将未认证配置入口暴露到公网。
 
-应用保存的最小示例（字段名与配置类一致；实际保存包含当前连接的完整字段）：
+应用保存的最小示例（字段名与配置类一致；示例中的 key 为用户明确输入）：
 
 ```yaml
 llm:
@@ -218,13 +218,11 @@ llm:
 
 ## 配置使用示例
 
-`POST /config/llm` 是统一 LLM 配置入口，会同时更新 `chat`、`extract` 和 `text2gql` 三个角色的 provider、模型和连接参数。OpenAI/LiteLLM 请求显式提供 `max_tokens` 时会统一三个角色的上限；省略时保留每个角色原有值。Ollama 使用 `host`、`port` 和 `language_model`，不修改 token 上限。
+`POST /config/llm` 保存请求指定的角色，省略 `role` 时保存 Chat。尚未独立配置的信息抽取和 Text2GQL 动态跟随 Chat；独立配置不会被 Chat 的修改覆盖。OpenAI/LiteLLM 可使用 `max_tokens`，Ollama 使用 `host`、`port` 和 `language_model`。
 
-界面的每次角色配置回调只更新对应角色。Chat 配置区渲染时会检查 `.env` 中其他角色的 OpenAI API key；缺少相关 key 时，Chat 按钮会额外绑定其他角色的配置回调。因此初始配置等场景下，一次点击可能更新多个角色，每个回调分别执行连通性检查和保存。这是界面已有的初始化联动。
+保存只验证配置格式，不发起模型连接测试。成功保存的配置立即用于后续请求，即使之后单独调用的连通性测试失败也不会回滚。运行中的请求继续使用各自的配置快照。
 
-一次 `/config/llm` 请求只执行一次连通性检查，检查成功后才持久化一次；检查失败返回状态或抛出异常时恢复原内存配置，不保存新值。
-
-LLM、embedding、reranker 和图服务的运行时配置写入、保存和 API 回滚与审核抽取的配置快照共用同一进程内的锁，避免其他配置保存把尚未通过检查的 LLM 参数写入 `.env`。正在执行的审核请求继续使用自己的快照；该锁还保护图服务操作；建立新快照可能需要等待正在运行的图服务配置或索引刷新。它不提供跨进程或磁盘写入事务保证。
+本部署契约面向当前 latest/1.8；不提供旧版 RAG 配置或旧 API 行为的自动兼容迁移。
 
 ### 1. 基础配置示例
 
@@ -308,7 +306,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 ## 注意事项
 
 1. **安全性**：`.env` 文件包含敏感信息（如 API 密钥），请勿将其提交到版本控制系统
-2. **配置同步**：修改配置后，系统会自动同步到 `.env` 文件
+2. **配置保存**：网页/API 保存的应用设置写入 `settings.yaml`，不会自动改写部署 `.env`
 3. **语言切换**：修改 `LANGUAGE` 配置后需要重启应用程序才能生效
 4. **模型兼容性**：确保所选的模型与你的使用场景兼容
 5. **资源限制**：根据你的硬件资源调整 `MAX_GRAPH_ITEMS`、`EDGE_LIMIT_PRE_LABEL` 等参数
@@ -317,7 +315,7 @@ print(f"数据库名称: {graph_config.graph_name}")
    - `LANGUAGE`、`CHAT_LLM_TYPE` 等字段使用 Literal 类型限制可选值
    - 大部分字段都是 Optional 类型，支持 None 值，表示未设置
 7. **环境变量别名与优先级**：
-   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 通用别名；同一来源中角色专用名称优先，进程来源整体优先于文件（包括文件中的专用名称）
+   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 通用别名；同一来源中角色专用名称优先，部署环境提供的字段优先于文件中的相应字段
    - OpenAI Embedding 支持独立的环境变量 `OPENAI_EMBEDDING_BASE_URL` 和 `OPENAI_EMBEDDING_API_KEY`
    - Cohere 支持 `CO_API_URL` 环境变量
 8. **Ollama 配置完整性**：
@@ -328,7 +326,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 ### 系统配置（.env 文件）
 
-- **主配置文件**：`hugegraph-llm/.env`
+- **默认部署配置文件**：`hugegraph-llm/.env`；可通过 `HUGEGRAPH_LLM_ENV_PATH` 指定其他文件
 - **管理范围**：
   - LLMConfig：语言、LLM 提供商配置、API 密钥等
   - HugeGraphConfig：数据库连接、查询限制等

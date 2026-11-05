@@ -20,11 +20,13 @@ import errno
 import os
 import tempfile
 import threading
+from io import StringIO
 from pathlib import Path
 from typing import ClassVar
 
 import yaml
 from dotenv import dotenv_values
+from dotenv.parser import parse_stream
 from pydantic import AliasChoices, PrivateAttr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -246,12 +248,47 @@ class BaseConfig(BaseSettings):
         if target.exists() and input(f"Replace configuration in {env_path}? (y/n) ").lower() != "y":
             return
 
-        values = dict(dotenv_values(target)) if target.exists() else {}
+        original = target.read_text(encoding="utf-8") if target.exists() else ""
+        bindings = list(parse_stream(StringIO(original)))
+        effective = dotenv_values(stream=StringIO(original))
+        aliases = {}
         for field in type(self).model_fields:
-            for alias in self._source_names(field):
-                values.pop(alias, None)
-                values.pop(alias.upper(), None)
+            for name in self._source_names(field):
+                aliases.setdefault(name.upper(), set()).add(field)
+
+        # Preserve unrelated lines verbatim. Keep an existing owned line only
+        # when it uniquely identifies a field and already represents its
+        # effective value; this retains dotenv references without freezing the
+        # values they point to or leaking resolved secrets into the file.
+        counts = {}
+        for binding in bindings:
+            fields = aliases.get(binding.key.upper(), set()) if binding.key else set()
+            if len(fields) == 1:
+                field = next(iter(fields))
+                counts[field] = counts.get(field, 0) + 1
+        preserved = set()
+        lines = []
+        for binding in bindings:
+            fields = aliases.get(binding.key.upper(), set()) if binding.key else set()
+            if not fields:
+                lines.append(binding.original.string)
+            elif len(fields) == 1:
+                field = next(iter(fields))
+                value = getattr(self, field)
+                if (
+                    counts[field] == 1
+                    and value is not None
+                    and not self._process_source(field)
+                    and effective.get(binding.key) == str(value)
+                ):
+                    lines.append(binding.original.string)
+                    preserved.add(field)
+
+        content = "".join(lines)
+        if content and not content.endswith("\n"):
+            content += "\n"
+        for field in type(self).model_fields:
             value = getattr(self, field)
-            if value is not None and not self._process_source(field):
-                values[field.upper()] = str(value)
-        _write_file(target, "".join(f"{k}={_quote_dotenv(v)}\n" for k, v in values.items() if v is not None))
+            if field not in preserved and value is not None and not self._process_source(field):
+                content += f"{field.upper()}={_quote_dotenv(value)}\n"
+        _write_file(target, content)

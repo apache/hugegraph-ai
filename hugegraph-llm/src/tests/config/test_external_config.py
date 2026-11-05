@@ -238,6 +238,21 @@ def test_export_preserves_generic_secret_and_endpoint_references(saved_config, m
     assert loaded.openai_chat_api_base == "https://after.invalid/v1"
 
 
+def test_export_rejects_a_cleared_field_that_shared_alias_would_restore(saved_config, monkeypatch):
+    _, env, _ = saved_config
+    env.write_text("OPENAI_API_KEY=${SOURCE_SECRET}\n")
+    monkeypatch.setenv("SOURCE_SECRET", "synthetic-secret")
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    llm = LLMConfig()
+    llm.openai_chat_api_key = None
+    before = env.read_bytes()
+
+    with pytest.raises(ValueError, match="shared dotenv key OPENAI_API_KEY"):
+        llm.generate_env()
+
+    assert env.read_bytes() == before
+
+
 def test_generate_command_keeps_all_sections(saved_config, monkeypatch):
     from hugegraph_llm.config.admin_config import AdminConfig
 

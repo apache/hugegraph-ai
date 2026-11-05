@@ -275,6 +275,16 @@ class BaseConfig(BaseSettings):
                     and effective.get(binding.key) == str(getattr(self, field))
                 }
                 if matching:
+                    cleared = {
+                        field
+                        for field in fields - matching
+                        if getattr(self, field) is None and self._saved_values.get(field) is not None
+                    }
+                    if cleared:
+                        raise ValueError(
+                            f"Cannot export cleared fields {', '.join(sorted(cleared))} "
+                            f"while shared dotenv key {binding.key} would restore them"
+                        )
                     lines.append(binding.original.string)
                     preserved.update(matching)
 

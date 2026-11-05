@@ -172,7 +172,7 @@ def test_graph_web_switch_cannot_send_previous_password_to_new_host(saved_config
     assert (
         configs_block.apply_graph_config("http://other.example:8080", "renamed", "file-user", "graph-secret", "") == 200
     )
-    assert sent[-1][0].startswith("http://other.example:8080/")
+    assert sent[-1][0] == "http://other.example:8080/graphs/renamed/schema"
 
 
 def test_deployment_endpoint_override_does_not_send_file_key(saved_config, monkeypatch):

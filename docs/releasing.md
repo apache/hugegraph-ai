@@ -17,8 +17,7 @@ With Python 3.12+ at the repository root:
 
 Synchronization updates the six subpackages (including the standalone LLM SDK),
 MCP's client dependency minimum, LLM's exact SDK dependency,
-Helm chart/application versions, deployment images and current installation
-examples. Historical migrations, compatibility minimums, backend capability
+Compose deployment image references and current installation examples. Historical migrations, compatibility minimums, backend capability
 evidence and protocol versions are maintained separately. CI rejects drift.
 The root `tool.hugegraph.ci` table also defines the shared uv version and primary
 Python runtime; see [CI selection](quality/ci.md) for full-validation controls.

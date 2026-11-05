@@ -333,8 +333,8 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 - **Docker 环境模板**：`docker/env.template`
   - 用于 Docker 容器部署的环境变量模板
-- **Helm Chart 配置**：Server 仓库 `helm/hugegraph/values.yaml`
-  - Kubernetes 部署配置，包含副本数、镜像、服务等设置
+- **Helm 部署指南**：[`docker/charts/README.md`](../docker/charts/README.md)
+  - 使用 Server 仓库 `helm/hugegraph/values-rag.yaml` 部署 RAG。
 
 ### 项目配置文件
 

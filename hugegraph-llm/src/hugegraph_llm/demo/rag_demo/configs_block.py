@@ -330,7 +330,8 @@ def test_saved_model(role="chat"):
     with runtime_config_lock:
         settings = llm_settings.model_copy(deep=True)
     if role in ("chat", "extract", "text2gql"):
-        client = {"chat": get_chat_llm, "extract": get_extract_llm, "text2gql": get_text2gql_llm}[role](settings)
+        factory = {"chat": get_chat_llm, "extract": get_extract_llm, "text2gql": get_text2gql_llm}[role]
+        client = factory(settings, raise_on_truncation=True)
         result = client.generate(messages=[{"role": "user", "content": "hi"}])
     elif role == "embedding":
         result = get_embedding(settings).get_text_embedding("test")

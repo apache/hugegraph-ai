@@ -63,7 +63,7 @@ def test_reviewed_http_uses_one_configuration_across_chunks_and_refreshes_next_r
         "openai_chat_tokens": 37,
     }.items():
         monkeypatch.setattr(llm_settings, field, value)
-    monkeypatch.setattr(LLMConfig, "update_env", lambda _self: None)
+    monkeypatch.setattr(LLMConfig, "update_env", lambda _self, **_kwargs: None)
     monkeypatch.setattr(configs_block.gr, "Info", lambda *_args: None)
     monkeypatch.setattr(configs_block, "test_api_connection", lambda *_args, **_kwargs: 200)
     monkeypatch.setattr(SchedulerSingleton, "_instance", Scheduler())

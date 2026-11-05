@@ -17,11 +17,21 @@
 
 from typing import Optional
 
+from pydantic import field_validator
+
 from .models import BaseConfig
 
 
 class AdminConfig(BaseConfig):
     """Admin settings"""
+
+    hugegraph_llm_enable_thin_writes: bool = False
+
+    @field_validator("hugegraph_llm_enable_thin_writes", mode="before")
+    @classmethod
+    def strict_write_opt_in(cls, value):
+        """Only an explicit true enables writes; malformed input stays closed."""
+        return value.strip().lower() == "true" if isinstance(value, str) else value is True
 
     enable_login: Optional[str] = "False"
     user_token: Optional[str] = "4321"

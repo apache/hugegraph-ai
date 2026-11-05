@@ -2,7 +2,7 @@
 
 本文档详细说明了 HugeGraph LLM 项目中所有的配置选项。配置分为以下几类：
 
-1. **基础配置**：通过 `.env` 文件管理
+1. **连接配置**：网页/API 保存到 `settings.yaml`，`.env` 提供部署默认值
 2. **Prompt 配置**：通过 `config_prompt.yaml` 文件管理
 3. **Docker 配置**：通过 Docker 和 Helm 配置文件管理
 4. **项目配置**：通过 `pyproject.toml` 和 `JSON` 文件管理
@@ -13,7 +13,6 @@
   - [基础配置](#基础配置)
   - [OpenAI 配置](#openai-配置)
   - [Ollama 配置](#ollama-配置)
-  - [LiteLLM 配置](#litellm-配置)
   - [重排序配置](#重排序配置)
   - [HugeGraph 数据库配置](#hugegraph-数据库配置)
   - [向量数据库配置](#向量数据库配置)
@@ -25,21 +24,88 @@
 
 `.env` 文件位于 `hugegraph-llm/` 目录下，包含了系统运行所需的所有配置项。
 
+### 网页/API 配置与部署默认值
+
+网页/API 是模型连接的主要管理入口，离线文件编辑也可用。已保存的应用配置优先于部署默认值；
+首次配置时，进程环境变量/Secret 和 `.env` 可组合，例如从 `.env` 读取地址和模型，从 Secret 读取 key。
+同一来源内，专用变量（如 `OPENAI_CHAT_API_KEY`）优先于通用变量（`OPENAI_API_KEY`）。
+程序显式传入的配置用于请求快照和测试，优先于这些来源。登录、访问令牌和 Thin API 写入开关仍由部署配置负责，网页模型配置不能修改它们。
+
+点击 **Save configuration** 后，应用把 provider、URL、model 及用户明确输入的 key 保存到
+`settings.yaml`，后续请求立即生效，重启和 Helm 升级也保留该连接。修改 Helm 默认值不会覆盖已保存的连接字段。
+如果已有 key 来自部署 Secret，且保存时没有替换 key，则继续使用 Secret 中的值；以环境变量注入的 Secret 更新后需重建 Pod。
+**Test saved connection** 单独发起网络测试；保存只校验格式，不要求模型服务在线，测试失败不会撤销保存。
+已有 key 不回显；输入留空或 API 省略 `api_key` 时保留原 key，勾选 **Clear API key** 或传
+`clear_api_key: true` 才删除。修改目标 URL 时，须输入新 key 或明确清除，
+不会把原 key 静默转发到新服务。同一服务地址下更换模型可保留 key。无 key 的本地服务也可保存和测试。
+
+信息抽取与 Text2GQL 默认动态复用 Chat，Chat 更新后它们一起更新，不复制 key。
+保存子功能连接后，该功能独立使用自己的连接；**Use Chat connection** 可恢复继承。
+Embedding 和 reranker 分别配置，不跟随 Chat。
+
+使用 `HUGEGRAPH_LLM_RESOURCE_PATH=/var/lib/hugegraph-rag` 将 `settings.yaml`、prompt、索引和生成文件放在可写持久卷中。
+可用 `HUGEGRAPH_LLM_SETTINGS_PATH` 单独指定应用配置文件。`.env` 和 prompt 可另外通过
+`HUGEGRAPH_LLM_ENV_PATH`、`HUGEGRAPH_LLM_PROMPT_CONFIG_PATH` 挂载，包括只读 ConfigMap/Secret；
+模型网页保存写入可写 `settings.yaml`，不改写这些部署源文件或 `os.environ`。
+启动不创建配置、不复制打包资源；缺少资源时从镜像读取默认值。数据生成和显式保存才需要写权限。
+
+离线可修改同一个 `settings.yaml`，然后重启应用。删除其中的 `llm.chat` 组可恢复使用部署默认值；
+删除 `llm.extract`/`llm.text2gql` 组可恢复部署定义或默认继承。不要在应用保存时同时编辑文件。
+普通目录保存通过原子替换；可写单文件 bind mount 返回 `EBUSY` 时原位保存，不能保证中断写入的原子性，优先挂载可写目录/PVC。
+新配置权限为 0600，已有文件保留权限；其中包含用户主动保存的 key，请限制卷和备份的访问权限。
+
+普通问答和请求内提示词覆盖不保存问题或改写全局 prompt。prompt 的显式保存需其文件可写。
+Graph/向量库仍有各自的连接配置入口；本文的“保存与测试分开”指模型连接。
+
+### API 示例
+
+```json
+{
+  "role": "chat",
+  "llm_type": "openai",
+  "api_base": "https://model.example/v1",
+  "language_model": "my-model",
+  "api_key": "your-key"
+}
+```
+
+提交到 `POST /config/llm` 保存（`role` 默认 `chat`，也支持 `extract`、`text2gql`）。
+使用 `POST /config/model/chat/test` 单独测试；其他可测试角色为 `extract`、`text2gql`、`embedding`、`reranker`。
+使用 `POST /config/llm/extract/use-chat` 或 `/config/llm/text2gql/use-chat` 恢复继承。
+Embedding 使用 `POST /config/embedding`；reranker 使用 `POST /config/rerank`。
+沿用应用现有登录/访问控制，请勿将未认证配置入口暴露到公网。
+
+应用保存的最小示例（字段名与配置类一致；示例中的 key 为用户明确输入）：
+
+```yaml
+llm:
+  chat:
+    chat_llm_type: openai
+    openai_chat_api_base: https://model.example/v1
+    openai_chat_language_model: my-model
+    openai_chat_api_key: your-key
+    openai_chat_tokens: 8192
+  extract:
+    extract_use_chat: true
+```
+
 ### 基础配置
 
 | 配置项                    | 类型                                                     | 默认值    | 说明                                    |
 |------------------------|--------------------------------------------------------|--------|---------------------------------------|
 | `LANGUAGE`             | Literal["EN", "CN"]                                    | EN     | prompt语言，支持 EN（英文）和 CN（中文）            |
-| `CHAT_LLM_TYPE`        | Literal["openai", "litellm", "ollama/local"]           | openai | 聊天 LLM 类型：openai/litellm/ollama/local |
-| `EXTRACT_LLM_TYPE`     | Literal["openai", "litellm", "ollama/local"]           | openai | 信息提取 LLM 类型                           |
-| `TEXT2GQL_LLM_TYPE`    | Literal["openai", "litellm", "ollama/local"]           | openai | 文本转 GQL LLM 类型                        |
-| `EMBEDDING_TYPE`       | Optional[Literal["openai", "litellm", "ollama/local"]] | openai | 嵌入模型类型                                |
+| `CHAT_LLM_TYPE`        | Literal["openai", "ollama/local"]           | openai | 聊天 LLM 类型：openai/ollama/local |
+| `EXTRACT_LLM_TYPE`     | Literal["openai", "ollama/local"]           | openai | 信息提取 LLM 类型                           |
+| `TEXT2GQL_LLM_TYPE`    | Literal["openai", "ollama/local"]           | openai | 文本转 GQL LLM 类型                        |
+| `EMBEDDING_TYPE`       | Optional[Literal["openai", "ollama/local"]] | openai | 嵌入模型类型                                |
 | `RERANKER_TYPE`        | Optional[Literal["cohere", "siliconflow"]]             | None   | 重排序模型类型：cohere/siliconflow            |
 | `KEYWORD_EXTRACT_TYPE` | Literal["llm", "textrank", "hybrid"]                   | llm    | 关键词提取模型类型：llm/textrank/hybrid         |
 | `WINDOW_SIZE`          | Optional[Integer] | 3 | TextRank 滑窗大小 (范围: 1-10),较大的窗口可以捕获更长距离的词语关系,但会增加计算复杂度 |
 | `HYBRID_LLM_WEIGHTS`   | Optional[Float] | 0.5 | 混合模式中 LLM 结果的权重 (范围: 0.0-1.0),TextRank 权重 = 1 - 该值。推荐 0.5 以平衡两种方法 |
 
 ### OpenAI 配置
+
+OpenAI 类型也可连接提供兼容接口的模型服务；服务商必须支持本应用使用的 Chat Completions 或 Embeddings API 及其请求参数。
 
 | 配置项                              | 类型               | 默认值                       | 说明                        |
 |----------------------------------|------------------|---------------------------|---------------------------|
@@ -85,26 +151,6 @@
 | `OLLAMA_EMBEDDING_HOST`          | Optional[String]  | 127.0.0.1 | Ollama 嵌入服务主机       |
 | `OLLAMA_EMBEDDING_PORT`          | Optional[Integer] | 11434     | Ollama 嵌入服务端口       |
 | `OLLAMA_EMBEDDING_MODEL`         | Optional[String]  | -         | Ollama 嵌入模型名称       |
-
-### LiteLLM 配置
-
-| 配置项                               | 类型               | 默认值                           | 说明                         |
-|-----------------------------------|------------------|-------------------------------|----------------------------|
-| `LITELLM_CHAT_API_KEY`            | Optional[String] | -                             | LiteLLM 聊天 API 密钥          |
-| `LITELLM_CHAT_API_BASE`           | Optional[String] | -                             | LiteLLM 聊天 API 基础 URL      |
-| `LITELLM_CHAT_LANGUAGE_MODEL`     | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 聊天模型名称             |
-| `LITELLM_CHAT_TOKENS`             | Integer          | 8192                          | 聊天最大令牌数                    |
-| `LITELLM_EXTRACT_API_KEY`         | Optional[String] | -                             | LiteLLM 提取 API 密钥          |
-| `LITELLM_EXTRACT_API_BASE`        | Optional[String] | -                             | LiteLLM 提取 API 基础 URL      |
-| `LITELLM_EXTRACT_LANGUAGE_MODEL`  | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 提取模型名称             |
-| `LITELLM_EXTRACT_TOKENS`          | Integer          | 256                           | 提取最大令牌数                    |
-| `LITELLM_TEXT2GQL_API_KEY`        | Optional[String] | -                             | LiteLLM 文本转 GQL API 密钥     |
-| `LITELLM_TEXT2GQL_API_BASE`       | Optional[String] | -                             | LiteLLM 文本转 GQL API 基础 URL |
-| `LITELLM_TEXT2GQL_LANGUAGE_MODEL` | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 文本转 GQL 模型名称       |
-| `LITELLM_TEXT2GQL_TOKENS`         | Integer          | 4096                          | 文本转 GQL 最大令牌数              |
-| `LITELLM_EMBEDDING_API_KEY`       | Optional[String] | -                             | LiteLLM 嵌入 API 密钥          |
-| `LITELLM_EMBEDDING_API_BASE`      | Optional[String] | -                             | LiteLLM 嵌入 API 基础 URL      |
-| `LITELLM_EMBEDDING_MODEL`         | Optional[String] | openai/text-embedding-3-small | LiteLLM 嵌入模型名称             |
 
 ### 重排序配置
 
@@ -153,13 +199,11 @@
 
 ## 配置使用示例
 
-`POST /config/llm` 是统一 LLM 配置入口，会同时更新 `chat`、`extract` 和 `text2gql` 三个角色的 provider、模型和连接参数。OpenAI/LiteLLM 请求显式提供 `max_tokens` 时会统一三个角色的上限；省略时保留每个角色原有值。Ollama 使用 `host`、`port` 和 `language_model`，不修改 token 上限。
+`POST /config/llm` 保存请求指定的角色，省略 `role` 时保存 Chat。尚未独立配置的信息抽取和 Text2GQL 动态跟随 Chat；独立配置不会被 Chat 的修改覆盖。OpenAI 兼容接口可使用 `max_tokens`，Ollama 使用 `host`、`port` 和 `language_model`。
 
-界面的每次角色配置回调只更新对应角色。Chat 配置区渲染时会检查 `.env` 中其他角色的 OpenAI API key；缺少相关 key 时，Chat 按钮会额外绑定其他角色的配置回调。因此初始配置等场景下，一次点击可能更新多个角色，每个回调分别执行连通性检查和保存。这是界面已有的初始化联动。
+保存只验证配置格式，不发起模型连接测试。成功保存的配置立即用于后续请求，即使之后单独调用的连通性测试失败也不会回滚。运行中的请求继续使用各自的配置快照。
 
-一次 `/config/llm` 请求只执行一次连通性检查，检查成功后才持久化一次；检查失败返回状态或抛出异常时恢复原内存配置，不保存新值。
-
-LLM、embedding、reranker 和图服务的运行时配置写入、保存和 API 回滚与审核抽取的配置快照共用同一进程内的锁，避免其他配置保存把尚未通过检查的 LLM 参数写入 `.env`。正在执行的审核请求继续使用自己的快照；该锁还保护图服务操作；建立新快照可能需要等待正在运行的图服务配置或索引刷新。它不提供跨进程或磁盘写入事务保证。
+本部署契约面向当前 latest/1.8；不提供旧版 RAG 配置或旧 API 行为的自动兼容迁移。
 
 ### 1. 基础配置示例
 
@@ -243,7 +287,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 ## 注意事项
 
 1. **安全性**：`.env` 文件包含敏感信息（如 API 密钥），请勿将其提交到版本控制系统
-2. **配置同步**：修改配置后，系统会自动同步到 `.env` 文件
+2. **配置保存**：网页/API 保存的应用设置写入 `settings.yaml`，不会自动改写部署 `.env`
 3. **语言切换**：修改 `LANGUAGE` 配置后需要重启应用程序才能生效
 4. **模型兼容性**：确保所选的模型与你的使用场景兼容
 5. **资源限制**：根据你的硬件资源调整 `MAX_GRAPH_ITEMS`、`EDGE_LIMIT_PRE_LABEL` 等参数
@@ -251,8 +295,8 @@ print(f"数据库名称: {graph_config.graph_name}")
    - `LIMIT_PROPERTY` 和 `ENABLE_LOGIN` 是字符串类型（\"False\"/\"True\"），不是布尔类型
    - `LANGUAGE`、`CHAT_LLM_TYPE` 等字段使用 Literal 类型限制可选值
    - 大部分字段都是 Optional 类型，支持 None 值，表示未设置
-7. **环境变量 Fallback**：
-   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 环境变量作为 fallback
+7. **环境变量别名与优先级**：
+   - OpenAI 配置支持 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 通用别名；同一来源中角色专用名称优先，部署环境提供的字段优先于文件中的相应字段
    - OpenAI Embedding 支持独立的环境变量 `OPENAI_EMBEDDING_BASE_URL` 和 `OPENAI_EMBEDDING_API_KEY`
    - Cohere 支持 `CO_API_URL` 环境变量
 8. **Ollama 配置完整性**：
@@ -263,7 +307,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 ### 系统配置（.env 文件）
 
-- **主配置文件**：`hugegraph-llm/.env`
+- **默认部署配置文件**：`hugegraph-llm/.env`；可通过 `HUGEGRAPH_LLM_ENV_PATH` 指定其他文件
 - **管理范围**：
   - LLMConfig：语言、LLM 提供商配置、API 密钥等
   - HugeGraphConfig：数据库连接、查询限制等
@@ -280,7 +324,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 - **位置**：`hugegraph-llm/src/hugegraph_llm/config/`
 - **基类**：
-  - BaseConfig：用于 .env 文件管理的配置类
+  - BaseConfig：读取部署默认值与保存应用配置的配置类
   - BasePromptConfig：用于 YAML 文件管理的提示词配置类
 - **UI 配置管理**：`src/hugegraph_llm/demo/rag_demo/configs_block.py`
   - Gradio 界面的配置管理组件
@@ -289,7 +333,7 @@ print(f"数据库名称: {graph_config.graph_name}")
 
 - **Docker 环境模板**：`docker/env.template`
   - 用于 Docker 容器部署的环境变量模板
-- **Helm Chart 配置**：`docker/charts/hg-llm/values.yaml`
+- **Helm Chart 配置**：Server 仓库 `helm/hugegraph/values.yaml`
   - Kubernetes 部署配置，包含副本数、镜像、服务等设置
 
 ### 项目配置文件
@@ -298,6 +342,16 @@ print(f"数据库名称: {graph_config.graph_name}")
   - 项目依赖、构建系统和包管理配置
 - **JSON 示例文件**：`resources/` 目录下的各种 JSON 文件
   - 包含示例数据、查询样本等
+
+## 空值与打包资源
+
+部署环境和 `.env` 的空占位项按未设置处理；`GRAPH_PWD` 的显式空值用于空密码。
+网页/API 的空 key 表示保留，明确清除保存为 YAML `null`，之后不会重新回退到部署 key。
+生成 `.env` 不再给缺失 key 创建 `KEY=` 占位符。只有当前支持的 latest/1.8 行为在此范围内。
+
+Thin API 写入必须同时启用登录，并将 `HUGEGRAPH_LLM_ENABLE_THIN_WRITES` 显式设为 `true`；其他值保持关闭。
+
+停止词逐语言查找：显式 `NLTK_DATA`（多个目录按系统路径分隔符分开）优先，其次是外部资源目录、打包资源、其他缓存路径。外部 corpus 支持目录或 NLTK ZIP 格式；只提供部分语言时，缺少的语言仍能使用打包词表；不会为此复制资源或下载数据。
 
 ## 相关文档
 

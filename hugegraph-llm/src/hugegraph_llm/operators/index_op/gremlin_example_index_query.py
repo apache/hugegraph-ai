@@ -16,12 +16,11 @@
 # under the License.
 
 
-import os
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from hugegraph_llm.config import resource_path
+from hugegraph_llm.config import resource_file, resource_path
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
 from hugegraph_llm.models.embeddings.init_embedding import Embeddings
@@ -54,7 +53,9 @@ class GremlinExampleIndexQuery:
         return self.vector_index.search(query_embedding, self.num_examples, dis_threshold=1.8)
 
     def _build_default_example_index(self):
-        properties = pd.read_csv(os.path.join(resource_path, "demo", "text2gremlin.csv")).to_dict(orient="records")
+        properties = pd.read_csv(resource_file("demo", "text2gremlin.csv", root=resource_path)).to_dict(
+            orient="records"
+        )
         # Some supported services accept at most 10 texts, regardless of the adapter default.
         # Complete each batch sequentially and only publish the index after all batches succeed.
         embeddings = []

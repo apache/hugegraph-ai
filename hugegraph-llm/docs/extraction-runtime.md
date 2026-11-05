@@ -10,8 +10,7 @@ and repair. It validates the graph against the supplied schema and returns a
 result for every chunk. It does not write graphs to HugeGraph.
 
 In all three reviewed stages, the OpenAI wrapper omits `max_tokens` from the SDK
-call. The LiteLLM wrapper passes `max_tokens=None`, which its provider adapter
-omits from the upstream request. Neither path explicitly caps upstream output;
+call. This does not explicitly cap upstream output;
 SDK adapters and services may still apply default or hard output and context
 limits. Existing requests without review and other model uses retain their
 configured token limit.
@@ -166,7 +165,7 @@ chunks. Invalid request data returns 422. Request-level schema preparation or
 scheduler errors retain the existing error path. An input producing no chunks
 is an error in the HTTP path. Old requests omit `chunk_results`.
 
-If an OpenAI or LiteLLM response reports `finish_reason=length`, or an Ollama
+If an OpenAI-compatible response reports `finish_reason=length`, or an Ollama
 response reports `done_reason=length`, that chunk fails before parsing incomplete
 output. Its `stage` identifies `extract`, `review`, or `repair`, and its `reason`
 is `<stage>_output_truncated: finish_reason=length` or the corresponding

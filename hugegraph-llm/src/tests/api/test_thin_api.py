@@ -16,7 +16,6 @@
 # under the License.
 
 import importlib
-import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -337,13 +336,15 @@ def test_ui_config_reload_waits_for_refresh_target(monkeypatch, tmp_path, path):
 
     # Exercise the callback actually registered by Gradio, not a copied function.
     ui = rag_demo_app.init_rag_ui()
-    reload_config = next(fn.fn for fn in ui.fns.values() if fn.fn and fn.fn.__name__ == "refresh_ui_config_prompt")
+    reload_config = next(
+        fn.fn for fn in ui.fns.values() if fn.fn and getattr(fn.fn, "__name__", None) == "refresh_ui_config_prompt"
+    )
     env_path = tmp_path / "graph.env"
     env_path.write_text("GRAPH_NAME=graph_a\nGRAPH_SPACE=DEFAULT\n", encoding="utf-8")
     monkeypatch.setattr(base_config, "env_path", str(env_path))
-    # BaseConfig reload writes these environment variables; restore them after the test.
+    # Isolate all graph defaults; an explicit empty GRAPH_PWD is a real password clear.
     for field in type(thin_api.huge_settings).model_fields:
-        monkeypatch.setenv(field.upper(), os.environ.get(field.upper(), ""))
+        monkeypatch.delenv(field.upper(), raising=False)
     settings = type(thin_api.huge_settings)(_env_file=env_path)
     monkeypatch.setattr(thin_api, "huge_settings", settings)
     monkeypatch.setattr(rag_demo_app, "huge_settings", settings)

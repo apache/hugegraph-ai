@@ -94,10 +94,6 @@ jobs:
               if not nltk.download(package, quiet=True, raise_on_error=True):
                   raise RuntimeError(f'Failed to download {package}')
           PYTHON
-      - name: Verify installed LiteLLM Nuitka compatibility
-        run: >-
-          uv run --no-sync python -m unittest discover
-          -s scripts/tests -p 'test_patch_litellm_nuitka.py' -v
       - name: Run unit and contract tests
         env:
           SKIP_EXTERNAL_SERVICES: 'true'

@@ -15,8 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import os
-from typing import Optional
+from typing import ClassVar, Optional
 
 from .models import BaseConfig
 
@@ -24,13 +23,19 @@ from .models import BaseConfig
 class IndexConfig(BaseConfig):
     """LLM settings"""
 
-    qdrant_host: Optional[str] = os.environ.get("QDRANT_HOST", None)
-    qdrant_port: int = int(os.environ.get("QDRANT_PORT", "6333"))
-    qdrant_api_key: Optional[str] = os.environ.get("QDRANT_API_KEY") if os.environ.get("QDRANT_API_KEY") else None
+    section: ClassVar[str] = "index"
+    connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {
+        'qdrant': ('qdrant_host', 'qdrant_port', 'qdrant_api_key'),
+        'milvus': ('milvus_host', 'milvus_port', 'milvus_user', 'milvus_password'),
+    }
 
-    milvus_host: Optional[str] = os.environ.get("MILVUS_HOST", None)
-    milvus_port: int = int(os.environ.get("MILVUS_PORT", "19530"))
-    milvus_user: str = os.environ.get("MILVUS_USER", "")
-    milvus_password: str = os.environ.get("MILVUS_PASSWORD", "")
+    qdrant_host: Optional[str] = None
+    qdrant_port: int = 6333
+    qdrant_api_key: Optional[str] = None
 
-    cur_vector_index: str = os.environ.get("CUR_VECTOR_INDEX", "Faiss")
+    milvus_host: Optional[str] = None
+    milvus_port: int = 19530
+    milvus_user: str = ""
+    milvus_password: str = ""
+
+    cur_vector_index: str = "Faiss"

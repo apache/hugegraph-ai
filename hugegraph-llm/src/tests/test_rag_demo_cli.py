@@ -50,7 +50,7 @@ def test_gradio_homepage_and_file_upload_schema(monkeypatch):
         *[
             (name, provider)
             for name in ("chat_llm_settings", "extract_llm_settings", "text2gql_llm_settings", "embedding_settings")
-            for provider in ("openai", "litellm", "ollama/local")
+            for provider in ("openai", "ollama/local")
         ],
         ("reranker_settings", "cohere"),
         ("reranker_settings", "siliconflow"),

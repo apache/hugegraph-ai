@@ -19,12 +19,12 @@
 
 import asyncio
 import json
-import os
 
 import gradio as gr
 from hugegraph_llm_sdk.schema import normalize_few_shot_schema_json, normalize_query_examples_json
 
-from hugegraph_llm.config import huge_settings, prompt, resource_path
+from hugegraph_llm.config import huge_settings, prompt, resource_file, resource_path
+from hugegraph_llm.config.paths import PACKAGED_RESOURCES
 from hugegraph_llm.document import schema_examples
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
@@ -121,7 +121,7 @@ def generate_prompt_for_ui(source_text, scenario, example_name):
 def load_example_names():
     """Load all candidate examples"""
     try:
-        examples_path = os.path.join(resource_path, "prompt_examples", "prompt_examples.json")
+        examples_path = resource_file("prompt_examples", "prompt_examples.json", root=resource_path)
         with open(examples_path, "r", encoding="utf-8") as f:
             examples = json.load(f)
         return [example.get("name", "Unnamed example") for example in examples]
@@ -139,6 +139,7 @@ def load_query_examples():
     try:
         return schema_examples.load_query_examples(
             resource_path=resource_path,
+            fallback_resource_path=str(PACKAGED_RESOURCES),
             persisted=getattr(prompt, "schema_generator_query_examples", ""),
             language=language,
         )
@@ -151,6 +152,7 @@ def load_schema_fewshot_examples():
     try:
         return schema_examples.load_schema_fewshot_examples(
             resource_path=resource_path,
+            fallback_resource_path=str(PACKAGED_RESOURCES),
             persisted=getattr(prompt, "schema_generator_few_shot_examples", ""),
         )
     except ValueError as exc:
@@ -160,7 +162,7 @@ def load_schema_fewshot_examples():
 def update_example_preview(example_name):
     """Update the display content based on the selected example name."""
     try:
-        examples_path = os.path.join(resource_path, "prompt_examples", "prompt_examples.json")
+        examples_path = resource_file("prompt_examples", "prompt_examples.json", root=resource_path)
         with open(examples_path, "r", encoding="utf-8") as f:
             all_examples = json.load(f)
         selected_example = next((ex for ex in all_examples if ex.get("name") == example_name), None)

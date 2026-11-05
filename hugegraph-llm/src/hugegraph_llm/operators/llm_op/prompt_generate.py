@@ -21,7 +21,7 @@ import os
 from typing import Any, Dict
 
 from hugegraph_llm.config import prompt as prompt_tpl
-from hugegraph_llm.config import resource_path
+from hugegraph_llm.config import resource_file, resource_path
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.utils.log import log
 
@@ -32,7 +32,7 @@ class PromptGenerate:
 
     def _load_few_shot_example(self, example_name: str) -> Dict[str, Any]:
         """Loads and finds the specified few-shot example from the unified JSON file."""
-        examples_path = os.path.join(resource_path, "prompt_examples", "prompt_examples.json")
+        examples_path = resource_file("prompt_examples", "prompt_examples.json", root=resource_path)
         if not os.path.exists(examples_path):
             raise FileNotFoundError(f"Examples file not found: {examples_path}")
         with open(examples_path, "r", encoding="utf-8") as f:

@@ -21,13 +21,13 @@ import os
 import queue
 import shutil
 import tempfile
-from pathlib import Path
 import threading
 import time
 import weakref
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from types import TracebackType
 from typing import Literal, Self
 

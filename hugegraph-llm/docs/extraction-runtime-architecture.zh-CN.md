@@ -58,7 +58,7 @@ flowchart TD
 
 `max_reviews=0` 仅跳过模型审阅，仍执行抽取、本地校验，以及 `max_fixes` 预算内必要的修复。没有经过审阅的图不能成为 final：有效图停留在 candidate，顶层状态为 failed，汇总 `result.vertices/edges` 为空，但图仍保留在 `chunk_results` 供检查。它不会切换到旧抽取模式；需要旧行为时应省略 `review_options` 或传入 null。`max_fixes=0` 仅禁用修复。
 
-审核路径显式启用模型客户端的 `raise_on_truncation=True`：OpenAI/LiteLLM 的 `finish_reason=length` 和 Ollama 的 `done_reason=length` 都会在解析前返回对应阶段的 failed 块，并在 reason 中保留对应的截断标记。普通客户端默认关闭该选项，保留既有的截断内容返回行为；是否抛出截断异常与是否设置输出 token 上限分别配置。审核路径还保留 OpenAI 请求错误和认证错误的异常类型，避免把它们误报为 JSON 解析错误；普通客户端保留既有的错误返回行为。
+审核路径显式启用模型客户端的 `raise_on_truncation=True`：OpenAI 兼容接口的 `finish_reason=length` 和 Ollama 的 `done_reason=length` 都会在解析前返回对应阶段的 failed 块，并在 reason 中保留对应的截断标记。普通客户端默认关闭该选项，保留既有的截断内容返回行为；是否抛出截断异常与是否设置输出 token 上限分别配置。审核路径还保留 OpenAI 请求错误和认证错误的异常类型，避免把它们误报为 JSON 解析错误；普通客户端保留既有的错误返回行为。
 
 | 终态 | 含义 |
 | --- | --- |

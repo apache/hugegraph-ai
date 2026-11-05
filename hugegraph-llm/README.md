@@ -47,8 +47,7 @@ Pydantic 2, NumPy 2 and current provider libraries. Unused PyArrow and igraph
 requirements and root-level ML constraints have been removed; ML remains outside
 the workspace.
 
-A few upstream compatibility limits remain: LiteLLM requires OpenAI 2.x and its
-Botocore dependency requires dateutil below 3. Jieba uses its built-in resource
+A few upstream compatibility limits remain: Jieba uses its built-in resource
 fallback without requiring setuptools. `pycgraph` stays on 3.2.2 because 3.3.0 has no
 CPython 3.14 Linux wheel or source distribution on PyPI. These limits do not prevent using
 Python 3.12, 3.13 or 3.14.
@@ -268,7 +267,7 @@ replace the default `USER_TOKEN=4321` with a strong random secret, and set
 Bearer token. Prefer the HugeGraph MCP guarded write tools for user-facing
 workflows.
 
-**LLM Provider Support**: This project uses [LiteLLM](https://docs.litellm.ai/docs/providers) for multi-provider LLM support.
+**LLM Provider Support**: Configure an OpenAI-compatible endpoint, model name, and API key, or use the built-in Ollama client. Provider support depends on the endpoint implementing the APIs and request parameters used by the application; an OpenAI-compatible URL alone does not guarantee compatibility.
 
 ### Programmatic Examples (new workflow engine)
 

@@ -46,7 +46,6 @@ docker run --rm -d --name llm-smoke -p 127.0.0.1:8001:8001 \
   -e ENABLE_LOGIN=false \
   -e GRAPH_URL=http://127.0.0.1:9 \
   -e GRADIO_ANALYTICS_ENABLED=false \
-  -e LITELLM_LOCAL_MODEL_COST_MAP=True \
   -e OPENAI_API_KEY=local-smoke-no-secret \
   -e OPENAI_EMBEDDING_API_KEY=local-smoke-no-secret \
   -e NO_PROXY=127.0.0.1,localhost \

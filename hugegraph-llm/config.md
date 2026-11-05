@@ -13,7 +13,6 @@
   - [基础配置](#基础配置)
   - [OpenAI 配置](#openai-配置)
   - [Ollama 配置](#ollama-配置)
-  - [LiteLLM 配置](#litellm-配置)
   - [重排序配置](#重排序配置)
   - [HugeGraph 数据库配置](#hugegraph-数据库配置)
   - [向量数据库配置](#向量数据库配置)
@@ -37,8 +36,8 @@
 如果已有 key 来自部署 Secret，且保存时没有替换 key，则继续使用 Secret 中的值；以环境变量注入的 Secret 更新后需重建 Pod。
 **Test saved connection** 单独发起网络测试；保存只校验格式，不要求模型服务在线，测试失败不会撤销保存。
 已有 key 不回显；输入留空或 API 省略 `api_key` 时保留原 key，勾选 **Clear API key** 或传
-`clear_api_key: true` 才删除。修改目标 URL（或 LiteLLM 的 provider）时，须输入新 key 或明确清除，
-不会把原 key 静默转发到新服务。同一 provider 下更换模型可保留 key；LiteLLM 推荐使用 `provider/model` 显式声明路由。无 key 的本地服务也可保存和测试。
+`clear_api_key: true` 才删除。修改目标 URL 时，须输入新 key 或明确清除，
+不会把原 key 静默转发到新服务。同一服务地址下更换模型可保留 key。无 key 的本地服务也可保存和测试。
 
 信息抽取与 Text2GQL 默认动态复用 Chat，Chat 更新后它们一起更新，不复制 key。
 保存子功能连接后，该功能独立使用自己的连接；**Use Chat connection** 可恢复继承。
@@ -95,16 +94,18 @@ llm:
 | 配置项                    | 类型                                                     | 默认值    | 说明                                    |
 |------------------------|--------------------------------------------------------|--------|---------------------------------------|
 | `LANGUAGE`             | Literal["EN", "CN"]                                    | EN     | prompt语言，支持 EN（英文）和 CN（中文）            |
-| `CHAT_LLM_TYPE`        | Literal["openai", "litellm", "ollama/local"]           | openai | 聊天 LLM 类型：openai/litellm/ollama/local |
-| `EXTRACT_LLM_TYPE`     | Literal["openai", "litellm", "ollama/local"]           | openai | 信息提取 LLM 类型                           |
-| `TEXT2GQL_LLM_TYPE`    | Literal["openai", "litellm", "ollama/local"]           | openai | 文本转 GQL LLM 类型                        |
-| `EMBEDDING_TYPE`       | Optional[Literal["openai", "litellm", "ollama/local"]] | openai | 嵌入模型类型                                |
+| `CHAT_LLM_TYPE`        | Literal["openai", "ollama/local"]           | openai | 聊天 LLM 类型：openai/ollama/local |
+| `EXTRACT_LLM_TYPE`     | Literal["openai", "ollama/local"]           | openai | 信息提取 LLM 类型                           |
+| `TEXT2GQL_LLM_TYPE`    | Literal["openai", "ollama/local"]           | openai | 文本转 GQL LLM 类型                        |
+| `EMBEDDING_TYPE`       | Optional[Literal["openai", "ollama/local"]] | openai | 嵌入模型类型                                |
 | `RERANKER_TYPE`        | Optional[Literal["cohere", "siliconflow"]]             | None   | 重排序模型类型：cohere/siliconflow            |
 | `KEYWORD_EXTRACT_TYPE` | Literal["llm", "textrank", "hybrid"]                   | llm    | 关键词提取模型类型：llm/textrank/hybrid         |
 | `WINDOW_SIZE`          | Optional[Integer] | 3 | TextRank 滑窗大小 (范围: 1-10),较大的窗口可以捕获更长距离的词语关系,但会增加计算复杂度 |
 | `HYBRID_LLM_WEIGHTS`   | Optional[Float] | 0.5 | 混合模式中 LLM 结果的权重 (范围: 0.0-1.0),TextRank 权重 = 1 - 该值。推荐 0.5 以平衡两种方法 |
 
 ### OpenAI 配置
+
+OpenAI 类型也可连接提供兼容接口的模型服务；服务商必须支持本应用使用的 Chat Completions 或 Embeddings API 及其请求参数。
 
 | 配置项                              | 类型               | 默认值                       | 说明                        |
 |----------------------------------|------------------|---------------------------|---------------------------|
@@ -150,26 +151,6 @@ llm:
 | `OLLAMA_EMBEDDING_HOST`          | Optional[String]  | 127.0.0.1 | Ollama 嵌入服务主机       |
 | `OLLAMA_EMBEDDING_PORT`          | Optional[Integer] | 11434     | Ollama 嵌入服务端口       |
 | `OLLAMA_EMBEDDING_MODEL`         | Optional[String]  | -         | Ollama 嵌入模型名称       |
-
-### LiteLLM 配置
-
-| 配置项                               | 类型               | 默认值                           | 说明                         |
-|-----------------------------------|------------------|-------------------------------|----------------------------|
-| `LITELLM_CHAT_API_KEY`            | Optional[String] | -                             | LiteLLM 聊天 API 密钥          |
-| `LITELLM_CHAT_API_BASE`           | Optional[String] | -                             | LiteLLM 聊天 API 基础 URL      |
-| `LITELLM_CHAT_LANGUAGE_MODEL`     | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 聊天模型名称             |
-| `LITELLM_CHAT_TOKENS`             | Integer          | 8192                          | 聊天最大令牌数                    |
-| `LITELLM_EXTRACT_API_KEY`         | Optional[String] | -                             | LiteLLM 提取 API 密钥          |
-| `LITELLM_EXTRACT_API_BASE`        | Optional[String] | -                             | LiteLLM 提取 API 基础 URL      |
-| `LITELLM_EXTRACT_LANGUAGE_MODEL`  | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 提取模型名称             |
-| `LITELLM_EXTRACT_TOKENS`          | Integer          | 256                           | 提取最大令牌数                    |
-| `LITELLM_TEXT2GQL_API_KEY`        | Optional[String] | -                             | LiteLLM 文本转 GQL API 密钥     |
-| `LITELLM_TEXT2GQL_API_BASE`       | Optional[String] | -                             | LiteLLM 文本转 GQL API 基础 URL |
-| `LITELLM_TEXT2GQL_LANGUAGE_MODEL` | Optional[String] | openai/gpt-4.1-mini           | LiteLLM 文本转 GQL 模型名称       |
-| `LITELLM_TEXT2GQL_TOKENS`         | Integer          | 4096                          | 文本转 GQL 最大令牌数              |
-| `LITELLM_EMBEDDING_API_KEY`       | Optional[String] | -                             | LiteLLM 嵌入 API 密钥          |
-| `LITELLM_EMBEDDING_API_BASE`      | Optional[String] | -                             | LiteLLM 嵌入 API 基础 URL      |
-| `LITELLM_EMBEDDING_MODEL`         | Optional[String] | openai/text-embedding-3-small | LiteLLM 嵌入模型名称             |
 
 ### 重排序配置
 
@@ -218,7 +199,7 @@ llm:
 
 ## 配置使用示例
 
-`POST /config/llm` 保存请求指定的角色，省略 `role` 时保存 Chat。尚未独立配置的信息抽取和 Text2GQL 动态跟随 Chat；独立配置不会被 Chat 的修改覆盖。OpenAI/LiteLLM 可使用 `max_tokens`，Ollama 使用 `host`、`port` 和 `language_model`。
+`POST /config/llm` 保存请求指定的角色，省略 `role` 时保存 Chat。尚未独立配置的信息抽取和 Text2GQL 动态跟随 Chat；独立配置不会被 Chat 的修改覆盖。OpenAI 兼容接口可使用 `max_tokens`，Ollama 使用 `host`、`port` 和 `language_model`。
 
 保存只验证配置格式，不发起模型连接测试。成功保存的配置立即用于后续请求，即使之后单独调用的连通性测试失败也不会回滚。运行中的请求继续使用各自的配置快照。
 

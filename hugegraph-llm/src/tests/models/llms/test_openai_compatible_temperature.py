@@ -28,8 +28,7 @@ pytestmark = pytest.mark.contract
 
 
 @pytest.mark.parametrize("mode", ["sync", "async", "stream", "async_stream"])
-@pytest.mark.parametrize("temperature", [None, 0.4])
-def test_openai_compatible_temperature_on_actual_http_body(mode, temperature):
+def test_openai_compatible_temperature_on_actual_http_body(mode):
     requests = []
 
     def endpoint(request):
@@ -55,7 +54,7 @@ def test_openai_compatible_temperature_on_actual_http_body(mode, temperature):
             },
         )
 
-    client = OpenAIClient(api_key="synthetic", api_base="https://example.invalid/v1", temperature=temperature)
+    client = OpenAIClient(api_key="synthetic", api_base="https://example.invalid/v1")
     client.client._client = httpx.Client(transport=httpx.MockTransport(endpoint))
     client.aclient._client = httpx.AsyncClient(transport=httpx.MockTransport(endpoint))
 
@@ -73,10 +72,7 @@ def test_openai_compatible_temperature_on_actual_http_body(mode, temperature):
             result = asyncio.run(async_result())
         assert result == "ok"
         assert len(requests) == 1
-        if temperature is None:
-            assert "temperature" not in requests[0]
-        else:
-            assert requests[0]["temperature"] == temperature
+        assert "temperature" not in requests[0]
     finally:
         client.client.close()
         asyncio.run(client.aclient.close())

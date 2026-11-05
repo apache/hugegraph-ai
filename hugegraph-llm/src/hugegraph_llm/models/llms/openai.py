@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Optional
+from typing import Any, Optional, cast
 
 import openai as openai
 import tiktoken as tiktoken
@@ -34,7 +34,7 @@ class OpenAIClient(CoreOpenAIClient, BaseLLM):
         api_base: Optional[str] = None,
         model_name: str = "gpt-4.1-mini",
         max_tokens: Optional[int] = 8092,
-        temperature: float = 0.01,
+        temperature: Optional[float] = None,
         raise_on_truncation: bool = False,
     ) -> None:
         super().__init__(
@@ -42,7 +42,9 @@ class OpenAIClient(CoreOpenAIClient, BaseLLM):
             api_base=api_base,
             model_name=model_name,
             max_tokens=max_tokens,
-            temperature=temperature,
+            # Let compatible providers choose their default unless a caller
+            # explicitly requests a temperature. Some reject non-defaults.
+            temperature=temperature if temperature is not None else cast(Any, openai.NOT_GIVEN),
             raise_on_truncation=raise_on_truncation,
             client=OpenAI(api_key=api_key or "EMPTY", base_url=api_base),
             async_client=AsyncOpenAI(api_key=api_key or "EMPTY", base_url=api_base),

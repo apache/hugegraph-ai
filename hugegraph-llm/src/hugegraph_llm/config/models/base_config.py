@@ -116,7 +116,6 @@ class BaseConfig(BaseSettings):
     )
     _saved_values: dict = PrivateAttr(default_factory=dict)
     _explicit_secret_updates: set[str] = PrivateAttr(default_factory=set)
-    _cleared_secrets: set[str] = PrivateAttr(default_factory=set)
     section: ClassVar[str] = ""
     connection_groups: ClassVar[dict[str, tuple[str, ...]]] = {}
     allow_empty_environment: ClassVar[frozenset[str]] = frozenset()
@@ -243,26 +242,6 @@ class BaseConfig(BaseSettings):
         data.setdefault("_env_file", env_path)
         super().__init__(**data)
         self._saved_values = self.model_dump()
-        self._refresh_cleared_secrets()
-
-    def _refresh_cleared_secrets(self):
-        section = _read_settings().get(self.section, {}) if self.section else {}
-        self._cleared_secrets = {
-            field
-            for group in section.values()
-            if isinstance(group, dict)
-            for field, value in group.items()
-            if self._is_secret(field) and value in (None, "")
-        }
-        env = {name.lower(): value for name, value in os.environ.items()}
-        for group in section.values():
-            if isinstance(group, dict):
-                for field, name in group.get("_env_secrets", {}).items():
-                    if not env.get(name.lower()):
-                        self._cleared_secrets.add(field)
-
-    def secret_is_explicitly_cleared(self, field: str) -> bool:
-        return field in self._cleared_secrets
 
     def mark_secret_update(self, field: str):
         self._explicit_secret_updates.add(field)
@@ -335,14 +314,12 @@ class BaseConfig(BaseSettings):
             _write_file(settings_path(), yaml.safe_dump(document, allow_unicode=True, sort_keys=False))
         self._saved_values = self.model_dump()
         self._explicit_secret_updates.clear()
-        self._refresh_cleared_secrets()
 
     def check_env(self):
         loaded = type(self)()
         for field, value in loaded.model_dump().items():
             setattr(self, field, value)
         self._saved_values = self.model_dump()
-        self._refresh_cleared_secrets()
 
     def generate_env(self):
         """Explicit export, omitting unset fields and process-injected secrets."""

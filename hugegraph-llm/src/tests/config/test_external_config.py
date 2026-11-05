@@ -49,7 +49,7 @@ def test_saved_complete_connection_survives_deployment_upgrade(saved_config, mon
     env.write_text("# deployment owned\nOPENAI_API_KEY=old-default\n")
     assert save_chat(client).status_code == 201
     before = env.read_bytes()
-    monkeypatch.setenv("CHAT_LLM_TYPE", "litellm")
+    monkeypatch.setenv("CHAT_LLM_TYPE", "ollama/local")
     monkeypatch.setenv("OPENAI_API_KEY", "new-deployment-secret")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://upgraded.invalid/v1")
     env.write_bytes(before + b"WINDOW_SIZE=13\n")

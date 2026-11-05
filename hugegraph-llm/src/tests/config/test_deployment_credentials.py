@@ -97,25 +97,15 @@ def test_web_provider_switch_requires_key_and_does_not_forward_old_secret(saved_
         == 201
     )
     assert LLMConfig().openai_chat_api_key == "secret-one"
-    response = save_chat(
-        client, llm_type="litellm", api_key="", api_base="https://other.example/v1", language_model="openai/example"
-    )
-    assert response.status_code >= 400
-    assert LLMConfig().chat_llm_type == "openai"
-    response = save_chat(
-        client,
-        llm_type="litellm",
-        api_key="new-provider-key",
-        api_base="https://other.example/v1",
-        language_model="openai/example",
-    )
+    response = save_chat(client, llm_type="ollama/local", host="localhost", port=11434, language_model="local-model")
     assert response.status_code == 201
     reloaded = LLMConfig()
-    assert (reloaded.chat_llm_type, reloaded.litellm_chat_api_base, reloaded.litellm_chat_api_key) == (
-        "litellm",
-        "https://other.example/v1",
-        "new-provider-key",
+    assert (reloaded.chat_llm_type, reloaded.ollama_chat_host, reloaded.ollama_chat_language_model) == (
+        "ollama/local",
+        "localhost",
+        "local-model",
     )
+    assert "secret-one" not in base_config.settings_path().read_text()
 
 
 def test_web_explicit_key_equal_to_secret_is_saved_as_user_key(saved_config, monkeypatch):
@@ -145,17 +135,6 @@ def test_saved_env_reference_obeys_specific_alias_priority(saved_config, monkeyp
     assert LLMConfig().openai_chat_api_key == "rotated-specific-key"
     monkeypatch.delenv("OPENAI_CHAT_API_KEY")
     assert LLMConfig().openai_chat_api_key is None  # never fall back to generic-key
-
-
-def test_first_provider_selection_can_use_provider_environment(saved_config, monkeypatch):
-    _, _, client = saved_config
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-env-key")
-    _reload_runtime(monkeypatch)
-    response = save_chat(client, llm_type="litellm", api_key="", api_base=None, language_model="anthropic/example")
-    assert response.status_code == 201
-    reloaded = LLMConfig()
-    assert reloaded.chat_llm_type == "litellm" and reloaded.litellm_chat_api_key is None
-    assert not reloaded.secret_is_explicitly_cleared("litellm_chat_api_key")
 
 
 def test_graph_file_endpoint_and_secret_follow_rotation(saved_config, monkeypatch):

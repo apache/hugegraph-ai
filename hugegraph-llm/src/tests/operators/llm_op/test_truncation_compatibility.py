@@ -21,7 +21,7 @@ from hugegraph_llm.operators.llm_op.keyword_extract import KeywordExtract
 pytestmark = pytest.mark.contract
 
 
-@pytest.mark.parametrize("provider", ["openai", "litellm"])
+@pytest.mark.parametrize("provider", ["openai"])
 def test_legacy_keyword_extraction_parses_truncated_sdk_response(monkeypatch, provider):
     """Keep the real operator, configured extract factory and client wrapper."""
     monkeypatch.setattr(llm_settings, "extract_use_chat", False)
@@ -51,10 +51,7 @@ def test_legacy_keyword_extraction_parses_truncated_sdk_response(monkeypatch, pr
             ],
         )
 
-    if provider == "openai":
-        monkeypatch.setattr(Completions, "create", lambda _self, **kwargs: completion(**kwargs))
-    else:
-        monkeypatch.setattr("hugegraph_llm.models.llms.litellm.completion", completion)
+    monkeypatch.setattr(Completions, "create", lambda _self, **kwargs: completion(**kwargs))
 
     result = KeywordExtract(text="Explain graph databases.").run({"extract_method": "llm", "call_count": 4})
 

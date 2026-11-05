@@ -31,14 +31,13 @@ from tests.fixtures.saved_config import save_chat
 pytestmark = pytest.mark.contract
 
 
-@pytest.mark.parametrize("provider", ["openai", "litellm", "ollama/local"])
+@pytest.mark.parametrize("provider", ["openai", "ollama/local"])
 @pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
 def test_save_api_persists_complete_role_without_any_network(saved_config, monkeypatch, role, provider):
     settings, _, client = saved_config
     probe = Mock(side_effect=AssertionError("Save must not contact a model service"))
     monkeypatch.setattr(configs_block, "test_api_connection", probe)
     monkeypatch.setattr(init_llm.OpenAIClient, "generate", probe)
-    monkeypatch.setattr(init_llm.LiteLLMClient, "generate", probe)
     monkeypatch.setattr(init_llm.OllamaClient, "generate", probe)
     response = save_chat(client, role=role, llm_type=provider, host="127.0.0.1", port=11434)
     assert response.status_code == 201
@@ -51,8 +50,45 @@ def test_save_api_persists_complete_role_without_any_network(saved_config, monke
     probe.assert_not_called()
 
 
+@pytest.mark.parametrize("route", ["/config/llm", "/config/embedding"])
+def test_removed_litellm_provider_is_not_accepted(saved_config, route):
+    _, _, client = saved_config
+    response = client.post(route, json={"llm_type": "litellm", "language_model": "model"})
+    assert response.status_code == 422
+
+
+def test_app_import_and_supported_clients_without_litellm(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    # Simulate an image that has never installed the optional LiteLLM package.
+    code = '''
+import builtins
+original_import = builtins.__import__
+def without_litellm(name, *args, **kwargs):
+    if name == "litellm" or name.startswith("litellm."):
+        raise ModuleNotFoundError("litellm deliberately unavailable")
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = without_litellm
+from hugegraph_llm.config.llm_config import LLMConfig
+from hugegraph_llm.demo.rag_demo.app import create_app
+from hugegraph_llm.models.embeddings.init_embedding import get_embedding
+from hugegraph_llm.models.llms.init_llm import get_chat_llm
+assert create_app() is not None
+assert get_chat_llm(LLMConfig(chat_llm_type="openai")) is not None
+assert get_chat_llm(LLMConfig(chat_llm_type="ollama/local")) is not None
+assert get_embedding(LLMConfig(embedding_type="openai")) is not None
+assert get_embedding(LLMConfig(embedding_type="ollama/local")) is not None
+'''
+    env = os.environ.copy()
+    env.update(HUGEGRAPH_LLM_RESOURCE_PATH=str(tmp_path), GRADIO_ANALYTICS_ENABLED="false")
+    result = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.mark.parametrize("role", ["chat", "extract", "text2gql"])
-@pytest.mark.parametrize("provider", ["openai", "litellm"])
+@pytest.mark.parametrize("provider", ["openai"])
 def test_blank_key_retains_and_explicit_clear_survives_restart(saved_config, role, provider, monkeypatch):
     settings, _, client = saved_config
     assert save_chat(client, role=role, llm_type=provider).status_code == 201
@@ -68,10 +104,8 @@ def test_blank_key_retains_and_explicit_clear_survives_restart(saved_config, rol
         "text2gql": init_llm.get_text2gql_llm,
     }[role]
     client_mock = Mock()
-    monkeypatch.setattr(init_llm, "LiteLLMClient" if provider == "litellm" else "OpenAIClient", client_mock)
+    monkeypatch.setattr(init_llm, "OpenAIClient", client_mock)
     factory(LLMConfig())
-    if provider == "litellm":
-        assert client_mock.call_args.kwargs["api_key"] == "EMPTY"
 
 
 @pytest.mark.parametrize("kind", ["embedding", "reranker"])
@@ -135,18 +169,6 @@ def test_invalid_save_keeps_last_good_connection(saved_config, bad):
     assert settings.model_dump() == before and base_config.settings_path().read_bytes() == disk
 
 
-def test_litellm_model_routing_change_requires_new_key_or_clear(saved_config):
-    _, _, client = saved_config
-    save_chat(client, llm_type="litellm", language_model="openai/old")
-    assert save_chat(client, llm_type="litellm", language_model="anthropic/new", api_key="").status_code == 400
-    assert (
-        save_chat(
-            client, llm_type="litellm", language_model="anthropic/new", api_key=None, clear_api_key=True
-        ).status_code
-        == 201
-    )
-
-
 def test_render_model_form_does_not_activate_provider_or_echo_key(saved_config, monkeypatch):
     settings, _, client = saved_config
     save_chat(client)
@@ -163,7 +185,7 @@ def test_render_model_form_does_not_activate_provider_or_echo_key(saved_config, 
     for name in ("Textbox", "Checkbox"):
         monkeypatch.setattr(configs_block.gr, name, Widget)
     monkeypatch.setattr(configs_block.gr, "Button", lambda *_: Widget())
-    configs_block._model_form("chat", "litellm")
+    configs_block._model_form("chat", "ollama/local")
     assert settings.model_dump() == before
     assert all(f.get("value") != "synthetic-user-key" for f in fields)
 
@@ -211,7 +233,7 @@ def test_web_form_saves_selected_provider_and_updates_inheritance_control(saved_
     client = TestClient(app.create_app())
     try:
         response = client.post(
-            f"/gradio_api/run/{render.api_name}", json={"data": ["litellm"], "session_hash": "scope-web-save"}
+            f"/gradio_api/run/{render.api_name}", json={"data": ["openai"], "session_hash": "scope-web-save"}
         )
         assert response.status_code == 200
         save = next(
@@ -219,7 +241,7 @@ def test_web_form_saves_selected_provider_and_updates_inheritance_control(saved_
             for function in ui.state_holder["scope-web-save"].blocks_config.fns.values()
             if isinstance(function.fn, partial)
             and function.fn.func is configs_block.save_model_form
-            and function.fn.args == ("extract", "litellm")
+            and function.fn.args == ("extract", "openai")
         )
         response = client.post(
             f"/gradio_api/run/{save.api_name}",
@@ -231,8 +253,8 @@ def test_web_form_saves_selected_provider_and_updates_inheritance_control(saved_
         assert response.status_code == 200 and response.json()["data"] == [False], response.text
         loaded = LLMConfig()
         assert not settings.extract_use_chat and not loaded.extract_use_chat
-        assert loaded.extract_llm_type == "litellm" and loaded.litellm_extract_language_model == "openai/web"
-        assert loaded.litellm_extract_api_key == "synthetic-web-key"
+        assert loaded.extract_llm_type == "openai" and loaded.openai_extract_language_model == "openai/web"
+        assert loaded.openai_extract_api_key == "synthetic-web-key"
         assert settings.chat_llm_type == "openai"
         assert "synthetic-web-key" not in response.text
     finally:
@@ -241,11 +263,11 @@ def test_web_form_saves_selected_provider_and_updates_inheritance_control(saved_
 
 
 @pytest.mark.parametrize("role", ["chat", "extract", "text2gql", "embedding"])
-def test_same_litellm_provider_model_change_keeps_key(saved_config, role):
+def test_same_openai_provider_model_change_keeps_key(saved_config, role):
     _, _, client = saved_config
     route = "/config/embedding" if role == "embedding" else "/config/llm"
     payload = {
-        "llm_type": "litellm",
+        "llm_type": "openai",
         "role": "chat" if role == "embedding" else role,
         "api_base": "http://proxy.invalid/v1",
         "language_model": "openai/first",
@@ -254,6 +276,6 @@ def test_same_litellm_provider_model_change_keeps_key(saved_config, role):
     assert client.post(route, json=payload).status_code == 201
     assert client.post(route, json={**payload, "language_model": "openai/second", "api_key": ""}).status_code == 201
     loaded = LLMConfig()
-    assert getattr(loaded, f"litellm_{role}_api_key") == "synthetic-key"
-    model_field = f"litellm_{role}_model" if role == "embedding" else f"litellm_{role}_language_model"
+    assert getattr(loaded, f"openai_{role}_api_key") == "synthetic-key"
+    model_field = f"openai_{role}_model" if role == "embedding" else f"openai_{role}_language_model"
     assert getattr(loaded, model_field) == "openai/second"

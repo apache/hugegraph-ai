@@ -18,39 +18,30 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
-from litellm.exceptions import APIError
-from litellm.utils import get_optional_params
 from openai import APIConnectionError, OpenAI
 from tenacity import wait_none
 
-from hugegraph_llm.models.llms import litellm as litellm_module
 from hugegraph_llm.models.llms import openai as openai_module
 from hugegraph_llm.models.llms.base import LLMOutputTruncatedError
 
 pytestmark = pytest.mark.contract
 
 
-@pytest.fixture(params=["openai", "litellm"])
-def client_factory(request, monkeypatch):
+@pytest.fixture
+def client_factory(monkeypatch):
     """Replace only the SDK call boundary, keeping the real wrapper and retries."""
     sync_call, async_call = Mock(), AsyncMock()
-    if request.param == "openai":
-        monkeypatch.setattr(
-            openai_module,
-            "OpenAI",
-            lambda **_: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=sync_call))),
-        )
-        monkeypatch.setattr(
-            openai_module,
-            "AsyncOpenAI",
-            lambda **_: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=async_call))),
-        )
-        cls = openai_module.OpenAIClient
-    else:
-        monkeypatch.setattr(litellm_module, "completion", sync_call)
-        monkeypatch.setattr(litellm_module, "acompletion", async_call)
-        cls = litellm_module.LiteLLMClient
-    return cls, sync_call, async_call
+    monkeypatch.setattr(
+        openai_module,
+        "OpenAI",
+        lambda **_: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=sync_call))),
+    )
+    monkeypatch.setattr(
+        openai_module,
+        "AsyncOpenAI",
+        lambda **_: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=async_call))),
+    )
+    return openai_module.OpenAIClient, sync_call, async_call
 
 
 def completion(content="complete", finish_reason="stop"):
@@ -122,48 +113,12 @@ def test_request_uses_sdk_none_policy_and_preserves_explicit_token_limit(client_
     ]
 
 
-@pytest.mark.parametrize("provider,model", [("openai", "gpt-4o-mini"), ("hosted_vllm", "unit-model")])
-@pytest.mark.parametrize("mode", ["generate", "agenerate", "generate_streaming", "agenerate_streaming"])
-@pytest.mark.parametrize("limit", [None, 237])
-def test_litellm_provider_payload_omits_none_and_preserves_explicit_limit(monkeypatch, provider, model, mode, limit):
-    sync_call, async_call = Mock(), AsyncMock()
-    monkeypatch.setattr(litellm_module, "completion", sync_call)
-    monkeypatch.setattr(litellm_module, "acompletion", async_call)
-    configure_calls(sync_call, async_call, mode)
-    client = litellm_module.LiteLLMClient(api_key="test-key", model_name=f"{provider}/{model}", max_tokens=limit)
-
-    assert invoke(client, mode) == "complete"
-
-    sdk_call = async_call if mode.startswith("a") else sync_call
-    sdk_call.assert_called_once()
-    passed = sdk_call.call_args.kwargs
-    assert passed["max_tokens"] == limit
-    # Use LiteLLM's real provider conversion, rather than equating SDK kwargs
-    # with the outgoing payload. Its default-None filter owns this omission.
-    optional = get_optional_params(
-        model=model,
-        custom_llm_provider=provider,
-        max_tokens=passed["max_tokens"],
-        temperature=passed["temperature"],
-        stream=passed.get("stream", False),
-    )
-    payload = json.loads(json.dumps({"model": model, "messages": passed["messages"], **optional}))
-    assert payload["model"] == model
-    assert payload["messages"] == passed["messages"]
-    assert payload["stream"] == ("streaming" in mode)
-    assert "max_completion_tokens" not in payload
-    if limit is None:
-        assert "max_tokens" not in payload
-    else:
-        assert payload["max_tokens"] == limit
-
-
 def test_omitted_constructor_limit_keeps_existing_default(client_factory):
     cls, sync_call, async_call = client_factory
     client = cls(api_key="test-key")
     configure_calls(sync_call, async_call, "generate")
     assert invoke(client, "generate") == "complete"
-    expected = 8092 if cls is openai_module.OpenAIClient else 8192
+    expected = 8092
     assert sync_call.call_args.kwargs["max_tokens"] == expected
 
 
@@ -203,10 +158,7 @@ def test_streaming_checks_terminal_reason_before_delivering_terminal_chunk(
 
     # Previously delivered streaming content is preserved, but the length chunk is never delivered.
     assert len(seen) == 1
-    if cls is openai_module.OpenAIClient:
-        assert seen == ["partial-prefix"]
-    else:
-        assert seen[0].choices[0].delta.content == "partial-prefix"
+    assert seen == ["partial-prefix"]
     (async_call if mode.startswith("a") else sync_call).assert_called_once()
 
 
@@ -222,8 +174,7 @@ def test_default_truncation_policy_returns_content_even_without_a_token_cap(clie
     assert invoke(client, mode, callback=seen.append) == expected
     (async_call if mode.startswith("a") else sync_call).assert_called_once()
     if "streaming" in mode:
-        delivered = seen if cls is openai_module.OpenAIClient else [part.choices[0].delta.content for part in seen]
-        assert delivered == ["prefix-", "partial"]
+        assert seen == ["prefix-", "partial"]
 
 
 @pytest.mark.parametrize("mode", ["generate_streaming", "agenerate_streaming"])
@@ -233,10 +184,7 @@ def test_stop_stream_preserves_content_and_callback_semantics(client_factory, mo
     configure_calls(sync_call, async_call, mode, content="-complete", finish_reason="stop", prefix="prefix")
     seen = []
     assert invoke(client, mode, callback=seen.append) == "prefix-complete"
-    if cls is openai_module.OpenAIClient:
-        assert seen == ["prefix", "-complete"]
-    else:
-        assert [part.choices[0].delta.content for part in seen] == ["prefix", "-complete"]
+    assert seen == ["prefix", "-complete"]
 
 
 @pytest.mark.parametrize("mode", ["generate", "agenerate"])
@@ -253,11 +201,7 @@ def test_network_retry_remains_enabled(client_factory, mode, monkeypatch):
     cls, sync_call, async_call = client_factory
     client = cls(api_key="test-key", max_tokens=None)
     sdk_call = async_call if mode.startswith("a") else sync_call
-    error = (
-        APIConnectionError(request=httpx.Request("POST", "https://unit.test"))
-        if cls is openai_module.OpenAIClient
-        else APIError(status_code=500, message="upstream failed", llm_provider="openai", model="test-model")
-    )
+    error = APIConnectionError(request=httpx.Request("POST", "https://unit.test"))
     sdk_call.side_effect = [error, completion()]
     monkeypatch.setattr(getattr(client, mode).retry, "wait", wait_none())
     assert invoke(client, mode) == "complete"

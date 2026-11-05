@@ -39,7 +39,6 @@ def saved_config(tmp_path, monkeypatch):
             (
                 "OPENAI_",
                 "OLLAMA_",
-                "LITELLM_",
                 "CHAT_",
                 "EXTRACT_",
                 "TEXT2GQL_",

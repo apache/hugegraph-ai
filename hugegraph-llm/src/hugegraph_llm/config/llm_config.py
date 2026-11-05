@@ -83,8 +83,6 @@ class LLMConfig(BaseConfig):
             if field.endswith("_port") and (value is None or not 1 <= int(value) <= 65535):
                 raise ValueError("Invalid port")
             if field.endswith(("_api_base", "_base_url")):
-                if not value and provider == "litellm":
-                    continue  # LiteLLM can resolve the destination from its model name.
                 parsed = urlsplit(str(value or ""))
                 if (
                     parsed.scheme not in ("http", "https")
@@ -100,10 +98,10 @@ class LLMConfig(BaseConfig):
         return "chat" if role in ("extract", "text2gql") and getattr(self, f"{role}_use_chat") else role
 
     language: Literal["EN", "CN"] = "EN"
-    chat_llm_type: Literal["openai", "litellm", "ollama/local"] = "openai"
-    extract_llm_type: Literal["openai", "litellm", "ollama/local"] = "openai"
-    text2gql_llm_type: Literal["openai", "litellm", "ollama/local"] = "openai"
-    embedding_type: Optional[Literal["openai", "litellm", "ollama/local"]] = "openai"
+    chat_llm_type: Literal["openai", "ollama/local"] = "openai"
+    extract_llm_type: Literal["openai", "ollama/local"] = "openai"
+    text2gql_llm_type: Literal["openai", "ollama/local"] = "openai"
+    embedding_type: Optional[Literal["openai", "ollama/local"]] = "openai"
     reranker_type: Optional[Literal["cohere", "siliconflow"]] = None
     keyword_extract_type: Literal["llm", "textrank", "hybrid"] = "llm"
     window_size: Optional[int] = 3
@@ -161,22 +159,6 @@ class LLMConfig(BaseConfig):
     ollama_embedding_host: Optional[str] = "127.0.0.1"
     ollama_embedding_port: Optional[int] = 11434
     ollama_embedding_model: Optional[str] = None
-    # 4. LiteLLM settings
-    litellm_chat_api_key: Optional[str] = None
-    litellm_chat_api_base: Optional[str] = None
-    litellm_chat_language_model: Optional[str] = "openai/gpt-4.1-mini"
-    litellm_chat_tokens: int = Field(8192, ge=1)
-    litellm_extract_api_key: Optional[str] = None
-    litellm_extract_api_base: Optional[str] = None
-    litellm_extract_language_model: Optional[str] = "openai/gpt-4.1-mini"
-    litellm_extract_tokens: int = Field(256, ge=1)
-    litellm_text2gql_api_key: Optional[str] = None
-    litellm_text2gql_api_base: Optional[str] = None
-    litellm_text2gql_language_model: Optional[str] = "openai/gpt-4.1-mini"
-    litellm_text2gql_tokens: int = Field(4096, ge=1)
-    litellm_embedding_api_key: Optional[str] = None
-    litellm_embedding_api_base: Optional[str] = None
-    litellm_embedding_model: Optional[str] = "openai/text-embedding-3-small"
 
 
 LLMConfig.connection_groups = {

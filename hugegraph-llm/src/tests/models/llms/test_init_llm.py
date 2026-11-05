@@ -25,7 +25,7 @@ from hugegraph_llm.models.llms import init_llm
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize(("provider", "class_name"), [("openai", "OpenAIClient"), ("litellm", "LiteLLMClient")])
+@pytest.mark.parametrize(("provider", "class_name"), [("openai", "OpenAIClient")])
 def test_chat_factory_omits_limit_only_when_requested(monkeypatch, provider, class_name):
     constructor = Mock()
     monkeypatch.setattr(init_llm, class_name, constructor)

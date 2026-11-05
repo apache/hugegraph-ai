@@ -17,14 +17,12 @@
 
 
 from hugegraph_llm.config import LLMConfig, llm_settings, snapshot_llm_settings
-from hugegraph_llm.models.embeddings.litellm import LiteLLMEmbedding
 from hugegraph_llm.models.embeddings.ollama import OllamaEmbedding
 from hugegraph_llm.models.embeddings.openai import OpenAIEmbedding
 
 model_map = {
     "openai": llm_settings.openai_embedding_model,
     "ollama/local": llm_settings.ollama_embedding_model,
-    "litellm": llm_settings.litellm_embedding_model,
 }
 
 
@@ -40,12 +38,6 @@ def get_embedding(llm_configs: LLMConfig):
             model=llm_configs.ollama_embedding_model,
             host=llm_configs.ollama_embedding_host,
             port=llm_configs.ollama_embedding_port,
-        )
-    if llm_configs.embedding_type == "litellm":
-        return LiteLLMEmbedding(
-            model_name=llm_configs.litellm_embedding_model,
-            api_key=llm_configs.litellm_embedding_api_key or "EMPTY",
-            api_base=llm_configs.litellm_embedding_api_base,
         )
 
     raise ValueError("embedding type is not supported !")
@@ -83,29 +75,5 @@ class Embeddings:
             except Exception:  # pylint: disable=broad-except
                 pass  # Keep default dimension
             return embedding
-        if settings.embedding_type == "litellm":
-            # For LiteLLM, we need to get dimension dynamically
-            # Create a temporary instance to test dimension
-            temp_embedding = LiteLLMEmbedding(
-                embedding_dimension=1536,  # Temporary default
-                model_name=settings.litellm_embedding_model,
-                api_key=settings.litellm_embedding_api_key or "EMPTY",
-                api_base=settings.litellm_embedding_api_base,
-            )
-            # Get actual dimension
-            try:
-                test_vec = temp_embedding.get_text_embedding("test")
-                actual_dim = len(test_vec)
-            except Exception:  # pylint: disable=broad-except
-                actual_dim = 1536  # Fallback
-
-            # Create final instance with correct dimension
-            embedding = LiteLLMEmbedding(
-                embedding_dimension=actual_dim,
-                model_name=settings.litellm_embedding_model,
-                api_key=settings.litellm_embedding_api_key or "EMPTY",
-                api_base=settings.litellm_embedding_api_base,
-            )
-            return embedding  # type: ignore
 
         raise Exception("embedding type is not supported !")

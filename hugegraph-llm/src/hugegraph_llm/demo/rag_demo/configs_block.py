@@ -193,17 +193,11 @@ def _saved_key(group, key_field, supplied, destination_fields, clear=False):
     )
     old_provider = previous.get(provider_field)
     old_key = "reranker_api_key" if group == "reranker" else f"{old_provider}_{group}_api_key"
-    # LiteLLM may pick up provider credentials directly from the environment,
-    # even when its role-specific key field is empty.
-    might_have_key = bool(previous.get(old_key)) or old_provider == "litellm"
+    might_have_key = bool(previous.get(old_key))
     if old_provider == getattr(llm_settings, provider_field):
         might_have_key = might_have_key or bool(previous.get(key_field))
     for field in destination_fields:
         old, new = previous.get(field), getattr(llm_settings, field)
-        if field.startswith("litellm_") and field.endswith(("_language_model", "_model")):
-            # A provider/model name can change within one provider without changing
-            # where its key goes. An unqualified name remains an explicit route.
-            old, new = str(old or "").split("/", 1)[0], str(new or "").split("/", 1)[0]
         if old != new and might_have_key:
             raise ValueError("Changing the model destination requires a new API key or explicit clear")
     return previous.get(key_field)
@@ -215,7 +209,7 @@ def apply_embedding_config(arg1, arg2, arg3, origin_call=None, clear_api_key=Fal
         llm_settings.embedding_type = provider
     provider = llm_settings.embedding_type
     prefix = "ollama" if provider == "ollama/local" else provider
-    if provider not in ("openai", "litellm", "ollama/local"):
+    if provider not in ("openai", "ollama/local"):
         raise ValueError("Unsupported embedding provider")
     if provider == "ollama/local":
         llm_settings.ollama_embedding_host = arg1
@@ -234,7 +228,6 @@ def apply_embedding_config(arg1, arg2, arg3, origin_call=None, clear_api_key=Fal
                 (
                     "embedding_type",
                     f"{prefix}_embedding_api_base",
-                    *((f"{prefix}_embedding_model",) if provider == "litellm" else ()),
                 ),
                 clear_api_key,
             ),
@@ -318,7 +311,7 @@ def apply_llm_config(
         if provider == "ollama/local":
             setattr(llm_settings, f"ollama_{role}_host", api_key_or_host)
             setattr(llm_settings, f"ollama_{role}_port", int(api_base_or_port))
-        elif provider in ("openai", "litellm"):
+        elif provider == "openai":
             base, key = f"{prefix}_{role}_api_base", f"{prefix}_{role}_api_key"
             setattr(llm_settings, f"{prefix}_{role}_language_model", model_name)
             setattr(llm_settings, base, api_base_or_port)
@@ -332,7 +325,6 @@ def apply_llm_config(
                     (
                         f"{role}_llm_type",
                         base,
-                        *((f"{prefix}_{role}_language_model",) if provider == "litellm" else ()),
                     ),
                     clear_api_key,
                 ),
@@ -514,7 +506,7 @@ def create_configs_block() -> list:
                     inherit.input(partial(use_chat_connection, role), inputs=inherit)
                     gr.Markdown("Saving a connection below switches this role to its own configuration.")
                 dropdown = gr.Dropdown(
-                    choices=["openai", "litellm", "ollama/local"],
+                    choices=["openai", "ollama/local"],
                     value=getattr(llm_settings, f"{role}_llm_type"),
                     label="Provider",
                 )
@@ -522,7 +514,7 @@ def create_configs_block() -> list:
 
     with gr.Accordion("3. Set up the Embedding.", open=False):
         embedding_dropdown = gr.Dropdown(
-            choices=["openai", "litellm", "ollama/local"], value=llm_settings.embedding_type, label="Provider"
+            choices=["openai", "ollama/local"], value=llm_settings.embedding_type, label="Provider"
         )
 
         @gr.render(inputs=[embedding_dropdown])

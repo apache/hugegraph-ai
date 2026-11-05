@@ -16,7 +16,6 @@
 # under the License.
 
 from hugegraph_llm.config import LLMConfig, snapshot_llm_settings
-from hugegraph_llm.models.llms.litellm import LiteLLMClient
 from hugegraph_llm.models.llms.ollama import OllamaClient
 from hugegraph_llm.models.llms.openai import OpenAIClient
 
@@ -35,14 +34,6 @@ def get_chat_llm(llm_configs: LLMConfig, *, limit_output: bool = True, raise_on_
             model=llm_configs.ollama_chat_language_model,
             host=llm_configs.ollama_chat_host,
             port=llm_configs.ollama_chat_port,
-            raise_on_truncation=raise_on_truncation,
-        )
-    if llm_configs.chat_llm_type == "litellm":
-        return LiteLLMClient(
-            api_key=llm_configs.litellm_chat_api_key or "EMPTY",
-            api_base=llm_configs.litellm_chat_api_base,
-            model_name=llm_configs.litellm_chat_language_model,
-            max_tokens=llm_configs.litellm_chat_tokens if limit_output else None,
             raise_on_truncation=raise_on_truncation,
         )
     raise Exception("chat llm type is not supported !")
@@ -66,14 +57,6 @@ def get_extract_llm(llm_configs: LLMConfig, *, raise_on_truncation: bool = False
             port=llm_configs.ollama_extract_port,
             raise_on_truncation=raise_on_truncation,
         )
-    if llm_configs.extract_llm_type == "litellm":
-        return LiteLLMClient(
-            api_key=llm_configs.litellm_extract_api_key or "EMPTY",
-            api_base=llm_configs.litellm_extract_api_base,
-            model_name=llm_configs.litellm_extract_language_model,
-            max_tokens=llm_configs.litellm_extract_tokens,
-            raise_on_truncation=raise_on_truncation,
-        )
     raise Exception("extract llm type is not supported !")
 
 
@@ -93,14 +76,6 @@ def get_text2gql_llm(llm_configs: LLMConfig, *, raise_on_truncation: bool = Fals
             model=llm_configs.ollama_text2gql_language_model,
             host=llm_configs.ollama_text2gql_host,
             port=llm_configs.ollama_text2gql_port,
-            raise_on_truncation=raise_on_truncation,
-        )
-    if llm_configs.text2gql_llm_type == "litellm":
-        return LiteLLMClient(
-            api_key=llm_configs.litellm_text2gql_api_key or "EMPTY",
-            api_base=llm_configs.litellm_text2gql_api_base,
-            model_name=llm_configs.litellm_text2gql_language_model,
-            max_tokens=llm_configs.litellm_text2gql_tokens,
             raise_on_truncation=raise_on_truncation,
         )
     raise Exception("text2gql llm type is not supported !")

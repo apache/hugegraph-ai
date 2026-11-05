@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hugegraph_llm.config import prompt
 
-LLMProviderType = Literal["openai", "ollama/local", "litellm"]
+LLMProviderType = Literal["openai", "ollama/local"]
 RerankerProviderType = Literal["cohere", "siliconflow"]
 
 
@@ -110,8 +110,7 @@ class LLMConfigRequest(BaseModel):
     role: Literal["chat", "extract", "text2gql"] = "chat"
     clear_api_key: bool = False
     llm_type: LLMProviderType
-    # The common parameters shared by OpenAI, LiteLLM,
-    # and OLLAMA platforms.
+    # The common parameters shared by OpenAI-compatible and Ollama platforms.
     api_key: Optional[str] = None
     api_base: Optional[str] = None
     language_model: str

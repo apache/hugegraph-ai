@@ -91,6 +91,12 @@ def _write_file(target: Path, text: str):
         Path(temporary).unlink(missing_ok=True)
 
 
+def _quote_dotenv(value) -> str:
+    """Quote one value using the syntax parsed by python-dotenv."""
+    escaped = str(value).replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
 class BaseConfig(BaseSettings):
     """Load deployment defaults and explicit saved connections without startup writes.
 
@@ -239,7 +245,6 @@ class BaseConfig(BaseSettings):
         target = Path(env_path)
         if target.exists() and input(f"Replace configuration in {env_path}? (y/n) ").lower() != "y":
             return
-        from shlex import quote
 
         values = dict(dotenv_values(target)) if target.exists() else {}
         for field in type(self).model_fields:
@@ -249,4 +254,4 @@ class BaseConfig(BaseSettings):
             value = getattr(self, field)
             if value is not None and not self._process_source(field):
                 values[field.upper()] = str(value)
-        _write_file(target, "".join(f"{k}={quote(str(v))}\n" for k, v in values.items() if v is not None))
+        _write_file(target, "".join(f"{k}={_quote_dotenv(v)}\n" for k, v in values.items() if v is not None))

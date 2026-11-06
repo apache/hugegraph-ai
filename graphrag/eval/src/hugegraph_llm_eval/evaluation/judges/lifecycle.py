@@ -43,6 +43,7 @@ from hugegraph_llm_eval.evaluation.judges.base import (
     JudgeOptions,
     JudgeRequest,
 )
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions, BatchInputError, BatchOutputError
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
 
@@ -63,7 +64,9 @@ class JudgedEvaluatorLifecycle:
         rubric: JudgeContent,
         clock: Callable[[], datetime],
         implementation: Mapping[str, JsonValue] | None = None,
+        batching: BatchingOptions | None = None,
     ) -> None:
+        self._batching = batching or BatchingOptions()
         self._invocation_key = invocation_key
         self._judge = judge
         self._prompt = prompt
@@ -74,7 +77,8 @@ class JudgedEvaluatorLifecycle:
             implementation_digest=canonical_digest(
                 {
                     "algorithm": invocation_key,
-                    "version": 2,
+                    "version": 3,
+                    "batching": self._batching.model_dump(mode="json"),
                     "judge": judge.descriptor.model_dump(mode="json"),
                     "prompt": prompt.reference.model_dump(mode="json"),
                     "rubric": rubric.reference.model_dump(mode="json"),
@@ -110,12 +114,18 @@ class JudgedEvaluatorLifecycle:
         prompt: JudgeContent | None = None,
         rubric: JudgeContent | None = None,
     ) -> JudgeRequest[OutputT]:
+        encoded = canonical_json_bytes(payload)
+        if len(encoded) > self._batching.max_payload_bytes:
+            raise BatchInputError(
+                f"Judge payload needs {len(encoded)} bytes; configured limit is {self._batching.max_payload_bytes}. "
+                "Reduce the input or raise the explicit limit; shared evidence is never truncated."
+            )
         selected_prompt = prompt or self._prompt
         selected_rubric = rubric or self._rubric
         return JudgeRequest(
             messages=(
                 JudgeMessage(role="system", content=f"{selected_prompt.text}\n\nRubric:\n{selected_rubric.text}"),
-                JudgeMessage(role="user", content=canonical_json_bytes(payload).decode()),
+                JudgeMessage(role="user", content=encoded.decode()),
             ),
             response_type=output_type,
             prompt=selected_prompt.reference,
@@ -161,7 +171,23 @@ class JudgedEvaluatorLifecycle:
             created_at=self._clock(),
         )
 
-    def judge_failure(self, error: JudgeCallError, session: JudgeSession) -> EvaluationRecordDraft:
+    def judge_failure(
+        self, error: JudgeCallError | BatchInputError | BatchOutputError, session: JudgeSession
+    ) -> EvaluationRecordDraft:
+        if isinstance(error, BatchInputError):
+            return self.failure(
+                "evaluation_payload_too_large",
+                str(error),
+                FailureCategory.RESOURCE_EXHAUSTED,
+                calls=session.calls,
+            )
+        if isinstance(error, BatchOutputError):
+            return self.failure(
+                "incomplete_batch_verdicts",
+                str(error),
+                FailureCategory.INVALID_PROVIDER_OUTPUT,
+                calls=session.calls,
+            )
         return self.failure(
             error.failure.code,
             error.failure.message,

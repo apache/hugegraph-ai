@@ -111,7 +111,12 @@ def test_long_entity_and_reason_are_valid_individually_and_together():
         RetrievalArtifactMaterializer(store), judge=judge, prompt=CONTENT, rubric=CONTENT, clock=lambda: NOW
     )
     sample = retrieval_input(
-        store, candidate_doc_ids=(), reference_doc_ids=(), question="Which entity?", reference_answer="e" * 4_000
+        store,
+        candidate_doc_ids=(),
+        reference_doc_ids=(),
+        question="Which entity?",
+        reference_answer="e" * 4_000,
+        reference_entities=("e" * 4_000,),
     )
     record = evaluate([evaluator], sample).records[0]
     assert record.status is EvaluationRecordStatus.COMPLETED

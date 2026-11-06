@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -55,10 +55,14 @@ def _networkx():
     return networkx
 
 
-def global_optimal_matches(matches: list[MatchPair]) -> tuple[MatchPair, ...]:
+def global_optimal_matches(
+    matches: list[MatchPair], *, strategy: Literal["max_weight", "max_cardinality"] = "max_weight"
+) -> tuple[MatchPair, ...]:
     """Select a maximum-weight one-to-one matching over all proposed pairs."""
+    if strategy not in ("max_weight", "max_cardinality"):
+        raise ValueError("unknown matching strategy")
     graph, pair_by_edge = _matching_graph(matches)
-    matching = _networkx().max_weight_matching(graph, maxcardinality=False, weight="weight")
+    matching = _networkx().max_weight_matching(graph, maxcardinality=strategy == "max_cardinality", weight="weight")
     return _accepted_pairs(matching, pair_by_edge)
 
 

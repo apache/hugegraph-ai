@@ -85,7 +85,7 @@ class OpenAICompatibleSettings(StrictModel):
 def _configuration_payload(
     settings: OpenAICompatibleSettings,
     pricing: OpenAICompatiblePricing,
-    transport: JsonValue | None = None,
+    transport: JsonValue = None,
 ) -> JsonValue:
     payload: dict[str, JsonValue] = {
         "generation": settings.model_dump(mode="json"),
@@ -131,7 +131,7 @@ class OpenAICompatibleJudge(AttemptLoopJudge):
         pricing: OpenAICompatiblePricing,
         settings: OpenAICompatibleSettings,
         clock: Callable[[], datetime],
-        transport_configuration: JsonValue | None = None,
+        transport_configuration: JsonValue = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:

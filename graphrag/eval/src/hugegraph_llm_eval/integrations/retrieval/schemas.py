@@ -17,7 +17,9 @@
 
 """Strict retrieval candidate, reference, and query schemas."""
 
-from pydantic import Field
+from typing import Annotated
+
+from pydantic import Field, model_validator
 
 from hugegraph_llm_eval.contracts.base import StrictModel, VersionedModel
 
@@ -31,6 +33,13 @@ class RetrievalReference(VersionedModel):
     doc_ids: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
     answer: str = ""
+    entities: tuple[Annotated[str, Field(min_length=1, max_length=4_000)], ...] | None = None
+
+    @model_validator(mode="after")
+    def _unique_entities(self) -> "RetrievalReference":
+        if self.entities is not None and len(self.entities) != len(set(self.entities)):
+            raise ValueError("reference entities must be unique")
+        return self
 
 
 class RetrievalQuery(VersionedModel):

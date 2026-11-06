@@ -17,7 +17,7 @@
 
 """Shared materialization and record lifecycle for judged retrieval metrics."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 
 from pydantic import JsonValue
@@ -32,6 +32,7 @@ from hugegraph_llm_eval.contracts.domain.evaluation import (
 )
 from hugegraph_llm_eval.contracts.errors import FailureCategory
 from hugegraph_llm_eval.evaluation.judges.base import Judge
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.judges.lifecycle import JudgedEvaluatorLifecycle
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
@@ -53,8 +54,11 @@ class JudgedRetrievalEvaluator(JudgedEvaluatorLifecycle):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
+        implementation: Mapping[str, JsonValue] | None = None,
     ) -> None:
         self._materializer = materializer
+        self._batching = batching or BatchingOptions()
         super().__init__(
             namespace="retrieval",
             invocation_key=invocation_key,
@@ -63,7 +67,13 @@ class JudgedRetrievalEvaluator(JudgedEvaluatorLifecycle):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
-            implementation={"question_required": True},
+            batching=self._batching,
+            implementation={
+                "question_required": True,
+                "retrieval_contract_version": 3,
+                "batching": self._batching.model_dump(mode="json"),
+                **(implementation or {}),
+            },
         )
 
     def materialize(self, evaluation_input: EvaluationInput) -> RetrievalComparisonInput | EvaluationRecordDraft:

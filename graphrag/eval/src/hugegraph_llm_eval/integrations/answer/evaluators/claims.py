@@ -22,8 +22,10 @@ from pydantic import Field, model_validator
 from hugegraph_llm_eval.contracts.base import StrictModel
 from hugegraph_llm_eval.contracts.domain.artifacts import ArtifactRef
 from hugegraph_llm_eval.contracts.domain.evaluation import EvidenceLink
+from hugegraph_llm_eval.evaluation.judges.batching import BatchOutputError, payload_batches
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
 from hugegraph_llm_eval.integrations.answer.evaluators.judged_common import JudgedAnswerEvaluator
+from hugegraph_llm_eval.utils.text_preview import text_preview
 
 
 class ClaimDecompositionOutput(StrictModel):
@@ -79,18 +81,23 @@ def verify(
 ) -> NLIVerdictsOutput:
     if not claims:
         return NLIVerdictsOutput(verdicts=())
-    return session.call(
-        call_key,
-        evaluator.request_for_task(
-            "verify",
-            NLIVerdictsOutput,
-            {
-                "task": "verify_claims",
-                "context": context,
-                "statements": [{"statement_index": index, "text": claim} for index, claim in enumerate(claims)],
-            },
-        ),
+    verdicts: list[NLIVerdict] = []
+    batches = payload_batches(
+        tuple(enumerate(claims)),
+        lambda items: {
+            "task": "verify_claims",
+            "context": context,
+            "statements": [{"statement_index": index, "text": claim} for index, claim in items],
+        },
+        evaluator._batching,
     )
+    for ordinal, (items, payload) in enumerate(batches):
+        key = call_key if ordinal == 0 else f"{call_key}_{ordinal}"
+        output = session.call(key, evaluator.request_for_task("verify", NLIVerdictsOutput, payload))
+        if {item.statement_index for item in output.verdicts} != {index for index, _ in items}:
+            raise BatchOutputError("NLI judge must cover exactly the supplied claim indices in this batch")
+        verdicts.extend(output.verdicts)
+    return NLIVerdictsOutput(verdicts=tuple(verdicts))
 
 
 def complete_verdicts(output: NLIVerdictsOutput, count: int) -> bool:
@@ -104,6 +111,4 @@ def ordered_verdicts(output: NLIVerdictsOutput) -> tuple[NLIVerdict, ...]:
 
 def claim_evidence(artifact: ArtifactRef, locator: str, claim: str) -> EvidenceLink:
     """Retain the judged claim because its generated index is not in the source artifact."""
-    suffix = "… [truncated]"
-    description = claim if len(claim) <= 2_000 else claim[: 2_000 - len(suffix)] + suffix
-    return EvidenceLink(artifact=artifact, locator=locator, description=description)
+    return EvidenceLink(artifact=artifact, locator=locator, description=text_preview(claim, 2_000))

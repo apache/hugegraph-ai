@@ -17,6 +17,7 @@
 
 """Run limits hold across samples and mixed graph evaluators."""
 
+import json
 import threading
 
 import pytest
@@ -83,7 +84,11 @@ def test_mixed_graph_metrics_share_the_provider_limit() -> None:
                 # A broken limiter admits all three calls; a working one admits only two.
                 self.all_started.wait(0.5)
                 output = (
-                    FaithfulnessJudgeOutput(supported_vertex_indices=tuple(range(300)))
+                    FaithfulnessJudgeOutput(
+                        supported_vertex_indices=tuple(
+                            item["item_index"] for item in json.loads(request.messages[-1].content)["items"]
+                        )
+                    )
                     if request.response_type is FaithfulnessJudgeOutput
                     else _verdicts(1)
                 )
@@ -110,5 +115,5 @@ def test_mixed_graph_metrics_share_the_provider_limit() -> None:
     )
 
     assert result.succeeded
-    assert judge.calls == 3
+    assert judge.calls == 4
     assert judge.peak <= 2

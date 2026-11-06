@@ -100,10 +100,15 @@ def _answer(name: str, payload: dict[str, Any]) -> dict[str, Any]:
                 for item in payload["contexts"]
             ]
         }
+    if name == "ReferenceEntitiesOutput":
+        return {"entities": ["auth tokens"]}
     if name == "ContextEntityRecallOutput":
         return {
             "has_reference_entities": True,
-            "verdicts": [{"entity_index": 0, "entity": "auth tokens", "covered": True, "reason": "present"}],
+            "verdicts": [
+                {"entity_index": item["entity_index"], "entity": item["text"], "covered": True, "reason": "present"}
+                for item in payload["entities"]
+            ],
         }
     if name == "EvidenceRecallOutput":
         return {

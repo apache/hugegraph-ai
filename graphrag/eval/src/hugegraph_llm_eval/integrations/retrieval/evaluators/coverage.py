@@ -19,6 +19,7 @@
 
 from collections.abc import Callable
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import Field, model_validator
 
@@ -33,18 +34,41 @@ from hugegraph_llm_eval.contracts.domain.evaluation import (
     FindingSeverity,
 )
 from hugegraph_llm_eval.contracts.errors import FailureCategory
+from hugegraph_llm_eval.contracts.identity import ComponentRef
 from hugegraph_llm_eval.evaluation.judges.base import Judge, JudgeCallError
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions, BatchInputError, payload_batches
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
 from hugegraph_llm_eval.integrations.retrieval.evaluators.judged_common import (
     JudgedRetrievalEvaluator,
-    complete_indices,
     indexed,
     ratio,
     require_unique_indices,
     subject,
 )
 from hugegraph_llm_eval.integrations.retrieval.materializers import RetrievalArtifactMaterializer
+from hugegraph_llm_eval.utils.text_preview import text_preview
+
+_ENTITY_EXTRACTION_INSTRUCTION = (
+    "Extract every distinct entity from reference_answer, without deciding whether it is covered. "
+    'Return only {"entities": ["entity name"]}; preserve named entities, include unsupported ones, '
+    "and do not invent entities. The caller will freeze this inventory before evaluating retrieval."
+)
+_ENTITY_COVERAGE_INSTRUCTION = (
+    "The supplied entities are the fixed reference inventory. Return has_reference_entities and verdicts. "
+    "For EVERY supplied entity_index return exactly one verdict with the same entity text, covered and reason. "
+    "Do not add, remove, rename or renumber entities, including those not covered by any retrieved context."
+)
+
+
+class ReferenceEntitiesOutput(StrictModel):
+    entities: tuple[Annotated[str, Field(min_length=1, max_length=4_000)], ...]
+
+    @model_validator(mode="after")
+    def _unique_entities(self) -> "ReferenceEntitiesOutput":
+        if len(self.entities) != len(set(self.entities)):
+            raise ValueError("reference entity inventory must be unique")
+        return self
 
 
 class ContextEntityVerdict(StrictModel):
@@ -57,7 +81,7 @@ class ContextEntityVerdict(StrictModel):
 
 
 class ContextEntityRecallOutput(StrictModel):
-    """Direct semantic coverage judgements for entities in the reference answer."""
+    """Semantic coverage judgements against a fixed reference entity inventory."""
 
     has_reference_entities: bool
     verdicts: tuple[ContextEntityVerdict, ...]
@@ -94,6 +118,7 @@ class ContextEntityRecallEvaluator(JudgedRetrievalEvaluator):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
     ) -> None:
         super().__init__(
             materializer,
@@ -102,6 +127,12 @@ class ContextEntityRecallEvaluator(JudgedRetrievalEvaluator):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
+            batching=batching,
+            implementation={
+                "entity_protocol": "fixed-inventory-v1",
+                "inventory_prompt": _ENTITY_EXTRACTION_INSTRUCTION,
+                "coverage_prompt": _ENTITY_COVERAGE_INSTRUCTION,
+            },
         )
 
     def evaluate(self, evaluation_input: EvaluationInput, context: EvaluationContext) -> EvaluationRecordDraft:
@@ -109,69 +140,107 @@ class ContextEntityRecallEvaluator(JudgedRetrievalEvaluator):
         if isinstance(value, EvaluationRecordDraft):
             return value
         session = self.session(context)
-        if not value.reference.answer.strip():
-            return self.completed(
-                ratio("context_entity_recall_llm", 1), (), "reference answer has no entities", session
-            )
+        supplied = value.reference.entities is not None
+        entities = value.reference.entities
         try:
-            output = session.call(
-                "judge_entity_coverage",
-                self.request(
-                    ContextEntityRecallOutput,
-                    {
-                        "question": value.query.question,
-                        "reference_answer": value.reference.answer,
-                        "contexts": indexed(value.candidate.contexts, "context_index"),
-                    },
-                ),
+            if entities is None:
+                entities = self._reference_entities(value.reference.answer, session)
+            if not entities:
+                return self.not_applicable_record("reference entity inventory is empty; recall is undefined", session)
+            verdicts: list[ContextEntityVerdict] = []
+            batches = payload_batches(
+                tuple(enumerate(entities)),
+                lambda items: {
+                    "question": value.query.question,
+                    "entities": [{"entity_index": index, "text": text} for index, text in items],
+                    "contexts": indexed(value.candidate.contexts, "context_index"),
+                },
+                self._batching,
             )
+            for ordinal, (items, payload) in enumerate(batches):
+                key = "judge_entity_coverage" if ordinal == 0 else f"judge_entity_coverage_{ordinal}"
+                output = session.call(
+                    key,
+                    self.request(
+                        ContextEntityRecallOutput,
+                        payload,
+                        prompt=self._entity_prompt("coverage", _ENTITY_COVERAGE_INSTRUCTION),
+                    ),
+                )
+                expected = dict(items)
+                if {item.entity_index for item in output.verdicts} != set(expected) or any(
+                    expected.get(item.entity_index) != item.entity for item in output.verdicts
+                ):
+                    return self.failure(
+                        "incomplete_context_entity_verdicts",
+                        "entity coverage must preserve every supplied entity and its global index",
+                        FailureCategory.INVALID_PROVIDER_OUTPUT,
+                        calls=session.calls,
+                    )
+                verdicts.extend(output.verdicts)
         except JudgeCallError as exc:
             return self.judge_failure(exc, session)
-        return self._complete_coverage(evaluation_input, output, session)
-
-    def _complete_coverage(
-        self,
-        evaluation_input: EvaluationInput,
-        output: ContextEntityRecallOutput,
-        session: JudgeSession,
-    ) -> EvaluationRecordDraft:
-        """Convert a complete entity-coverage verdict into record facts."""
-        if not output.has_reference_entities:
-            return self.completed(
-                ratio("context_entity_recall_llm", 1),
-                (),
-                "reference answer has no distinct entities",
-                session,
-            )
-        if not complete_indices(tuple(item.entity_index for item in output.verdicts), len(output.verdicts)):
+        except BatchInputError as exc:
             return self.failure(
-                "incomplete_context_entity_verdicts",
-                "context entity judge must return contiguous verdict indices starting at zero",
-                FailureCategory.INVALID_PROVIDER_OUTPUT,
+                "evaluation_payload_too_large",
+                str(exc),
+                FailureCategory.RESOURCE_EXHAUSTED,
                 calls=session.calls,
             )
-        ordered = sorted(output.verdicts, key=lambda item: item.entity_index)
+        ordered = sorted(verdicts, key=lambda item: item.entity_index)
         covered = sum(item.covered for item in ordered)
         artifact = subject(evaluation_input, "retrieval_reference")
+        source = "supplied" if supplied else "model-extracted"
         return self.completed(
-            ratio("context_entity_recall_llm", round(covered / len(ordered), 4)),
-            _entity_findings(ordered, artifact),
-            f"retrieved contexts semantically cover {covered} of {len(ordered)} reference entities",
+            ratio("context_entity_recall_llm", round(covered / len(entities), 4)),
+            _entity_findings(ordered, artifact, supplied=supplied),
+            f"retrieved contexts cover {covered} of {len(entities)} entities in the fixed {source} inventory",
             session,
+        )
+
+    def _reference_entities(self, answer: str, session: JudgeSession) -> tuple[str, ...]:
+        if not answer.strip():
+            return ()
+        batches = payload_batches((answer,), lambda items: {"reference_answer": items[0]}, self._batching)
+        _, payload = next(batches)
+        output = session.call(
+            "extract_reference_entities",
+            self.request(
+                ReferenceEntitiesOutput,
+                payload,
+                prompt=self._entity_prompt("inventory", _ENTITY_EXTRACTION_INSTRUCTION),
+            ),
+        )
+        return output.entities
+
+    def _entity_prompt(self, task: str, instruction: str) -> JudgeContent:
+        return JudgeContent(
+            component=ComponentRef(namespace="retrieval", name=f"entity_{task}", revision="v1"),
+            text=f"{self._prompt.text}\n\n{instruction}",
         )
 
 
 def _entity_findings(
     verdicts: list[ContextEntityVerdict],
     artifact: ArtifactRef,
+    *,
+    supplied: bool,
 ) -> tuple[Finding, ...]:
     """Render entity-coverage verdicts as item-level findings."""
     return tuple(
         Finding(
             code="context_entity_recall.covered" if verdict.covered else "context_entity_recall.missing",
             severity=FindingSeverity.INFO if verdict.covered else FindingSeverity.ERROR,
-            message=f"{verdict.entity}: {verdict.reason}",
-            evidence=(EvidenceLink(artifact=artifact, locator=f"answer.entity[{verdict.entity_index}]"),),
+            message=text_preview(f"{verdict.entity}: {verdict.reason}", 4_000),
+            evidence=(
+                EvidenceLink(
+                    artifact=artifact,
+                    locator=(
+                        f"entities[{verdict.entity_index}]" if supplied else f"answer.entity[{verdict.entity_index}]"
+                    ),
+                    description=text_preview(verdict.entity, 2_000),
+                ),
+            ),
         )
         for verdict in verdicts
     )
@@ -186,6 +255,7 @@ class EvidenceRecallEvaluator(JudgedRetrievalEvaluator):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
     ) -> None:
         super().__init__(
             materializer,
@@ -194,6 +264,7 @@ class EvidenceRecallEvaluator(JudgedRetrievalEvaluator):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
+            batching=batching,
         )
 
     def evaluate(self, evaluation_input: EvaluationInput, context: EvaluationContext) -> EvaluationRecordDraft:
@@ -211,28 +282,38 @@ class EvidenceRecallEvaluator(JudgedRetrievalEvaluator):
                 for index in range(len(evidence))
             )
             return self.completed(ratio("evidence_recall_llm", 0), findings, "no retrieved contexts", session)
+        verdicts: list[EvidenceVerdict] = []
         try:
-            output = session.call(
-                "verify_evidence",
-                self.request(
-                    EvidenceRecallOutput,
-                    {
-                        "question": value.query.question,
-                        "contexts": list(value.candidate.contexts),
-                        "evidence": indexed(evidence, "evidence_index"),
-                    },
-                ),
+            batches = payload_batches(
+                tuple(enumerate(evidence)),
+                lambda items: {
+                    "question": value.query.question,
+                    "contexts": list(value.candidate.contexts),
+                    "evidence": [{"evidence_index": index, "text": text} for index, text in items],
+                },
+                self._batching,
             )
+            for ordinal, (items, payload) in enumerate(batches):
+                key = "verify_evidence" if ordinal == 0 else f"verify_evidence_{ordinal}"
+                output = session.call(key, self.request(EvidenceRecallOutput, payload))
+                if {item.evidence_index for item in output.verdicts} != {index for index, _ in items}:
+                    return self.failure(
+                        "incomplete_evidence_verdicts",
+                        "evidence judge must cover exactly the supplied batch",
+                        FailureCategory.INVALID_PROVIDER_OUTPUT,
+                        calls=session.calls,
+                    )
+                verdicts.extend(output.verdicts)
         except JudgeCallError as exc:
             return self.judge_failure(exc, session)
-        if not complete_indices(tuple(item.evidence_index for item in output.verdicts), len(evidence)):
+        except BatchInputError as exc:
             return self.failure(
-                "incomplete_evidence_verdicts",
-                "evidence judge must return one verdict for every evidence index",
-                FailureCategory.INVALID_PROVIDER_OUTPUT,
+                "evaluation_payload_too_large",
+                str(exc),
+                FailureCategory.RESOURCE_EXHAUSTED,
                 calls=session.calls,
             )
-        ordered = sorted(output.verdicts, key=lambda item: item.evidence_index)
+        ordered = sorted(verdicts, key=lambda item: item.evidence_index)
         attributed = sum(item.attributed for item in ordered)
         return self.completed(
             ratio("evidence_recall_llm", round(attributed / len(ordered), 4)),

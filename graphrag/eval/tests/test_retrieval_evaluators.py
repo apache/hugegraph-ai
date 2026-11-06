@@ -39,6 +39,7 @@ from hugegraph_llm_eval.contracts.domain.operation import PortName
 from hugegraph_llm_eval.contracts.identity import ComponentRef, EvaluationRunId, SchemaRef
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.options import CancellationToken
+from hugegraph_llm_eval.integrations.retrieval.evaluators.coverage import ReferenceEntitiesOutput
 from hugegraph_llm_eval.integrations.retrieval.evaluators.judged import (
     ContextEntityRecallEvaluator,
     ContextEntityRecallOutput,
@@ -255,6 +256,7 @@ def test_context_entity_and_evidence_recall_keep_semantic_item_reasons(tmp_path:
     materializer = RetrievalArtifactMaterializer(store)
     entity_judge = ScriptedJudge(
         (
+            ReferenceEntitiesOutput(entities=("answer", "Car")),
             ContextEntityRecallOutput(
                 has_reference_entities=True,
                 verdicts=(
@@ -301,9 +303,10 @@ def test_context_entity_and_evidence_recall_keep_semantic_item_reasons(tmp_path:
 
     assert _measurements(entity) == {"context_entity_recall_llm": 0.5}
     assert _measurements(evidence) == {"evidence_recall_llm": 0.5}
-    assert len(entity.judge_calls) == 1
+    assert len(entity.judge_calls) == 2
     assert "reference_answer" in entity_judge.requests[0].messages[-1].content
-    assert "context_index" in entity_judge.requests[0].messages[-1].content
+    assert "context_index" not in entity_judge.requests[0].messages[-1].content
+    assert "context_index" in entity_judge.requests[1].messages[-1].content
     assert [item.code for item in evidence.findings] == [
         "evidence_recall.supported",
         "evidence_recall.missing",

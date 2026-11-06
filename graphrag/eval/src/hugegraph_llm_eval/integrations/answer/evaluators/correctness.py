@@ -35,6 +35,7 @@ from hugegraph_llm_eval.contracts.domain.evaluation import (
 )
 from hugegraph_llm_eval.contracts.errors import FailureCategory
 from hugegraph_llm_eval.evaluation.judges.base import Judge, JudgeCallError
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions, BatchInputError, BatchOutputError
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.integrations.answer.evaluators.claims import (
     NLIVerdict,
@@ -90,6 +91,7 @@ class AnswerCorrectnessEvaluator(JudgedAnswerEvaluator):
         rubric: JudgeContent,
         clock: Callable[[], datetime],
         use_default_task_prompts: bool = False,
+        batching: BatchingOptions | None = None,
     ) -> None:
         super().__init__(
             materializer,
@@ -99,6 +101,7 @@ class AnswerCorrectnessEvaluator(JudgedAnswerEvaluator):
             rubric=rubric,
             clock=clock,
             use_default_task_prompts=use_default_task_prompts,
+            batching=batching,
         )
 
     def evaluate(self, evaluation_input: EvaluationInput, context: EvaluationContext) -> EvaluationRecordDraft:
@@ -122,7 +125,7 @@ class AnswerCorrectnessEvaluator(JudgedAnswerEvaluator):
                     },
                 ),
             )
-        except JudgeCallError as exc:
+        except (JudgeCallError, BatchInputError, BatchOutputError) as exc:
             return self.judge_failure(exc, session)
         if not _complete_classification(output, len(candidate), len(reference)):
             return self.failure(
@@ -154,6 +157,7 @@ class FactualCorrectnessEvaluator(JudgedAnswerEvaluator):
         rubric: JudgeContent,
         clock: Callable[[], datetime],
         use_default_task_prompts: bool = False,
+        batching: BatchingOptions | None = None,
     ) -> None:
         super().__init__(
             materializer,
@@ -163,6 +167,7 @@ class FactualCorrectnessEvaluator(JudgedAnswerEvaluator):
             rubric=rubric,
             clock=clock,
             use_default_task_prompts=use_default_task_prompts,
+            batching=batching,
         )
 
     def evaluate(self, evaluation_input: EvaluationInput, context: EvaluationContext) -> EvaluationRecordDraft:
@@ -176,7 +181,7 @@ class FactualCorrectnessEvaluator(JudgedAnswerEvaluator):
             precision = verify(self, session, "verify_candidate", candidate, reference_value)
             reference = decompose(self, session, "decompose_reference", value.source.question, reference_value)
             recall = verify(self, session, "verify_reference", reference, value.candidate.text)
-        except JudgeCallError as exc:
+        except (JudgeCallError, BatchInputError, BatchOutputError) as exc:
             return self.judge_failure(exc, session)
         if not complete_verdicts(precision, len(candidate)) or not complete_verdicts(recall, len(reference)):
             return self.failure(

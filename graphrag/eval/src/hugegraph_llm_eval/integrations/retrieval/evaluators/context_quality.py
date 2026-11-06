@@ -20,7 +20,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from pydantic import Field, model_validator
+from pydantic import Field, JsonValue, model_validator
 
 from hugegraph_llm_eval.contracts.base import StrictModel
 from hugegraph_llm_eval.contracts.domain.artifacts import ArtifactRef
@@ -34,11 +34,11 @@ from hugegraph_llm_eval.contracts.domain.evaluation import (
 )
 from hugegraph_llm_eval.contracts.errors import FailureCategory
 from hugegraph_llm_eval.evaluation.judges.base import Judge, JudgeCallError
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions, BatchInputError, payload_batches
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
+from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
 from hugegraph_llm_eval.integrations.retrieval.evaluators.judged_common import (
     JudgedRetrievalEvaluator,
-    complete_indices,
-    indexed,
     ratio,
     require_unique_indices,
     subject,
@@ -85,6 +85,7 @@ class ContextPrecisionEvaluator(JudgedRetrievalEvaluator):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
     ) -> None:
         super().__init__(
             materializer,
@@ -93,6 +94,7 @@ class ContextPrecisionEvaluator(JudgedRetrievalEvaluator):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
+            batching=batching,
         )
 
     def evaluate(self, evaluation_input: EvaluationInput, context: EvaluationContext) -> EvaluationRecordDraft:
@@ -103,28 +105,17 @@ class ContextPrecisionEvaluator(JudgedRetrievalEvaluator):
         contexts = value.candidate.contexts
         if not contexts:
             return self.completed(ratio("context_precision", 0), (), "no retrieved contexts", session)
-        try:
-            output = session.call(
-                "judge_contexts",
-                self.request(
-                    ContextPrecisionOutput,
-                    {
-                        "question": value.query.question,
-                        "ground_truth": value.reference.answer,
-                        "contexts": indexed(contexts, "context_index"),
-                    },
-                ),
-            )
-        except JudgeCallError as exc:
-            return self.judge_failure(exc, session)
-        if not complete_indices(tuple(item.context_index for item in output.verdicts), len(contexts)):
-            return self.failure(
-                "incomplete_context_verdicts",
-                "context precision judge must return one verdict for every context index",
-                FailureCategory.INVALID_PROVIDER_OUTPUT,
-                calls=session.calls,
-            )
-        ordered = sorted(output.verdicts, key=lambda item: item.context_index)
+        verdicts = _judge_context_batches(
+            self,
+            session,
+            ContextPrecisionOutput,
+            {"question": value.query.question, "ground_truth": value.reference.answer},
+            contexts,
+            "judge_contexts",
+        )
+        if isinstance(verdicts, EvaluationRecordDraft):
+            return verdicts
+        ordered = sorted(verdicts, key=lambda item: item.context_index)
         relevance = [int(item.relevant) for item in ordered]
         artifact = subject(evaluation_input, "retrieval_candidate")
         return self.completed(
@@ -144,6 +135,7 @@ class ContextRelevancyEvaluator(JudgedRetrievalEvaluator):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
     ) -> None:
         super().__init__(
             materializer,
@@ -152,6 +144,7 @@ class ContextRelevancyEvaluator(JudgedRetrievalEvaluator):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
+            batching=batching,
         )
 
     def evaluate(self, evaluation_input: EvaluationInput, context: EvaluationContext) -> EvaluationRecordDraft:
@@ -162,24 +155,17 @@ class ContextRelevancyEvaluator(JudgedRetrievalEvaluator):
         contexts = value.candidate.contexts
         if not contexts:
             return self.completed(ratio("context_relevancy", 0), (), "no retrieved contexts", session)
-        try:
-            output = session.call(
-                "score_contexts",
-                self.request(
-                    ContextRelevancyOutput,
-                    {"question": value.query.question, "contexts": indexed(contexts, "context_index")},
-                ),
-            )
-        except JudgeCallError as exc:
-            return self.judge_failure(exc, session)
-        if not complete_indices(tuple(item.context_index for item in output.verdicts), len(contexts)):
-            return self.failure(
-                "incomplete_context_verdicts",
-                "context relevancy judge must return one verdict for every context index",
-                FailureCategory.INVALID_PROVIDER_OUTPUT,
-                calls=session.calls,
-            )
-        ordered = sorted(output.verdicts, key=lambda item: item.context_index)
+        verdicts = _judge_context_batches(
+            self,
+            session,
+            ContextRelevancyOutput,
+            {"question": value.query.question},
+            contexts,
+            "score_contexts",
+        )
+        if isinstance(verdicts, EvaluationRecordDraft):
+            return verdicts
+        ordered = sorted(verdicts, key=lambda item: item.context_index)
         score = sum(item.score for item in ordered) / (2 * len(ordered))
         artifact = subject(evaluation_input, "retrieval_candidate")
         return self.completed(
@@ -188,6 +174,44 @@ class ContextRelevancyEvaluator(JudgedRetrievalEvaluator):
             f"mean graded context relevance is {score:.4f}",
             session,
         )
+
+
+def _judge_context_batches(
+    evaluator: JudgedRetrievalEvaluator,
+    session: JudgeSession,
+    output_type,
+    fixed: dict[str, JsonValue],
+    contexts: tuple[str, ...],
+    call_key: str,
+):
+    verdicts = []
+    try:
+        batches = payload_batches(
+            tuple(enumerate(contexts)),
+            lambda batch: {**fixed, "contexts": [{"context_index": i, "text": text} for i, text in batch]},
+            evaluator._batching,
+        )
+        for ordinal, (items, payload) in enumerate(batches):
+            key = call_key if ordinal == 0 else f"{call_key}_{ordinal}"
+            output = session.call(key, evaluator.request(output_type, payload))
+            if {item.context_index for item in output.verdicts} != {index for index, _ in items}:
+                return evaluator.failure(
+                    "incomplete_context_verdicts",
+                    "judge must cover exactly the contexts in this batch",
+                    FailureCategory.INVALID_PROVIDER_OUTPUT,
+                    calls=session.calls,
+                )
+            verdicts.extend(output.verdicts)
+    except JudgeCallError as exc:
+        return evaluator.judge_failure(exc, session)
+    except BatchInputError as exc:
+        return evaluator.failure(
+            "evaluation_payload_too_large",
+            str(exc),
+            FailureCategory.RESOURCE_EXHAUSTED,
+            calls=session.calls,
+        )
+    return tuple(verdicts)
 
 
 def _average_precision(relevance: list[int]) -> float:

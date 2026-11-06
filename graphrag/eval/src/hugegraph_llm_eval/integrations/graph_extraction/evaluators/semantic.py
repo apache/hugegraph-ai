@@ -18,9 +18,10 @@
 """LLM semantic entity and triple matching with deterministic scoring."""
 
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import islice
 from typing import Literal
 
 from pydantic import Field, JsonValue, model_validator
@@ -45,6 +46,7 @@ from hugegraph_llm_eval.evaluation.judges.base import (
     JudgeOptions,
     JudgeRequest,
 )
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions, BatchInputError, paired_payload_batches
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
 from hugegraph_llm_eval.integrations.graph_extraction.evaluators.semantic_scoring import (
@@ -132,9 +134,6 @@ class _SemanticSpec:
     evaluator: EvaluatorRef
 
 
-_CANDIDATE_BATCH_SIZE = 256
-
-
 @dataclass(frozen=True, slots=True)
 class _SemanticBatchResult:
     """Result of one independent candidate-batch judge call."""
@@ -156,7 +155,13 @@ class _SemanticGraphEvaluator:
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
+        matching_strategy: Literal["max_weight", "max_cardinality"] = "max_weight",
     ) -> None:
+        if matching_strategy not in ("max_weight", "max_cardinality"):
+            raise ValueError("matching_strategy must be 'max_weight' or 'max_cardinality'")
+        self._batching = batching or BatchingOptions()
+        self._matching_strategy = matching_strategy
         self._materializer = materializer
         self._spec = spec
         self._judge = judge
@@ -168,8 +173,10 @@ class _SemanticGraphEvaluator:
             implementation_digest=canonical_digest(
                 {
                     "algorithm": f"graph-semantic-{spec.kind}",
-                    "version": 8,
-                    "matching": "candidate-batch-alternative-pairs-global-max-weight-one-to-one",
+                    "version": 9,
+                    "matching": "two-sided-window-alternative-pairs-global-one-to-one",
+                    "matching_strategy": matching_strategy,
+                    "batching": self._batching.model_dump(mode="json"),
                     "judge": judge.descriptor.model_dump(mode="json"),
                     "prompt": prompt.reference.model_dump(mode="json"),
                     "rubric": rubric.reference.model_dump(mode="json"),
@@ -199,7 +206,7 @@ class _SemanticGraphEvaluator:
         if not candidate or not reference:
             return self._completed(evaluation_input, candidate, reference, [], ())
         batch_results = self._run_batches(
-            _batches(tuple(enumerate(candidate)), _CANDIDATE_BATCH_SIZE),
+            tuple(enumerate(candidate)),
             tuple(enumerate(reference)),
             context,
         )
@@ -240,29 +247,58 @@ class _SemanticGraphEvaluator:
 
     def _run_batches(
         self,
-        candidate_batches: tuple[tuple[tuple[int, GraphItem], ...], ...],
+        indexed_candidate: tuple[tuple[int, GraphItem], ...],
         indexed_reference: tuple[tuple[int, GraphItem], ...],
         context: EvaluationContext,
     ) -> tuple[_SemanticBatchResult, ...]:
-        """Judge independent candidate batches concurrently, preserving batch order."""
-        if not candidate_batches:
-            return ()
-        worker_count = min(context.max_concurrency, len(candidate_batches))
+        batches = enumerate(
+            paired_payload_batches(
+                indexed_candidate,
+                indexed_reference,
+                lambda candidate, reference: _request_payload(candidate, reference, self._spec.kind),
+                self._batching,
+            )
+        )
+        results: list[_SemanticBatchResult] = []
         with ThreadPoolExecutor(
-            max_workers=worker_count,
+            max_workers=context.max_concurrency,
             thread_name_prefix=f"hugegraph-llm-eval-semantic-{self._spec.kind}",
         ) as executor:
-            futures: tuple[Future[_SemanticBatchResult], ...] = tuple(
-                executor.submit(self._run_batch, ordinal, candidate_batch, indexed_reference, context)
-                for ordinal, candidate_batch in enumerate(candidate_batches)
-            )
-            return tuple(future.result() for future in futures)
+            while True:
+                try:
+                    group = tuple(islice(batches, context.max_concurrency))
+                except BatchInputError as exc:
+                    results.append(
+                        _SemanticBatchResult(
+                            output=None,
+                            judge_calls=(),
+                            failure=FailureDetail(
+                                category=FailureCategory.RESOURCE_EXHAUSTED,
+                                code="evaluation_payload_too_large",
+                                message=str(exc),
+                                retryable=False,
+                            ),
+                        )
+                    )
+                    break
+                if not group:
+                    break
+                futures = [
+                    executor.submit(self._run_batch, ordinal, candidate, reference, payload, context)
+                    for ordinal, (candidate, reference, payload) in group
+                ]
+                outcomes = tuple(future.result() for future in futures)
+                results.extend(outcomes)
+                if any(outcome.failure is not None for outcome in outcomes):
+                    break
+        return tuple(results)
 
     def _run_batch(
         self,
         batch_ordinal: int,
         candidate_batch: tuple[tuple[int, GraphItem], ...],
         indexed_reference: tuple[tuple[int, GraphItem], ...],
+        payload: JsonValue,
         context: EvaluationContext,
     ) -> _SemanticBatchResult:
         """Run one candidate batch in its own judge session."""
@@ -277,7 +313,7 @@ class _SemanticGraphEvaluator:
             limiter=context.limiter,
             clock=self._clock,
         )
-        request = _request(candidate_batch, indexed_reference, self._prompt, self._rubric, self._spec.kind)
+        request = _request(payload, self._prompt, self._rubric)
         try:
             output = session.call(f"candidate_batch_{batch_ordinal}", request)
         except JudgeCallError as exc:
@@ -308,7 +344,7 @@ class _SemanticGraphEvaluator:
         matches: list[MatchPair],
         judge_calls: tuple[JudgeCallRecord, ...],
     ) -> EvaluationRecordDraft:
-        accepted = global_optimal_matches(matches)
+        accepted = global_optimal_matches(matches, strategy=self._matching_strategy)
         matched = len(accepted)
         precision = matched / len(candidate) if candidate else 0.0
         recall = matched / len(reference) if reference else 0.0
@@ -369,6 +405,8 @@ class SemanticEntityEvaluator(_SemanticGraphEvaluator):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
+        matching_strategy: Literal["max_weight", "max_cardinality"] = "max_weight",
     ) -> None:
         super().__init__(
             materializer,
@@ -381,6 +419,8 @@ class SemanticEntityEvaluator(_SemanticGraphEvaluator):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
+            batching=batching,
+            matching_strategy=matching_strategy,
         )
 
 
@@ -393,6 +433,8 @@ class SemanticTripleEvaluator(_SemanticGraphEvaluator):
         prompt: JudgeContent,
         rubric: JudgeContent,
         clock: Callable[[], datetime],
+        batching: BatchingOptions | None = None,
+        matching_strategy: Literal["max_weight", "max_cardinality"] = "max_weight",
     ) -> None:
         super().__init__(
             materializer,
@@ -405,18 +447,13 @@ class SemanticTripleEvaluator(_SemanticGraphEvaluator):
             prompt=prompt,
             rubric=rubric,
             clock=clock,
+            batching=batching,
+            matching_strategy=matching_strategy,
         )
 
 
 def _items(graph: GraphCandidate, kind: str) -> tuple[GraphItem, ...]:
     return tuple(graph.vertices if kind == "entity" else graph.edges)
-
-
-def _batches(values: tuple[tuple[int, GraphItem], ...], size: int) -> tuple[tuple[tuple[int, GraphItem], ...], ...]:
-    """Split candidates so every LLM verdict task stays bounded."""
-    if not values:
-        return ((),)
-    return tuple(values[index : index + size] for index in range(0, len(values), size))
 
 
 def _match_pairs(output: SemanticVerdictOutput) -> tuple[MatchPair, ...]:
@@ -443,24 +480,27 @@ def _renumber_judge_calls(calls: tuple[JudgeCallRecord, ...]) -> tuple[JudgeCall
     return tuple(call.model_copy(update={"call_index": index}) for index, call in enumerate(calls, start=1))
 
 
-def _request(
+def _request_payload(
     candidate: tuple[tuple[int, GraphItem], ...],
     reference: tuple[tuple[int, GraphItem], ...],
+    kind: str,
+) -> JsonValue:
+    return {
+        "item_kind": kind,
+        "candidates": [_payload(index, item, kind, "candidate_index") for index, item in candidate],
+        "references": [_payload(index, item, kind, "reference_index") for index, item in reference],
+    }
+
+
+def _request(
+    payload: JsonValue,
     prompt: JudgeContent,
     rubric: JudgeContent,
-    kind: str,
 ) -> JudgeRequest[SemanticVerdictOutput]:
-    payload = canonical_json_bytes(
-        {
-            "item_kind": kind,
-            "candidates": [_payload(index, item, kind, "candidate_index") for index, item in candidate],
-            "references": [_payload(index, item, kind, "reference_index") for index, item in reference],
-        }
-    ).decode()
     return JudgeRequest(
         messages=(
             JudgeMessage(role="system", content=f"{prompt.text}\n\nRubric:\n{rubric.text}"),
-            JudgeMessage(role="user", content=payload),
+            JudgeMessage(role="user", content=canonical_json_bytes(payload).decode()),
         ),
         response_type=SemanticVerdictOutput,
         prompt=prompt.reference,

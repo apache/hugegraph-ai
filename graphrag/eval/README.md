@@ -84,7 +84,7 @@ EVAL_JUDGE_MODEL=<model> EVAL_JUDGE_API_KEY=<key> python examples/all_metrics.py
 | --- | --- |
 | Retrieval | `recall@k`, `hit@k` (any/all), `MRR`, context precision, context relevancy, context entity recall, evidence recall |
 | Answers | ROUGE-L (English and Chinese), answer correctness, factual correctness, faithfulness, noise sensitivity |
-| Graph extraction | entity extraction precision/recall/F1, relation extraction precision/recall/F1, schema validity, graph faithfulness |
+| Graph extraction | entity extraction precision/recall/F1, relation extraction precision, recall and F1, schema validity, graph faithfulness |
 
 Entity and relation scores compare the candidate graph against a reference graph and
 match semantically: equivalent names may match despite label or property differences,
@@ -96,18 +96,30 @@ source text.
 ### Scoring boundaries
 
 - Semantic entity/triple judges propose every valid candidate/reference pair in
-  each 256-candidate window, including alternatives for the same item. A reference
-  with no match in that window gets one null verdict. The existing solver then
-  selects a maximum-total-weight one-to-one assignment over **all returned pairs**;
-  a window must not discard alternatives by assigning matches locally. Custom
-  prompts and judges must follow this pair-proposal protocol. This does not
-  guarantee that an LLM finds every true semantic match. Dense ambiguous graphs
-  can produce more output tokens; candidate batching and request counts are
-  unchanged, and provider output limits still apply.
-- Schema validity treats a candidate as a complete graph: edge endpoints must
-  exist among its vertices. An explicit endpoint label disambiguates equal names;
-  without it, the name must resolve to exactly one type. Invalid graphs remain
-  valid evaluation inputs and produce findings rather than failing construction.
+  each bounded candidate/reference window, including alternatives for the same
+  item. A reference with no match in that window gets one null verdict. The
+  default `matching_strategy="max_weight"` selects a maximum-total-weight
+  one-to-one assignment over **all returned pairs**. Set `"max_cardinality"` on
+  either semantic evaluator to maximize matched count first, then weight. The
+  strategy changes the evaluator digest. For weights 100 versus two compatible
+  edges of 49 each, the default deliberately chooses one match; cardinality mode
+  chooses two. Custom prompts and judges must propose alternatives, never assign
+  locally. Neither strategy guarantees an LLM finds every true semantic pair.
+- Schema validity checks the declared basic contract: vertex labels, primary-key
+  presence and per-label composite-key uniqueness, edge labels and actual endpoint
+  types. It is **not** a complete HugeGraph database-schema validator: property
+  data types, undeclared properties and edge sort keys are not represented here.
+  Primary-key values retain their case and JSON type. An explicit endpoint label
+  disambiguates equal names; without it, a name must resolve to exactly one type.
+  Invalid graphs produce findings rather than failing input construction.
+- Context entity recall freezes an entity inventory before judging coverage.
+  Supply `reference_entities` to `retrieval_input` for an authoritative denominator;
+  otherwise a separate extraction call sees only the reference answer, not the
+  retrieved contexts. Coverage must return every inventory item unchanged, including
+  missing entities. Omitted, renamed or out-of-window items fail the metric rather
+  than inflate recall. An empty inventory is `not_applicable`, not a perfect score.
+  Model-extracted inventories can still omit entities; fixing the inventory does
+  not turn an LLM extraction into ground truth. Entity text is retained in findings.
 - Judged answer metrics treat `references` as cumulative reference content.
   ROUGE-L instead selects the best lexical reference. For alternative correct
   answers, evaluate the alternatives separately and choose an aggregation in the
@@ -175,6 +187,52 @@ not be added again. Unknown or unpriced attempts stop later samples and metrics
 in a budgeted run while preserving completed records. With `openai_judge`, supply
 both `input_usd_per_million` and `output_usd_per_million` for cost estimates; a
 provider must also report usage for its cost to be verifiable.
+
+### Large inputs and per-request limits
+
+Judged evaluators accept an optional `batching=BatchingOptions(...)`:
+
+```python
+from hugegraph_llm_eval import BatchingOptions, GraphFaithfulnessEvaluator
+
+metric = GraphFaithfulnessEvaluator(
+    materializer,
+    judge=judge,
+    prompt=prompt,
+    rubric=rubric,
+    clock=utc_now,
+    batching=BatchingOptions(max_items=128, max_payload_bytes=128_000),
+)
+```
+
+Defaults are 256 items and 512,000 UTF-8 JSON payload bytes. Graph faithfulness
+batches vertices and edges with global indices; semantic matching windows both
+candidate and reference collections and then applies one global assignment.
+Context precision/relevancy, evidence/entity coverage and answer NLI verification
+also batch items. Context precision is calculated over the complete original
+ranking, **not** averaged across per-window precision scores. All calls retain
+the shared limiter, deadline, cancellation and attempt-level usage accounting.
+
+Shared evidence is copied intact into each request, never silently truncated.
+Answer decomposition and global correctness classification remain whole-input
+operations because arbitrary splitting would change their semantics. If a single
+item plus shared evidence, or a whole-input task, exceeds the byte limit, the
+record fails with `evaluation_payload_too_large`; previous call provenance is
+kept and an incomplete metric is not reported as a complete score. Split the
+business input meaningfully or explicitly adjust the limit.
+
+These are **payload** limits, not model context-token or output-token limits:
+system prompts, schemas and model tokenization have additional overhead. Dense
+semantic alternatives can still exceed a provider's output limit. Smaller windows
+increase call counts; two-sided semantic batching has a candidate-window ×
+reference-window cost. Budget settlement remains evaluator-level, so `budget_usd`
+is not a hard per-request spending ceiling. Configure provider-specific limits
+and bound workloads with a deadline.
+
+The context-entity Judge protocol now includes `ReferenceEntitiesOutput` followed
+by coverage requests containing a fixed `entities` list. Custom Judge adapters
+must support both response types, or callers can pass `reference_entities` to
+skip extraction. Empty and omitted inventories are intentionally distinct.
 
 ## Judge-based metrics with a real model
 

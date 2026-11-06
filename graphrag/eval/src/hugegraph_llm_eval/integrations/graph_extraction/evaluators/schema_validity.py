@@ -20,7 +20,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from hugegraph_llm_eval.contracts.digests import canonical_digest
+from hugegraph_llm_eval.contracts.digests import canonical_digest, canonical_json_bytes
 from hugegraph_llm_eval.contracts.domain.artifacts import ArtifactRef
 from hugegraph_llm_eval.contracts.domain.evaluation import (
     EvaluationContext,
@@ -51,6 +51,7 @@ from hugegraph_llm_eval.integrations.graph_extraction.materializers import (
     GraphArtifactMaterializer,
     GraphMaterializationError,
 )
+from hugegraph_llm_eval.utils.text_preview import text_preview
 
 SCHEMA_VALIDITY_REF = EvaluatorRef(namespace="graph", name="schema_validity", revision="v1")
 EXTRACTION_SCHEMA_VALIDITY_REF = EvaluatorRef(namespace="graph", name="schema_validity", revision="v2")
@@ -76,7 +77,7 @@ class SchemaValidityEvaluator:
             implementation_digest=canonical_digest(
                 {
                     "algorithm": "graph-schema-validity",
-                    "version": 3,
+                    "version": 4,
                     "input_schema": input_schema.model_dump(mode="json"),
                 }
             ),
@@ -184,6 +185,7 @@ def _validate_vertices(
 ) -> tuple[int, int]:
     valid_types = 0
     filled_properties = 0
+    primary_key_owners: dict[tuple[str, bytes], int] = {}
     for index, vertex in enumerate(vertices):
         declared = vertex_schemas.get(vertex.label.casefold())
         if declared is None:
@@ -207,6 +209,24 @@ def _validate_vertices(
             findings.append(_finding("schema.missing_required_property", message, artifact, f"vertices[{index}]"))
         else:
             filled_properties += 1
+            if declared.primary_keys:
+                key = (
+                    vertex.label.casefold(),
+                    canonical_json_bytes([vertex.properties[name] for name in declared.primary_keys]),
+                )
+                owner = primary_key_owners.setdefault(key, index)
+                if owner != index:
+                    findings.append(
+                        Finding(
+                            code="schema.duplicate_primary_key",
+                            severity=FindingSeverity.ERROR,
+                            message=f"vertices[{index}] and vertices[{owner}] have the same primary key for this label",
+                            evidence=(
+                                EvidenceLink(artifact=artifact, locator=f"vertices[{index}]"),
+                                EvidenceLink(artifact=artifact, locator=f"vertices[{owner}]"),
+                            ),
+                        )
+                    )
     return valid_types, filled_properties
 
 
@@ -248,7 +268,7 @@ def _finding(code: str, message: str, artifact: ArtifactRef, locator: str) -> Fi
     return Finding(
         code=code,
         severity=FindingSeverity.ERROR,
-        message=message,
+        message=text_preview(message, 4_000),
         evidence=(EvidenceLink(artifact=artifact, locator=locator),),
     )
 

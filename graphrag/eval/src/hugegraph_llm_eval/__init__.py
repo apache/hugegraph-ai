@@ -48,6 +48,7 @@ from hugegraph_llm_eval.evaluation.judges.base import (
     JudgeRequest,
     JudgeResult,
 )
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.options import CancellationToken, EvaluationOptions
 from hugegraph_llm_eval.integrations.answer.evaluators.correctness import (
@@ -109,6 +110,7 @@ __all__ = [
     "AnswerCorrectnessEvaluator",
     "AnswerFaithfulnessEvaluator",
     "AuthMode",
+    "BatchingOptions",
     "CancellationToken",
     "ClaudeCodeJudge",
     "ClaudeCodeJudgeConfig",

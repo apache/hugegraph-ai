@@ -34,6 +34,7 @@ from hugegraph_llm_eval.integrations.retrieval.evaluators.context_quality import
 from hugegraph_llm_eval.integrations.retrieval.evaluators.coverage import (
     ContextEntityRecallOutput,
     EvidenceRecallOutput,
+    ReferenceEntitiesOutput,
 )
 
 RESPONSE_TYPES = [
@@ -44,6 +45,7 @@ RESPONSE_TYPES = [
     ContextRelevancyOutput,
     ContextEntityRecallOutput,
     EvidenceRecallOutput,
+    ReferenceEntitiesOutput,
     SemanticVerdictOutput,
     FaithfulnessJudgeOutput,
 ]

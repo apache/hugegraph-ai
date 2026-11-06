@@ -51,6 +51,7 @@ from hugegraph_llm_eval.evaluation.judges.base import (
     JudgeOptions,
     JudgeRequest,
 )
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions, BatchInputError, payload_batches
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
 from hugegraph_llm_eval.integrations.graph_extraction.evaluators.faithfulness_output import (
@@ -68,6 +69,7 @@ from hugegraph_llm_eval.integrations.graph_extraction.materializers import (
     GraphArtifactMaterializer,
     GraphMaterializationError,
 )
+from hugegraph_llm_eval.utils.text_preview import text_preview
 
 FAITHFULNESS_REF = EvaluatorRef(namespace="graph", name="faithfulness", revision="v1")
 EXTRACTION_FAITHFULNESS_REF = EvaluatorRef(namespace="graph", name="faithfulness", revision="v2")
@@ -85,6 +87,7 @@ class FaithfulnessEvaluator:
         rubric: JudgeContent,
         clock: Callable[[], datetime],
         input_schema: SchemaRef = GRAPH_REVIEW_INPUT_SCHEMA,
+        batching: BatchingOptions | None = None,
     ) -> None:
         if input_schema not in QUALITY_INPUT_SCHEMAS:
             raise ValueError("graph quality input schema must be candidate_review or extraction")
@@ -94,9 +97,15 @@ class FaithfulnessEvaluator:
         self._rubric = rubric
         self._clock = clock
         self._input_schema = input_schema
+        self._batching = batching or BatchingOptions()
         self.descriptor = EvaluatorDescriptor(
             evaluator=_evaluator_ref(input_schema),
-            implementation_digest=canonical_digest(_implementation_identity(judge, prompt, rubric, input_schema)),
+            implementation_digest=canonical_digest(
+                {
+                    **_implementation_identity(judge, prompt, rubric, input_schema),
+                    "batching": self._batching.model_dump(mode="json"),
+                }
+            ),
             input_schema=input_schema,
             output_schema=SchemaRef(namespace="graph", name="faithfulness_record", version=1),
         )
@@ -118,7 +127,6 @@ class FaithfulnessEvaluator:
             )
         if not materialized.candidate.vertices and not materialized.candidate.edges:
             return self._empty_candidate()
-        request = _judge_request(materialized, self._prompt, self._rubric)
         session = JudgeSession(
             self._judge,
             JudgeOptions(
@@ -130,27 +138,42 @@ class FaithfulnessEvaluator:
             limiter=context.limiter,
             clock=self._clock,
         )
+        verdicts: list[FaithfulnessVerdict] = []
         try:
-            output = session.call("evaluate_items", request)
+            batches = payload_batches(
+                _items(materialized.candidate),
+                lambda items: {"source_text": materialized.source_text, "items": list(items)},
+                self._batching,
+            )
+            for index, (items, payload) in enumerate(batches):
+                key = "evaluate_items" if index == 0 else f"evaluate_items_{index}"
+                output = session.call(key, _judge_request(payload, self._prompt, self._rubric))
+                batch_verdicts = output.verdicts()
+                coverage_failure = _coverage_failure(items, batch_verdicts)
+                if coverage_failure is not None:
+                    return self._failure(
+                        "incomplete_faithfulness_verdicts",
+                        coverage_failure,
+                        FailureCategory.INVALID_PROVIDER_OUTPUT,
+                        judge_calls=session.calls,
+                    )
+                verdicts.extend(batch_verdicts)
         except JudgeCallError as exc:
             return self._judge_failure(exc, session)
-        verdicts = output.verdicts()
-        coverage_failure = _coverage_failure(materialized.candidate, verdicts)
-        judge_call = session.calls[0]
-        if coverage_failure is not None:
+        except BatchInputError as exc:
             return self._failure(
-                "incomplete_faithfulness_verdicts",
-                coverage_failure,
-                FailureCategory.INVALID_PROVIDER_OUTPUT,
-                judge_call=judge_call,
+                "evaluation_payload_too_large",
+                str(exc),
+                FailureCategory.RESOURCE_EXHAUSTED,
+                judge_calls=session.calls,
             )
-        return self._completed(evaluation_input, verdicts, judge_call)
+        return self._completed(evaluation_input, tuple(verdicts), session.calls)
 
     def _completed(
         self,
         evaluation_input: EvaluationInput,
         verdicts: tuple[FaithfulnessVerdict, ...],
-        judge_call: JudgeCallRecord,
+        judge_calls: tuple[JudgeCallRecord, ...],
     ) -> EvaluationRecordDraft:
         vertex_verdicts = tuple(item for item in verdicts if item.item_kind is FaithfulnessItemKind.VERTEX)
         edge_verdicts = tuple(item for item in verdicts if item.item_kind is FaithfulnessItemKind.EDGE)
@@ -177,9 +200,9 @@ class FaithfulnessEvaluator:
                 f"vertices {faithful_vertices}/{len(vertex_verdicts)}, "
                 f"edges {faithful_edges}/{len(edge_verdicts)}"
             ),
-            judge_calls=(judge_call,),
+            judge_calls=judge_calls,
             attempts=1,
-            latency_ms=_judge_call_latency(judge_call),
+            latency_ms=sum(_judge_call_latency(call) for call in judge_calls),
             created_at=self._clock(),
         )
 
@@ -189,7 +212,7 @@ class FaithfulnessEvaluator:
             error.failure.message,
             error.failure.category,
             retryable=error.failure.retryable,
-            judge_call=session.calls[0],
+            judge_calls=session.calls,
         )
 
     def _failure(
@@ -199,7 +222,7 @@ class FaithfulnessEvaluator:
         category: FailureCategory,
         *,
         retryable: bool = False,
-        judge_call: JudgeCallRecord | None = None,
+        judge_calls: tuple[JudgeCallRecord, ...] = (),
     ) -> EvaluationRecordDraft:
         failure = FailureDetail(category=category, code=code, message=message, retryable=retryable)
         return EvaluationRecordDraft(
@@ -211,9 +234,9 @@ class FaithfulnessEvaluator:
                 else EvaluationRecordStatus.FAILED
             ),
             reason=message,
-            judge_calls=(judge_call,) if judge_call is not None else (),
+            judge_calls=judge_calls,
             attempts=1,
-            latency_ms=_judge_call_latency(judge_call) if judge_call is not None else 0,
+            latency_ms=sum(_judge_call_latency(call) for call in judge_calls),
             failure=failure,
             created_at=self._clock(),
         )
@@ -288,10 +311,10 @@ def _implementation_identity(
     prompt: JudgeContent,
     rubric: JudgeContent,
     input_schema: SchemaRef,
-) -> JsonValue:
+) -> dict[str, JsonValue]:
     return {
         "algorithm": "graph-item-faithfulness",
-        "version": 7,
+        "version": 8,
         "score_semantics": "supported_candidate_claims_micro_average_with_vertex_edge_diagnostics",
         "empty_candidate": "not_applicable",
         "input_schema": input_schema.model_dump(mode="json"),
@@ -306,19 +329,17 @@ def _judge_call_latency(call: JudgeCallRecord) -> int:
 
 
 def _judge_request(
-    materialized: GraphReviewInput | GraphExtractionInput,
+    payload: JsonValue,
     prompt: JudgeContent,
     rubric: JudgeContent,
 ) -> JudgeRequest[FaithfulnessJudgeOutput]:
-    items = _items(materialized.candidate)
-    payload = canonical_json_bytes({"source_text": materialized.source_text, "items": items}).decode()
     return JudgeRequest(
         messages=(
             JudgeMessage(
                 role="system",
                 content=f"{prompt.text}\n\nRubric:\n{rubric.text}",
             ),
-            JudgeMessage(role="user", content=payload),
+            JudgeMessage(role="user", content=canonical_json_bytes(payload).decode()),
         ),
         response_type=FaithfulnessJudgeOutput,
         prompt=prompt.reference,
@@ -355,15 +376,12 @@ def _items(candidate: GraphCandidate) -> list[JsonValue]:
     return [*vertices, *edges]
 
 
-def _coverage_failure(candidate: GraphCandidate, verdicts: tuple[FaithfulnessVerdict, ...]) -> str | None:
-    expected = {
-        *((FaithfulnessItemKind.VERTEX, index) for index in range(len(candidate.vertices))),
-        *((FaithfulnessItemKind.EDGE, index) for index in range(len(candidate.edges))),
-    }
-    actual = {(item.item_kind, item.item_index) for item in verdicts}
+def _coverage_failure(items: tuple[JsonValue, ...], verdicts: tuple[FaithfulnessVerdict, ...]) -> str | None:
+    expected = {(item["item_kind"], item["item_index"]) for item in items if isinstance(item, dict)}
+    actual = {(item.item_kind.value, item.item_index) for item in verdicts}
     if actual == expected and len(actual) == len(verdicts):
         return None
-    return "faithfulness judge must return exactly one verdict for every candidate vertex and edge"
+    return "faithfulness judge must return exactly one verdict for every item in the supplied batch"
 
 
 def _findings(verdict: FaithfulnessVerdict, artifact: ArtifactRef) -> tuple[Finding, ...]:
@@ -373,7 +391,8 @@ def _findings(verdict: FaithfulnessVerdict, artifact: ArtifactRef) -> tuple[Find
         if verdict.item_kind is FaithfulnessItemKind.VERTEX
         else f"edges[{verdict.item_index}]"
     )
-    evidence = (EvidenceLink(artifact=artifact, locator=locator, description=verdict.evidence_quote),)
+    description = text_preview(verdict.evidence_quote, 2_000) if verdict.evidence_quote is not None else None
+    evidence = (EvidenceLink(artifact=artifact, locator=locator, description=description),)
     base = Finding(
         code="faithfulness.supported" if verdict.faithful else "faithfulness.unsupported",
         severity=FindingSeverity.INFO if verdict.faithful else FindingSeverity.ERROR,

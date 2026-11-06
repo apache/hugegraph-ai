@@ -31,6 +31,7 @@ from hugegraph_llm_eval.contracts.domain.evaluation import (
 from hugegraph_llm_eval.contracts.errors import FailureCategory
 from hugegraph_llm_eval.contracts.identity import ComponentRef
 from hugegraph_llm_eval.evaluation.judges.base import Judge
+from hugegraph_llm_eval.evaluation.judges.batching import BatchingOptions
 from hugegraph_llm_eval.evaluation.judges.content import JudgeContent
 from hugegraph_llm_eval.evaluation.judges.lifecycle import JudgedEvaluatorLifecycle
 from hugegraph_llm_eval.evaluation.judges.session import JudgeSession
@@ -54,6 +55,7 @@ class JudgedAnswerEvaluator(JudgedEvaluatorLifecycle):
         rubric: JudgeContent,
         clock: Callable[[], datetime],
         use_default_task_prompts: bool = False,
+        batching: BatchingOptions | None = None,
     ) -> None:
         self._materializer = materializer
         self._use_default_task_prompts = use_default_task_prompts
@@ -72,6 +74,7 @@ class JudgedAnswerEvaluator(JudgedEvaluatorLifecycle):
             rubric=rubric,
             clock=clock,
             implementation=implementation,
+            batching=batching,
         )
 
     def materialize(self, evaluation_input: EvaluationInput) -> AnswerComparisonInput | EvaluationRecordDraft:

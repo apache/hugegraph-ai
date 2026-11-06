@@ -155,7 +155,7 @@ def retrieval_judge_prompt(kind: str, language: str = "zh") -> str:
 _FAITHFULNESS_PROMPT_ZH: Final = """\
 你是知识图谱抽取质量的评审员。判断候选图中的每个顶点和每条边，是否被原始文本 source_text 忠实支持。
 
-输入是一条 JSON 消息：source_text 是唯一的证据；items 是候选项，顶点和边各自从 0 开始用 item_index 计数。顶点包含 label、name、properties、source_snippet；边包含 label、out_v、in_v、out_v_label、in_v_label、properties、source_snippet。
+输入是一条 JSON 消息：source_text 是唯一的证据；items 是当前批次的候选项，item_index 是原始图中的全局索引，顶点和边分别编号。保留输入中的索引，不得在批次内重新编号；只判断本批次提供的项。顶点包含 label、name、properties、source_snippet；边包含 label、out_v、in_v、out_v_label、in_v_label、properties、source_snippet。
 
 判定规则：
 - 把每个顶点或边视为一个完整的图事实断言。只有 source_text 明确陈述完整断言，或无需引入外部事实即可无歧义地推出时，才判为忠实。
@@ -191,7 +191,7 @@ _FAITHFULNESS_PROMPT_ZH: Final = """\
 _FAITHFULNESS_PROMPT_EN: Final = """\
 You review the quality of a knowledge-graph extraction. Decide whether each candidate vertex and edge is faithfully supported by the original text, source_text.
 
-The input is one JSON message. source_text is the only evidence. items are the candidates; vertices and edges are each numbered from 0 by item_index. A vertex has label, name, properties and source_snippet. An edge has label, out_v, in_v, out_v_label, in_v_label, properties and source_snippet.
+The input is one JSON message. source_text is the only evidence. items are the candidates in this batch; item_index is a global index in the original graph, with separate vertex and edge namespaces. Preserve the supplied indices without renumbering; evaluate only the items in this batch. A vertex has label, name, properties and source_snippet. An edge has label, out_v, in_v, out_v_label, in_v_label, properties and source_snippet.
 
 Rules:
 - Treat each vertex or edge as one complete factual claim. Mark it faithful only when source_text states the whole claim explicitly, or entails it unambiguously without external facts.
@@ -286,10 +286,10 @@ def semantic_verdict_prompt(kind: str, language: str = "zh") -> str:
             ),
         }[kind]
         protocol = (
-            "candidates 是当前候选窗口，references 是完整文档标准答案。对每个 reference_index，"
+            "candidates 是当前候选窗口，references 是当前标准答案窗口。对每个 reference_index，"
             "返回当前窗口中所有语义等价候选的独立 pair，不要只选最高分候选，也不要在窗口内做一对一分配。"
             "同一个 reference_index 可以对应多个 candidate_index，同一个 candidate_index 也可以对应多个"
-            " reference_index；由后处理对所有窗口返回的 pair 统一做最大总权重的一对一匹配。"
+            " reference_index；由后处理对所有窗口返回的 pair 统一按调用方选定策略做一对一匹配。"
             "每个 (reference_index, candidate_index) 只能出现一次；仅当该 reference 在当前窗口完全没有"
             "语义等价候选时，返回一条 candidate_index=null 的记录，不得与该 reference 的命中 pair 混用。"
             "每个 reference 都必须被覆盖，不能输出未提供的 reference 或当前窗口以外的 candidate。"
@@ -316,11 +316,11 @@ def semantic_verdict_prompt(kind: str, language: str = "zh") -> str:
             ),
         }[kind]
         protocol = (
-            "candidates is the current candidate window; references is the complete reference graph. "
+            "candidates is the current candidate window; references is the current reference window. "
             "For every reference_index, return ALL semantically valid candidate pairs in this window. "
             "Do not keep only the best candidate and do not assign one-to-one within a window. "
             "Both reference_index and candidate_index may occur in multiple distinct pairs. The caller "
-            "selects a maximum-total-weight one-to-one matching over all pairs from all windows. "
+            "selects a one-to-one matching over all pairs from all windows using its configured strategy. "
             "Each (reference_index, candidate_index) pair must be unique. Only when a reference has no "
             "valid candidate in this window, return exactly one null candidate_index for it; never mix "
             "a null verdict with matched pairs for the same reference. Cover every reference and use "

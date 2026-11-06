@@ -73,6 +73,7 @@ def retrieval_input(
     candidate_contexts: Sequence[str] = (),
     reference_evidence: Sequence[str] = (),
     reference_answer: str = "",
+    reference_entities: Sequence[str] | None = None,
 ) -> EvaluationInput:
     """Input for ranking, context quality and evidence coverage metrics."""
     return _input(
@@ -93,6 +94,7 @@ def retrieval_input(
                     "doc_ids": list(reference_doc_ids),
                     "evidence": list(reference_evidence),
                     "answer": reference_answer,
+                    **({"entities": list(reference_entities)} if reference_entities is not None else {}),
                 },
             ),
             ("query", "retrieval", "query", {"question": question}),

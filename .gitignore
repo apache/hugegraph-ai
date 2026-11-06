@@ -122,9 +122,9 @@ ipython_config.py
 .pdm.toml
 
 # uv
-#   uv.lock contains resolved dependencies and is generally recommended to include in version control
-#   for reproducible builds, but can be excluded if you prefer to resolve dependencies fresh
-uv.lock
+# The root workspace lockfile is committed for reproducible builds.
+# Ignore ad hoc lockfiles generated inside top-level packages.
+/*/uv.lock
 # Local UV configuration file (for mirror settings)
 uv.toml
 

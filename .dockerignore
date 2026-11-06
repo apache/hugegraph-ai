@@ -79,8 +79,8 @@ scripts/
 .github/
 style/
 
-# Lock files (will be regenerated)
-uv.lock
+# The root uv.lock is committed and copied into the dependency layer.
+# Local package lockfiles are not image inputs.
 hugegraph-llm/uv.lock
 hugegraph-python-client/uv.lock
 
@@ -102,6 +102,12 @@ hugegraph-python-client/uv.lock
 **/.mypy_cache/
 **/dist/
 **/build/
+
+# Nuitka outputs are recreated inside the builder stage.
+**/app.build/
+**/app.dist/
+**/app.onefile-build/
+
 **/logs/
 **/*.faiss
 **/*.pkl

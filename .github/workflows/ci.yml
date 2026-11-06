@@ -11,7 +11,7 @@ on:
       test-set:
         description: Tests to run
         type: choice
-        options: [mainline, full, dependencies, codeql]
+        options: [mainline, full, deployment, dependencies, codeql]
         default: mainline
       base-ref:
         description: Base ref for on-demand dependency review
@@ -66,6 +66,32 @@ jobs:
           TEST_SET: ${{ inputs.test-set || 'mainline' }}
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/ci.py
+      - name: Set up Docker Buildx for configuration checks
+        if: ${{ steps.select.outputs.docker_llm == 'true' || steps.select.outputs.docker_nk == 'true' }}
+        uses: docker/setup-buildx-action@v4
+      - name: Check affected Docker build definitions
+        if: ${{ steps.select.outputs.docker_llm == 'true' || steps.select.outputs.docker_nk == 'true' }}
+        env:
+          CHECK_LLM: ${{ steps.select.outputs.docker_llm }}
+          CHECK_NK: ${{ steps.select.outputs.docker_nk }}
+        run: |
+          set -euo pipefail
+          if [ "$CHECK_LLM" = true ]; then
+            docker buildx build --check --progress=plain --file docker/Dockerfile.llm .
+          fi
+          if [ "$CHECK_NK" = true ]; then
+            docker buildx build --check --progress=plain --file docker/Dockerfile.nk .
+          fi
+      - name: Check Docker Compose definitions
+        if: steps.select.outputs.compose == 'true'
+        env:
+          PROJECT_PATH: ${{ runner.temp }}/hugegraph-ai
+        run: |
+          docker compose --env-file docker/env.template -f docker/docker-compose-llm.yml config --quiet
+          docker compose --env-file docker/env.template -f docker/docker-compose-network.yml config --quiet
+      - name: Check image build script
+        if: steps.select.outputs.image_script == 'true'
+        run: bash -n scripts/build_llm_image.sh
       - name: Check synchronized release metadata
         run: python3 scripts/version.py check
       - name: Test release tooling and CI policy

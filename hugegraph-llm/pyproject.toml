@@ -8,8 +8,8 @@
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
@@ -101,6 +101,8 @@ allow-direct-references = true
 [tool.uv.sources]
 hugegraph-llm-sdk = { workspace = true }
 hugegraph-python = { workspace = true }
+# Temporary immutable source until a Gradio release contains upstream #14034.
+gradio = { git = "https://github.com/gradio-app/gradio.git", rev = "1028366300f10b26f0b54a1d6cda6d520895acbb" }
 # The published Linux wheel needs a newer libstdc++ than Debian Bookworm.
 # Build the same immutable 3.2.2 release commit used by the Docker image.
 pycgraph = { git = "https://github.com/ChunelFeng/CGraph.git", subdirectory = "python", rev = "f224e02339f8de73b34054c8a9db1236b64ede86", marker = "sys_platform == 'linux'" }

@@ -57,6 +57,7 @@ header: # `header` section is configurations for source codes license header.
     - 'LICENSE'
     - 'NOTICE'
     - 'DISCLAIMER'
+    - 'uv.lock'
     - '**/*.versionsBackup'
     - '**/*.proto'
     - '**/*.log'

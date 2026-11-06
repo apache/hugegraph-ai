@@ -17,7 +17,7 @@
 
 """Typed Judge configuration and lifecycle helpers for SDK callers."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from typing import Annotated, Literal
 
@@ -122,7 +122,7 @@ def create_judge(config: JudgeConfig | Mapping[str, object]) -> Judge:
 
 
 @contextmanager
-def managed_judge(config: JudgeConfig | Mapping[str, object]) -> Iterator[Judge]:
+def managed_judge(config: JudgeConfig | Mapping[str, object]) -> Generator[Judge, None, None]:
     """Create a Judge and close transports such as Codex app-server on exit."""
     judge = create_judge(config)
     try:

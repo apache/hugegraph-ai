@@ -61,7 +61,7 @@ def _simplify_chinese(text: str) -> str:
     """
     try:
         # opencc-python-reimplemented exposes OpenCC in the same way
-        from opencc import OpenCC  # type: ignore[import-not-found]  # ty: ignore[unresolved-import]
+        from opencc import OpenCC  # type: ignore[import-not-found]  # ty: ignore[import-not-found]
 
         converter = OpenCC("t2s")
         return cast(str, converter.convert(text))

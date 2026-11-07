@@ -23,6 +23,9 @@ class LLMOutputTruncatedError(RuntimeError):
         self.reason = reason
         super().__init__(f"LLM output was truncated ({reason}).")
 
+    def __reduce__(self):
+        return type(self), (self.reason,), self.__dict__
+
 
 class ModelOutputError(ValueError):
     """The model did not return the requested structured output."""
@@ -35,3 +38,6 @@ class SchemaValidationError(ValueError):
         self.issues = tuple(issues)
         message = "; ".join(f"{issue.path}: {issue.message}" for issue in self.issues)
         super().__init__(f"Invalid graph schema: {message}")
+
+    def __reduce__(self):
+        return type(self), (self.issues,), self.__dict__

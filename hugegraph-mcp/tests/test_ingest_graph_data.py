@@ -1377,3 +1377,27 @@ def test_ingest_graph_data_does_not_promote_failed_items_without_counts(monkeypa
     assert result["ok"] is False
     assert result["error"]["type"] == "FEATURE_DISABLED"
     post.assert_not_called()
+
+
+@pytest.mark.parametrize("form", ["source_target", "outV_inV"])
+def test_duplicate_edge_warning_reads_both_endpoint_forms(form):
+    def edge(source, target):
+        if form == "outV_inV":
+            return {"label": "knows", "outV": source, "outVLabel": "person", "inV": target, "inVLabel": "person"}
+        return {
+            "label": "knows",
+            "source": source,
+            "source_label": "person",
+            "target": target,
+            "target_label": "person",
+        }
+
+    distinct = ingest_graph_data_module.validate_graph_payload(
+        {"vertices": [], "edges": [edge("1:Alice", "1:Bob"), edge("1:Bob", "1:Carol")]}
+    )
+    repeated = ingest_graph_data_module.validate_graph_payload(
+        {"vertices": [], "edges": [edge("1:Alice", "1:Bob"), edge("1:Alice", "1:Bob")]}
+    )
+
+    assert "potential duplicate edges detected" not in distinct["warnings"]
+    assert "potential duplicate edges detected" in repeated["warnings"]

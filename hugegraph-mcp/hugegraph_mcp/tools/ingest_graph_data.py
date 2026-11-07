@@ -675,15 +675,9 @@ def validate_graph_payload(
         edge_pairs = []
         for e in edges:
             if isinstance(e, dict):
-                edge_pairs.append(
-                    (
-                        e.get("label"),
-                        e.get("source_label"),
-                        e.get("target_label"),
-                        e.get("source"),
-                        e.get("target"),
-                    )
-                )
+                src_label, source = _edge_endpoint(e, "source")
+                tgt_label, target = _edge_endpoint(e, "target")
+                edge_pairs.append((e.get("label"), src_label, tgt_label, source, target))
         if len(edge_pairs) > len({json.dumps(p, sort_keys=True) for p in edge_pairs}):
             warnings.append("potential duplicate edges detected")
 

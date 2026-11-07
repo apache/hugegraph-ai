@@ -275,7 +275,9 @@ def _execute_gremlin_with_error_handling(client, gremlin_query: str, operation_t
         }
 
     except requests.exceptions.HTTPError as e:
-        status_code = e.response.status_code if hasattr(e, "response") and e.response else "unknown"
+        # requests.Response is falsy for 4xx/5xx, so compare against None.
+        response = getattr(e, "response", None)
+        status_code = response.status_code if response is not None else "unknown"
 
         if status_code == 401:
             error_type = "authentication_error"

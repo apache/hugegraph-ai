@@ -366,6 +366,9 @@ def _validate_properties_against_schema(
                 value=value,
                 spec=spec,
             )
+            if value_error is None and not isinstance(value, list) and cardinalities.get(name) in {"LIST", "SET"}:
+                # The append preview unpacks the value, so a collection append needs a JSON array.
+                value_error = f"{target} 0 property '{name}' expects a JSON array to append, got {type(value).__name__}"
             if value_error is not None:
                 data_type, cardinality = spec or (
                     None,

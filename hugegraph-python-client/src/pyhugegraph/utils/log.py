@@ -45,13 +45,12 @@ Example Usage:
     log.error("Error occurred: %s", error_msg)
 """
 
-import atexit
 import logging
 import os
 import sys
 import time
 from collections import Counter
-from functools import cache, lru_cache
+from functools import lru_cache
 from logging.handlers import RotatingFileHandler
 
 from rich.logging import RichHandler
@@ -63,9 +62,6 @@ __all__ = [
     "log_every_n_times",
     "log_first_n_times",
 ]
-
-LOG_BUFFER_SIZE_ENV: str = "LOG_BUFFER_SIZE"
-DEFAULT_BUFFER_SIZE: int = 1024 * 1024  # 1MB
 
 
 @lru_cache  # avoid creating multiple handlers when calling init_logger()
@@ -145,28 +141,6 @@ def init_logger(
         file_handler.setFormatter(formatter)
         log_instance.addHandler(file_handler)
     return log_instance
-
-
-# Cache the opened file object, so that different calls to `initialize_logger`
-# with the same file name can safely write to the same file.
-@cache
-def _cached_log_file(filename):
-    """Cache the opened file object"""
-    # Use 1K buffer if writing to cloud storage
-    with open(filename, "a", buffering=_determine_buffer_size(filename), encoding="utf-8") as file_io:
-        atexit.register(file_io.close)
-        return file_io
-
-
-def _determine_buffer_size(filename: str) -> int:
-    """Determine the buffer size for the log stream"""
-    if "://" not in filename:
-        # Local file, no extra caching is necessary
-        return -1
-    # Remote file requires a larger cache to avoid many smalls writes.
-    if LOG_BUFFER_SIZE_ENV in os.environ:
-        return int(os.environ[LOG_BUFFER_SIZE_ENV])
-    return DEFAULT_BUFFER_SIZE
 
 
 def _identify_caller():

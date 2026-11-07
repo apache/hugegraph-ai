@@ -145,6 +145,7 @@ class VertexLabel(HugeParamsBase):
             "name": self._parameter_holder.get_value("name"),
             "user_data": user_data,
         }
+        self.clean_parameter_holder()
         if response := self._sess.request(path, "PUT", data=json.dumps(data)):
             return f'eliminate VertexLabel success, Detail: "{response!s}"'
         log.error("eliminate VertexLabel failed, Detail: %s", str(response))

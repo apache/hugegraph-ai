@@ -15,7 +15,10 @@ import inspect
 import json
 from pathlib import Path
 
+import pytest
 from pyhugegraph.api.gremlin import GremlinManager
+
+pytestmark = pytest.mark.contract
 
 
 def _contract() -> dict:

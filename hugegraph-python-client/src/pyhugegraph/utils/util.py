@@ -60,7 +60,7 @@ def _decode_escaped_text(value):
         return value
     if not any(marker in value for marker in ESCAPE_MARKERS):
         return value
-    return value.encode("utf-8", errors="replace").decode("unicode_escape", errors="replace")
+    return value.encode("latin-1", errors="backslashreplace").decode("unicode_escape", errors="replace")
 
 
 def redact_sensitive_data(value):

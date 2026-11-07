@@ -34,19 +34,20 @@ class UseTimeMiddleware(BaseHTTPMiddleware):
         # TODO: handle time record for async task pool in gradio
         start_time = time.perf_counter()
         response = await call_next(request)
-        process_time = (time.perf_counter() - start_time) * 1000  # ms
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        process_time = elapsed_ms
         unit = "ms"
         if process_time > 1000:
             process_time /= 1000
             unit = "s"
 
         response.headers["X-Process-Time"] = f"{process_time:.2f} {unit}"
-        log.info("Request process time: %.2f ms, code=%d", process_time, response.status_code)
+        log.info("Request process time: %.2f ms, code=%d", elapsed_ms, response.status_code)
         log.info(
             "%s - Args: %s, IP: %s, URL: %s",
             request.method,
             request.query_params,
-            request.client.host,
+            request.client.host if request.client else None,
             request.url,
         )
         return response

@@ -120,6 +120,12 @@ class CheckSchema:
             str,
             "'target_label' in edge_label is not of correct type.",
         )
+        if "properties" in edge_label:
+            check_type(
+                edge_label["properties"],
+                list,
+                "'properties' in edge_label is not of correct type.",
+            )
 
     def _process_keys(self, label: Dict[str, Any], key_type: str, default_keys: list) -> list:
         keys = label.get(key_type, default_keys)

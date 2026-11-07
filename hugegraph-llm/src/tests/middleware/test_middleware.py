@@ -84,6 +84,27 @@ class TestUseTimeMiddlewareDispatch(unittest.IsolatedAsyncioTestCase):
         # Verify the result is the response
         self.assertEqual(result, self.mock_response)
 
+    @patch("time.perf_counter")
+    @patch("hugegraph_llm.middleware.middleware.log")
+    async def test_dispatch_logs_milliseconds_for_slow_requests(self, mock_log, mock_time):
+        mock_time.side_effect = [100.0, 102.5]
+
+        await self.middleware.dispatch(self.mock_request, self.mock_call_next)
+
+        self.assertEqual(self.mock_response.headers["X-Process-Time"], "2.50 s")
+        mock_log.info.assert_any_call("Request process time: %.2f ms, code=%d", 2500.0, 200)
+
+    @patch("time.perf_counter")
+    @patch("hugegraph_llm.middleware.middleware.log")
+    async def test_dispatch_handles_request_without_client(self, mock_log, mock_time):
+        mock_time.side_effect = [100.0, 100.5]
+        self.mock_request.client = None
+
+        result = await self.middleware.dispatch(self.mock_request, self.mock_call_next)
+
+        self.assertEqual(result, self.mock_response)
+        mock_log.info.assert_any_call("%s - Args: %s, IP: %s, URL: %s", "GET", {}, None, "http://localhost:8000/api")
+
 
 if __name__ == "__main__":
     unittest.main()

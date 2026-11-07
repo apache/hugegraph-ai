@@ -15,6 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from types import SimpleNamespace
+
 import pytest
 
 pytestmark = pytest.mark.contract
@@ -32,6 +34,45 @@ def test_installed_milvus_client_constructs_adapter_schema():
     )
     assert schema.fields[1].params["dim"] == 3
     assert callable(MilvusVectorIndex.search)
+
+
+def _fake_milvus(monkeypatch, store, collections, created):
+    class FakeCollection:
+        def __init__(self, name, schema=None):
+            if schema is not None:
+                collections[name] = next(f.params["dim"] for f in schema.fields if f.name == "embedding")
+                created.append(name)
+            elif name not in collections:
+                raise RuntimeError(f"collection {name} does not exist and no schema given")
+            self.name = name
+            self.schema = SimpleNamespace(fields=[SimpleNamespace(name="embedding", params={"dim": collections[name]})])
+
+        def create_index(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(store, "Collection", FakeCollection)
+    monkeypatch.setattr(store, "connections", SimpleNamespace(connect=lambda **kwargs: None))
+    monkeypatch.setattr(
+        store,
+        "utility",
+        SimpleNamespace(has_collection=lambda name: name in collections, drop_collection=collections.pop),
+    )
+
+
+@pytest.mark.parametrize(("existing_dim", "expected_created"), [(768, ["hugegraph_llm_graph_vids"]), (1024, [])])
+def test_milvus_index_recreates_collection_only_when_dimension_changes(monkeypatch, existing_dim, expected_created):
+    pytest.importorskip("pymilvus", reason="Install the vectordb extra")
+    from hugegraph_llm.indices.vector_index import milvus_vector_store as store
+
+    collections = {"hugegraph_llm_graph_vids": existing_dim}
+    created = []
+    _fake_milvus(monkeypatch, store, collections, created)
+
+    index = store.MilvusVectorIndex("graph_vids", "localhost", 19530, embed_dim=1024)
+
+    assert created == expected_created
+    assert collections == {"hugegraph_llm_graph_vids": 1024}
+    assert index.collection.name == "hugegraph_llm_graph_vids"
 
 
 def test_installed_qdrant_client_searches_real_local_storage(monkeypatch):

@@ -31,7 +31,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql.elements import ColumnElement
 
-from ..errors import ConflictError, NotFoundError, PolicyDeniedError, StoreError
+from ..errors import ConflictError, NotFoundError, PolicyDeniedError, RuleRejectedError, StoreError
 from .ddl import ensure_tables, live_index_name, object_table
 
 
@@ -411,10 +411,12 @@ class ObjectRepository:
         extraction is not evidence of absence.
         """
         t = self._table(object_type)
+        values = self._to_columns(object_type, values)
         pk_cols = self._pk_cols(object_type)
         missing = [c for c in pk_cols if values.get(c) is None]
         if missing:
             raise StoreError(f"extracted row missing primary key {missing}")
+        values.update(dict(zip(pk_cols, self._key_values(object_type, [values[c] for c in pk_cols]), strict=True)))
         where = _and(t.c._valid_to.is_(None), *[getattr(t.c, c) == values[c] for c in pk_cols])
         current = (await session.execute(select(t).where(where).limit(1).with_for_update())).mappings().first()
 
@@ -548,12 +550,19 @@ class ObjectRepository:
                 f"revision conflict: expected {expected_revision}, current {current['_rev']}",
                 details={"expected": expected_revision, "current": current["_rev"]},
             )
+        columns = self._to_columns(object_type, changes)
+        pk_cols = self._pk_cols(object_type)
+        if any(key in columns for key in pk_cols):
+            new_keys = self._key_values(object_type, [columns.get(key, current[key]) for key in pk_cols])
+            if any(new != current[key] for key, new in zip(pk_cols, new_keys, strict=True)):
+                raise RuleRejectedError(f"cannot change the primary key of {object_type}/{obj_id}")
+            columns.update(dict(zip(pk_cols, new_keys, strict=True)))
         ts = _next_version_time(current["_valid_from"], ts)
         await session.execute(update(t).where(where).values(_valid_to=ts))
         merged = {c: current.get(c) for c in self._prop_cols(object_type)}
         # materialized function-derived values survive the version transition
         merged.update({c: current.get(c) for c in self._materialized_cols(object_type)})
-        merged.update(self._to_columns(object_type, changes))
+        merged.update(columns)
         merged.update({"_rev": current["_rev"] + 1, "_valid_from": ts, "_valid_to": None, "_synced_at": None})
         await session.execute(t.insert().values(**merged))
         return self.row_to_props(object_type, dict(current) | merged)

@@ -19,7 +19,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import hashlib
 import re
 
 import pytest
@@ -175,6 +177,230 @@ async def test_document_removal_retracts_links_and_archives(doc_context):
     assert await _note(sc, "Acme Components") is None
     # the other note is untouched
     assert await _note(sc, "Globex Materials") is not None
+
+
+async def test_reupload_removed_document_reuses_its_original_row(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    original = path.read_bytes()
+    doc = next(d for d in await _rows(sc, DocumentRow) if d.path == str(path))
+    await sc.documents.remove_document(doc.id)
+    path.write_bytes(original)
+
+    await sc.documents.list_documents("supplier-docs")
+    await sc.sync("supplier-note")
+    rows = [d for d in await _rows(sc, DocumentRow) if d.id == doc.id]
+    assert len(rows) == 1
+    assert rows[0].status == "active"
+    assert await _note(sc, "Acme Components") is not None
+
+
+async def test_document_can_revert_to_previous_contents(doc_context):
+    sc, pkg, _ = doc_context
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    original = path.read_bytes()
+    await sc.sync("supplier-note")
+    original_id = next(d.id for d in await _rows(sc, DocumentRow) if d.path == str(path))
+    path.write_bytes(original + b"\nUpdated text\n")
+    await sc.documents.list_documents("supplier-docs")
+    path.write_bytes(original)
+    await sc.documents.list_documents("supplier-docs")
+
+    rows = [d for d in await _rows(sc, DocumentRow) if d.path == str(path)]
+    assert len(rows) == 2
+    assert next(d for d in rows if d.id == original_id).status == "active"
+    assert sum(d.status == "active" for d in rows) == 1
+
+
+def _legacy_document_id(path):
+    return hashlib.sha256(path.name.encode("utf-8") + b"\0" + path.read_bytes()).hexdigest()
+
+
+async def test_cross_store_documents_with_identical_path_and_content_have_distinct_ids(tmp_path):
+    import yaml
+
+    def add_second_store(pkg):
+        store = yaml.safe_load((pkg / "stores" / "supplier-docs.yaml").read_text())
+        store["metadata"]["name"] = "second-docs"
+        store["spec"]["connection"] = "data/docs/supplier-notes"
+        (pkg / "stores" / "second-docs.yaml").write_text(yaml.safe_dump(store), encoding="utf-8")
+        obj = yaml.safe_load((pkg / "objects" / "supplier-note.yaml").read_text())
+        obj["metadata"]["name"] = "second-note"
+        obj["spec"]["backing"]["store"] = "second-docs"
+        obj["spec"]["backing"]["source"]["table"] = ""
+        (pkg / "objects" / "second-note.yaml").write_text(yaml.safe_dump(obj), encoding="utf-8")
+
+    sc, _, _ = await make_context(tmp_path, mutate=add_second_store)
+    first = await sc.documents.list_documents("supplier-docs")
+    second = await sc.documents.list_documents("second-docs")
+    first_ids = {d["name"]: d["id"] for d in first["documents"]}
+    second_ids = {d["name"]: d["id"] for d in second["documents"]}
+    assert first_ids.keys() == second_ids.keys()
+    assert all(first_ids[name] != second_ids[name] for name in first_ids)
+
+    class CaptureExtractor(FakeExtractor):
+        async def extract(self, request):
+            self.ids = getattr(self, "ids", []) + [doc.doc_id for doc in request.docs]
+            return await super().extract(request)
+
+    sc.document_extractor = CaptureExtractor()
+    await sc.documents.ingest("supplier-docs", dry_run=True)
+    assert set(sc.document_extractor.ids) == set(first_ids.values())
+    sc.document_extractor.ids.clear()
+    await sc.documents.ingest("second-docs", dry_run=True)
+    assert set(sc.document_extractor.ids) == set(second_ids.values())
+    await sc.documents.ingest("supplier-docs")
+    await sc.documents.ingest("second-docs")
+    packets = await _rows(sc, ExtractPacketRow)
+    assert set(first_ids.values()).issubset({p.doc_id for p in packets})
+    assert set(second_ids.values()).issubset({p.doc_id for p in packets})
+
+
+async def test_concurrent_scans_of_identical_documents_in_two_stores(tmp_path):
+    import yaml
+
+    def add_second_store(pkg):
+        store = yaml.safe_load((pkg / "stores" / "supplier-docs.yaml").read_text())
+        store["metadata"]["name"] = "second-docs"
+        store["spec"]["connection"] = "data/docs/supplier-notes"
+        (pkg / "stores" / "second-docs.yaml").write_text(yaml.safe_dump(store), encoding="utf-8")
+
+    sc, _, _ = await make_context(tmp_path, mutate=add_second_store)
+    counts = await asyncio.gather(
+        sc.documents.scan_corpus("supplier-docs"),
+        sc.documents.scan_corpus("second-docs"),
+    )
+    assert counts == [3, 3]
+    rows = await _rows(sc, DocumentRow)
+    first = {d.path: d.id for d in rows if d.store == "supplier-docs" and d.status == "active"}
+    second = {d.path: d.id for d in rows if d.store == "second-docs" and d.status == "active"}
+    assert first.keys() == second.keys()
+    assert len(first) == 3
+    assert all(first[path] != second[path] for path in first)
+
+
+async def test_legacy_document_id_survives_restart_dry_run_update_and_revert(doc_context):
+    from ontogeny.service import ServiceContext
+
+    sc, pkg, _ = doc_context
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    original = path.read_bytes()
+    legacy_id = _legacy_document_id(path)
+    async with sc.sessionmaker() as session:
+        session.add(
+            DocumentRow(id=legacy_id, store="supplier-docs", path=str(path), status="active", size=len(original))
+        )
+        session.add(
+            ExtractAssertionRow(
+                run_id=9876,
+                doc_id=legacy_id,
+                kind="object",
+                object_type="supplier-note",
+                object_id="old-reference",
+                prop="summary",
+            )
+        )
+        await session.commit()
+
+    # A new service instance reads the same persisted state.
+    restarted = ServiceContext(sc.settings, str(pkg))
+    await restarted.initialize()
+
+    class CaptureExtractor(FakeExtractor):
+        async def extract(self, request):
+            self.ids = getattr(self, "ids", []) + [doc.doc_id for doc in request.docs]
+            return await super().extract(request)
+
+    restarted.document_extractor = CaptureExtractor()
+    await restarted.documents.ingest("supplier-docs", dry_run=True)
+    assert legacy_id in restarted.document_extractor.ids
+    listed = await restarted.documents.list_documents("supplier-docs")
+    assert next(d for d in listed["documents"] if d["name"] == path.name)["id"] == legacy_id
+    assert any(
+        a.doc_id == legacy_id and a.object_id == "old-reference" for a in await _rows(restarted, ExtractAssertionRow)
+    )
+
+    await restarted.documents.ingest("supplier-docs")
+    assert any(p.doc_id == legacy_id for p in await _rows(restarted, ExtractPacketRow))
+    path.write_bytes(original + b"\nnew version\n")
+    await restarted.documents.ingest("supplier-docs")
+    new_row = next(d for d in await _rows(restarted, DocumentRow) if d.path == str(path) and d.status == "active")
+    assert new_row.id != legacy_id
+    path.write_bytes(original)
+    await restarted.documents.ingest("supplier-docs")
+    active = [d for d in await _rows(restarted, DocumentRow) if d.path == str(path) and d.status == "active"]
+    assert len(active) == 1 and active[0].id == legacy_id
+
+
+async def test_duplicate_legacy_and_scoped_ids_fail_without_modifying_references(doc_context):
+    from ontogeny.documents import corpus
+    from ontogeny.documents.engine import DocumentError
+
+    sc, pkg, _ = doc_context
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    store = sc.documents.store("supplier-docs")
+    scanned = corpus.scan(path.parent, sc.documents._cfg(store), store_name="supplier-docs")
+    item = next(item for item in scanned if item.path == path)
+    async with sc.sessionmaker() as session:
+        session.add_all(
+            [
+                DocumentRow(id=item.doc_id, store="supplier-docs", path=str(path), status="active"),
+                DocumentRow(id=item.legacy_id, store="supplier-docs", path=str(path), status="active"),
+            ]
+        )
+        await session.commit()
+    with pytest.raises(DocumentError, match="both legacy and store-scoped"):
+        await sc.documents.list_documents("supplier-docs")
+    rows = [d for d in await _rows(sc, DocumentRow) if d.id in {item.doc_id, item.legacy_id}]
+    assert len(rows) == 2 and all(row.status == "active" for row in rows)
+
+
+async def test_document_scan_updates_path_when_corpus_root_changes(doc_context, tmp_path):
+    from ontogeny.documents.corpus import ScannedDocument
+
+    sc, _, _ = doc_context
+    await sc.documents.list_documents("supplier-docs")
+    old = next(d for d in await _rows(sc, DocumentRow) if d.path.endswith("acme-2026-03.md"))
+    moved = tmp_path / "moved" / "acme-2026-03.md"
+    scanned = [ScannedDocument(old.id, moved, moved.name, old.size, old.media_type)]
+    store = sc.documents.store("supplier-docs")
+    async with sc.sessionmaker() as session:
+        active, _ = await sc.documents._sync_documents(session, store, sc.documents._cfg(store), scanned)
+        await session.commit()
+        assert active[0].id == old.id
+        assert active[0].path == str(moved)
+        assert active[0].status == "active"
+
+
+async def test_replacing_document_retracts_old_document_links(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    old_note = await _note(sc, "Acme Components")
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    path.write_text(
+        "Supplier: Initech Fasteners\nEffective date: 2026-04-02\nRisk level: MEDIUM\nSummary: Replaced.\n",
+        encoding="utf-8",
+    )
+    await sc.sync("supplier-note")
+    assert ("SUP-001", old_note["note_id"]) not in await _link_pairs(sc)
+    assert await _note(sc, "Acme Components") is None
+    assert await _note(sc, "Initech Fasteners") is not None
+
+
+async def test_rejected_candidate_is_not_recreated_on_reingest(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    add_note(pkg, "globex-conflict.md", "Globex Materials", "2026-02-14", "HIGH", "Different finding")
+    await sc.sync("supplier-note")
+    candidate = next(c for c in await _rows(sc, ExtractCandidateRow) if c.reason == "CONFLICT")
+    await sc.documents.reject_candidate(candidate.id, principal="reviewer", reason="not credible")
+
+    await sc.sync("supplier-note")
+    matching = [c for c in await _rows(sc, ExtractCandidateRow) if c.signature == candidate.signature]
+    assert len(matching) == 1
+    assert matching[0].status == "rejected"
+    assert matching[0].decided_by == "reviewer"
 
 
 async def test_dry_run_never_writes(doc_context):

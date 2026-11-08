@@ -171,6 +171,41 @@ async def test_declared_names_are_preserved_through_sync_actions_and_links(named
         assert resynced["mask-cost"] == 1850000 and resynced["LiveScore"] == 42
 
 
+async def test_extracted_values_use_declared_property_names(named_client):
+    from ontogeny.stores.repo import utcnow
+
+    _, sc = named_client
+    async with sc.sessionmaker() as session:
+        values = {"version-id": "TO-EXTRACT", "project": "one", "mask-cost": 9, "SupplierCode": "A"}
+        assert await sc.repo.apply_extracted(session, "tapeout-version", values, utcnow()) == "inserted"
+        row = await sc.repo.get(session, "tapeout-version", "TO-EXTRACT")
+        assert row["version-id"] == "TO-EXTRACT" and row["mask-cost"] == 9 and row["SupplierCode"] == "A"
+        assert (
+            await sc.repo.apply_extracted(session, "tapeout-version", values | {"mask-cost": 42}, utcnow()) == "updated"
+        )
+        row = await sc.repo.get(session, "tapeout-version", "TO-EXTRACT")
+        assert row["mask-cost"] == 42 and row["SupplierCode"] == "A"
+        assert await sc.repo.apply_extracted(session, "tapeout-version", values | {"mask-cost": 42}, utcnow()) == "noop"
+        await session.commit()
+
+
+async def test_aggregate_empty_results_return_null(named_client):
+    client, _ = named_client
+    for fn in ("sum", "avg", "min", "max"):
+        response = await client.post(
+            "/api/v1/objects/tapeout-version/aggregate",
+            headers=_claim(),
+            json={"fn": fn, "field": "mask-cost", "filter": {"version-id": "not-present"}},
+        )
+        assert response.status_code == 200
+        assert response.json()["value"] is None
+    response = await client.post(
+        "/api/v1/objects/tapeout-version/aggregate",
+        json={"fn": "count", "filter": {"version-id": "not-present"}},
+    )
+    assert response.status_code == 200 and response.json()["value"] == 0
+
+
 async def test_marked_filters_sort_and_aggregates_preserve_claims(named_client):
     client, _ = named_client
     for payload in ({"filter": {"mask-cost": 1850000}}, {"sort": "mask-cost-desc"}):

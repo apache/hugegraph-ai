@@ -230,6 +230,7 @@ spec:
             (await session.execute(select(DocumentRow).where(DocumentRow.store == store.metadata.name))).scalars().all()
         )
         by_path = {str(r.path): r for r in rows if r.status == "active"}
+        by_id = {r.id: r for r in rows}
         now = utcnow()
         active: list[DocumentRow] = []
         changed: list[DocumentRow] = []
@@ -249,6 +250,19 @@ spec:
                 # one is a different id (content-addressed)
                 row.status = "removed"
                 changed.append(row)
+            # A previously removed version can reappear at the same path.
+            # Its content-addressed id is already present, so restore the row
+            # instead of inserting a duplicate primary key.
+            previous = by_id.get(item.doc_id)
+            if previous is not None:
+                previous.status = "active"
+                previous.path = key
+                previous.media_type = item.media_type
+                previous.size = item.size
+                previous.last_seen_at = now
+                active.append(previous)
+                changed.append(previous)
+                continue
             new = DocumentRow(
                 id=item.doc_id,
                 store=store.metadata.name,
@@ -601,8 +615,9 @@ spec:
                     select(ExtractCandidateRow)
                     .where(
                         ExtractCandidateRow.signature == signature,
-                        ExtractCandidateRow.status == "pending",
+                        ExtractCandidateRow.status.in_(("pending", "rejected")),
                     )
+                    .order_by((ExtractCandidateRow.status == "rejected").desc())
                     .limit(1)
                 )
             )
@@ -610,6 +625,8 @@ spec:
             .first()
         )
         if existing is not None:
+            if existing.status == "rejected":
+                return
             # the same proposal from a newer run: refresh it instead of filling
             # the queue with rows a human must reject one by one
             existing.run_id = run_id
@@ -852,7 +869,7 @@ spec:
         # different agent is a different extractor and must not reuse packets
         agent_id = self.sc.settings.doc_agent_url or self.sc.settings.doc_agent_cmd or "unconfigured"
         model = "agent:" + _sha(agent_id)[:16]
-        scanned = corpus.scan(root, cfg, self._selector(store, targets))
+        scanned = await self._scan_documents(store, cfg, root, targets)
 
         summary: dict[str, Any] = {
             "store": store_name,
@@ -1227,6 +1244,27 @@ spec:
             "extractor": "loaded" if self._extractor() is not None else "missing",
         }
 
+    async def _scan_documents(self, store, cfg, root, targets) -> list[corpus.ScannedDocument]:
+        from dataclasses import replace
+
+        store_name = store.metadata.name
+        scanned = corpus.scan(root, cfg, self._selector(store, targets), store_name=store_name)
+        async with self.sc.sessionmaker() as session:
+            existing = set(
+                (await session.execute(select(DocumentRow.id).where(DocumentRow.store == store_name))).scalars().all()
+            )
+        resolved = []
+        for item in scanned:
+            if item.doc_id in existing and item.legacy_id in existing:
+                raise DocumentError(
+                    f"document {item.path} has both legacy and store-scoped records in store {store_name!r}; "
+                    "reconcile the duplicate records and their references before scanning"
+                )
+            if item.legacy_id in existing:
+                item = replace(item, doc_id=item.legacy_id)
+            resolved.append(item)
+        return resolved
+
     async def scan_corpus(self, store_name: str) -> int:
         """Register files that exist on disk, without extracting anything.
 
@@ -1237,7 +1275,7 @@ spec:
         cfg = self._cfg(store)
         root = self._root(store)
         targets = self.object_types(store_name)
-        scanned = corpus.scan(root, cfg, self._selector(store, targets))
+        scanned = await self._scan_documents(store, cfg, root, targets)
         async with self.sc.sessionmaker() as session:
             await self._sync_documents(session, store, cfg, scanned)
             await session.commit()

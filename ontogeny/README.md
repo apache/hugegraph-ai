@@ -40,7 +40,7 @@ docker compose up -d          # self-contained demo (SQLite + seeded data)
 docker compose exec ontogeny cat /data/admin-bootstrap-password
 ```
 
-Console + API: **http://localhost:8000** — the first boot creates an `admin` account. Unless `ONTOGENY_ADMIN_PASSWORD` was set, its random six-digit password is stored in an owner-only file on the data volume; retrieve it with `docker compose exec ontogeny cat /data/admin-bootstrap-password`. Change the password after first login and securely delete the file. Existing credential files are never overwritten. One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
+Console + API: **http://localhost:8000** — the first boot creates an `admin` account. Unless `ONTOGENY_ADMIN_PASSWORD` was set, its random high-entropy password is stored in an owner-only file on the data volume; retrieve it with `docker compose exec ontogeny cat /data/admin-bootstrap-password`. Change the password after first login and securely delete the file. Existing credential files are never overwritten. One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
 
 ![The Overview dashboard — ontology model section](./docs/en/img/qs-dashboard.png)
 

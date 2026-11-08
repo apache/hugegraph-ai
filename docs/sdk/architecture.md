@@ -8,7 +8,10 @@ SDK 面向独立 Python 项目提供图 schema 设计、校验和属性图抽取
 `hugegraph-llm-sdk/` 与 `hugegraph-llm/` 在仓库根目录平级。旧应用通过兼容层复用 SDK，
 外部项目直接调用 SDK；图规则和模型传输实现只维护一份。
 
-评测能力位于 `graphrag/eval/`：抽取、检索与答案的评分规则、Judge 协议和执行语义都只在该包内维护。
+独立评测 SDK 存放在 `hugegraph-llm-sdk/eval/`，具有自己的 `pyproject.toml` 和
+`hugegraph_llm_eval` 命名空间，不包含在抽取 SDK 的发行包中。两者在根 workspace 中分别注册。
+抽取 SDK 可按需通过评测包的公开契约接入，评测包不得反向依赖抽取 SDK 或应用。
+抽取、检索与答案的评分规则、Judge 协议和执行语义都只在评测包内维护。
 应用侧的评测流程、持久化与报告渲染留在 `hugegraph-llm`，通过该包公开的契约与评测器接入，不再复制评分实现。
 
 | 位置 | 职责 |

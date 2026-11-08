@@ -8,6 +8,15 @@ reports. Callers provide inputs, inject a judge model only when a metric needs o
 and receive structured records that can be stored elsewhere or fed back into a
 repair loop.
 
+## Package boundary
+
+The package lives at `hugegraph-llm-sdk/eval/` to keep the repository layout compact.
+It has its own `pyproject.toml` and remains a separate root-workspace member:
+`hugegraph-llm-eval` is the distribution and `hugegraph_llm_eval` is the import name.
+It is not a submodule of `hugegraph_llm_sdk` and is not bundled with the extraction
+SDK. External projects can install it independently; extraction or application
+code can opt in through its public contracts without a reverse dependency.
+
 ## Install
 
 This package ships with the repository and has not been published to a public
@@ -15,10 +24,10 @@ index by this change. Use an editable install or a built wheel:
 
 ```bash
 # in your own project, with the path replaced by the actual checkout
-uv add --editable /absolute/path/hugegraph-ai/graphrag/eval
+uv add --editable /absolute/path/hugegraph-ai/hugegraph-llm-sdk/eval
 
 # or build a wheel and install it
-uv build --no-sources /absolute/path/hugegraph-ai/graphrag/eval --out-dir /tmp/llm-eval-dist
+uv build --no-sources /absolute/path/hugegraph-ai/hugegraph-llm-sdk/eval --out-dir /tmp/llm-eval-dist
 uv add /tmp/llm-eval-dist/hugegraph_llm_eval-1.8.0-py3-none-any.whl
 ```
 
@@ -73,7 +82,7 @@ entry points in one run. It uses a deterministic stand-in judge unless a model i
 configured, so it runs without an API key:
 
 ```bash
-uv add --editable /absolute/path/hugegraph-ai/graphrag/eval --extra graph --extra rouge
+uv add --editable /absolute/path/hugegraph-ai/hugegraph-llm-sdk/eval --extra graph --extra rouge
 python examples/all_metrics.py
 
 # same script against a real model

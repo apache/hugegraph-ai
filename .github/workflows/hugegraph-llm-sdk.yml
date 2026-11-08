@@ -78,7 +78,8 @@ jobs:
               "$RUNNER_TEMP"/sdk-dist/*.$format 'pytest>=9.2,<10'
             "$RUNNER_TEMP/sdk-venv-$format/bin/python" -c \
               'import os; from importlib.metadata import version; assert version("hugegraph-llm-sdk") == os.environ["EXPECTED_VERSION"]'
-            "$RUNNER_TEMP/sdk-venv-$format/bin/python" -B "$RUNNER_TEMP/sdk-build/tests/distribution_smoke.py"
+            "$RUNNER_TEMP/sdk-venv-$format/bin/python" -B "$RUNNER_TEMP/sdk-build/tests/distribution_smoke.py" \
+              "$RUNNER_TEMP"/sdk-dist/*.$format
             "$RUNNER_TEMP/sdk-venv-$format/bin/python" -B "$RUNNER_TEMP/sdk-build/examples/basic.py"
             "$RUNNER_TEMP/sdk-venv-$format/bin/python" -B "$RUNNER_TEMP/sdk-build/examples/customization.py"
             "$RUNNER_TEMP/sdk-venv-$format/bin/python" -B "$RUNNER_TEMP/sdk-build/examples/async_example.py"

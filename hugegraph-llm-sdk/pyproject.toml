@@ -42,4 +42,9 @@ build-backend = "hatchling.build"
 packages = ["src/hugegraph_llm_sdk"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/hugegraph_llm_sdk", "README.md", "LICENSE", "NOTICE", "examples"]
+include = ["/src/hugegraph_llm_sdk", "/README.md", "/LICENSE", "/NOTICE", "/examples"]
+exclude = ["/eval"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"

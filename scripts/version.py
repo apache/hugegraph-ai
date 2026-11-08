@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = (
     "hugegraph-llm-sdk",
-    "graphrag/eval",
+    "hugegraph-llm-sdk/eval",
     "hugegraph-llm",
     "hugegraph-python-client",
     "hugegraph-mcp",
@@ -42,7 +42,7 @@ DOCS = (
     "docs/quality/hugegraph-integration.md",
     "docs/quality/test-taxonomy.md",
     "hugegraph-llm-sdk/README.md",
-    "graphrag/eval/README.md",
+    "hugegraph-llm-sdk/eval/README.md",
 )
 DEPLOYMENT = (
     "docker/charts/hg-llm/Chart.yaml",

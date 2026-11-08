@@ -64,7 +64,7 @@ class TestReleaseVersion(unittest.TestCase):
         self.assertIn("hugegraph/rag:1.9.2", (self.root / version.DEPLOYMENT[2]).read_text())
         self.assertIn("hugegraph-mcp@1.9.2", (self.root / version.DOCS[0]).read_text())
         self.assertIn("hugegraph_llm_sdk-1.9.2-py3", (self.root / "hugegraph-llm-sdk/README.md").read_text())
-        self.assertIn("hugegraph_llm_eval-1.9.2-py3", (self.root / "graphrag/eval/README.md").read_text())
+        self.assertIn("hugegraph_llm_eval-1.9.2-py3", (self.root / "hugegraph-llm-sdk/eval/README.md").read_text())
         self.assertEqual(0, self.run_command("check"))
 
     def test_check_reports_drift_without_writing(self):

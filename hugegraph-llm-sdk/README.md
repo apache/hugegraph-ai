@@ -4,6 +4,15 @@
 
 SDK 的命名为后续更多可组合的 LLM 能力保留空间，当前实现范围仍限于上述图设计与抽取流程。它沿用 HugeGraph 属性图规则，基础安装只依赖 Pydantic。模型厂商适配器按需安装；SDK 不会加载旧应用配置、读写 `.env` / YAML、创建日志文件或配置宿主程序的日志。
 
+## 目录与包边界
+
+本目录保留抽取 SDK 的 `src/hugegraph_llm_sdk/`，并在 [eval/](eval/README.md)
+存放独立评测 SDK。两者分别拥有 `pyproject.toml`，由仓库根 workspace 管理；
+`eval/` 不属于 `hugegraph_llm_sdk` 命名空间，也不随本包的 wheel 或源码包分发。
+评测包的发行名是 `hugegraph-llm-eval`，导入名是 `hugegraph_llm_eval`，可单独安装。
+抽取 SDK 或应用需要评测时，通过评测包的公开输入和结果契约按需接入；本次目录调整
+不增加隐式依赖，也不改变抽取或评测 API。
+
 ## 安装到另一个项目
 
 此 SDK 随当前源码提供，尚未通过本次变更发布到公共包仓库。请使用仓库路径或构建的 wheel，勿假定公共索引已有此版本。

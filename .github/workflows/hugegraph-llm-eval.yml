@@ -63,7 +63,7 @@ jobs:
           component: eval
       - name: Build outside the application workspace
         run: |
-          cp -R "$GITHUB_WORKSPACE/graphrag/eval" "$RUNNER_TEMP/eval-build"
+          cp -R "$GITHUB_WORKSPACE/hugegraph-llm-sdk/eval" "$RUNNER_TEMP/eval-build"
           cd "$RUNNER_TEMP"
           uv --no-config build --no-sources "$RUNNER_TEMP/eval-build" --out-dir "$RUNNER_TEMP/eval-dist"
           cp "$GITHUB_WORKSPACE/pyproject.toml" "$RUNNER_TEMP/eval-dist/workspace-pyproject.toml"
@@ -121,7 +121,7 @@ jobs:
         run: >-
           uvx --from "ty>=$TY_VERSION" ty check
           --python "$RUNNER_TEMP/eval-venv-whl/bin/python"
-          graphrag/eval/src/hugegraph_llm_eval
+          hugegraph-llm-sdk/eval/src/hugegraph_llm_eval
       - name: Prune uv cache before upload
         if: always() && steps.python-env.outcome == 'success'
         run: uv cache prune --ci

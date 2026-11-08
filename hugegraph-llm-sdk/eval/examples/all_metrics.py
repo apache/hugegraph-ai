@@ -17,7 +17,7 @@
 
 """Score retrieval, answers and graphs with every metric the SDK ships.
 
-    uv add --editable /absolute/path/hugegraph-ai/graphrag/eval --extra graph --extra rouge
+    uv add --editable /absolute/path/hugegraph-ai/hugegraph-llm-sdk/eval --extra graph --extra rouge
     python examples/all_metrics.py
 
 Without ``EVAL_JUDGE_MODEL`` the judged metrics use a deterministic stand-in.

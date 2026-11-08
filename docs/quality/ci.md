@@ -27,6 +27,11 @@ Dependency review runs for dependency changes on same-repository PRs; its token
 restrictions for fork PRs are unchanged. Deleted files and both sides of a rename
 participate in selection.
 
+The nested `hugegraph-llm-sdk/eval/` package is selected by the longest matching
+module path. Eval-only changes do not select the extraction SDK or application;
+changes to both packages select both suites. The SDK distribution smoke also
+checks the built wheel and sdist for accidentally bundled eval sources.
+
 SDK changes run the SDK distribution contracts and downstream LLM adapter tests,
 without selecting unrelated client/MCP suites. The SDK workflow builds outside
 the application workspace and verifies both wheel and sdist in clean environments

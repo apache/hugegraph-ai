@@ -1,17 +1,21 @@
 # HugeGraph-LLM Eval SDK 架构与扩展边界
 
 评测 SDK 面向独立 Python 项目和 GraphRAG 流程提供检索、答案与属性图的质量度量。接入示例见
-[使用指南](../../graphrag/eval/README.md)；本文说明它在项目中的位置、内部层次和维护边界。
+[使用指南](../../hugegraph-llm-sdk/eval/README.md)；本文说明它在项目中的位置、内部层次和维护边界。
 
 ## 在项目中的位置
 
-`graphrag/eval/` 是**度量层**：评分规则、Judge 协议和执行语义只在这里维护。整条链路的分工是
+`hugegraph-llm-sdk/eval/` 是**度量层**：评分规则、Judge 协议和执行语义只在这里维护。整条链路的分工是
 
 ```
-hugegraph-llm-sdk/ 负责把文本变成图（schema 设计 + 抽取）
-graphrag/eval/    负责判断图、检索和答案的质量（本包）
-hugegraph-llm/    负责把这些能力串成流程，并持有配置、持久化、报告和 UI
+hugegraph-llm-sdk/src/   抽取 SDK：schema 设计 + 抽取
+hugegraph-llm-sdk/eval/  独立评测 SDK：图、检索和答案的质量度量
+hugegraph-llm/          应用：流程、配置、持久化、报告和 UI
 ```
+
+目录嵌套仅用于组织源码：抽取包与评测包各有 `pyproject.toml`，是根 workspace 的两个独立成员。
+父包只分发自己的 `src/hugegraph_llm_sdk/` 和示例，评测包独立分发 `src/hugegraph_llm_eval/`。
+抽取 SDK 可按需调用评测 SDK，评测 SDK 不反向导入抽取代码；本次迁移不增加默认运行时依赖。
 
 因此评测包既可以被外部项目单独安装使用，也可以被 GraphRAG 流程嵌入：流程每轮产出候选后调用一次
 评测器，`findings` 与 `issues` 直接作为下一轮修复的输入，而不需要写回数据库或生成报告。
@@ -90,7 +94,7 @@ hugegraph-llm/    负责把这些能力串成流程，并持有配置、持久�
 - 基础安装只依赖 Pydantic；`networkx`、`rouge-score`、`jieba`、`openai` 全部是可选 extra。
 - 独立安装验证在仓库工作区之外构建 wheel/sdist，再在干净 venv 中安装并运行完整测试；基础环境跑通
   可跳过的用例，安装 extras 后覆盖全部用例。
-- 指标清单与用法以 [README](../../graphrag/eval/README.md) 为准；`examples/all_metrics.py` 一次跑通
+- 指标清单与用法以 [README](../../hugegraph-llm-sdk/eval/README.md) 为准；`examples/all_metrics.py` 一次跑通
   全部指标，CI 在安装 extras 的 wheel 环境里执行它。
 - 导入隔离测试断言 `import hugegraph_llm_eval` 不加载应用与厂商模块。
 - 评测指令中的示例必须保持领域中立，不得沉淀具体业务场景或内部评分文档引用。

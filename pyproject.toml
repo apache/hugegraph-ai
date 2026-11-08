@@ -80,7 +80,7 @@ packages = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "graphrag/*/src", "graphrag/*/pyproject.toml", "graphrag/*/README.md", "graphrag/*/LICENSE", "graphrag/*/NOTICE", "README.md", "LICENSE", "NOTICE"]
+include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "hugegraph-llm-sdk/eval/src", "hugegraph-llm-sdk/eval/pyproject.toml", "hugegraph-llm-sdk/eval/README.md", "hugegraph-llm-sdk/eval/LICENSE", "hugegraph-llm-sdk/eval/NOTICE", "README.md", "LICENSE", "NOTICE"]
 
 [tool.uv.sources]
 hugegraph-llm = { workspace = true }
@@ -92,7 +92,7 @@ vermeer-python-client = { path = "vermeer-python-client", editable = true }
 [tool.uv.workspace]
 members = [
     "hugegraph-llm-sdk",
-    "graphrag/eval",
+    "hugegraph-llm-sdk/eval",
     "hugegraph-llm",
     "hugegraph-python-client"
 ]
@@ -154,7 +154,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["T20"]
 "hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
-"graphrag/eval/examples/**/*.py" = ["T20"]
+"hugegraph-llm-sdk/eval/examples/**/*.py" = ["T20"]
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
 
 [tool.ruff.lint.isort]

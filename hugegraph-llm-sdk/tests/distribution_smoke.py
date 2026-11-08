@@ -29,7 +29,9 @@ import logging
 import os
 import socket
 import sys
-from pathlib import Path
+import tarfile
+import zipfile
+from pathlib import Path, PurePosixPath
 
 FORBIDDEN_IMPORTS = {
     "gradio",
@@ -38,6 +40,7 @@ FORBIDDEN_IMPORTS = {
     "pyhugegraph",
     "hugegraph_llm",
     "hugegraph_llm_core",
+    "hugegraph_llm_eval",
     "faiss",
     "langchain",
     "langchain_text_splitters",
@@ -82,6 +85,23 @@ def scripted(*responses):
         return next(remaining)
 
     return generate
+
+
+def verify_archive(path: Path) -> None:
+    if path.suffix == ".whl":
+        with zipfile.ZipFile(path) as archive:
+            names = [PurePosixPath(name) for name in archive.namelist()]
+        required = PurePosixPath("hugegraph_llm_sdk/__init__.py")
+    elif path.name.endswith(".tar.gz"):
+        with tarfile.open(path) as archive:
+            names = [PurePosixPath(*PurePosixPath(name).parts[1:]) for name in archive.getnames()]
+        required = PurePosixPath("src/hugegraph_llm_sdk/__init__.py")
+    else:
+        raise ValueError(f"unsupported distribution archive: {path}")
+    assert required in names, f"{path.name} is missing {required}"
+    for name in names:
+        assert "hugegraph_llm_eval" not in name.parts, f"{path.name} bundles the eval import package: {name}"
+        assert not name.parts or name.parts[0] != "eval", f"{path.name} bundles the nested eval project: {name}"
 
 
 def verify_distribution():
@@ -174,4 +194,6 @@ def run():
 
 
 if __name__ == "__main__":
+    for archive_path in sys.argv[1:]:
+        verify_archive(Path(archive_path))
     run()

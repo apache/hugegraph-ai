@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "client": "hugegraph-python-client",
     "sdk": "hugegraph-llm-sdk",
-    "eval": "graphrag/eval",
+    "eval": "hugegraph-llm-sdk/eval",
     "llm": "hugegraph-llm",
     "mcp": "hugegraph-mcp",
 }
@@ -66,8 +66,9 @@ def select(paths: list[str], *, full: bool = False, test_set: str = "mainline") 
         is_pyproject = Path(path).name == "pyproject.toml"
         is_documentation = Path(path).suffix.lower() in (".md", ".rst")
         # Module documentation/examples are inputs to contract tests too.
-        in_module = any(path.startswith(module + "/") for module in MODULES.values())
-        if is_documentation and not in_module:
+        owners = [key for key, module in MODULES.items() if path.startswith(module + "/")]
+        owner = max(owners, key=lambda key: len(MODULES[key]), default=None)
+        if is_documentation and owner is None:
             continue
         if not is_documentation:
             flags["license"] = True
@@ -76,8 +77,10 @@ def select(paths: list[str], *, full: bool = False, test_set: str = "mainline") 
         if path in SHARED or path.startswith(".github/actions/"):
             for key in (*MODULES, "quality"):
                 flags[key] = True
-        for key, module in MODULES.items():
-            if path.startswith(module + "/") or path == f".github/workflows/{WORKFLOWS[key]}":
+        if owner is not None:
+            flags[owner] = True
+        for key, workflow in WORKFLOWS.items():
+            if path == f".github/workflows/{workflow}":
                 flags[key] = True
         if path == ".dockerignore" or path.startswith("docker/") or path == "scripts/build_llm_image.sh":
             flags["llm"] = True

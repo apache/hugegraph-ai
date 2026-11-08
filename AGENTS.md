@@ -1,53 +1,57 @@
 # AGENTS.md
 
-Guidance for AI agents working in this repository. Keep README content in README files; keep this file focused on decisions agents commonly get wrong.
+Repository guidance for coding agents. Keep product usage in README files and use this file for ownership, validation and decisions agents commonly get wrong.
 
-## Stack & Modules
+## Module ownership
 
-- This is a Python `uv` workspace. Prefer root-level workspace commands unless a module-specific file says otherwise.
-- `hugegraph-llm-sdk/` owns the standalone graph schema/extraction runtime. Keep its base installation independent of application/provider dependencies; verify LLM callers after SDK changes.
-- `hugegraph-llm/` is the primary and most frequently changed module. When editing or reviewing it, read `hugegraph-llm/AGENTS.md` first.
-- `hugegraph-python-client/` is a supporting dependency for HugeGraph access. Change it only when the client contract itself must change, and verify `hugegraph-llm` callers when you do.
-- Treat `hugegraph-ml/` and `vermeer-python-client/` as lower-frequency modules. Do not expand changes into them without a direct reason.
+- `hugegraph-llm-sdk/` owns reusable schema design, validation and reviewed graph-extraction contracts. Keep its base installation independent of application and provider dependencies.
+- `hugegraph-llm/` owns GraphRAG, knowledge-graph construction, prompts, model integration, vector indexes, API/UI and application orchestration. Read its local guidance before editing it.
+- `hugegraph-python-client/` owns the HugeGraph Python protocol and public client APIs. Change it only when the client contract itself must change, then verify application callers.
+- `hugegraph-mcp/` owns MCP transport, tool contracts, safety defaults and write confirmation.
+- `hugegraph-ml/` and `vermeer-python-client/` are lower-frequency standalone modules. Do not expand a change into them without a direct dependency or behavior reason.
 
-## Testing Expectations
+## Load on demand
 
-- Any code change must include sufficient and effective test coverage for the changed behavior, regression risk, or failure path.
-- Do not add tests that only improve coverage numbers while mocking away the behavior being changed.
-- If a change cannot reasonably include automated tests, state why and provide the manual verification performed.
-- Cross-module or shared dependency changes must test the affected downstream module, not only the package where the edit was made.
+| Task | Read first |
+|---|---|
+| Documentation ownership and durable links | [docs/README.md](docs/README.md) |
+| LLM application or GraphRAG | [`hugegraph-llm/`](hugegraph-llm/) and its local guidance |
+| Standalone SDK | [`hugegraph-llm-sdk/`](hugegraph-llm-sdk/) and [SDK architecture](docs/sdk/architecture.md) |
+| Python client | [`hugegraph-python-client/`](hugegraph-python-client/) |
+| MCP | [`hugegraph-mcp/`](hugegraph-mcp/) |
+| CI and test selection | [docs/quality/ci.md](docs/quality/ci.md) and [test taxonomy](docs/quality/test-taxonomy.md) |
+| Complex multi-file or API-contract work | [rules/README.md](rules/README.md) |
 
-## Code Search Anchors
+## Repository constraints
 
-- `hugegraph-llm/src/hugegraph_llm/` - main LLM, RAG, KG, prompt, API, and vector-index code.
-- `hugegraph-python-client/src/pyhugegraph/` - Python client used by LLM code to talk to HugeGraph.
-- `pyproject.toml` and module `pyproject.toml` files - workspace membership, dependency groups, lint settings, Python versions.
-- `rules/README.md` - staged AI-assisted workflow for multi-file features, API contract changes, or cross-module design changes.
+- Keep a change in the package that owns the behavior. Update callers deliberately rather than moving shared behavior into the application for convenience.
+- A shared SDK or Python-client change requires downstream `hugegraph-llm` validation, not only package-local tests.
+- Keep root and module READMEs as entry points. Put detailed cross-module policy in `docs/` and link every durable page from `docs/README.md` or a module-local index.
+- Do not duplicate quick starts, Docker procedures or public API examples in this file.
+- Document current contracts and failure boundaries, not implementation chronology. Avoid PR links, commit hashes, timestamps and review logs in durable docs.
+- Keep Markdown prose as logical lines; wrap near 160 characters only when necessary for review.
 
-## Build & Test
+## Build, type and style checks
 
 ```bash
 uv sync --all-extras
 uv run --extra dev ruff format --check .
 uv run --extra dev ruff check .
-uv run --extra dev ty check hugegraph-llm-sdk/src/hugegraph_llm_sdk hugegraph-llm/src/hugegraph_llm hugegraph-python-client/src/pyhugegraph
+uv run --extra dev ty check \
+  hugegraph-llm-sdk/src/hugegraph_llm_sdk \
+  hugegraph-llm/src/hugegraph_llm \
+  hugegraph-python-client/src/pyhugegraph
 ```
 
-- The default toolchain is uv + Ruff + ty; versions are maintained in the root `pyproject.toml`.
-- CI runs ty for affected modules on the primary runtime, in existing runners. Existing application diagnostics are advisory until the baseline is resolved.
+The exact Python ranges, extras and tool versions live in root and module `pyproject.toml` files. Do not copy them into agent notes unless the version is the subject of the change.
 
-- Run tests for the affected module rather than defaulting to a full-repository test sweep.
-- For `hugegraph-llm`, use the module CI split between unit-style tests and integration tests.
-- For `hugegraph-python-client`, include client tests and any `hugegraph-llm` tests needed to validate caller compatibility.
+## Testing expectations
 
-## Agent Workflow
+- Test changed behavior, regression risk and meaningful failure paths; do not add tests that mock away the contract being changed.
+- Run affected-module tests rather than an unconditional full-repository sweep. Use the CI policy to add downstream or integration tiers when shared code or external behavior changes.
+- `hugegraph-llm-sdk` changes require SDK tests and relevant LLM application tests.
+- `hugegraph-python-client` changes require client tests and affected LLM/MCP callers.
+- MCP safety or write-path changes require tests for read-only defaults, confirmation, target revalidation and error behavior.
+- When automated testing is not practical, state the missing environment and provide the exact manual verification performed.
 
-- Before editing, identify whether the change belongs to `hugegraph-llm`, `hugegraph-python-client`, or root workspace configuration.
-- For multi-file features, API contract changes, or cross-module design changes, read `rules/README.md` first.
-- Keep changes scoped to the module that owns the behavior. Avoid opportunistic rewrites in sibling modules.
-
-## Cross-module Notes
-
-- Root dependency or workspace changes can affect multiple packages; verify the package that consumes the changed dependency.
-- `hugegraph-llm` imports `hugegraph-python-client`; client API changes must preserve or deliberately update those call sites.
-- Do not duplicate README quick-start, Docker, or deployment instructions in AGENTS files.
+Documentation-only changes require relative-link, package-name, import, command-working-directory and rendered-heading review plus `git diff --check`.

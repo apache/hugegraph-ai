@@ -36,6 +36,8 @@ from sqlalchemy import select
 from ..action.models import RevisionRow
 from ..core import expr as _expr
 from ..core.loader import OntologyPackage
+from ..engine.service import assemble_row
+from ..errors import TypeMismatchError
 from ..registry.compiled import compile_package
 
 SYSTEM_COLUMNS = ("_rev", "_valid_from", "_valid_to", "_synced_at")
@@ -47,6 +49,141 @@ def declared_columns(compiled, object_type: str) -> list[str]:
     if obj is None:
         return []
     return [*obj.spec.properties, *SYSTEM_COLUMNS]
+
+
+def assemble_revision_state(compiled, object_type: str, state: dict | None) -> dict | None:
+    """Compute the applicable derived fields without modifying historical audit data."""
+    if state is None or state == {"archived": True}:
+        return state
+    return assemble_row(compiled, object_type, state)
+
+
+def missing_revision_fields(compiled, object_type: str, state: dict, expressions: list[str]) -> set[str]:
+    """Return fields that cannot be established from a historical snapshot.
+
+    A missing key differs from a key explicitly set to None: schema changes
+    may have introduced or renamed a field since this revision was recorded.
+    Expand expression-derived properties to their stored input fields.
+    """
+    properties = compiled.objects[object_type].spec.properties
+    assembled = assemble_revision_state(compiled, object_type, state)
+    missing: set[str] = set()
+    visiting: set[str] = set()
+
+    def field(name: str) -> None:
+        prop = properties.get(name)
+        if prop is not None and prop.derived_kind() == "expr":
+            if name in visiting:
+                missing.add(name)
+                return
+            visiting.add(name)
+            expression(prop.derived)
+            visiting.remove(name)
+        elif name not in state:
+            missing.add(name)
+
+    def walk(node) -> None:
+        if isinstance(node, _expr.Path):
+            if len(node.parts) >= 2 and node.parts[0] == "target":
+                field(node.parts[1])
+                value = assembled.get(node.parts[1])
+                for part in node.parts[2:]:
+                    if value is None:
+                        break  # explicit null is known
+                    if not isinstance(value, dict) or part not in value:
+                        missing.add(".".join(node.parts[1:]))
+                        break
+                    value = value[part]
+            elif len(node.parts) == 1 and node.parts[0] not in ("target", "parameters", "user", "principal"):
+                field(node.parts[0])
+        elif isinstance(node, _expr.Bin):
+            walk(node.left)
+            if node.op == "has" and isinstance(node.left, _expr.Path) and node.left.parts[0] == "target":
+                if isinstance(node.right, _expr.Path) and len(node.right.parts) == 1:
+                    walk(_expr.Path((*node.left.parts, node.right.parts[0])))
+            elif node.op != "has":
+                walk(node.right)
+        elif isinstance(node, _expr.Un):
+            walk(node.operand)
+        elif isinstance(node, _expr.Call):
+            for child in node.args:
+                walk(child)
+        elif isinstance(node, _expr.ListLit):
+            for child in node.items:
+                walk(child)
+
+    def expression(src: str) -> None:
+        try:
+            walk(_expr.parse(src))
+        except _expr.ExpressionError:
+            missing.add("<invalid expression>")
+
+    for expr in expressions:
+        expression(expr)
+    return missing
+
+
+def bind_revision_parameters(action, raw: dict) -> tuple[dict, set[str]]:
+    """Rebind recorded parameters under the selected action contract."""
+    bound: dict[str, Any] = {}
+    unknown: set[str] = set()
+    for name, pdef in action.spec.parameters.items():
+        value = raw.get(name, pdef.default)
+        if value is None:
+            if pdef.required:
+                unknown.add(f"parameters.{name}")
+            else:
+                bound[name] = None
+            continue
+        try:
+            bound[name] = pdef.ptype().coerce(value, prop=name)
+        except (TypeMismatchError, ValueError, TypeError):
+            unknown.add(f"parameters.{name}")
+    return bound, unknown
+
+
+def missing_revision_parameters(action, raw: dict, bound: dict, expressions: list[str]) -> set[str]:
+    """Detect nested historical parameter fields that coercion would invent as null."""
+    missing: set[str] = set()
+
+    def walk(node) -> None:
+        if isinstance(node, _expr.Path) and len(node.parts) >= 2 and node.parts[0] == "parameters":
+            name = node.parts[1]
+            if name not in action.spec.parameters:
+                missing.add(f"parameters.{name}")
+                return
+            # An absent top-level parameter uses the current action's declared
+            # default, which has already been coerced exactly as at runtime.
+            value = raw[name] if name in raw else bound.get(name)
+            for part in node.parts[2:]:
+                if value is None:
+                    break  # an explicitly null parent is known
+                if not isinstance(value, dict) or part not in value:
+                    missing.add(".".join(node.parts))
+                    break
+                value = value[part]
+        elif isinstance(node, _expr.Bin):
+            walk(node.left)
+            if node.op == "has" and isinstance(node.left, _expr.Path) and node.left.parts[0] == "parameters":
+                if isinstance(node.right, _expr.Path) and len(node.right.parts) == 1:
+                    walk(_expr.Path((*node.left.parts, node.right.parts[0])))
+            elif node.op != "has":
+                walk(node.right)
+        elif isinstance(node, _expr.Un):
+            walk(node.operand)
+        elif isinstance(node, _expr.Call):
+            for child in node.args:
+                walk(child)
+        elif isinstance(node, _expr.ListLit):
+            for child in node.items:
+                walk(child)
+
+    for expr in expressions:
+        try:
+            walk(_expr.parse(expr))
+        except _expr.ExpressionError:
+            missing.add("<invalid expression>")
+    return missing
 
 
 def _parse_since(since: str) -> int:
@@ -143,7 +280,10 @@ class EvalRunner:
                 report["passed"] = False
                 continue
             total = matched = after_rejected = 0
+            unknown: list[dict[str, Any]] = []
             for rev in revisions:
+                if rev.object_type != action_res.spec.target:
+                    continue  # this action now targets a different object type
                 # the revision's own before/after snapshots are the truth: a
                 # `get(at=rev.created_at)` lands exactly on the new version's
                 # _valid_from boundary and silently returns the AFTER state,
@@ -166,22 +306,38 @@ class EvalRunner:
                     # counting it made `after_rejected == total` impossible and
                     # kept the suite red forever after a retargeting.
                     continue
+                rules = [r.expr for r in action_res.spec.rules]
+                raw_params = rev.params or {}
+                params, missing = bind_revision_parameters(action_res, raw_params)
+                missing |= missing_revision_parameters(action_res, raw_params, params, rules)
+                missing |= missing_revision_fields(compiled, action_res.spec.target, before, rules)
+                if after is not None and after != {"archived": True} and case.expect.no_double_close:
+                    missing |= missing_revision_fields(compiled, action_res.spec.target, after, rules)
+                if missing:
+                    unknown.append({"revision": rev.id, "missing_fields": sorted(missing)})
+                    continue
+                before = assemble_revision_state(compiled, action_res.spec.target, before)
+                after = assemble_revision_state(compiled, action_res.spec.target, after)
+                ctx = _expr.ExprContext(target=before, parameters=params, principal={"id": rev.principal})
+                try:
+                    rules_ok = all(bool(_expr.evaluate(r.expr, ctx)) for r in action_res.spec.rules)
+                    # The runtime rejects archived objects before evaluating rules.
+                    rejects_after = after == {"archived": True}
+                    if after is not None and not rejects_after and case.expect.no_double_close:
+                        ctx2 = _expr.ExprContext(target=after, parameters=params, principal={"id": rev.principal})
+                        rejects_after = not all(bool(_expr.evaluate(r.expr, ctx2)) for r in action_res.spec.rules)
+                except _expr.ExpressionError as exc:
+                    unknown.append({"revision": rev.id, "error": str(exc)})
+                    continue
                 total += 1
-                ctx = _expr.ExprContext(target=before, parameters=rev.params or {}, principal={"id": rev.principal})
-                rules_ok = all(bool(_expr.evaluate(r.expr, ctx)) for r in action_res.spec.rules)
-                # historical executions passed the OLD rules; the candidate must
-                # agree on the pass/fail outcome class for the replay to match
-                if rules_ok:
-                    matched += 1
-                # no-double-close: replaying against the CURRENT (post-action)
-                # state must be rejected by the candidate rules
-                if after is not None:
-                    ctx2 = _expr.ExprContext(target=after, parameters=rev.params or {}, principal={"id": rev.principal})
-                    after_rejected += 0 if all(bool(_expr.evaluate(r.expr, ctx2)) for r in action_res.spec.rules) else 1
-            ok = True
+                matched += int(rules_ok)
+                after_rejected += int(rejects_after)
+            ok = not unknown
             expectations: dict[str, Any] = {"replays": total, "outcome_matches": matched}
+            if unknown:
+                expectations["unknown_revisions"] = unknown
             if total and case.expect.outcomes_match is not None:
-                ok = matched / total >= case.expect.outcomes_match
+                ok = ok and matched / total >= case.expect.outcomes_match
             if total and case.expect.no_double_close:
                 expectations["after_state_rejections"] = after_rejected
                 ok = ok and after_rejected == total

@@ -19,6 +19,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+import pytest
 import pytest_asyncio
 import yaml
 from doc_fixtures import make_context
@@ -114,7 +117,8 @@ async def test_packet_cache_reuses_one_run_and_preserves_all_audit_trails(lifecy
         assert sum(len(d["chunks"]) for d in detail["documents"]) == 3
 
 
-async def test_manually_accepted_link_records_assertion_and_retracts(tmp_path):
+@pytest.mark.parametrize("withdrawal", ["document", "extraction"])
+async def test_manually_accepted_link_records_assertion_and_retracts(tmp_path, withdrawal):
     def mutate(pkg):
         path = pkg / "objects/supplier-note.yaml"
         obj = yaml.safe_load(path.read_text())
@@ -139,7 +143,14 @@ async def test_manually_accepted_link_records_assertion_and_retracts(tmp_path):
         assert assertions[0].run_id == link.run_id
         assert assertions[0].evidence["doc_id"] == obj.doc_id
 
-        await sc.documents.remove_document(obj.doc_id)
+        if withdrawal == "document":
+            await sc.documents.remove_document(obj.doc_id)
+        else:
+            # Re-extract the same document version with an agent that reports
+            # no relationships, including the previously accepted link.
+            sc.document_extractor.skip_supplier_edge = True
+            sc.settings = replace(sc.settings, doc_agent_cmd="updated-agent-without-links")
+            await sc.sync("supplier-note")
         async with sc.sessionmaker() as session:
             assert await sc.repo.link_members(session, "supplier-risk-note") == []
     finally:

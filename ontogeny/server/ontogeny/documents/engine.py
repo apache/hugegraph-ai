@@ -701,7 +701,16 @@ spec:
             )
         )
 
-    async def _apply_links(self, session, run, outcome, *, applied_ids: set[tuple[str, str]], principal: str) -> int:
+    async def _apply_links(
+        self,
+        session,
+        run,
+        outcome,
+        *,
+        applied_ids: set[tuple[str, str]],
+        doc_ids: set[str],
+        principal: str,
+    ) -> int:
         ts = utcnow()
         # collect new assertions per document first
         new_by_doc: dict[str, set[tuple[str, str, str]]] = {}
@@ -709,7 +718,9 @@ spec:
             for doc_id in bound.sources:
                 new_by_doc.setdefault(doc_id, set()).add((bound.link, bound.src_id, bound.dst_id))
         # retract previous assertions of the same documents that are gone
-        docs = list(new_by_doc)
+        # Empty extracted graphs also withdraw prior assertions. Only docs
+        # actually processed by this run participate in replacement.
+        docs = list(doc_ids)
         if docs:
             old = (
                 (
@@ -1060,7 +1071,12 @@ spec:
 
                 applied_ids |= outcome.references
                 summary["links"] = await self._apply_links(
-                    session, run, outcome, applied_ids=applied_ids, principal=f"extractor:{run_id}"
+                    session,
+                    run,
+                    outcome,
+                    applied_ids=applied_ids,
+                    doc_ids={packet.doc_id for packet, _ in packets},
+                    principal=f"extractor:{run_id}",
                 )
                 await session.flush()
                 pending = (

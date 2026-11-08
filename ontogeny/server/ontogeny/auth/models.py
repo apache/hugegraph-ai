@@ -43,7 +43,7 @@ from ..db import Base
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
 
 
 class UserRow(Base):

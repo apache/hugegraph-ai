@@ -16,13 +16,13 @@
 # limitations under the License.
 
 """Domain example, system level: package integrity plus the full
-plan -> release -> produce -> inspect execution chain, and every cross-cutting
+requirement -> tapeout -> lot -> step -> test execution chain, and every cross-cutting
 capability the golden package must keep demonstrating: masking, derived
 properties, audit with rejections, sandboxed functions, eval suites,
 projections and evolution promotion.
 
 The old richer system fixture also demoed maintenance and procurement chains
-and llm/http capability functions; product-manufacturing does not model those,
+and llm/http capability functions; chip-lifecycle does not model those,
 so their coverage lives where the capability lives (join-table links: the
 worker rig in test_projection_hugegraph; llm/http capabilities: the inline
 package below).
@@ -72,9 +72,9 @@ spec:
 """,
 }
 
-PLANNER = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
-OPERATOR = {"id": "u-op", "Role": ["operator"], "site": "plant-north"}
-INSPECTOR = {"id": "u-qi", "Role": ["quality"], "site": "plant-north"}
+PRODUCT = {"id": "u-product", "Role": ["product"], "site": "hq"}
+FAB = {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
+CQE = {"id": "u-cqe", "Role": ["cqe"], "site": "hq"}
 OUTSIDER = {"id": "u-outsider", "Role": ["visitor"]}
 
 
@@ -139,13 +139,13 @@ class TestPackage:
         assert seed.is_file()
         text = seed.read_text(encoding="utf-8")
         for table in (
-            "products",
-            "materials",
-            "boms",
-            "work_centers",
-            "production_orders",
-            "operations",
-            "quality_inspections",
+            "requirements",
+            "design_modules",
+            "tapeout_versions",
+            "equipment",
+            "wafer_lots",
+            "process_steps",
+            "wafer_tests",
         ):
             assert f"CREATE TABLE {table}" in text
 
@@ -178,7 +178,7 @@ async def execute(sc, action, principal, params, target=None, **kw):
         return rev
 
 
-SYSTEM = {"id": "test-runner", "Role": ["planner"], "markings": ["internal"]}
+SYSTEM = {"id": "test-runner", "Role": ["product"], "markings": ["internal"]}
 
 
 async def get(sc, object_type, obj_id):
@@ -191,130 +191,131 @@ class TestSyncCoverage:
     async def test_every_object_type_syncs(self, sc):
         async with sc.sessionmaker() as s:
             for name in sc.compiled.objects:
+                if sc.compiled.objects[name].spec.backing.sync.strategy == "extract":
+                    continue  # extracted from documents, not seeded in SQL
                 _rows, total = await sc.repo.query(s, name, limit=1)
                 assert total > 0, f"{name} synced no rows"
 
     async def test_derived_properties_compute(self, sc):
-        po = await get(sc, "production-order", "PO-1001")
-        assert po["release_lag_h"] == pytest.approx(24.0)  # released one day after creation
-        po = await get(sc, "production-order", "PO-1002")
-        assert po["release_lag_h"] is None  # not released yet: nothing to derive from
+        tv = await get(sc, "tapeout-version", "TO-A0")
+        assert tv["fab_lag_h"] == pytest.approx(936.0)  # taped out 39 days after creation
+        tv = await get(sc, "tapeout-version", "TO-A1")
+        assert tv["fab_lag_h"] is None  # not taped out yet: nothing to derive from
 
     async def test_fk_links_traverse(self, sc):
         async with sc.sessionmaker() as s:
-            linked = await sc.repo.fk_linked_ids(s, "production-order-product", "P-100", from_source=True)
-        assert "PO-1001" in linked
-        assert "PO-1004" in linked
+            linked = await sc.repo.fk_linked_ids(s, "version-lots", "TO-A0", from_source=True)
+        assert "LOT-2417" in linked
+        assert "LOT-2418" in linked
 
 
-class TestPlanToRelease:
-    async def test_create_and_release_production_order(self, sc):
+class TestPlanToFab:
+    async def test_create_and_tapeout_version(self, sc):
         rev = await execute(
             sc,
-            "create-production-order",
-            PLANNER,
+            "create-tapeout-version",
+            PRODUCT,
             {
-                "product_id": "P-100",
-                "qty": 10,
-                "priority": "NORMAL",
+                "project": "X9",
+                "notes": "Trial version for the system-level chain",
             },
         )
-        pid = rev.object_id
-        assert pid.startswith("PO-")
+        vid = rev.object_id
+        assert vid.startswith("TO-")
 
-        po = await get(sc, "production-order", pid)
-        assert po["status"] == "PLANNED" and po["qty"] == 10
+        tv = await get(sc, "tapeout-version", vid)
+        assert tv["status"] == "PLANNED" and tv["project"] == "X9"
 
-        await execute(sc, "release-production-order", PLANNER, {}, pid)
-        po = await get(sc, "production-order", pid)
-        assert po["status"] == "RELEASED" and po["released_at"] is not None
-
-        from ontogeny.errors import RuleRejectedError
-
-        with pytest.raises(RuleRejectedError):
-            await execute(sc, "release-production-order", PLANNER, {}, pid)
-
-    async def test_create_requires_planner_role(self, sc):
-        from ontogeny.errors import PolicyDeniedError
-
-        with pytest.raises(PolicyDeniedError):
-            await execute(sc, "create-production-order", OPERATOR, {"product_id": "P-100", "qty": 1})
-
-    async def test_release_requires_planner_role(self, sc):
-        """The Cedar `when` clause gates planners to PLANNED orders; operators
-        hold no release permit at all -- policy denies before rules matter."""
-        from ontogeny.errors import PolicyDeniedError
-
-        with pytest.raises(PolicyDeniedError):
-            await execute(sc, "release-production-order", OPERATOR, {}, "PO-1002")
-
-
-class TestShopFloor:
-    async def test_complete_operation_moves_and_stamps(self, sc):
-        await execute(sc, "complete-operation", OPERATOR, {"note": "Plate cutting finished"}, "OP-2001")
-        op = await get(sc, "operation", "OP-2001")
-        assert op["status"] == "COMPLETED" and op["completed_at"] is not None
+        await execute(sc, "tapeout", PRODUCT, {}, vid)
+        tv = await get(sc, "tapeout-version", vid)
+        assert tv["status"] == "FAB" and tv["taped_out_at"] is not None
 
         from ontogeny.errors import RuleRejectedError
 
         with pytest.raises(RuleRejectedError):
-            await execute(sc, "complete-operation", OPERATOR, {}, "OP-2001")
+            await execute(sc, "tapeout", PRODUCT, {}, vid)
 
-    async def test_only_operators_may_complete(self, sc):
+    async def test_create_requires_product_role(self, sc):
         from ontogeny.errors import PolicyDeniedError
 
         with pytest.raises(PolicyDeniedError):
-            await execute(sc, "complete-operation", PLANNER, {}, "OP-2002")
+            await execute(sc, "create-tapeout-version", FAB, {"project": "X9"})
+
+    async def test_tapeout_requires_product_role(self, sc):
+        """The Cedar `when` clause gates product to PLANNED versions; fab
+        holds no tapeout permit at all -- policy denies before rules matter."""
+        from ontogeny.errors import PolicyDeniedError
+
+        with pytest.raises(PolicyDeniedError):
+            await execute(sc, "tapeout", FAB, {}, "TO-A1")
+
+
+class TestFabFloor:
+    async def test_complete_process_step_moves_and_stamps(self, sc):
+        await execute(sc, "complete-process-step", FAB, {"note": "Etch finished on EQ-07"}, "PS-7132")
+        step = await get(sc, "process-step", "PS-7132")
+        assert step["status"] == "COMPLETED" and step["completed_at"] is not None
+
+        from ontogeny.errors import RuleRejectedError
+
+        with pytest.raises(RuleRejectedError):
+            await execute(sc, "complete-process-step", FAB, {}, "PS-7132")
+
+    async def test_only_fab_may_complete(self, sc):
+        from ontogeny.errors import PolicyDeniedError
+
+        with pytest.raises(PolicyDeniedError):
+            await execute(sc, "complete-process-step", PRODUCT, {}, "PS-7212")
 
 
 class TestQuality:
-    async def test_record_pass_inspection(self, sc):
+    async def test_record_pass_wafer_test(self, sc):
         rev = await execute(
             sc,
-            "record-inspection",
-            INSPECTOR,
+            "record-wafer-test",
+            FAB,
             {
-                "order_id": "PO-1003",
-                "inspected_qty": 40,
+                "lot_id": "LOT-2417",
+                "tested_qty": 40,
                 "defect_qty": 1,
                 "result": "PASS",
-                "inspector": "qa-eng-02",
+                "tester": "cp-eng-02",
             },
         )
-        qi_id = rev.object_id
-        assert qi_id.startswith("QI-")
-        qi = await get(sc, "quality-inspection", qi_id)
-        assert qi["result"] == "PASS" and qi["inspected_at"] is not None
-        assert qi["order_id"] == "PO-1003" and qi["defect_qty"] == 1
+        wt_id = rev.object_id
+        assert wt_id.startswith("WT-")
+        wt = await get(sc, "wafer-test", wt_id)
+        assert wt["result"] == "PASS" and wt["tested_at"] is not None
+        assert wt["lot_id"] == "LOT-2417" and wt["defect_qty"] == 1
 
-    async def test_defects_cannot_exceed_inspected(self, sc):
+    async def test_defects_cannot_exceed_tested(self, sc):
         from ontogeny.errors import RuleRejectedError
 
         with pytest.raises(RuleRejectedError):
             await execute(
                 sc,
-                "record-inspection",
-                INSPECTOR,
+                "record-wafer-test",
+                FAB,
                 {
-                    "order_id": "PO-1003",
-                    "inspected_qty": 40,
+                    "lot_id": "LOT-2417",
+                    "tested_qty": 40,
                     "defect_qty": 41,
                     "result": "FAIL",
-                    "inspector": "qa-eng-02",
+                    "tester": "cp-eng-02",
                 },
             )
 
-    async def test_only_quality_may_record(self, sc):
+    async def test_only_fab_may_record(self, sc):
         from ontogeny.errors import PolicyDeniedError
 
         with pytest.raises(PolicyDeniedError):
             await execute(
                 sc,
-                "record-inspection",
-                OPERATOR,
+                "record-wafer-test",
+                CQE,
                 {
-                    "order_id": "PO-1003",
-                    "inspected_qty": 1,
+                    "lot_id": "LOT-2417",
+                    "tested_qty": 1,
                     "defect_qty": 0,
                     "result": "PASS",
                 },
@@ -322,46 +323,47 @@ class TestQuality:
 
 
 class TestFunctions:
-    async def test_material_availability_reports_shortage(self, sc):
-        fn = sc.compiled.functions["material-availability"]
+    async def test_analyze_yield_loss_reports_candidates(self, sc):
+        fn = sc.compiled.functions["analyze-yield-loss"]
         async with sc.sessionmaker() as s:
-            out = await sc.sandbox.run(s, fn, {"product_id": "P-100", "qty": 5})
-        assert out["bom_lines"] == 3
-        assert out["ready"] is False
-        short = {x["material_id"]: x for x in out["shortage"]}
-        assert set(short) == {"M-104"}  # bearings: 21 required incl. scrap, 9 on hand
-        assert short["M-104"]["required"] == 21
-        assert short["M-104"]["on_hand"] == 9
-        assert short["M-104"]["gap"] == 12
+            out = await sc.sandbox.run(s, fn, {"test_id": "WT-501"})
+        assert out["found"] is True
+        assert out["lot_id"] == "LOT-2417" and out["lot_status"] == "COMPLETE"
+        assert out["loss"] == pytest.approx(0.18)  # 36 defects on 200 tested units
+        assert out["recommended_action"] == "HOLD"
+        by_class = {c["root_cause_class"]: c["confidence"] for c in out["candidates"]}
+        assert by_class == {"PROCESS": 0.82, "DESIGN": 0.55}
 
-    async def test_order_yield_summarises_quality_and_routing(self, sc):
-        fn = sc.compiled.functions["order-yield"]
+    async def test_requirement_impact_walks_the_whole_chain(self, sc):
+        fn = sc.compiled.functions["requirement-impact"]
         async with sc.sessionmaker() as s:
-            out = await sc.sandbox.run(s, fn, {"order_id": "PO-1004"})
-        assert out["ok"] is True
-        assert out["inspected_qty"] == 10 and out["defect_qty"] == 0
-        assert out["pass_rate"] == pytest.approx(1.0)
-        assert out["operations_total"] == 2 and out["operations_completed"] == 2
-        assert out["routing_complete"] is True
+            out = await sc.sandbox.run(s, fn, {"requirement_id": "REQ-101"})
+        assert out["found"] is True
+        assert {m["module_id"] for m in out["modules"]} == {"DSG-201", "DSG-211"}
+        assert {v["version_id"] for v in out["versions"]} == {"TO-A0", "TO-A1"}
+        assert out["at_risk_lots"] == ["LOT-2419"]
+        assert out["at_risk_wafers"] == 25
 
-    async def test_capacity_check(self, sc):
-        fn = sc.compiled.functions["capacity-check"]
+    async def test_yield_pareto_ranks_the_worst_lot_first(self, sc):
+        fn = sc.compiled.functions["yield-pareto"]
         async with sc.sessionmaker() as s:
-            out = await sc.sandbox.run(s, fn, {"work_center_id": "WC-01", "qty": 10})
-        assert out["daily_capacity"] == 800  # 400 per shift x 2 shifts
-        assert out["committed_qty"] == 170  # open orders: 20 + 50 + 100
-        assert out["ok"] is True
+            out = await sc.sandbox.run(s, fn, {})
+        assert out["lots_with_tests"] == 3
+        top = out["ranking"][0]
+        assert top["lot_id"] == "LOT-2417"  # 18% loss, the biggest bucket
+        assert top["loss"] == pytest.approx(0.18)
+        assert "Etch@EQ-07" in top["route"]
 
     async def test_function_capability_is_scoped(self, sc):
         from ontogeny.errors import SandboxError
 
-        fn = sc.compiled.functions["material-availability"]
+        fn = sc.compiled.functions["analyze-yield-loss"]
         original = fn.spec.capabilities
         fn.spec.capabilities = []  # strip grants
         try:
             async with sc.sessionmaker() as s:
                 with pytest.raises(SandboxError, match="capability denied"):
-                    await sc.sandbox.run(s, fn, {"product_id": "P-100", "qty": 1})
+                    await sc.sandbox.run(s, fn, {"test_id": "WT-501"})
         finally:
             fn.spec.capabilities = original
 
@@ -369,29 +371,25 @@ class TestFunctions:
 class TestMaskingAndAudit:
     async def test_internal_marking_is_masked(self, sc):
         async with sc.sessionmaker() as s:
-            obj = await sc.query.get(s, "material", "M-101", OUTSIDER)
-        assert obj["unit_cost"] == "__masked__"
+            obj = await sc.query.get(s, "tapeout-version", "TO-A0", OUTSIDER)
+        assert obj["mask_cost"] == "__masked__"
         async with sc.sessionmaker() as s:
-            obj = await sc.query.get(s, "material", "M-101", {**OUTSIDER, "markings": ["internal"]})
-        assert obj["unit_cost"] == pytest.approx(210.0)
+            obj = await sc.query.get(s, "tapeout-version", "TO-A0", {**OUTSIDER, "markings": ["internal"]})
+        assert obj["mask_cost"] == pytest.approx(1850000.0)
 
     async def test_revision_trail_records_rejections(self, sc):
         from ontogeny.errors import RuleRejectedError
 
-        await execute(sc, "release-production-order", PLANNER, {}, "PO-1002")
+        await execute(sc, "tapeout", PRODUCT, {}, "TO-A1")
         with pytest.raises(RuleRejectedError):
-            await execute(sc, "release-production-order", PLANNER, {}, "PO-1002")
+            await execute(sc, "tapeout", PRODUCT, {}, "TO-A1")
         async with sc.sessionmaker() as s:
             from sqlalchemy import select
 
             from ontogeny.action.models import RevisionRow
 
             rows = (
-                (
-                    await s.execute(
-                        select(RevisionRow).where(RevisionRow.object_id == "PO-1002").order_by(RevisionRow.id)
-                    )
-                )
+                (await s.execute(select(RevisionRow).where(RevisionRow.object_id == "TO-A1").order_by(RevisionRow.id)))
                 .scalars()
                 .all()
             )
@@ -410,7 +408,7 @@ class TestEvolutionOnDomainPackage:
             [
                 {
                     "mutation": "add-optional-property",
-                    "object": "production-order",
+                    "object": "wafer-lot",
                     "prop": "shift-pattern",
                     "type": "string",
                 }
@@ -425,7 +423,7 @@ class TestEvolutionOnDomainPackage:
                 diff=[
                     {
                         "mutation": "add-optional-property",
-                        "object": "production-order",
+                        "object": "wafer-lot",
                         "prop": "shift-pattern",
                         "type": "string",
                     }

@@ -40,7 +40,17 @@ from ontogeny.demo import (
     seed_source_db,
 )
 
-OBJECT_TYPES = ("product", "material", "bom", "work-center", "production-order", "operation", "quality-inspection")
+OBJECT_TYPES = (
+    "requirement",
+    "design-module",
+    "tapeout-version",
+    "equipment",
+    "wafer-lot",
+    "process-step",
+    "wafer-test",
+    "customer",
+    "field-failure",
+)
 
 
 class TestSeedSource:
@@ -82,8 +92,9 @@ class TestCopyPackage:
         import yaml
 
         # the domain's store is already demo-shaped: a local sqlite source the
-        # bootstrap's ERP_DSN points at
-        doc = yaml.safe_load((dest / "stores" / "mes.yaml").read_text(encoding="utf-8"))
+        # bootstrap's ERP_DSN points at (copy_package leaves it untouched --
+        # there is no erp.yaml for it to swap)
+        doc = yaml.safe_load((dest / "stores" / "fab.yaml").read_text(encoding="utf-8"))
         assert doc["spec"]["type"] == "sqlite"
         assert doc["spec"]["connection"] == "${ERP_DSN}"
         assert doc["spec"]["access"] == "read-write"
@@ -91,9 +102,9 @@ class TestCopyPackage:
         assert validate(load_package(dest)).ok
 
     def test_source_example_left_untouched(self, golden_pkg_path, tmp_path):
-        source_store = (golden_pkg_path / "stores" / "mes.yaml").read_text(encoding="utf-8")
+        source_store = (golden_pkg_path / "stores" / "fab.yaml").read_text(encoding="utf-8")
         copy_package(golden_pkg_path, tmp_path / "pkg")
-        assert (golden_pkg_path / "stores" / "mes.yaml").read_text(encoding="utf-8") == source_store
+        assert (golden_pkg_path / "stores" / "fab.yaml").read_text(encoding="utf-8") == source_store
 
     def test_reuse_unless_forced(self, golden_pkg_path, tmp_path):
         dest = tmp_path / "pkg"
@@ -115,7 +126,7 @@ class TestPrepareDemo:
         assert env["ONTOGENY_DB_DSN"].startswith("sqlite+aiosqlite:///")
         assert env["ONTOGENY_PACKAGE_ROOT"] == str(paths.package_root)
         assert env["ERP_DSN"].startswith("sqlite+aiosqlite:///")
-        assert env["WMS_WEBHOOK"].startswith("https://")
+        assert env["FAB_WEBHOOK"].startswith("https://")
 
     def test_reseed_rebuilds_artifacts(self, golden_pkg_path, tmp_path):
         paths = prepare_demo(tmp_path / "demo", package=golden_pkg_path)
@@ -126,7 +137,7 @@ class TestPrepareDemo:
         assert not (paths.package_root / "marker.txt").exists()
 
     def test_direct_mode_serves_the_source_and_skips_copies(self, golden_pkg_path, tmp_path):
-        """`serve --demo` over a first-class domain serves it IN PLACE: no pkg/
+        """`serve --demo` over an in-tree domain serves it IN PLACE: no pkg/
         or pkg.pristine copies are made, so console saves (model edits and the
         canvas layout.yaml) land in the domain directory itself."""
         src = tmp_path / "domains" / "acme"
@@ -148,7 +159,7 @@ class TestPrepareDemo:
             settings = Settings(dev_auth=True, db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'oo.db'}")
             sc = ServiceContext(settings, str(paths.package_root))
             await sc.initialize()
-            sc.write_layout({"type:product": {"x": 111, "y": 60}})
+            sc.write_layout({"type:wafer-lot": {"x": 111, "y": 60}})
             app = build_app(sc)
             transport = httpx.ASGITransport(app=app)
             import json as _json
@@ -160,7 +171,7 @@ class TestPrepareDemo:
             ) as c:
                 r = await c.get("/api/v1/admin/builder/resources")
                 assert r.status_code == 200
-                assert r.json()["layout"]["type:product"] == {"x": 111, "y": 60}
+                assert r.json()["layout"]["type:wafer-lot"] == {"x": 111, "y": 60}
 
         import asyncio
 
@@ -184,8 +195,8 @@ class TestPrepareDemo:
         assert not root.exists()
 
     def test_default_package_points_at_the_domain_example(self):
-        """`serve --demo` must showcase the product-manufacturing domain."""
-        assert Path(DEFAULT_PACKAGE).parts == ("domains", "product-manufacturing")
+        """`serve --demo` must showcase the chip-lifecycle domain."""
+        assert Path(DEFAULT_PACKAGE).parts == ("domains", "chip-lifecycle")
         assert (Path(__file__).resolve().parent.parent / DEFAULT_PACKAGE / "ontology.yaml").is_file()
 
 
@@ -222,30 +233,30 @@ class TestDemoIsRunnable:
             assert r.status_code == 200
             assert r.json()["inserted"] > 0
 
-        r = await client.post("/api/v1/objects/production-order/query", json={"filter": {"status": "RELEASED"}})
+        r = await client.post("/api/v1/objects/wafer-lot/query", json={"filter": {"status": "RUNNING"}})
         assert r.json()["total"] == 2
 
-    async def test_release_production_order_against_sqlite_source(self, sc):
+    async def test_tapeout_against_sqlite_source(self, sc):
         client, _ = sc
-        await client.post("/api/v1/admin/sync/production-order")
+        await client.post("/api/v1/admin/sync/tapeout-version")
         r = await client.post(
-            "/api/v1/actions/release-production-order/execute",
-            json={"parameters": {}, "target_id": "PO-1002"},
-            headers={"X-Ontogeny-Principal": '{"id":"demo","Role":["planner"],"site":"plant-north"}'},
+            "/api/v1/actions/tapeout/execute",
+            json={"parameters": {}, "target_id": "TO-A1"},
+            headers={"X-Ontogeny-Principal": '{"id":"demo","Role":["product"],"site":"hq"}'},
         )
         assert r.status_code == 200
-        assert r.json()["after"]["status"] == "RELEASED"
+        assert r.json()["after"]["status"] == "FAB"
 
     async def test_rsl_loop_reaches_live_schema(self, sc):
         """Signals from demo traffic promote a schema change (M5 acceptance)."""
         client, _ = sc
-        # the eval suite queries orders, operations and work centres: all of
+        # the eval suite queries lots, steps, tests and field failures: all of
         # them must be materialized for a proposal to eval green
         for t in OBJECT_TYPES:
             await client.post(f"/api/v1/admin/sync/{t}")
         for _ in range(6):
             await client.post(
-                "/api/v1/objects/production-order/query",
+                "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
             )
         agg = await client.post("/api/v1/evolve/aggregate")
@@ -256,7 +267,7 @@ class TestDemoIsRunnable:
         promoted = await client.post(f"/api/v1/evolve/proposals/{pid}/promote")
         assert promoted.json()["status"] == "promoted"
         meta = await client.get("/api/v1/meta/ontology")
-        assert "shift" in meta.json()["objects"]["production-order"]["properties"]
+        assert "shift" in meta.json()["objects"]["wafer-lot"]["properties"]
 
 
 class TestSpaServing:
@@ -288,7 +299,7 @@ class TestSpaServing:
         assert r.status_code == 200 and "OO SPA SHELL" in r.text
 
     async def test_client_route_falls_back_to_index(self, client):
-        for path in ("/ontology", "/objects/production-order/PO-1001", "/evolve/3"):
+        for path in ("/ontology", "/objects/wafer-lot/LOT-2419", "/evolve/3"):
             r = await client.get(path)
             assert r.status_code == 200 and "OO SPA SHELL" in r.text, path
 
@@ -302,7 +313,7 @@ class TestSpaServing:
 
     async def test_api_is_never_shadowed(self, client):
         r = await client.get("/api/v1/meta/ontology")
-        assert r.status_code == 200 and r.json()["package"] == "product-manufacturing"
+        assert r.status_code == 200 and r.json()["package"] == "chip-lifecycle"
         r = await client.get("/api/v1/does-not-exist")
         assert r.status_code == 404 and r.json()["code"] == "NOT_FOUND"
         assert "OO SPA SHELL" not in r.text

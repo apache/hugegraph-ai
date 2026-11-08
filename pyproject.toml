@@ -128,7 +128,6 @@ line-length = 120
 # Domain packages ship user function code as data, not platform source.
 extend-exclude = ["ontogeny/domains"]
 target-version = "py312"
-per-file-target-version = { "ontogeny/**/*.py" = "py310" }
 
 [tool.ruff.lint]
 # Select a broad set of rules for comprehensive checks.

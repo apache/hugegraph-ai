@@ -16,13 +16,13 @@
 # limitations under the License.
 
 """ontogeny.evolve -- the RSI loop: observe (telemetry) -> diagnose -> propose ->
-evaluate (deterministic) -> promote (tiered, budgeted, constitutional)."""
+evaluate (deterministic) -> promote (tiered, budgeted, baseline)."""
 
 from .models import BudgetRow, EvolveSignalRow, ProposalRow
-from .promoter import CONSTITUTION_MUTATIONS, Promoter, apply_mutations, write_package
+from .promoter import BASELINE_MUTATIONS, Promoter, apply_mutations, write_package
 
 __all__ = [
-    "CONSTITUTION_MUTATIONS",
+    "BASELINE_MUTATIONS",
     "BudgetRow",
     "EvolveSignalRow",
     "Promoter",

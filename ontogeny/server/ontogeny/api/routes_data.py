@@ -110,7 +110,7 @@ def register(app: FastAPI, r: APIRouter, sc: ServiceContext) -> None:
                 while True:
                     try:
                         event = await asyncio.wait_for(q.get(), timeout=15.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield ": keepalive\n\n"
                         continue
                     if event.get("object_type") == object_type:

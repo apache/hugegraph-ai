@@ -37,8 +37,12 @@ limitations under the License.
  * exactly three hues with shades: PURPLE = modeling / agents, BLUE = the
  * gated write & policy sides, GREEN = the loop / assurance:
  *
- *   ① the eight DSL first-class citizens as one chip strip; Action and
- *      EvalSuite carry the CORE tag (the only write gate / the selection box);
+ *   ① the nine DSL platform resources as four grouped clusters (core 4 /
+ *      extension 3 / adapter 1 / baseline 1), read from the backend kind
+ *      registry (`/meta/ontology.kinds`); a note names the two manifest
+ *      resources that travel with the package but are not platform resources.
+ *      Action is the only write gate and EvalSuite the selection box;
+ *      EvolutionPolicy carries HUMAN (the only surface humans may change);
  *   ② the two engines side by side — the online pipeline (left: build the
  *      ontology, explore the knowledge, execute actions, govern access,
  *      audit everything) and the offline RSI loop (right, each beat with a
@@ -54,9 +58,11 @@ limitations under the License.
  * space; nothing is absolutely positioned except the spine's dashed connector
  * (pills and the agent node sit above it with opaque backgrounds).
  */
+import type { KindMeta } from '../../api/types'
 import { useI18n } from '../../i18n'
+import { groupPlatformKinds, KIND_LABELS, MANIFEST_FALLBACK, PLATFORM_FALLBACK } from './kindVisuals'
 
-/** Slim pill band heading, e.g. "一等公民 · 声明式 DSL 资源". */
+/** Slim pill band heading, e.g. "平台资源 · 声明式 DSL 资源". */
 function BandLabel({ tone, children }: { tone: string; children: React.ReactNode }) {
   return (
     <span
@@ -118,21 +124,17 @@ function AgentNode({ zh, className }: { zh: boolean; className?: string }) {
   )
 }
 
-export function ArchBoard() {
+export function ArchBoard({ kinds }: { kinds?: KindMeta[] }) {
   const { lang } = useI18n()
   const zh = lang === 'zh'
 
-  // ① the citizens: name + one-word label; Action carries the CORE tag
-  const citizens: Array<{ ico: string; name: string; label: string; core?: boolean }> = [
-    { ico: zh ? '名' : 'N', name: 'ObjectType', label: zh ? '对象' : 'object' },
-    { ico: zh ? '联' : 'L', name: 'LinkType', label: zh ? '链接' : 'link' },
-    { ico: zh ? '行' : 'A', name: 'Action', label: zh ? '动作' : 'action', core: true },
-    { ico: zh ? '算' : 'F', name: 'Function', label: zh ? '函数' : 'function' },
-    { ico: zh ? '策' : 'P', name: 'PolicySet', label: zh ? '策略' : 'policy' },
-    { ico: zh ? '智' : 'G', name: 'AgentPlugin', label: zh ? '智能体' : 'agent' },
-    { ico: zh ? '投' : 'J', name: 'Projection', label: zh ? '投影' : 'projection' },
-    { ico: zh ? '进' : 'E', name: 'EvalSuite', label: zh ? '自进化' : 'evolution', core: true },
-  ]
+  // ① platform resources come from the backend kind registry; the fallback keeps the
+  // board renderable without a meta payload (tests, static export).
+  const allKinds = kinds?.length ? kinds : [...PLATFORM_FALLBACK, ...MANIFEST_FALLBACK]
+  const platformResources = allKinds.filter((k) => k.platform)
+  const manifests = allKinds.filter((k) => !k.platform)
+
+  const kindGroups = groupPlatformKinds(platformResources)
 
   // ② left: the online pipeline — build → explore → act → govern → audit.
   // Hues: purple = the read/model sides, blue = the gated write & policy
@@ -220,35 +222,77 @@ export function ArchBoard() {
       }}
       data-testid="arch-board"
     >
-      {/* ① first-class citizens — one chip strip */}
-      <BandLabel tone="violet">{zh ? '一等公民 · 声明式 DSL 资源' : 'FIRST-CLASS CITIZENS · DSL RESOURCES'}</BandLabel>
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8">
-        {citizens.map((c) => (
+      {/* ① platform resources — four labelled groups, equal-width cards */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <BandLabel tone="violet">
+          {zh ? `平台资源 · 声明式 DSL 资源（${platformResources.length}）` : `PLATFORM RESOURCES · DSL RESOURCES (${platformResources.length})`}
+        </BandLabel>
+        <span className="ml-auto text-[8.5px] font-semibold" style={{ color: 'var(--text-muted)' }} data-testid="kind-manifest-note">
+          {zh
+            ? `另 ${manifests.length} 种清单资源（${manifests.map((m) => m.kind).join(' · ')}）随包同行`
+            : `${manifests.length} manifest resources (${manifests.map((m) => m.kind).join(' · ')}) travel with the package`}
+        </span>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-3 sm:grid-cols-4 lg:grid-cols-9" data-testid="kind-groups">
+        {kindGroups.map((g) => (
           <div
-            key={c.name}
-            className="flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5"
-            style={{
-              background: c.core ? 'var(--tone-violet-bg)' : 'var(--surface-card)',
-              border: `1px solid ${c.core ? 'var(--tone-violet-ring)' : 'var(--border-subtle)'}`,
-            }}
+            key={g.group}
+            data-group={g.group}
+            data-count={g.items.length}
+            data-testid="kind-group"
+            className={`${g.label.col} min-w-0`}
           >
-            <span
-              className="grid size-[18px] shrink-0 place-items-center rounded-md text-[10px] font-extrabold"
-              style={c.core
-                ? { background: 'var(--tone-violet-fg)', color: 'var(--surface-card)' }
-                : { background: 'var(--tone-violet-bg)', color: 'var(--tone-violet-fg)' }}
+            <div
+              className="flex items-baseline gap-1.5 rounded-t-md px-1.5 pb-1 pt-1"
+              style={{
+                background: `var(--tone-${g.label.tone}-bg)`,
+                borderBottom: `2px solid var(--tone-${g.label.tone}-fg)`,
+              }}
             >
-              {c.ico}
-            </span>
-            <span className="min-w-0 leading-tight">
-              <span className="block truncate text-[11px] font-extrabold">{c.name}</span>
-              <span className="block truncate text-[9px] font-semibold" style={{ color: 'var(--text-muted)' }}>{c.label}</span>
-            </span>
-            {c.core ? (
-              <span className="ml-auto shrink-0 rounded bg-[var(--color-brand-500)] px-[3px] py-px text-[7.5px] font-extrabold text-white">
-                CORE
+              <span
+                className="text-[8.5px] font-extrabold tracking-[0.12em]"
+                style={{ color: `var(--tone-${g.label.tone}-fg)` }}
+              >
+                {zh ? g.label.zh : g.label.en}
               </span>
-            ) : null}
+              <span className="text-[8px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                {g.items.length}
+              </span>
+            </div>
+            <div className={`mt-1 grid gap-1.5 ${g.label.inner}`}>
+              {g.items.map((c) => {
+                const look = KIND_LABELS[c.kind]
+                const baseline = c.group === 'baseline'
+                return (
+                  <div
+                    key={c.kind}
+                    data-kind={c.kind}
+                    data-group={c.group}
+                    className="flex min-w-0 flex-col justify-center rounded-lg border px-2 py-2"
+                    style={{ background: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }}
+                  >
+                    <span className="truncate text-[10px] font-extrabold leading-tight">{c.kind}</span>
+                    <span
+                      className="mt-0.5 flex min-w-0 items-baseline gap-1 text-[8.5px] font-semibold"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <span className="truncate">{look ? (zh ? look.zh : look.en) : c.kind}</span>
+                      {baseline ? (
+                        <span className="shrink-0 text-[7px]" style={{ color: 'var(--border-strong)' }} aria-hidden>
+                          ·
+                        </span>
+                      ) : null}
+                      {baseline ? (
+                        <span className="shrink-0 text-[7px] font-extrabold" style={{ color: 'var(--tone-success-fg)' }}>
+                          {zh ? '仅人可改' : 'HUMAN'}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         ))}
       </div>

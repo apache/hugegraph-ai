@@ -94,8 +94,8 @@ class GraphStore(Protocol):
 class ProjectionWorker:
     """Outbox consumer: object rows -> graph vertices/edges (eventual consistency).
 
-    Same-object events are processed strictly in outbox-id order; failures are
-    retried by cursor rewind rather than skipped (at-least-once, idempotent upserts).
+    Visible pending events are processed in outbox-id order; failures are
+    retried while unacknowledged (at-least-once, idempotent upserts).
     """
 
     def __init__(self, compiled, projection, client: GraphStore) -> None:
@@ -127,10 +127,10 @@ class ProjectionWorker:
         relation table, an FK link from the target-side table's foreign key
         column. Returns every pair when neither side is given (full backfill).
         """
-        from ..core.models import JoinTableJoin
+        from ..core.models import ExtractedJoin, JoinTableJoin
 
         lnk = self.compiled.links[link_name]
-        if isinstance(lnk.spec.join, JoinTableJoin):
+        if isinstance(lnk.spec.join, (JoinTableJoin, ExtractedJoin)):
             return await repo.link_members(session, link_name, src_id=src_id, dst_id=dst_id)
         if src_id is None and dst_id is None:
             return await repo.fk_link_pairs(session, link_name)

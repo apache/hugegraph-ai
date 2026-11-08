@@ -12,18 +12,19 @@ The board below is the console's **Overview** dashboard (`/`, `ArchBoard` compon
 
 ### How to read the picture
 
-**Layer ① — the top strip: FIRST-CLASS CITIZENS · DSL RESOURCES (violet).**
-Eight chips — `ObjectType`, `LinkType`, `Action`, `Function`, `PolicySet`, `AgentPlugin`, `Projection`, `EvalSuite` — are the platform's actual building blocks. Every one of them is a declarative YAML resource in Git (`apiVersion: ontogeny/v1`), so everything shown here can be deleted and rebuilt from the repo at any time. Two chips carry the violet **CORE** tag, and the two tags are the two halves of the governance story:
+**Layer ① — the top strip: PLATFORM RESOURCES · DSL RESOURCES (violet).**
+Nine chips — `ObjectType`, `LinkType`, `Action`, `Function`, `PolicySet`, `AgentPlugin`, `Projection`, `EvalSuite`, `EvolutionPolicy` — are the platform's actual building blocks, grouped **Core 4 · Extension 3 · Adapter 1 · Baseline 1**. Every one of them is a declarative YAML resource in Git (`apiVersion: ontogeny/v1`), so everything shown here can be deleted and rebuilt from the repo at any time. The taxonomy lives in [00 · Kind Taxonomy](00-kind-taxonomy.md): **9 platform resources + 2 manifest resources (`Store` / `Ontology`) = 11 kinds**. Three of them carry the governance story:
 
 - **Action — the only write gate.** All writes to the world go through one five-stage runtime (params → rules → policy → effects → audit). There is no second door.
 - **EvalSuite — the selection box.** Promotion decisions in the evolution loop are made only by deterministic, reproducible evaluation suites — never by the LLM.
+- **EvolutionPolicy — the governance baseline.** The surface the loop may not touch (engine / pass bars / markings / ownership / audit), human-only; it is a platform resource of its own so the T3 protection has a physical landing point.
 
-Everything else is replaceable acceleration: HugeGraph, Ollama and Debezium (marked optional/dashed elsewhere) are **not** citizens — unplug them and the platform degrades gracefully instead of stopping.
+Everything else is replaceable acceleration: HugeGraph, Ollama and Debezium (marked optional/dashed elsewhere) are **not** platform resources — unplug them and the platform degrades gracefully instead of stopping.
 
 **Layer ② — the middle band: two engines side by side, joined by an agent spine.**
 
 - **Left card (violet→blue): the ONLINE PIPELINE · MODEL → ACT → AUDIT** — one request's journey through five numbered stages: `01 Ontology build` (declarative modeling · mount · publish; YAML · Git), `02 Knowledge explore` (query, explore & traverse; SQL ⇄ graph), `03 Action execution` (params→rules→policy→effects→audit; the write gate), `04 Access control` (roles · markings · row-level conditions · default deny; Cedar), `05 Full-cycle trace & audit` (history · immutable audit · subscriptions; outbox · SSE). The color gradient is deliberate: violet for the modeling/read sides, blue for the gated write and policy sides.
-- **Right card (green): the OFFLINE · RSI LOOP** — the batch evolution cycle outside the request path: `1 Observe` (telemetry turns runs into fitness signals) → `2 Propose` (the LLM drafts inside a closed mutation catalog; out-of-catalog drafts are refused) → `3 Evaluate` (deterministic evals select, never the LLM) → `4 Promote` (T0 auto · T1 review · T2 canary · T3 human) → `5 Hot-reload` (snapshot hot-swaps; new columns auto-added). The card's footer is the constitution in one line: **mutation to the model is outsourced to the model; selection never is** — `baseline: human-only`.
+- **Right card (green): the OFFLINE · RSI LOOP** — the batch evolution cycle outside the request path: `1 Observe` (telemetry turns runs into fitness signals) → `2 Propose` (the LLM drafts inside a closed mutation catalog; out-of-catalog drafts are refused) → `3 Evaluate` (deterministic evals select, never the LLM) → `4 Promote` (T0 auto · T1 review · T2 canary · T3 human) → `5 Hot-reload` (snapshot hot-swaps; new columns auto-added). The card's footer is the governance baseline in one line: **mutation to the model is outsourced to the model; selection never is** — `baseline: human-only`.
 - **The dashed spine between them: Agents (EXT).** The `AgentPlugin` node sits deliberately on a dashed, white-backed box — the dashed frame marks it as coming from *outside* the platform proper. Three lines describe its contract: it is an *extensible plugin with a frozen identity*; its reads and writes still cross the pipeline's very gates (02/03/04); and its *traces & approvals flow back into the loop* — the two dashed pills on the spine, `telemetry →` (runs flow up into Observe) and `← proposals` (promoted models flow back down), are exactly the data flows between the two engines.
 
 **Layer ③ — the bottom band: the supporting layer and the cross-cutting invariants.**
@@ -36,43 +37,51 @@ Everything else is replaceable acceleration: HugeGraph, Ollama and Debezium (mar
 
 ## Reading guide
 
-① **First-class citizens** — objects · links · actions · functions · policies · agents · projections · self-evolution are all declarative DSL resources in Git, the platform's actual substance → ② **Offline loop** — the RSI loop (signals → mutations → evals → promotion), with the dashed data-flow pills (↓ injection / ↑ return) annotating direction → ③ **Online main path 01→05**: access & identity → read path (query · explore · traverse) → *03 write path Action (the core)* → side effects & subscriptions (outbox) → ④ the **supporting layer** is called by the main path → ⑤ **cross-cutting mechanisms** span the whole chain. **Dashed = optional/progressive components** (graph projection · LLM gateway); without them the platform still runs.
+① **Platform resources** — objects · links · actions · functions · policies · agents · projections · self-evolution · the governance baseline: **9 platform resources + 2 manifest resources**, all declarative DSL resources in Git, the platform's actual substance → ② **Offline loop** — the RSI loop (signals → mutations → evals → promotion), with the dashed data-flow pills (↓ injection / ↑ return) annotating direction → ③ **Online main path 01→05**: access & identity → read path (query · explore · traverse) → *03 write path Action (the core)* → side effects & subscriptions (outbox) → ④ the **supporting layer** is called by the main path → ⑤ **cross-cutting mechanisms** span the whole chain. **Dashed = optional/progressive components** (graph projection · LLM gateway); without them the platform still runs.
 
 ```
-FIRST-CLASS CITIZENS (11 DSL resources · declarative Git · everything rebuildable)
+PLATFORM RESOURCES (9 platform resources + 2 manifest resources · declarative Git · everything rebuildable)
         ▲ machine proposals · same Git channel as humans   │ run traces · telemetry flows back (01 observe) ▼
 OFFLINE · model evolution (batch loop off the request path): RSI loop · recursion inside governance
 ────────────────────────────────────────────────────────────────────────
 ONLINE PIPELINE (one request's journey)
-  01 access & identity → 02 read path (SQL⇄GRAPH) → 03 write path Action (CORE · the only gate) → 04 side effects & subscriptions
+  01 access & identity → 02 read path (SQL⇄GRAPH) → 03 write path Action (the only gate) → 04 side effects & subscriptions
 ────────────────────────────────────────────────────────────────────────
 SUPPORTING (called by the main path): 06 storage & registry · 07 compute & governance
 CROSS-CUTTING: property ownership · single governance channel · source-of-truth invariant
 ```
 
-## First-class citizens (11 DSL resources · declarative Git · everything rebuildable)
+## Platform resource resources (9) + manifest resources (2) · declarative Git · everything rebuildable
 
-| Resource | Layer | Responsibility & key fields |
+| Group | Resource | Layer | Responsibility & key fields |
+|---|---|---|---|
+| Core | `ObjectType` | semantic | nouns: `primaryKey` · properties (type / required / **owner** / marking / derived) · backing (store + mapping + sync) |
+| Core | `LinkType` | semantic | relations: `cardinality` 1:1 / 1:N / M:N · foreign-key or join-table · navigable, multi-hop traceable |
+| Core | `Action` | kinetic | **The only write gate.** Five stages: parameters → rules → **Cedar policy** → effects → immutable audit; declarative or functional — the one door to the write world |
+| Extension | `Function` | kinetic | subprocess sandbox: cross-object compute · `ontogeny.llm` · derivation substrate · publishable as a version-anchored API |
+| Core | `PolicySet` | governance | Cedar subset: principal × action × resource, row-level conditions · **default deny** · refusals are audited too |
+| Extension | `AgentPlugin` | agent | agent as a resource: **frozen identity = permission surface** · tool allowlist · approval stance · budget (steps / wall_ms / writes) |
+| Adapter | `Projection` | derived | graph projection is never authoritative: allowlist into the graph · markings never enter · eventually consistent · zero dependency when unused (auto-fallback to SQL recursion) |
+| Extension | `EvalSuite` | evolution | **The selection box**: every selection function is deterministically evaluable (query regression + action replay + agent cases + quarantine coverage) |
+| Baseline | `EvolutionPolicy` | evolution | **human-only** (engine / pass bars / markings / ownership / audit); the T0–T3 allowlists and budgets live here |
+
+**Manifest resources (travel with the package, not platform resources)**
+
+| Resource | Layer | Responsibility |
 |---|---|---|
-| `ObjectType` | semantic | nouns: `primaryKey` · properties (type / required / **owner** / marking / derived) · backing (store + mapping + sync) |
-| `LinkType` | semantic | relations: `cardinality` 1:1 / 1:N / M:N · foreign-key or join-table · navigable, multi-hop traceable |
-| `Action` | kinetic | **CORE · the only write gate.** Five stages: parameters → rules → **Cedar policy** → effects → immutable audit; declarative or functional — the one door to the write world |
-| `Function` | kinetic | subprocess sandbox: cross-object compute · `ontogeny.llm` · derivation substrate · publishable as a version-anchored API |
-| `PolicySet` | governance | Cedar subset: principal × action × resource, row-level conditions · **default deny** · refusals are audited too |
-| `AgentPlugin` | agent | agent as a resource: **frozen identity = permission surface** · tool allowlist · approval stance · budget (steps / wall_ms / writes) |
-| `Projection` | derived | graph projection is never authoritative: allowlist into the graph · markings never enter · eventually consistent · zero dependency when unused (auto-fallback to SQL recursion) |
-| `EvalSuite` · `EvolutionPolicy` | evolution | selection functions are all deterministically evaluable; **the constitution is human-only** (engine / pass bars / markings / ownership / audit) |
+| `Store` | data plane | storage binding: `type` · `connection: ${DSN}` · `access` (`read-write` is the precondition for actions writing back) |
+| `Ontology` | manifest | package manifest: name / display / version / imports (package dependencies, the basis of a template market) |
 
-First-class citizens = **declarative YAML in Git** (`apiVersion: ontogeny/v1`) — the platform's substance; compiled artifacts can be rebuilt at any time. `Store` / `Ontology` are binding & manifest resources traveling with the package. External components (HugeGraph · Ollama · Debezium) are **not** citizens — they are replaceable accelerators and adapters; not plugging them in means graceful degradation.
+Platform resources = **declarative YAML in Git** (`apiVersion: ontogeny/v1`) — the platform's substance; compiled artifacts can be rebuilt at any time. `Store` / `Ontology` are binding & manifest resources traveling with the package and are **not** platform resources. The full 9+2 taxonomy, its three tests and the admission rules live in [00 · Kind Taxonomy](00-kind-taxonomy.md). External components (HugeGraph · Ollama · Debezium) are **not** platform resources — they are replaceable accelerators and adapters; not plugging them in means graceful degradation.
 
 ## OFFLINE · model evolution (the batch loop off the request path)
 
-**The RSI loop · recursion inside governance** (the constitution cannot self-modify):
+**The RSI loop · recursion inside governance** (the governance baseline cannot self-modify):
 
 1. **① Observe**: 8 telemetry detectors — empty-query rate · unmapped filter fields · hot queries · slow queries P95 · action-rule rejection rate · agent tool errors · approval rejection rate · sync quarantine bad rows → `ontogeny_evolve_signal`
 2. **② Diagnose & propose**: deterministic diagnosers produce gaps (with evidence) → `HeuristicProposer` / `LLMProposer` (Ollama structured output, **dropped without rationale**) → `ontogeny_evolve_proposal`
 3. **③ Deterministic evaluation**: L1 validate/lint → **L2 EvalSuite** (query regression + action time-travel replay: system-versioned tables = a labeled history set) → L3 shadow double-run → L4 LLM **explains only, never scores**
-4. **④ Tiered promotion**: T0 auto-merge (budget 8/week · optional-property additions/enum widening/indexes) · T1 human-reviewed PR (default) · T2 canary (shadow diff + approval) · **T3 constitutional surface, human-only** (policy loosening/marking/ownership/pass bars/migrations)
+4. **④ Tiered promotion**: T0 auto-merge (budget 8/week · optional-property additions/enum widening/indexes) · T1 human-reviewed PR (default) · T2 canary (shadow diff + approval) · **T3 governance-baseline surface, human-only** (policy loosening/marking/ownership/pass bars/migrations)
 5. **⑤ Hot reload**: write_package → publish → `sc.reload()`; new optional properties are auto-completed by the DDL layer (`ALTER TABLE ADD COLUMN`), queryable immediately
 
 Inter-band flows: ↓ **machine proposals · the same Git channel as humans**; ↑ **run traces · telemetry returns (01 observe)**.
@@ -99,7 +108,7 @@ Inter-band flows: ↓ **machine proposals · the same Git channel as humans**; �
 | service identity | client_credentials for agents / background jobs |
 | ★AgentPlugin | the plugin **carries its own frozen identity** (Role/site is the permission surface); tool catalog and budget stack on top |
 
-Unified error model: `{code, message, details, trace_id}`; stable codes: `RULE_REJECTED` · `POLICY_DENIED` · `REVISION_CONFLICT` · `CONSTITUTION_VIOLATION` — the frontend localizes by code.
+Unified error model: `{code, message, details, trace_id}`; stable codes: `RULE_REJECTED` · `POLICY_DENIED` · `REVISION_CONFLICT` · `BASELINE_VIOLATION` — the frontend localizes by code.
 
 ### 02 Read path · query / explore / traverse (engine/service.py) — SQL ⇄ GRAPH
 
@@ -119,7 +128,7 @@ Unified error model: `{code, message, details, trace_id}`; stable codes: `RULE_R
 
 Read-side invariants: expression derivations are computed read-only, never stored; masks applied at the assembly layer, not the frontend; **the action decision path never reads the projection** (eventually consistent).
 
-### 03 Write path · the Action runtime (action/runtime.py) — CORE · the only write gate
+### 03 Write path · the Action runtime (action/runtime.py) — the only write gate
 
 **Five stages · execute(action, principal, params, target)**:
 

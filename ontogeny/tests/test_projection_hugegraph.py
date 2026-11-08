@@ -43,7 +43,28 @@ from ontogeny.registry import compile_package
 from ontogeny.service import ServiceContext
 
 # every domain owns exactly one graph, named after the package, snake-cased
-GRAPH = "product_manufacturing"
+GRAPH = "chip_lifecycle"
+
+# vertex-label ids the mocked server reports (PRIMARY_KEY ids derive from them)
+LABEL_IDS = {
+    "requirement": 1,
+    "design-module": 2,
+    "tapeout-version": 3,
+    "wafer-lot": 4,
+    "process-step": 5,
+    "equipment": 6,
+    "wafer-test": 7,
+    "customer": 8,
+    "field-failure": 9,
+    "fmea-note": 10,
+}
+
+
+def _vertexlabels_response() -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={"vertexlabels": [{"name": name, "id": lid} for name, lid in LABEL_IDS.items()]},
+    )
 
 
 @pytest.fixture()
@@ -60,6 +81,8 @@ def _recorder(routes: list[tuple[str, str, httpx.Response]]):
         for method, needle, response in routes:
             if request.method == method and request.url.path.endswith(needle):
                 return response
+        if request.method == "GET" and request.url.path == "/graphspaces/DEFAULT/graphs":
+            return httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})
         return httpx.Response(200, json={})
 
     return handler, calls
@@ -73,28 +96,11 @@ class TestDialectV17:
     async def rig(self, compiled):
         routes = [
             ("GET", "/graphspaces", httpx.Response(200, json={"graphSpaces": []})),
-            (
-                "GET",
-                "/schema/vertexlabels",
-                httpx.Response(
-                    200,
-                    json={
-                        "vertexlabels": [
-                            {"name": "product", "id": 1},
-                            {"name": "bom", "id": 2},
-                            {"name": "material", "id": 3},
-                            {"name": "work-center", "id": 4},
-                            {"name": "production-order", "id": 5},
-                            {"name": "operation", "id": 6},
-                            {"name": "quality-inspection", "id": 7},
-                        ]
-                    },
-                ),
-            ),
+            ("GET", "/schema/vertexlabels", _vertexlabels_response()),
         ]
         handler, calls = _recorder(routes)
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        prj = compiled.projections["production-graph"]
+        prj = compiled.projections["production-lifecycle-graph"]
         client = HugeGraphClient("http://hg.test", prj.spec.graph, http=http)
         worker = ProjectionWorker(compiled, prj, client)
         yield {"client": client, "worker": worker, "calls": calls, "prj": prj}
@@ -113,14 +119,14 @@ class TestDialectV17:
 
         vl = next(r for r in posts if r.url.path.endswith("/schema/vertexlabels"))
         body = json.loads(vl.read())
-        assert body["id_strategy"] == "PRIMARY_KEY" and body["primary_keys"] == ["product_id"]
+        assert body["id_strategy"] == "PRIMARY_KEY" and body["primary_keys"] == ["requirement_id"]
         # the key property is not nullable, the rest are
-        assert "product_id" not in body["nullable_keys"]
+        assert "requirement_id" not in body["nullable_keys"]
 
         # every declared index is on a TEXT prop (status) -> SECONDARY
         ix = [json.loads(r.read()) for r in posts if r.url.path.endswith("/schema/indexlabels")]
         assert {i["index_type"] for i in ix} == {"SECONDARY"}
-        assert {i["base_value"] for i in ix} == {"production-order", "operation", "work-center"}
+        assert {i["base_value"] for i in ix} == {"wafer-lot", "process-step", "field-failure"}
 
     async def test_index_type_follows_property_type(self, rig, compiled):
         schema = compile_projection(compiled, rig["prj"])
@@ -128,7 +134,7 @@ class TestDialectV17:
             if pk["name"] == "status":
                 pk["data_type"] = "INT"  # pretend the DSL indexed a numeric prop
         # a TEXT-prop index alongside the numeric ones, for contrast
-        schema["indexes"].append({"label": "product", "property": "name"})
+        schema["indexes"].append({"label": "equipment", "property": "name"})
         await rig["client"].ensure_schema(schema)
         raw = [
             json.loads(r.read())
@@ -136,8 +142,8 @@ class TestDialectV17:
             if r.method == "POST" and r.url.path.endswith("/schema/indexlabels")
         ]
         by_name = {i["name"]: i["index_type"] for i in raw}
-        assert by_name["production-order_by_status"] == "RANGE"  # numeric -> RANGE
-        assert by_name["product_by_name"] == "SECONDARY"  # text -> SECONDARY
+        assert by_name["wafer-lot_by_status"] == "RANGE"  # numeric -> RANGE
+        assert by_name["equipment_by_name"] == "SECONDARY"  # text -> SECONDARY
 
     async def test_exists_reads_the_graphspace_listing(self):
         """Load-vs-build turns on this answer, so it must be exact: a listed
@@ -168,9 +174,14 @@ class TestDialectV17:
         await http.aclose()
 
     async def test_exists_is_unknown_when_the_probe_fails(self):
+        probes = 0
+
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path.endswith("/graphspaces"):
-                return httpx.Response(200, json={})
+            nonlocal probes
+            if request.url.path == "/graphspaces/DEFAULT/graphs":
+                probes += 1
+                if probes == 1:
+                    return httpx.Response(200, json={"graphs": []})
             return httpx.Response(503, text="backend unavailable")
 
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -285,16 +296,16 @@ class TestDialectV17:
         )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
-        prj = compiled.projections["production-graph"]
+        prj = compiled.projections["production-lifecycle-graph"]
         await client.ensure_schema(compile_projection(compiled, prj))  # must not raise
         assert calls
         await http.aclose()
 
     async def test_vertex_upsert_is_batch_override_with_pk_in_properties(self, rig):
         await rig["client"].upsert_vertices(
-            "work-center",
-            "work_center_id",
-            [{"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"}],
+            "equipment",
+            "equipment_id",
+            [{"equipment_id": "EQ-09", "name": "Etcher 2 (ICP)", "status": "ACTIVE"}],
         )
         req = rig["calls"][-1]
         assert req.method == "PUT" and req.url.path.endswith("/graph/vertices/batch")
@@ -302,31 +313,31 @@ class TestDialectV17:
         # PRIMARY_KEY ids derive from the properties, so the key travels inside them
         assert body["vertices"] == [
             {
-                "label": "work-center",
-                "properties": {"work_center_id": "WC-01", "name": "CNC Machining Cell", "status": "ACTIVE"},
+                "label": "equipment",
+                "properties": {"equipment_id": "EQ-09", "name": "Etcher 2 (ICP)", "status": "ACTIVE"},
             }
         ]
-        assert body["update_strategies"] == {"work_center_id": "OVERRIDE", "name": "OVERRIDE", "status": "OVERRIDE"}
+        assert body["update_strategies"] == {"equipment_id": "OVERRIDE", "name": "OVERRIDE", "status": "OVERRIDE"}
 
     async def test_rows_without_primary_key_are_skipped(self, rig):
-        await rig["client"].upsert_vertices("work-center", "work_center_id", [{"name": "no key"}])
+        await rig["client"].upsert_vertices("equipment", "equipment_id", [{"name": "no key"}])
         assert not [r for r in rig["calls"] if "vertices/batch" in r.url.path]
 
     async def test_edge_upsert_builds_composite_ids_and_camelcase_labels(self, rig):
-        await rig["client"].upsert_edges("bom-product", "product", "bom", [("P-100", "B-1001")])
+        await rig["client"].upsert_edges("version-lots", "tapeout-version", "wafer-lot", [("TO-A0", "LOT-2417")])
         req = rig["calls"][-1]
         assert req.method == "PUT" and req.url.path.endswith("/graph/edges/batch")
         body = json.loads(req.read())
-        assert body["edges"][0]["outV"] == "1:P-100" and body["edges"][0]["inV"] == "2:B-1001"
-        assert body["edges"][0]["outVLabel"] == "product" and body["edges"][0]["inVLabel"] == "bom"
+        assert body["edges"][0]["outV"] == "3:TO-A0" and body["edges"][0]["inV"] == "4:LOT-2417"
+        assert body["edges"][0]["outVLabel"] == "tapeout-version" and body["edges"][0]["inVLabel"] == "wafer-lot"
         # HugeGraph rejects an empty strategy map; edges carry no properties
         assert body["update_strategies"] == {"_ignore": "OVERRIDE"}
 
     async def test_delete_vertex_quotes_composite_id_and_tolerates_404(self, rig):
-        await rig["client"].delete_vertex("work-center", "WC-99")
+        await rig["client"].delete_vertex("equipment", "EQ-99")
         req = rig["calls"][-1]
         assert req.method == "DELETE"
-        assert unquote(req.url.path).endswith('/graph/vertices/"4:WC-99"')
+        assert unquote(req.url.path).endswith('/graph/vertices/"6:EQ-99"')
 
     async def test_counts_reads_the_async_gremlin_job(self, rig):
         async def run():
@@ -337,7 +348,7 @@ class TestDialectV17:
                     (
                         "GET",
                         "/tasks/7",
-                        httpx.Response(200, json={"task_status": "success", "task_result": '[{"work-center": 2}]'}),
+                        httpx.Response(200, json={"task_status": "success", "task_result": '[{"equipment": 2}]'}),
                     ),
                 ]
             )
@@ -348,7 +359,7 @@ class TestDialectV17:
             return out, calls
 
         out, calls = await run()
-        assert out == [{"work-center": 2}]
+        assert out == [{"equipment": 2}]
         assert [c.method for c in calls] == ["GET", "POST", "GET"]
 
 
@@ -360,12 +371,13 @@ class TestDialectV15Legacy:
     async def rig(self, compiled):
         handler, calls = _recorder(
             [
-                ("GET", "/graphspaces", httpx.Response(404, json={})),  # 1.5 has no graphspaces
+                ("GET", "/graphspaces/DEFAULT/graphs", httpx.Response(404, json={})),
+                ("GET", "/graphs", httpx.Response(200, json={"graphs": [GRAPH]})),
             ]
         )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg15.test", GRAPH, http=http)
-        yield {"client": client, "calls": calls, "prj": compiled.projections["production-graph"]}
+        yield {"client": client, "calls": calls, "prj": compiled.projections["production-lifecycle-graph"]}
         await http.aclose()
 
     async def test_auto_detects_15_when_graphspaces_absent(self, rig):
@@ -374,17 +386,17 @@ class TestDialectV15Legacy:
     async def test_legacy_paths_and_payloads(self, rig, compiled):
         await rig["client"].ensure_schema(compile_projection(compiled, rig["prj"]))
         await rig["client"].upsert_vertices(
-            "work-center", "work_center_id", [{"work_center_id": "WC-01", "name": "CNC Machining Cell"}]
+            "equipment", "equipment_id", [{"equipment_id": "EQ-02", "name": "Scanner A (193i)"}]
         )
-        await rig["client"].delete_vertex("work-center", "WC-01")
+        await rig["client"].delete_vertex("equipment", "EQ-02")
         paths = [r.url.path for r in rig["calls"]]
         assert any(p.startswith("/apis/schema/") for p in paths)
         assert any(p == "/apis/graph/vertices/batch-upsert" for p in paths)
         # 1.5 addressed the vertex through query params, not a path id
         delete = next(r for r in rig["calls"] if r.method == "DELETE")
-        assert delete.url.params["id"] == "WC-01" and delete.url.params["graph"] == GRAPH
+        assert delete.url.params["id"] == "EQ-02" and delete.url.params["graph"] == GRAPH
         body = json.loads(next(r for r in rig["calls"] if "batch-upsert" in r.url.path).read())
-        assert body[0]["id"] == "WC-01"  # legacy shape carried an explicit id
+        assert body[0]["id"] == "EQ-02"  # legacy shape carried an explicit id
 
 
 # ------------------------------------------------------------------- worker
@@ -399,15 +411,15 @@ class _FakeRepo:
 
     async def link_members(self, session, link_name, *, src_id=None, dst_id=None, at=None):
         self.calls.append(("link_members", link_name, src_id, dst_id))
-        return [("P-100", "M-101")]
+        return [("REQ-101", "TO-A0")]
 
     async def fk_link_pairs(self, session, link_name, *, at=None):
         self.calls.append(("fk_link_pairs", link_name))
-        return [("P-100", "B-1001"), ("P-100", "B-1002")]
+        return [("TO-A0", "LOT-2417"), ("TO-A0", "LOT-2418")]
 
     async def fk_linked_ids(self, session, link_name, obj_id, *, from_source, at=None):
         self.calls.append(("fk_linked_ids", link_name, obj_id, from_source))
-        return ["B-1001"] if from_source else ["P-100"]
+        return ["LOT-2417"] if from_source else ["TO-A0"]
 
 
 # The golden package projects only FK links; the join-table branch of the
@@ -417,24 +429,24 @@ _JOIN_LINK_YAML = """\
 apiVersion: ontogeny/v1
 kind: LinkType
 metadata:
-  name: product-material-usage
-  display: Product material usage
+  name: requirement-versions
+  display: Requirement versions
   description: Many-to-many usage relation carried by a join table
 spec:
-  source: product
-  target: material
+  source: requirement
+  target: tapeout-version
   cardinality: MANY_TO_MANY
   join:
     kind: join-table
-    store: mes
+    store: fab
     relation:
-      schema: mes
-      table: product_materials
+      schema: fab
+      table: requirement_versions
     keys:
       source:
-        product_id: product_id
+        requirement_id: requirement_id
       target:
-        material_id: material_id
+        version_id: version_id
 """
 
 
@@ -447,10 +459,10 @@ def compiled_with_join_link(compiled):
     from ontogeny.core.models import LinkTypeResource
 
     link = LinkTypeResource.model_validate(yaml.safe_load(_JOIN_LINK_YAML))
-    prj = compiled.projections["production-graph"].model_copy(deep=True)
+    prj = compiled.projections["production-lifecycle-graph"].model_copy(deep=True)
     prj.spec.include.links.append(link.metadata.name)
     compiled = dc_replace(
-        compiled, links={**compiled.links, link.metadata.name: link}, projections={"production-graph": prj}
+        compiled, links={**compiled.links, link.metadata.name: link}, projections={"production-lifecycle-graph": prj}
     )
     return compiled, prj
 
@@ -462,24 +474,7 @@ class TestWorkerEdges:
         handler, calls = _recorder(
             [
                 ("GET", "/graphspaces", httpx.Response(200, json={})),
-                (
-                    "GET",
-                    "/schema/vertexlabels",
-                    httpx.Response(
-                        200,
-                        json={
-                            "vertexlabels": [
-                                {"name": "product", "id": 1},
-                                {"name": "bom", "id": 2},
-                                {"name": "material", "id": 3},
-                                {"name": "work-center", "id": 4},
-                                {"name": "production-order", "id": 5},
-                                {"name": "operation", "id": 6},
-                                {"name": "quality-inspection", "id": 7},
-                            ]
-                        },
-                    ),
-                ),
+                ("GET", "/schema/vertexlabels", _vertexlabels_response()),
             ]
         )
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -493,11 +488,14 @@ class TestWorkerEdges:
 
     async def test_link_pairs_covers_both_join_kinds(self, rig):
         repo = rig["repo"]
-        assert await rig["worker"]._link_pairs(repo, None, "bom-product") == [("P-100", "B-1001"), ("P-100", "B-1002")]
-        assert await rig["worker"]._link_pairs(repo, None, "product-material-usage") == [("P-100", "M-101")]
+        assert await rig["worker"]._link_pairs(repo, None, "version-lots") == [
+            ("TO-A0", "LOT-2417"),
+            ("TO-A0", "LOT-2418"),
+        ]
+        assert await rig["worker"]._link_pairs(repo, None, "requirement-versions") == [("REQ-101", "TO-A0")]
         # single-sided lookups go through the right FK direction
-        assert await rig["worker"]._link_pairs(repo, None, "bom-product", src_id="P-100") == [("P-100", "B-1001")]
-        assert await rig["worker"]._link_pairs(repo, None, "bom-product", dst_id="B-1001") == [("P-100", "B-1001")]
+        assert await rig["worker"]._link_pairs(repo, None, "version-lots", src_id="TO-A0") == [("TO-A0", "LOT-2417")]
+        assert await rig["worker"]._link_pairs(repo, None, "version-lots", dst_id="LOT-2417") == [("TO-A0", "LOT-2417")]
 
     async def test_handle_event_projects_edges_for_both_sides(self, rig, monkeypatch):
         async def fake_project_object(repo, session, object_type, obj_id):
@@ -505,16 +503,17 @@ class TestWorkerEdges:
 
         monkeypatch.setattr(rig["worker"], "project_object", fake_project_object)
         await rig["worker"].handle_event(
-            rig["repo"], None, OutboxRow(object_type="product", object_id="P-100", op="upsert", payload={})
+            rig["repo"], None, OutboxRow(object_type="tapeout-version", object_id="TO-A0", op="upsert", payload={})
         )
         await rig["worker"].handle_event(
-            rig["repo"], None, OutboxRow(object_type="bom", object_id="B-1001", op="upsert", payload={})
+            rig["repo"], None, OutboxRow(object_type="wafer-lot", object_id="LOT-2417", op="upsert", payload={})
         )
 
         batches = self._edge_batches(rig["calls"])
-        # product is the FK *source* (bom-product), bom the target: both emit the pair
-        assert any(b["edges"][0]["outV"] == "1:P-100" for b in batches)
-        assert any(b["edges"][0]["inV"] == "2:B-1001" for b in batches)
+        # tapeout-version is the FK *source* (version-lots), wafer-lot the
+        # target: both emit the pair
+        assert any(b["edges"][0]["outV"] == "3:TO-A0" for b in batches)
+        assert any(b["edges"][0]["inV"] == "4:LOT-2417" for b in batches)
 
     async def test_unprojected_type_is_consumed_silently(self, rig):
         ok = await rig["worker"].handle_event(
@@ -548,43 +547,24 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
             # the domain's own graph (named after the domain) is already there
             return httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})
         if path.endswith("/schema/vertexlabels") and method == "GET":
-            return httpx.Response(
-                200,
-                json={
-                    "vertexlabels": [
-                        {"name": "product", "id": 1},
-                        {"name": "bom", "id": 2},
-                        {"name": "material", "id": 3},
-                        {"name": "work-center", "id": 4},
-                        {"name": "production-order", "id": 5},
-                        {"name": "operation", "id": 6},
-                        {"name": "quality-inspection", "id": 7},
-                    ]
-                },
-            )
+            return _vertexlabels_response()
         if path.endswith("/schema/edgelabels") and method == "GET":
             return httpx.Response(
                 200,
                 json={
                     "edgelabels": [
-                        {"name": "bom-product", "source_label": "product", "target_label": "bom"},
-                        {"name": "bom-material", "source_label": "material", "target_label": "bom"},
+                        {"name": "requirement-modules", "source_label": "requirement", "target_label": "design-module"},
                         {
-                            "name": "production-order-product",
-                            "source_label": "product",
-                            "target_label": "production-order",
+                            "name": "version-includes",
+                            "source_label": "tapeout-version",
+                            "target_label": "design-module",
                         },
-                        {
-                            "name": "production-order-operations",
-                            "source_label": "production-order",
-                            "target_label": "operation",
-                        },
-                        {
-                            "name": "production-order-inspections",
-                            "source_label": "production-order",
-                            "target_label": "quality-inspection",
-                        },
-                        {"name": "operation-work-center", "source_label": "work-center", "target_label": "operation"},
+                        {"name": "version-lots", "source_label": "tapeout-version", "target_label": "wafer-lot"},
+                        {"name": "lot-steps", "source_label": "wafer-lot", "target_label": "process-step"},
+                        {"name": "lot-tests", "source_label": "wafer-lot", "target_label": "wafer-test"},
+                        {"name": "step-equipment", "source_label": "equipment", "target_label": "process-step"},
+                        {"name": "customer-failures", "source_label": "customer", "target_label": "field-failure"},
+                        {"name": "design-fmea-notes", "source_label": "design-module", "target_label": "fmea-note"},
                     ]
                 },
             )
@@ -593,17 +573,17 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
             return httpx.Response(201, json={"task_id": 11})
         if "/tasks/11" in path:
             if gremlin_jobs["n"] % 2:  # odd job: vertices, even job: edges
-                result = '[{"product": 2, "work-center": 2}]'
+                result = '[{"requirement": 2, "equipment": 2}]'
             else:
-                result = '[{"bom-product": 1, "production-order-product": 2}]'
+                result = '[{"requirement-modules": 1, "version-lots": 2}]'
             return httpx.Response(200, json={"task_status": "success", "task_result": result})
         if path.endswith("/graph/vertices") and method == "GET":
             return httpx.Response(
                 200,
                 json={
                     "vertices": [
-                        {"id": "4:WC-01", "label": "work-center", "properties": {"work_center_id": "WC-01"}},
-                        {"id": "4:WC-02", "label": "work-center", "properties": {"work_center_id": "WC-02"}},
+                        {"id": "6:EQ-02", "label": "equipment", "properties": {"equipment_id": "EQ-02"}},
+                        {"id": "6:EQ-07", "label": "equipment", "properties": {"equipment_id": "EQ-07"}},
                     ]
                 },
             )
@@ -613,12 +593,12 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
                 json={
                     "edges": [
                         {
-                            "id": "S1:P-100>2>5>>S2:PO-1001",
-                            "label": "production-order-product",
-                            "outV": "1:P-100",
-                            "inV": "5:PO-1001",
-                            "outVLabel": "product",
-                            "inVLabel": "production-order",
+                            "id": "S1:REQ-101>2>5>>S2:DSG-201",
+                            "label": "requirement-modules",
+                            "outV": "1:REQ-101",
+                            "inV": "2:DSG-201",
+                            "outVLabel": "requirement",
+                            "inVLabel": "design-module",
                         },
                     ]
                 },
@@ -630,7 +610,7 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
         env={
             "ERP_DSN": f"sqlite+aiosqlite:///{src}",
-            "WMS_WEBHOOK": "https://wms.example.test/hook",
+            "FAB_WEBHOOK": "https://fab-portal.example.test/hook",
             "HUGEGRAPH_URL": "http://hg.test",
         },
     )
@@ -644,7 +624,7 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
 
 @pytest.fixture()
 def principal():
-    return {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
+    return {"id": "u-fab", "Role": ["fab"], "site": "fab-site-a"}
 
 
 class TestLoadVersusBuild:
@@ -687,12 +667,14 @@ class TestServicePreview:
             await sc_with_graph.sync(object_type)
 
         counts = await sc_with_graph.projection_rebuild()
-        # the demo source seed: 3 products + 7 BOM lines + 6 materials
-        # + 3 work centres + 4 production orders + 9 operations + 3 inspections
-        assert counts["vertices"] == 35
-        # all six projected links are FK links: 7+7 BOM edges, 4 order-product,
-        # 9 order-operations, 3 order-inspections, 9 operation-work-centre
-        assert counts["edges"] == 39
+        # the demo source seed: 4 requirements + 5 design modules + 3 tapeout versions
+        # + 5 equipment + 4 wafer lots + 11 process steps + 3 CP tests
+        # + 2 customers + 3 field failures (fmea-note is extract-backed: 0 rows)
+        assert counts["vertices"] == 40
+        # all FK links project: 5 requirement-modules, 5 version-includes,
+        # 4 version-lots, 11 lot-steps, 11 step-equipment, 3 lot-tests,
+        # 3 customer-failures; the extracted design-fmea-notes has no rows
+        assert counts["edges"] == 42
 
     async def test_summary_reports_labels_counts_and_dialect(self, sc_with_graph, principal):
         summary = await sc_with_graph.projection_summary()
@@ -702,45 +684,52 @@ class TestServicePreview:
         assert summary["graph_name"] == GRAPH and summary["graph_exists"] is True
         assert summary["dialect"] == "1.7"
         assert {v["name"] for v in summary["labels"]["vertices"]} == {
-            "product",
-            "bom",
-            "material",
-            "work-center",
-            "production-order",
-            "operation",
-            "quality-inspection",
+            "requirement",
+            "design-module",
+            "tapeout-version",
+            "wafer-lot",
+            "process-step",
+            "equipment",
+            "wafer-test",
+            "customer",
+            "field-failure",
+            "fmea-note",
         }
-        assert summary["counts"]["vertices"] == {"product": 2, "work-center": 2}
+        assert summary["counts"]["vertices"] == {"requirement": 2, "equipment": 2}
 
     async def test_graph_rows_are_reassembled_through_the_engine(self, sc_with_graph, principal):
-        await sc_with_graph.sync("work-center")
-        out = await sc_with_graph.projection_vertices("work-center", principal, limit=5)
-        assert out["label"] == "work-center" and out["hidden"] == 0
-        rows = {r["work_center_id"]: r for r in out["rows"]}
-        assert set(rows) == {"WC-01", "WC-02"}
+        await sc_with_graph.sync("equipment")
+        out = await sc_with_graph.projection_vertices("equipment", principal, limit=5)
+        assert out["label"] == "equipment" and out["hidden"] == 0
+        rows = {r["equipment_id"]: r for r in out["rows"]}
+        assert set(rows) == {"EQ-02", "EQ-07"}
         # exactly what the object API returns: masking applied, graph has no say
         async with sc_with_graph.sessionmaker() as session:
-            object_row = await sc_with_graph.query.get(session, "work-center", "WC-01", principal)
-        assert rows["WC-01"] == object_row
+            object_row = await sc_with_graph.query.get(session, "equipment", "EQ-02", principal)
+        assert rows["EQ-02"] == object_row
 
     async def test_graph_edges_are_reassembled_and_named(self, sc_with_graph, principal):
-        await sc_with_graph.sync("product")
-        await sc_with_graph.sync("production-order")
-        out = await sc_with_graph.projection_edges("production-order-product", principal, limit=5)
+        await sc_with_graph.sync("requirement")
+        await sc_with_graph.sync("design-module")
+        out = await sc_with_graph.projection_edges("requirement-modules", principal, limit=5)
         assert len(out["rows"]) == 1
         edge = out["rows"][0]
-        assert edge["source"] == {"type": "product", "id": "P-100", "display": "CNC Milling Machine"}
-        assert edge["target"]["type"] == "production-order" and edge["target"]["id"] == "PO-1001"
+        assert edge["source"] == {
+            "type": "requirement",
+            "id": "REQ-101",
+            "display": "IO ESD robustness ±8kV contact discharge",
+        }
+        assert edge["target"]["type"] == "design-module" and edge["target"]["id"] == "DSG-201"
 
     async def test_data_preview_lists_every_type_with_counts(self, sc_with_graph, principal):
         for t in sc_with_graph.compiled.objects:
             await sc_with_graph.sync(t)
         out = await sc_with_graph.data_preview(principal, limit=2)
         by_type = {o["type"]: o for o in out["objects"]}
-        assert {"work-center", "production-order", "material"} <= set(by_type)
-        assert by_type["work-center"]["total"] == 3
-        assert len(by_type["work-center"]["rows"]) == 2
-        assert out["total"] >= 35
+        assert {"equipment", "wafer-lot", "customer"} <= set(by_type)
+        assert by_type["equipment"]["total"] == 5
+        assert len(by_type["equipment"]["rows"]) == 2
+        assert out["total"] >= 40
 
 
 class TestAuthMode:
@@ -783,8 +772,8 @@ class TestAuthMode:
         from ontogeny.errors import StoreError
 
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path.endswith("/graphspaces"):
-                return httpx.Response(200, json={})
+            if request.url.path == "/graphspaces/DEFAULT/graphs":
+                return httpx.Response(200, json={"graphs": [GRAPH]})
             if request.url.path.endswith("/schema/vertexlabels"):
                 return httpx.Response(401, text="Unauthorized")
             return httpx.Response(200, json={"vertexlabels": [], "edgelabels": []})
@@ -799,12 +788,14 @@ class TestAuthMode:
         """A probe we were not allowed to make must never be reported as "the
         graph is gone" — that answer is what offers a destructive build."""
 
+        from ontogeny.errors import StoreError
+
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.path.endswith("/graphspaces"):
-                return httpx.Response(200, json={})
             return httpx.Response(401, text="Unauthorized")
 
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         client = HugeGraphClient("http://hg.test", GRAPH, http=http)
-        assert await client.exists() is None
+        with pytest.raises(StoreError, match="no credentials configured"):
+            await client.exists()
+        assert client.auth_rejected
         await http.aclose()

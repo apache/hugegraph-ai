@@ -17,7 +17,7 @@
 
 """Extension host: discovery + supervised loading of optional extensions.
 
-The core is a constitution: registry, policy, actions, governance. Everything
+The core is the fixed basis: registry, policy, actions, governance. Everything
 that is one *implementation choice* among many -- an LLM adapter, an agent
 engine, a graph store -- lives OUTSIDE the core in an ``extensions/``
 directory and plugs in through contracts the core defines:

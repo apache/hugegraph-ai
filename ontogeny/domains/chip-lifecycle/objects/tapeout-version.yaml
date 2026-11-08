@@ -1,0 +1,68 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: ObjectType
+metadata:
+  name: tapeout-version
+  display: Tapeout version
+  description: One tapeout of a project (A0, A1, B0...)
+spec:
+  primaryKey:
+  - version_id
+  properties:
+    version_id:
+      type: string
+      display: Version ID
+      required: true
+    project:
+      type: string
+      display: Project
+      required: true
+    status:
+      type: enum[PLANNED, FAB, QUALIFIED, RETIRED]
+      display: Status
+      owner: ontology
+    notes:
+      type: string
+      display: Notes
+    mask_cost:
+      type: decimal(14,2)
+      display: Mask set cost
+      marking: internal
+    taped_out_at:
+      type: timestamp
+      display: Taped out at
+      owner: ontology
+    created_at:
+      type: timestamp
+      display: Created at
+    fab_lag_h:
+      type: decimal(10,2)
+      display: Plan-to-fab lag (h)
+      required: false
+      derived: (taped_out_at - created_at) / 3600000
+  backing:
+    store: fab
+    mode: materialized
+    source:
+      schema: fab
+      table: tapeout_versions
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

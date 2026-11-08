@@ -221,7 +221,9 @@ class PolicyEngine:
                     ):
                         return name
                 except ExpressionError:
-                    continue
+                    # A broken deny must never turn a matching permit into
+                    # authorization, including policies published by older versions.
+                    return name
         return None
 
     def decide(self, principal: dict, action_name: str, resource: dict | None) -> PolicyDecision:

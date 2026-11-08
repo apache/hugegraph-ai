@@ -395,7 +395,8 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         try:
             clean, quoted = _policy_text(text)
             authored = sum(1 for match in _re.finditer(r"\bforbid\s*\(", clean) if match.start() not in quoted)
-            parsed = len(parse_forbids(text))
+            forbids = parse_forbids(text)
+            parsed = len(forbids)
         except ValueError as exc:
             rep.error("POLICY-FORBID", f"PolicySet/{pol.metadata.name}", f"invalid policy comments: {exc}")
             continue
@@ -406,6 +407,16 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 "contains a forbid() statement this engine cannot parse; refusing to "
                 "publish (an unparsed forbid would silently grant instead of deny)",
             )
+        for rule in forbids:
+            if rule.when is not None:
+                try:
+                    _expr.parse(rule.when)
+                except ExpressionError as exc:
+                    rep.error(
+                        "POLICY-FORBID",
+                        f"PolicySet/{pol.metadata.name}",
+                        f"unsupported forbid condition: {exc}",
+                    )
 
     # ---- actions ----------------------------------------------------------
     for act in pkg.actions():

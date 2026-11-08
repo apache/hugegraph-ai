@@ -33,14 +33,14 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ..action.models import OutboxRow, RevisionRow
 from ..core.models import DocumentCfg, ExtractCfg, ExtractedJoin
 from ..errors import NotFoundError, OOError, StoreError
 from ..stores.repo import utcnow
 from . import corpus
-from .binder import Binder, BoundObject, _jsonable
+from .binder import Binder, BoundObject, Evidence, _jsonable
 from .models import (
     DocumentRow,
     ExtractAssertionRow,
@@ -296,25 +296,41 @@ spec:
         )
 
     async def _packets_for(
-        self, session, doc_id: str, schema_hash: str, prompt_hash: str, model: str
+        self,
+        session,
+        doc_id: str,
+        schema_hash: str,
+        prompt_hash: str,
+        model: str,
+        *,
+        run_id: int | None = None,
+        chunk_count: int | None = None,
     ) -> list[ExtractPacketRow]:
-        rows = (
-            (
-                await session.execute(
-                    select(ExtractPacketRow)
-                    .where(
-                        ExtractPacketRow.doc_id == doc_id,
-                        ExtractPacketRow.schema_hash == schema_hash,
-                        ExtractPacketRow.prompt_hash == prompt_hash,
-                        ExtractPacketRow.model == model,
-                    )
-                    .order_by(ExtractPacketRow.chunk_index)
-                )
-            )
-            .scalars()
-            .all()
+        stmt = select(ExtractPacketRow).where(
+            ExtractPacketRow.doc_id == doc_id,
+            ExtractPacketRow.schema_hash == schema_hash,
+            ExtractPacketRow.prompt_hash == prompt_hash,
+            ExtractPacketRow.model == model,
         )
-        return list(rows)
+        if run_id is None:
+            # Copied packets remain an audit trail for their own run. Pick one
+            # complete successful run without loading all historical packets.
+            cached_run = (
+                stmt.with_only_columns(ExtractPacketRow.run_id)
+                .join(ExtractRunRow, ExtractRunRow.id == ExtractPacketRow.run_id)
+                .where(ExtractRunRow.status == "ok")
+                .group_by(ExtractPacketRow.run_id)
+            )
+            if chunk_count is not None:
+                cached_run = cached_run.having(
+                    func.count() == chunk_count,
+                    func.count(ExtractPacketRow.chunk_index.distinct()) == chunk_count,
+                )
+            run_id = cached_run.order_by(ExtractPacketRow.run_id.desc()).limit(1).scalar_subquery()
+        rows = await session.execute(
+            stmt.where(ExtractPacketRow.run_id == run_id).order_by(ExtractPacketRow.chunk_index)
+        )
+        return list(rows.scalars().all())
 
     async def _extract_doc(
         self, session, run, doc: DocumentRow, schema, options, *, schema_hash: str, prompt_hash: str, model: str
@@ -507,10 +523,11 @@ spec:
                         )
                     continue
                 values[prop] = value
-            if not values:
-                return "noop"
-            values[obj.spec.primaryKey[0]] = bound.object_id
-            outcome = await self.sc.repo.apply_extracted(session, bound.object_type, values, ts)
+            if values:
+                values[obj.spec.primaryKey[0]] = bound.object_id
+                outcome = await self.sc.repo.apply_extracted(session, bound.object_type, values, ts)
+            else:
+                outcome = "noop"
             created = False
 
         if created and outcome == "inserted":
@@ -549,34 +566,44 @@ spec:
                     message=f"extracted from {doc_id[:12]}" if doc_id else "extracted",
                 )
             )
-            written = bound.props if created else values
-            for prop, value in written.items():
-                docs = bound.sources.get(prop) or bound.docs or {doc_id}
-                for source_doc in docs:
-                    ev = evidence.get(prop)
-                    await session.execute(
-                        delete(ExtractAssertionRow).where(
-                            ExtractAssertionRow.doc_id == source_doc,
-                            ExtractAssertionRow.kind == "object",
-                            ExtractAssertionRow.object_type == bound.object_type,
-                            ExtractAssertionRow.object_id == bound.object_id,
-                            ExtractAssertionRow.prop == prop,
-                        )
+        # Matching evidence still supports the object even when no new stored
+        # version is needed; unapplied conflicts do not support those values.
+        supported = (
+            bound.props
+            if created
+            else {
+                prop: value
+                for prop, value in bound.props.items()
+                if _valid(value) and (prop in values or current.get(self.compiled.col(prop)) == value)
+            }
+        )
+        for prop, value in supported.items():
+            docs = bound.sources.get(prop) or bound.docs or {doc_id}
+            for source_doc in docs:
+                ev = evidence.get(prop)
+                await session.execute(
+                    delete(ExtractAssertionRow).where(
+                        ExtractAssertionRow.doc_id == source_doc,
+                        ExtractAssertionRow.kind == "object",
+                        ExtractAssertionRow.object_type == bound.object_type,
+                        ExtractAssertionRow.object_id == bound.object_id,
+                        ExtractAssertionRow.prop == prop,
                     )
-                    session.add(
-                        ExtractAssertionRow(
-                            run_id=run_id,
-                            doc_id=source_doc,
-                            chunk_index=ev.chunk_index if ev else 0,
-                            kind="object",
-                            object_type=bound.object_type,
-                            object_id=bound.object_id,
-                            prop=prop,
-                            value=_jsonable(value),
-                            evidence=ev.as_dict() if ev else {},
-                            created_object=bool(created and (created_by in (None, source_doc))),
-                        )
+                )
+                session.add(
+                    ExtractAssertionRow(
+                        run_id=run_id,
+                        doc_id=source_doc,
+                        chunk_index=ev.chunk_index if ev else 0,
+                        kind="object",
+                        object_type=bound.object_type,
+                        object_id=bound.object_id,
+                        prop=prop,
+                        value=_jsonable(value),
+                        evidence=ev.as_dict() if ev else {},
+                        created_object=bool(created and (created_by in (None, source_doc))),
                     )
+                )
         return outcome
 
     async def _candidate(
@@ -650,6 +677,30 @@ spec:
             )
         )
 
+    async def _assert_link(self, session, run_id, link, src_id, dst_id, evidence: Evidence, ts) -> None:
+        await self.sc.repo.link_assert(session, link, src_id, dst_id, evidence.as_dict(), ts)
+        await session.execute(
+            delete(ExtractAssertionRow).where(
+                ExtractAssertionRow.doc_id == evidence.doc_id,
+                ExtractAssertionRow.kind == "link",
+                ExtractAssertionRow.object_type == link,
+                ExtractAssertionRow.object_id == f"{src_id}->{dst_id}",
+            )
+        )
+        session.add(
+            ExtractAssertionRow(
+                run_id=run_id,
+                doc_id=evidence.doc_id,
+                chunk_index=evidence.chunk_index,
+                kind="link",
+                object_type=link,
+                object_id=f"{src_id}->{dst_id}",
+                prop="",
+                value={"src": src_id, "dst": dst_id},
+                evidence=evidence.as_dict(),
+            )
+        )
+
     async def _apply_links(self, session, run, outcome, *, applied_ids: set[tuple[str, str]], principal: str) -> int:
         ts = utcnow()
         # collect new assertions per document first
@@ -693,36 +744,8 @@ spec:
                     link=bound.link,
                 )
                 continue
-            for doc_id, ev in bound.sources.items():
-                await self.sc.repo.link_assert(
-                    session,
-                    bound.link,
-                    bound.src_id,
-                    bound.dst_id,
-                    {"doc_id": doc_id, "chunk_index": ev.chunk_index, "quote": ev.quote},
-                    ts,
-                )
-                await session.execute(
-                    delete(ExtractAssertionRow).where(
-                        ExtractAssertionRow.doc_id == doc_id,
-                        ExtractAssertionRow.kind == "link",
-                        ExtractAssertionRow.object_type == bound.link,
-                        ExtractAssertionRow.object_id == f"{bound.src_id}->{bound.dst_id}",
-                    )
-                )
-                session.add(
-                    ExtractAssertionRow(
-                        run_id=run.id,
-                        doc_id=doc_id,
-                        chunk_index=ev.chunk_index,
-                        kind="link",
-                        object_type=bound.link,
-                        object_id=f"{bound.src_id}->{bound.dst_id}",
-                        prop="",
-                        value={"src": bound.src_id, "dst": bound.dst_id},
-                        evidence=ev.as_dict(),
-                    )
-                )
+            for ev in bound.sources.values():
+                await self._assert_link(session, run.id, bound.link, bound.src_id, bound.dst_id, ev, ts)
                 count += 1
         return count
 
@@ -912,7 +935,9 @@ spec:
             for doc in active:
                 if doc.status != "active":
                     continue
-                cached_packets = await self._packets_for(session, doc.id, schema.hash, prompt_hash, model)
+                cached_packets = await self._packets_for(
+                    session, doc.id, schema.hash, prompt_hash, model, chunk_count=doc.chunk_count
+                )
                 if cached_packets and doc.extracted_at is not None and doc.chunk_count == len(cached_packets):
                     cached[doc.id] = cached_packets
                 else:
@@ -926,6 +951,7 @@ spec:
                     run = await session.get(ExtractRunRow, run_id)
                     await session.execute(
                         delete(ExtractPacketRow).where(
+                            ExtractPacketRow.run_id == run_id,
                             ExtractPacketRow.doc_id == doc.id,
                             ExtractPacketRow.schema_hash == schema.hash,
                             ExtractPacketRow.prompt_hash == prompt_hash,
@@ -981,7 +1007,7 @@ spec:
                             copied.append(clone)
                         rows = copied
                     else:
-                        rows = await self._packets_for(session, doc.id, schema.hash, prompt_hash, model)
+                        rows = await self._packets_for(session, doc.id, schema.hash, prompt_hash, model, run_id=run_id)
                     for row in rows:
                         packets.append((row, row.graph or {}))
                 outcome = await self._bind(session, run, packets, schema)
@@ -1481,12 +1507,13 @@ spec:
                     dst_row = await self.sc.repo.get(session, link_obj.spec.target, str(dst))
                     if src_row is None or dst_row is None:
                         raise DocumentError("link endpoints no longer exist")
-                await self.sc.repo.link_assert(
+                await self._assert_link(
                     session,
+                    c.run_id,
                     link,
                     str(src),
                     str(dst),
-                    {"doc_id": c.doc_id, "chunk_index": c.chunk_index, "quote": ev.get("quote", "")},
+                    Evidence(c.doc_id, c.chunk_index, ev.get("quote", "")),
                     utcnow(),
                 )
                 session.add(
@@ -1499,7 +1526,7 @@ spec:
                 object_id = str(payload.get("object_id") or c.object_id or "")
                 if not object_type or not object_id:
                     raise DocumentError("object candidate is missing its type/id")
-                from .binder import BoundObject, Evidence, coerce_value
+                from .binder import coerce_value
 
                 obj = self.compiled.objects.get(object_type)
                 if obj is None:

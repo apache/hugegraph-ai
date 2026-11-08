@@ -48,7 +48,7 @@ flowchart LR
 
 - Python 3.12–3.14 for the LLM application, SDK, Python client and MCP
 - [uv](https://docs.astral.sh/uv/) 0.13.6+ (required for workspace management)
-- HugeGraph Server 1.5+ for the Python client and LLM application; `hugegraph-mcp` requires 1.7.0+
+- HugeGraph Server 1.3+ for the LLM application (1.5+ recommended), 1.5+ for the Python client, and 1.7.0+ for `hugegraph-mcp`
 - Docker (optional, for containerized deployment)
 
 ### Option 1: Docker Deployment (Recommended)

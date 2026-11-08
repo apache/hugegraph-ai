@@ -103,6 +103,7 @@ class LLMConfig(BaseConfig):
     text2gql_llm_type: Literal["openai", "ollama/local"] = "openai"
     embedding_type: Optional[Literal["openai", "ollama/local"]] = "openai"
     reranker_type: Optional[Literal["cohere", "siliconflow"]] = None
+    rag_query_max_length: int = Field(default=50, ge=1)
     keyword_extract_type: Literal["llm", "textrank", "hybrid"] = "llm"
     window_size: Optional[int] = 3
     hybrid_llm_weights: Optional[float] = 0.5

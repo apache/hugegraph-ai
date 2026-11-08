@@ -66,6 +66,14 @@ whose contents are trusted, remove group and world write permissions with
 `chmod -R go-w "$NLTK_DATA"`, then restart the application. A missing or refused
 stopwords corpus is logged and falls back to an empty stopword list.
 
+### RAG query length
+
+`RAG_QUERY_MAX_LENGTH` limits the number of characters in a RAG query submitted
+through the API or the interactive demo. It defaults to `50` and must be a
+positive integer. Set it in the environment or the LLM `.env` file, for example
+`RAG_QUERY_MAX_LENGTH=200`, if your application needs longer questions. This is
+a character limit, not a token or resource budget.
+
 ### Code Quality (uv + Ruff + ty)
 
 Run all quality commands from the repository root.

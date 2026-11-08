@@ -29,6 +29,7 @@ from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.decorators import with_task_id
 from hugegraph_llm.utils.log import log
+from hugegraph_llm.utils.query_validation import validate_rag_query_length
 
 
 def rag_answer(
@@ -54,6 +55,10 @@ def rag_answer(
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
     """
+    try:
+        validate_rag_query_length(text)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from exc
     gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
     vector_search = vector_only_answer or graph_vector_answer
     graph_search = graph_only_answer or graph_vector_answer
@@ -132,6 +137,10 @@ async def rag_answer_streaming(
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
     """
+    try:
+        validate_rag_query_length(text)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from exc
     gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
     vector_search = vector_only_answer or graph_vector_answer
     graph_search = graph_only_answer or graph_vector_answer

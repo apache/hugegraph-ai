@@ -68,7 +68,7 @@ jobs:
         run: python3 scripts/ci.py
       - name: Set up Docker Buildx for configuration checks
         if: ${{ steps.select.outputs.docker_llm == 'true' || steps.select.outputs.docker_nk == 'true' }}
-        uses: docker/setup-buildx-action@v4
+        run: docker buildx create --driver docker-container --use
       - name: Check affected Docker build definitions
         if: ${{ steps.select.outputs.docker_llm == 'true' || steps.select.outputs.docker_nk == 'true' }}
         env:

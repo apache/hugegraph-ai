@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Index, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Index, Integer, String, Text, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -101,6 +101,13 @@ class OutboxRow(Base):
     revision_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     published_at: Mapped[_dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Per-consumer pending flags make idle scans independent of delivered history.
+    # Defaults are database-side too, so events inserted by existing producers
+    # are pending even if their transaction commits after newer IDs.
+    pending_webhook: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    pending_projection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    pending_derivation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    pending_sse: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
 
 
 class OutboxConsumerRow(Base):
@@ -111,6 +118,7 @@ class OutboxConsumerRow(Base):
     consumer: Mapped[str] = mapped_column(String(100), primary_key=True)
     last_id: Mapped[int] = mapped_column(BigInteger, default=0)
     receipts_initialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pending_initialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     failures: Mapped[int] = mapped_column(default=0)
     updated_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 

@@ -182,7 +182,7 @@ def coerce_value(ptype: PropertyType, value: Any, *, prop: str) -> Any:
     reading "High" for `enum[LOW, HIGH]` is not evidence of a schema violation,
     so case/whitespace are normalized *before* validation, never after.
     """
-    v = _normalize_scalar(value)
+    v = _normalize_scalar(value) if ptype.kind in {"integer", "decimal"} else value
     if v is None:
         return None
     if ptype.kind == "enum" and isinstance(v, str):

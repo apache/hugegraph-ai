@@ -163,6 +163,7 @@ class ActionRuntime:
             raise NotFoundError(f"unknown action {action_name!r}")
         params = self._bind_parameters(action, parameters)
         target = await self.repo.get(session, action.spec.target, target_id) if target_id else None
+        target = self._assemble_target(action.spec.target, target)
         ctx = _expr.ExprContext(target=target, parameters=params, principal=principal)
         rule_results = []
         for rule in action.spec.rules:
@@ -251,6 +252,7 @@ class ActionRuntime:
             target = await self.repo.get(session, action.spec.target, target_id, for_update=True)
             if target is None:
                 raise NotFoundError(f"{action.spec.target}/{target_id} not found (or archived)")
+            target = self._assemble_target(action.spec.target, target)
         ctx = _expr.ExprContext(
             target=target or {},
             parameters=params,
@@ -337,6 +339,8 @@ class ActionRuntime:
         effective_id = created_id or target_id
         if after is None:
             after = await self.repo.get(session, action.spec.target, effective_id)
+        if after is not None and after != {"archived": True}:
+            after = self._assemble_target(action.spec.target, after)
         rev = await _record(
             "executed", None, before=before, after=after, rules_hit=rules_hit, decision=decision, obj_id=effective_id
         )
@@ -355,6 +359,13 @@ class ActionRuntime:
         return rev
 
     # --------------------------------------------------------------- effects
+
+    def _assemble_target(self, object_type: str, target: dict | None) -> dict | None:
+        if target is None:
+            return None
+        from ..engine.service import assemble_row
+
+        return assemble_row(self.compiled, object_type, target)
 
     def _eval_value(self, expr_src: Any, ctx: _expr.ExprContext, current_target: dict) -> Any:
         if isinstance(expr_src, Literal):
@@ -395,7 +406,7 @@ class ActionRuntime:
                 changes,
                 ts,
             )
-            ctx.target = new
+            ctx.target = self._assemble_target(action.spec.target, new)
             return new, None, []
 
         if isinstance(eff, CreateObjectEffect):
@@ -408,7 +419,7 @@ class ActionRuntime:
             created = await self.repo.action_insert(session, action.spec.target, props, ts)
             pk = self.compiled.objects[action.spec.target].spec.primaryKey[0]
             created_id = str(created[pk]) if created else None
-            ctx.target = created
+            ctx.target = self._assemble_target(action.spec.target, created)
             return created, created_id, []
 
         if isinstance(eff, ArchiveObjectEffect):
@@ -439,9 +450,10 @@ class ActionRuntime:
                     )
                     if not resolved:
                         continue
-                    ctx.target = await self.repo.action_update(
+                    updated = await self.repo.action_update(
                         session, action.spec.target, target_id, {fk_prop: next(iter(resolved.values()))}, ts
                     )
+                    ctx.target = self._assemble_target(action.spec.target, updated)
                     fk_written = True
                 for entry in eff.remove:
                     if fk_written:
@@ -455,9 +467,10 @@ class ActionRuntime:
                     cur = (ctx.target or {}).get(fk_prop)
                     if resolved and cur is not None and str(cur) == str(next(iter(resolved.values()))):
                         # FK membership has no "absent" row: removing = clearing the FK
-                        ctx.target = await self.repo.action_update(
+                        updated = await self.repo.action_update(
                             session, action.spec.target, target_id, {fk_prop: None}, ts
                         )
+                        ctx.target = self._assemble_target(action.spec.target, updated)
                         fk_written = True
                 if fk_written:
                     return ctx.target, None, []

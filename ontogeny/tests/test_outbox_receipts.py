@@ -113,6 +113,9 @@ async def test_failed_consumer_retries_without_redelivering_other_consumers(tmp_
         async with maker() as s:
             receipts = (await s.scalars(select(OutboxReceiptRow))).all()
             assert {r.consumer for r in receipts} == {"webhook", "sse", "derivation"}
+            row = (await s.scalars(select(OutboxRow))).one()
+            assert row.pending_projection
+            assert not any((row.pending_webhook, row.pending_derivation, row.pending_sse))
             assert (await s.get(DerivationPendingRow, {"object_type": "product", "object_id": "one"})) is not None
         await dispatcher.dispatch_pending()
         assert len(calls) == 1 and len(attempts) == 2
@@ -142,6 +145,8 @@ async def test_cancelled_transaction_rolls_back_receipt_and_derivation_queue(tmp
         async with maker() as s:
             assert (await s.scalars(select(OutboxReceiptRow))).all() == []
             assert (await s.scalars(select(DerivationPendingRow))).all() == []
+            row = (await s.scalars(select(OutboxRow))).one()
+            assert all((row.pending_webhook, row.pending_projection, row.pending_derivation, row.pending_sse))
         dispatcher.derivation_hook = worker.handle_event
         await dispatcher.dispatch_pending()
         async with maker() as s:
@@ -244,3 +249,284 @@ async def test_postgres_late_commit_is_delivered_to_each_consumer():
         async with admin.begin() as conn:
             await conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin.dispose()
+
+
+async def test_upgrade_existing_receipts_preserves_replay_and_uses_pending_index(tmp_path):
+    engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'old-receipts.sqlite'}")
+    try:
+        # A real pre-upgrade schema with one delivered and one pending event.
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE TABLE ontogeny_outbox (id INTEGER PRIMARY KEY, object_type VARCHAR(200) NOT NULL, "
+                    "object_id VARCHAR(500) NOT NULL, op VARCHAR(32) NOT NULL, payload JSON NOT NULL, "
+                    "revision_id BIGINT, created_at DATETIME NOT NULL, published_at DATETIME)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE TABLE ontogeny_outbox_cursor (consumer VARCHAR(100) PRIMARY KEY, last_id BIGINT NOT NULL, "
+                    "receipts_initialized BOOLEAN NOT NULL DEFAULT FALSE, failures INTEGER NOT NULL, "
+                    "updated_at DATETIME NOT NULL)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE TABLE ontogeny_outbox_receipt (consumer VARCHAR(100) NOT NULL, "
+                    "event_id BIGINT NOT NULL, PRIMARY KEY (consumer, event_id))"
+                )
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO ontogeny_outbox (id, object_type, object_id, op, payload, created_at) VALUES "
+                    "(10, 'product', 'old', 'event', "
+                    '\'{"kind":"webhook","url":"https://sink.example/hook"}\', CURRENT_TIMESTAMP), '
+                    "(20, 'product', 'pending', 'event', "
+                    '\'{"kind":"webhook","url":"https://sink.example/hook"}\', CURRENT_TIMESTAMP)'
+                )
+            )
+            await conn.execute(
+                text("INSERT INTO ontogeny_outbox_cursor VALUES ('webhook', 10, TRUE, 0, CURRENT_TIMESTAMP)")
+            )
+            await conn.execute(text("INSERT INTO ontogeny_outbox_receipt VALUES ('webhook', 10)"))
+        await init_schema(engine)
+        maker = make_sessionmaker(engine)
+        calls = []
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200)))
+        dispatcher = OutboxDispatcher(maker, Settings(webhook_allowlist=("sink.example",)), http_client=http)
+        # A rollback must roll back the initialization marker and flag updates.
+        async with maker() as s:
+            cursor = await s.get(OutboxConsumerRow, "webhook")
+            await dispatcher._initialize_pending(s, cursor)
+            await s.rollback()
+        async with maker() as s:
+            assert not (await s.get(OutboxConsumerRow, "webhook")).pending_initialized
+            assert (await s.get(OutboxRow, 10)).pending_webhook
+            plan = (
+                await s.execute(
+                    text(
+                        "EXPLAIN QUERY PLAN SELECT id FROM ontogeny_outbox "
+                        "WHERE pending_webhook IS TRUE ORDER BY id LIMIT 100"
+                    )
+                )
+            ).all()
+            assert any("ix_outbox_pending_webhook" in str(row) for row in plan)
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["pending"]
+        assert await dispatcher.replay("webhook", from_id=10, through_id=10) == 1
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["pending", "old"]
+        await http.aclose()
+    finally:
+        await engine.dispose()
+
+
+async def test_lower_id_inserted_after_dispatch_still_reaches_every_consumer(tmp_path):
+    engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'late.sqlite'}")
+    try:
+        await init_schema(engine)
+        maker = make_sessionmaker(engine)
+        calls, projected = [], []
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200)))
+
+        async def project(row):
+            projected.append(row.object_id)
+            return True
+
+        dispatcher = OutboxDispatcher(
+            maker, Settings(webhook_allowlist=("sink.example",)), http_client=http, projection_hook=project
+        )
+        queue = dispatcher.sse.subscribe()
+        async with maker() as s:
+            later = event("later")
+            later.id = 20
+            s.add(later)
+            await s.commit()
+        await dispatcher.dispatch_pending()
+        async with maker() as s:
+            earlier = event("earlier")
+            earlier.id = 10
+            s.add(earlier)
+            await s.commit()
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["later", "earlier"]
+        assert projected == ["later", "earlier"]
+        assert [queue.get_nowait()["object_id"] for _ in range(2)] == ["later", "earlier"]
+        async with maker() as s:
+            assert len((await s.scalars(select(OutboxReceiptRow))).all()) == 8
+            for row in (await s.scalars(select(OutboxRow))).all():
+                assert not any((row.pending_webhook, row.pending_projection, row.pending_derivation, row.pending_sse))
+        await http.aclose()
+    finally:
+        await engine.dispose()
+
+
+async def test_replay_waits_for_dispatch_and_commits_atomically(tmp_path):
+    engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'concurrent.sqlite'}")
+    try:
+        await init_schema(engine)
+        maker = make_sessionmaker(engine)
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200)))
+
+        async def project(row):
+            if row.object_id == "second":
+                entered.set()
+                await release.wait()
+            return True
+
+        dispatcher = OutboxDispatcher(
+            maker, Settings(webhook_allowlist=("sink.example",)), http_client=http, projection_hook=project
+        )
+        async with maker() as s:
+            first = event("first")
+            s.add(first)
+            await s.commit()
+            first_id = first.id
+        await dispatcher.dispatch_pending()
+        async with maker() as s:
+            s.add(event("second"))
+            await s.commit()
+        dispatch_task = asyncio.create_task(dispatcher.dispatch_pending())
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        replay_task = asyncio.create_task(dispatcher.replay("webhook", from_id=first_id, through_id=first_id))
+        await asyncio.sleep(0)
+        assert not replay_task.done()
+        release.set()
+        await dispatch_task
+        assert await replay_task == 1
+        async with maker() as s:
+            assert (await s.get(OutboxRow, first_id)).pending_webhook
+            assert await s.get(OutboxReceiptRow, {"consumer": "webhook", "event_id": first_id}) is None
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["first", "second", "first"]
+        await http.aclose()
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.skipif(not os.environ.get("ONTOGENY_PG_DSN"), reason="PostgreSQL integration requires ONTOGENY_PG_DSN")
+async def test_postgres_upgrade_existing_receipts_then_replay():
+    dsn = os.environ["ONTOGENY_PG_DSN"]
+    schema = f"outbox_upgrade_{uuid.uuid4().hex}"
+    admin = create_async_engine(dsn)
+    async with admin.begin() as conn:
+        await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_async_engine(dsn, connect_args={"server_settings": {"search_path": schema}})
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE TABLE ontogeny_outbox (id BIGSERIAL PRIMARY KEY, object_type VARCHAR(200) NOT NULL, "
+                    "object_id VARCHAR(500) NOT NULL, op VARCHAR(32) NOT NULL, payload JSON NOT NULL, "
+                    "revision_id BIGINT, created_at TIMESTAMPTZ NOT NULL, published_at TIMESTAMPTZ)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE TABLE ontogeny_outbox_cursor (consumer VARCHAR(100) PRIMARY KEY, last_id BIGINT NOT NULL, "
+                    "receipts_initialized BOOLEAN NOT NULL DEFAULT FALSE, failures INTEGER NOT NULL, "
+                    "updated_at TIMESTAMPTZ NOT NULL)"
+                )
+            )
+            await conn.execute(
+                text(
+                    "CREATE TABLE ontogeny_outbox_receipt (consumer VARCHAR(100) NOT NULL, "
+                    "event_id BIGINT NOT NULL, PRIMARY KEY (consumer, event_id))"
+                )
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO ontogeny_outbox (id, object_type, object_id, op, payload, created_at) VALUES "
+                    "(10, 'product', 'old', 'event', "
+                    '\'{"kind":"webhook","url":"https://sink.example/hook"}\', CURRENT_TIMESTAMP), '
+                    "(20, 'product', 'pending', 'event', "
+                    '\'{"kind":"webhook","url":"https://sink.example/hook"}\', CURRENT_TIMESTAMP)'
+                )
+            )
+            await conn.execute(
+                text("INSERT INTO ontogeny_outbox_cursor VALUES ('webhook', 10, TRUE, 0, CURRENT_TIMESTAMP)")
+            )
+            await conn.execute(text("INSERT INTO ontogeny_outbox_receipt VALUES ('webhook', 10)"))
+        await init_schema(engine)
+        maker = make_sessionmaker(engine)
+        calls = []
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200)))
+        dispatcher = OutboxDispatcher(maker, Settings(webhook_allowlist=("sink.example",)), http_client=http)
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["pending"]
+        assert await dispatcher.replay("webhook", from_id=10, through_id=10) == 1
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["pending", "old"]
+        async with engine.connect() as conn:
+            await conn.execute(text("SET enable_seqscan = off"))
+            plan = (
+                await conn.execute(
+                    text("EXPLAIN SELECT id FROM ontogeny_outbox WHERE pending_webhook IS TRUE ORDER BY id LIMIT 100")
+                )
+            ).all()
+            assert any("ix_outbox_pending_webhook" in str(row) for row in plan)
+        # A receipt-only worker can replay an old event and deliver a new one
+        # while rolled back. Both directions are reconciled on restart.
+        async with maker() as session:
+            await session.execute(
+                delete(OutboxReceiptRow).where(OutboxReceiptRow.consumer == "webhook", OutboxReceiptRow.event_id == 10)
+            )
+            old_worker_event = event("old-worker")
+            old_worker_event.id = 30
+            session.add(old_worker_event)
+            await session.flush()
+            session.add(OutboxReceiptRow(consumer="webhook", event_id=30))
+            await session.commit()
+        await init_schema(engine)
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["pending", "old", "old"]
+        await http.aclose()
+    finally:
+        await engine.dispose()
+        async with admin.begin() as conn:
+            await conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        await admin.dispose()
+
+
+async def test_restart_reconciles_receipts_after_receipt_only_worker(tmp_path):
+    engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'rollback.sqlite'}")
+    try:
+        await init_schema(engine)
+        maker = make_sessionmaker(engine)
+        calls = []
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: calls.append(r) or httpx.Response(200)))
+        dispatcher = OutboxDispatcher(maker, Settings(webhook_allowlist=("sink.example",)), http_client=http)
+        async with maker() as s:
+            first = event("first")
+            s.add(first)
+            await s.commit()
+            first_id = first.id
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["first"]
+
+        # While an older release is running it can replay a past event (delete
+        # receipt) and deliver a new event (insert receipt), without updating
+        # either pending flag. Stop it before starting the new release.
+        async with maker() as s:
+            await s.execute(
+                delete(OutboxReceiptRow).where(
+                    OutboxReceiptRow.consumer == "webhook", OutboxReceiptRow.event_id == first_id
+                )
+            )
+            older_delivered = event("delivered-by-old-worker")
+            s.add(older_delivered)
+            await s.flush()
+            s.add(OutboxReceiptRow(consumer="webhook", event_id=older_delivered.id))
+            await s.commit()
+        await init_schema(engine)
+        await dispatcher.dispatch_pending()
+        assert [json.loads(r.content)["object_id"] for r in calls] == ["first", "first"]
+        async with maker() as s:
+            assert (await s.get(OutboxConsumerRow, "webhook")).pending_initialized
+            assert not (await s.get(OutboxRow, first_id)).pending_webhook
+            assert not (await s.get(OutboxRow, older_delivered.id)).pending_webhook
+        await http.aclose()
+    finally:
+        await engine.dispose()

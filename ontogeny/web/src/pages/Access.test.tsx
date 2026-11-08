@@ -250,25 +250,25 @@ describe('Access control', () => {
     })
   })
 
-  it('requires six characters when creating or resetting a password', async () => {
+  it('requires eight characters when creating or resetting a password', async () => {
     mock()
     wrap(<Access />)
     await waitFor(() => expect(screen.getByTestId('create-user')).toBeInTheDocument())
     fireEvent.change(screen.getByTestId('new-username'), { target: { value: 'wang' } })
     const input = screen.getByTestId('new-password')
-    expect(input).toHaveAttribute('minlength', '6')
-    fireEvent.change(input, { target: { value: '12345' } })
+    expect(input).toHaveAttribute('minlength', '8')
+    fireEvent.change(input, { target: { value: '1234567' } })
     expect(screen.getByTestId('create-user')).toBeDisabled()
-    fireEvent.change(input, { target: { value: '000012' } })
+    fireEvent.change(input, { target: { value: '00001234' } })
     expect(screen.getByTestId('create-user')).toBeEnabled()
 
     fireEvent.click(screen.getByTestId('edit-li'))
     const reset = screen.getByTestId('edit-password')
-    expect(reset).toHaveAttribute('minlength', '6')
+    expect(reset).toHaveAttribute('minlength', '8')
     expect(screen.getByTestId('save-user')).toBeEnabled()
-    fireEvent.change(reset, { target: { value: '12345' } })
+    fireEvent.change(reset, { target: { value: '1234567' } })
     expect(screen.getByTestId('save-user')).toBeDisabled()
-    fireEvent.change(reset, { target: { value: '000012' } })
+    fireEvent.change(reset, { target: { value: '00001234' } })
     expect(screen.getByTestId('save-user')).toBeEnabled()
   })
 

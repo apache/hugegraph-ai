@@ -44,15 +44,59 @@ SHARED = {
     "scripts/version.py",
     "scripts/check_hugegraph.sh",
 }
+DEPLOYMENT_CHECKS = (
+    "docker_llm",
+    "docker_nk",
+    "compose",
+    "image_script",
+)
+
+
+def deployment_checks(
+    paths: list[str],
+    *,
+    full: bool = False,
+    test_set: str = "mainline",
+) -> dict[str, bool]:
+    """Select cheap deployment validation that can share the preflight runner."""
+
+    checks = dict.fromkeys(DEPLOYMENT_CHECKS, False)
+    if test_set in ("codeql", "dependencies"):
+        return checks
+    if full or test_set == "deployment":
+        return dict.fromkeys(checks, True)
+
+    for path in paths:
+        if path in (".github/workflows/ci.yml", "scripts/ci.py"):
+            for check in checks:
+                checks[check] = True
+        elif path == ".dockerignore":
+            checks["docker_llm"] = checks["docker_nk"] = True
+        elif path == "docker/Dockerfile.llm":
+            checks["docker_llm"] = True
+        elif path == "docker/Dockerfile.nk":
+            checks["docker_nk"] = True
+        elif path in (
+            "docker/docker-compose-llm.yml",
+            "docker/docker-compose-network.yml",
+            "docker/env.template",
+        ):
+            checks["compose"] = True
+        elif path == "scripts/build_llm_image.sh":
+            checks["image_script"] = checks["docker_llm"] = True
+    return checks
 
 
 def select(paths: list[str], *, full: bool = False, test_set: str = "mainline") -> dict[str, bool]:
-    flags = dict.fromkeys((*MODULES, "quality", "dependencies", "codeql", "license"), False)
+    flags = dict.fromkeys((*MODULES, "quality", "dependencies", "codeql", "license", "deployment"), False)
     if full:
         return dict.fromkeys(flags, True)
-    if test_set in ("codeql", "dependencies"):
+    if test_set in ("codeql", "dependencies", "deployment"):
         flags[test_set] = True
         return flags
+
+    checks = deployment_checks(paths)
+    flags["deployment"] = any(checks.values())
     for path in paths:
         is_pyproject = Path(path).name == "pyproject.toml"
         is_documentation = Path(path).suffix.lower() in (".md", ".rst")
@@ -70,7 +114,11 @@ def select(paths: list[str], *, full: bool = False, test_set: str = "mainline") 
         for key, module in MODULES.items():
             if path.startswith(module + "/") or path == f".github/workflows/{module}.yml":
                 flags[key] = True
-        if path == ".dockerignore" or path.startswith("docker/") or path == "scripts/build_llm_image.sh":
+        # Python helpers under docker/ still exercise LLM behavior. Unknown
+        # non-documentation deployment files retain the conservative LLM fallback.
+        if path.startswith("docker/") and (
+            path.endswith((".py", ".pyi")) or (not is_documentation and not any(deployment_checks([path]).values()))
+        ):
             flags["llm"] = True
         if (
             is_pyproject
@@ -139,9 +187,11 @@ def main() -> None:
     )
     paths = changed_paths(event, event_name)
     selected = select(paths, full=full, test_set=test_set)
+    checks = deployment_checks(paths, full=full, test_set=test_set)
     provider = codeql_provider(selected, os.environ["GITHUB_REPOSITORY"])
     config = release_config(ROOT)
     outputs = {key: str(value).lower() for key, value in selected.items()}
+    outputs.update({key: str(value).lower() for key, value in checks.items()})
     outputs.update(config)
     outputs["full"] = str(full).lower()
     for key in MODULES:
@@ -153,7 +203,14 @@ def main() -> None:
         for key, value in outputs.items():
             stream.write(f"{key}={value}\n")
     summary = json.dumps(
-        {"full": full, "codeql_provider": provider, "suites": selected, "changed_files": paths}, indent=2
+        {
+            "full": full,
+            "codeql_provider": provider,
+            "suites": selected,
+            "deployment_checks": checks,
+            "changed_files": paths,
+        },
+        indent=2,
     )
     Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(f"### CI selection\n\n```json\n{summary}\n```\n")
 

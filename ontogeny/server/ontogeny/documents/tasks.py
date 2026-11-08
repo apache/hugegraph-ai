@@ -548,7 +548,6 @@ class TaskService:
             chunks = list((result.get("output") or {}).get("chunks") or [])
             vertices: list[Any] = []
             edges: list[Any] = []
-            seen_vertices: set[str] = set()
             seen_edges: set[tuple[str, str, str]] = set()
             for chunk in chunks:
                 graph = chunk.get("graph") if isinstance(chunk, dict) else None
@@ -560,17 +559,10 @@ class TaskService:
                     chunk_edges = chunk.get("edges") or []
                 else:
                     continue
-                for vertex in chunk_vertices:
-                    if not isinstance(vertex, dict):
-                        vertices.append(vertex)
-                        continue
-                    # the same reference may be named by every table row; one
-                    # graph vertex is enough, and duplicate ids crash G6
-                    key = f"{vertex.get('label')}/{vertex.get('id')}"
-                    if key in seen_vertices:
-                        continue
-                    seen_vertices.add(key)
-                    vertices.append(vertex)
+                # Every occurrence carries evidence: later chunks can add
+                # properties or disagree. The binder reconciles identities;
+                # the graph preview separately deduplicates display node IDs.
+                vertices.extend(chunk_vertices)
                 for edge in chunk_edges:
                     if isinstance(edge, dict):
                         key = (

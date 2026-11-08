@@ -149,27 +149,27 @@ def _compile_object(
         fname = str(mapping.get(name, name))
         # field names must be unique: a rename colliding with a real property
         # would make the extractor unable to tell them apart
-        if fname in reverse and reverse[fname] != name:
+        if fname in fields and fields[fname] != name:
             raise ValueError(f"{obj.metadata.name}: extraction field {fname!r} is used by two properties")
         fields[fname] = name
         reverse[name] = fname
 
     if system_pk:
         first_key = cfg.key[0]
-        if first_key not in fields:
+        if first_key not in reverse:
             raise ValueError(f"{obj.metadata.name}: extract.key {first_key!r} is not an extractable property")
-        primary_keys = [fields[first_key]]
+        primary_keys = [reverse[first_key]]
         id_strategy = "CUSTOMIZE_STRING"
     else:
-        primary_keys = [fields[pk]]
+        primary_keys = [reverse[pk]]
         id_strategy = "PRIMARY_KEY"
     label = {
         "id": object_id,
         "name": obj.metadata.name,
         "id_strategy": id_strategy,
         "primary_keys": primary_keys,
-        "properties": [fields[name] for name in included],
-        "nullable_keys": [fields[name] for name in included if name != pk and not props[name].required],
+        "properties": [reverse[name] for name in included],
+        "nullable_keys": [reverse[name] for name in included if name != pk and not props[name].required],
         "description": " | ".join(x for x in (obj.metadata.description, obj.metadata.display) if x)
         or obj.metadata.name,
     }
@@ -193,6 +193,8 @@ def _compile_reference(
     reverse: dict[str, str] = {}
     for name in wanted:
         fname = str(mapping.get(name, name))
+        if fname in fields and fields[fname] != name:
+            raise ValueError(f"{obj.metadata.name}: extraction field {fname!r} is used by two properties")
         fields[fname] = name
         reverse[name] = fname
     # a reference is identified by its natural key (usually name), not by a
@@ -202,9 +204,9 @@ def _compile_reference(
         "id": object_id,
         "name": obj.metadata.name,
         "id_strategy": "CUSTOMIZE_STRING",
-        "primary_keys": [fields.get(natural, fields[pk])],
-        "properties": [fields[name] for name in wanted],
-        "nullable_keys": [fields[name] for name in wanted],
+        "primary_keys": [reverse.get(natural, reverse[pk])],
+        "properties": [reverse[name] for name in wanted],
+        "nullable_keys": [reverse[name] for name in wanted],
         "description": (
             f"reference to an existing {obj.metadata.name}; do NOT invent one -- "
             "emit it only when the text names an existing record"

@@ -430,10 +430,11 @@ class Binder:
         for edge in graph.get("edges") or []:
             if not isinstance(edge, dict):
                 continue
-            link_name = edge.get("label")
-            lnk = self.compiled.links.get(link_name) if isinstance(link_name, str) else None
+            label = edge.get("label")
+            link_name = self.schema.link_labels.get(label) if isinstance(label, str) else None
+            lnk = self.compiled.links.get(link_name) if link_name is not None else None
             if lnk is None or not isinstance(lnk.spec.join, ExtractedJoin):
-                self.out.gaps.append(f"unknown link {link_name!r}")
+                self.out.gaps.append(f"unknown link {label!r}")
                 continue
             out_label = edge.get("outVLabel")
             in_label = edge.get("inVLabel")

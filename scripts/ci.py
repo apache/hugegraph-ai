@@ -27,12 +27,21 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "client": "hugegraph-python-client",
     "sdk": "hugegraph-llm-sdk",
+    "eval": "graphrag/eval",
     "llm": "hugegraph-llm",
     "mcp": "hugegraph-mcp",
+}
+WORKFLOWS = {
+    "client": "hugegraph-python-client.yml",
+    "sdk": "hugegraph-llm-sdk.yml",
+    "eval": "hugegraph-llm-eval.yml",
+    "llm": "hugegraph-llm.yml",
+    "mcp": "hugegraph-mcp.yml",
 }
 FULL_PYTHONS = {
     "client": ["3.12", "3.13", "3.14"],
     "sdk": ["3.12", "3.13", "3.14"],
+    "eval": ["3.12", "3.13", "3.14"],
     "llm": ["3.12", "3.13", "3.14"],
     "mcp": ["3.12", "3.13", "3.14"],
 }
@@ -68,7 +77,7 @@ def select(paths: list[str], *, full: bool = False, test_set: str = "mainline") 
             for key in (*MODULES, "quality"):
                 flags[key] = True
         for key, module in MODULES.items():
-            if path.startswith(module + "/") or path == f".github/workflows/{module}.yml":
+            if path.startswith(module + "/") or path == f".github/workflows/{WORKFLOWS[key]}":
                 flags[key] = True
         if path == ".dockerignore" or path.startswith("docker/") or path == "scripts/build_llm_image.sh":
             flags["llm"] = True

@@ -11,9 +11,10 @@ in the job summary. A failed diff or preflight fails CI rather than skipping tes
 | Module README/docs, including examples and data files | Owning module, preserving documentation/example contracts |
 | Python client | Client plus downstream LLM and MCP |
 | Standalone LLM SDK | SDK plus downstream LLM compatibility tests |
+| Standalone LLM eval SDK | Eval |
 | LLM | LLM |
 | MCP | MCP |
-| Root dependency/release configuration or shared CI setup | Client, SDK, LLM and MCP |
+| Root dependency/release configuration or shared CI setup | Client, SDK, Eval, LLM and MCP |
 | Module CI workflow | That module and its downstream consumers |
 | Docker configuration or LLM image build script | LLM |
 | Archive exclusions (`.gitattributes`) | Client archive installation guard and downstream LLM/MCP |

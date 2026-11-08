@@ -12,6 +12,7 @@ Contributor workflows: [CI selection and full validation](docs/quality/ci.md), [
 - **[LLM/GraphRAG](./hugegraph-llm/README.md#graphrag)**: Build intelligent question-answering systems with graph-enhanced retrieval
 - **[Knowledge Graph Construction](./hugegraph-llm/README.md#knowledge-graph-construction)**: Automated graph building from text using LLMs
 - **[HugeGraph-LLM SDK](./hugegraph-llm-sdk/README.md)**: Design schemas and extract reviewed property graphs in your own Python project, without a UI or database service
+- **[HugeGraph-LLM Eval](./graphrag/eval/README.md)**: Score retrieval, answers and property graphs in your own pipeline, without the application or a database
 - **[Graph ML](./hugegraph-ml/README.md)**: Integration with 20+ graph learning algorithms (GCN, GAT, GraphSAGE, etc.)
 - **[HG-Python Client](./hugegraph-python-client/README.md)**: Easy-to-use Python interface for HugeGraph operations
 - **[Vermeer Python Client](./vermeer-python-client/README.md)**: SDK/Interface for Graph Computing with [Vermeer](https://github.com/apache/hugegraph-computer/tree/master/vermeer#readme)
@@ -102,6 +103,14 @@ optional provider adapter; synchronous and asynchronous APIs share the same grap
 are sibling packages: `hugegraph-llm` depends on `hugegraph-llm-sdk`, while external projects can install the SDK
 alone. See its [integration guide](./hugegraph-llm-sdk/README.md) for source installation and offline examples,
 and [architecture](./docs/sdk/architecture.md) for module responsibilities and extension boundaries.
+
+### [hugegraph-llm-eval](./graphrag/eval)
+
+HugeGraph-LLM Eval is an independently installable evaluation SDK for retrieval, answer and property-graph
+quality. It depends on Pydantic only, injects a judge model instead of reading application configuration, and
+reports structured findings that a pipeline can consume as repair input. Persistence, reporting and the CLI stay
+in `hugegraph-llm`. See its [guide](./graphrag/eval/README.md) for metrics, extras and examples, and
+[architecture](./docs/sdk/eval-architecture.md) for its position in the project and extension boundaries.
 
 ### [hugegraph-llm](./hugegraph-llm) [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/apache/hugegraph-ai)
 

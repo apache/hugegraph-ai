@@ -6,6 +6,7 @@ Guidance for AI agents working in this repository. Keep README content in README
 
 - This is a Python `uv` workspace. Prefer root-level workspace commands unless a module-specific file says otherwise.
 - `hugegraph-llm-sdk/` owns the standalone graph schema/extraction runtime. Keep its base installation independent of application/provider dependencies; verify LLM callers after SDK changes.
+- `graphrag/eval/` owns the standalone evaluation runtime: scoring rules, judge ports and execution semantics. The application keeps pipelines, persistence and reports; do not duplicate scoring logic there.
 - `hugegraph-llm/` is the primary and most frequently changed module. When editing or reviewing it, read `hugegraph-llm/AGENTS.md` first.
 - `hugegraph-python-client/` is a supporting dependency for HugeGraph access. Change it only when the client contract itself must change, and verify `hugegraph-llm` callers when you do.
 - Treat `hugegraph-ml/` and `vermeer-python-client/` as lower-frequency modules. Do not expand changes into them without a direct reason.
@@ -30,7 +31,7 @@ Guidance for AI agents working in this repository. Keep README content in README
 uv sync --all-extras
 uv run --extra dev ruff format --check .
 uv run --extra dev ruff check .
-uv run --extra dev ty check hugegraph-llm-sdk/src/hugegraph_llm_sdk hugegraph-llm/src/hugegraph_llm hugegraph-python-client/src/pyhugegraph
+uv run --extra dev ty check hugegraph-llm-sdk/src/hugegraph_llm_sdk graphrag/eval/src/hugegraph_llm_eval hugegraph-llm/src/hugegraph_llm hugegraph-python-client/src/pyhugegraph
 ```
 
 - The default toolchain is uv + Ruff + ty; versions are maintained in the root `pyproject.toml`.

@@ -23,6 +23,8 @@ from pyhugegraph.api.property_cas import (
     PropertyCASStatus,
 )
 
+pytestmark = pytest.mark.contract
+
 
 def _contract() -> dict:
     path = Path(__file__).parents[1] / "contracts" / "conditional_property_cas.json"

@@ -94,7 +94,7 @@ def _valid_uuid(value) -> bool:
 
 def _primary_keys(definition: dict) -> list:
     strategy = definition.get("id_strategy")
-    return definition.get("primary_keys", []) if not strategy or str(strategy).upper() == "PRIMARY_KEY" else []
+    return definition.get("primary_keys", []) if not strategy or str(strategy).upper() in ("DEFAULT", "PRIMARY_KEY") else []
 
 
 def _float_identity(value) -> tuple[bool, int]:

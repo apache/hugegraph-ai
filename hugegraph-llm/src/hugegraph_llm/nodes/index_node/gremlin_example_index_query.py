@@ -49,6 +49,11 @@ class GremlinExampleIndexQueryNode(BaseNode):
         return super().node_init()
 
     def operator_schedule(self, data_json: Dict[str, Any]):
+        query = getattr(self.wk_input, "query", "") or ""
+        if not query:
+            data_json["match_result"] = []
+            return data_json
+        data_json["query"] = query
         try:
             return self.operator.run(data_json)
         except ValueError as err:

@@ -99,27 +99,24 @@ development/testing. For reproducible deployments, set `HUGEGRAPH_SERVER_IMAGE`
 in `docker/.env` to a verified release tag or immutable digest. The override
 does not change the CI image policy.
 
+From the repository root, prepare the two separate configuration files:
+
 ```bash
-# 1. Set up environment
 cp docker/env.template docker/.env
-# Edit docker/.env and set PROJECT_PATH to your actual project path
-# See "config.md" for all available configuration options
-# If there is not a configuration file (named .env) under hugegraph-llm, run the following command
-cd hugegraph-llm && touch .env && cd ..
-
-# 2. Deploy services
-cd docker
-docker-compose -f docker-compose-network.yml up -d
-
-# 3. Verify deployment
-docker-compose -f docker-compose-network.yml ps
-
-# 4. Access services
-# HugeGraph Server: http://localhost:8080
-# RAG Service: http://localhost:8001
+touch hugegraph-llm/.env
 ```
 
-The Compose configuration publishes the RAG service only on the host loopback interface by default.
+Edit `docker/.env` and set `PROJECT_PATH` to the absolute path of this checkout. It is used for Compose variable substitution, not passed to the RAG application. Edit `hugegraph-llm/.env`, the file mounted into the RAG container, to set `GRAPH_URL=http://server:8080`, model provider settings and credentials. If Server authentication is enabled, set `GRAPH_USER` and `GRAPH_PWD` to the configured credentials. See [configuration](config.md) for the available settings. The `HUGEGRAPH_HOST` and `HUGEGRAPH_PORT` values in Compose do not configure the application's `GRAPH_URL`.
+
+**Before starting**, restrict access: the supplied Compose file publishes Server on `8080:8080` and RAG on `8001:8001` on all host interfaces. The RAG HTTP API has authentication disabled by default, and Server authentication must be configured separately. For local use, change those port mappings in `docker/docker-compose-network.yml` to `127.0.0.1:8080:8080` and `127.0.0.1:8001:8001`. For remote access, configure the Server's authentication and network controls, and enable RAG Bearer authentication with `ENABLE_LOGIN=true` and a strong `USER_TOKEN` in `hugegraph-llm/.env`, or use an authenticated reverse proxy and trusted network boundary.
+
+```bash
+cd docker
+docker compose -f docker-compose-network.yml up -d
+docker compose -f docker-compose-network.yml ps
+```
+
+The services are available at `http://127.0.0.1:8080` and `http://127.0.0.1:8001` when bound to loopback.
 
 ### Option 2: Individual Docker Containers
 

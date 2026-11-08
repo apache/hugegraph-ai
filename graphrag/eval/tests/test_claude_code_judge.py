@@ -19,6 +19,7 @@
 
 import json
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -231,6 +232,71 @@ def test_subscription_auth_status_is_cached() -> None:
     assert len(status.calls) == 1
 
 
+def test_subscription_auth_and_model_share_deadline() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    elapsed = [0.0]
+    status = FakeAuthStatusRunner()
+
+    def slow_status(argv, *, env, cwd, timeout):
+        result = status(argv, env=env, cwd=cwd, timeout=timeout)
+        elapsed[0] += 0.4
+        return result
+
+    runner = FakeRunner(completed(success()))
+    judge = make_judge(
+        runner,
+        auth_mode="subscription",
+        auth_status_runner=slow_status,
+        clock=lambda: now,
+        monotonic=lambda: elapsed[0],
+    )
+    judge.judge(cli_request(), JudgeOptions(max_attempts=1, deadline=now + timedelta(seconds=1)))
+
+    assert status.calls[0].timeout == pytest.approx(1)
+    assert runner.calls[0].timeout == pytest.approx(0.6)
+
+
+def test_subscription_auth_lock_wait_obeys_deadline() -> None:
+    now = datetime.now(UTC)
+    runner, status = FakeRunner(), FakeAuthStatusRunner()
+    judge = make_judge(runner, auth_mode="subscription", auth_status_runner=status)
+    judge._auth_lock.acquire()
+    try:
+        with pytest.raises(JudgeCallError) as caught:
+            judge.judge(cli_request(), JudgeOptions(max_attempts=1, deadline=now + timedelta(seconds=0.1)))
+    finally:
+        judge._auth_lock.release()
+
+    assert caught.value.failure.category is FailureCategory.TIMEOUT
+    assert not status.calls
+    assert not runner.calls
+
+
+def test_expired_deadline_after_auth_does_not_start_model() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    elapsed = [0.0]
+    status = FakeAuthStatusRunner()
+
+    def expired_status(argv, *, env, cwd, timeout):
+        result = status(argv, env=env, cwd=cwd, timeout=timeout)
+        elapsed[0] = 1.0
+        return result
+
+    runner = FakeRunner()
+    judge = make_judge(
+        runner,
+        auth_mode="subscription",
+        auth_status_runner=expired_status,
+        clock=lambda: now,
+        monotonic=lambda: elapsed[0],
+    )
+    with pytest.raises(JudgeCallError) as caught:
+        judge.judge(cli_request(), JudgeOptions(max_attempts=1, deadline=now + timedelta(seconds=1)))
+
+    assert caught.value.failure.category is FailureCategory.TIMEOUT
+    assert not runner.calls
+
+
 def test_json_in_result_text_is_accepted_when_structured_output_is_absent() -> None:
     payload = success(structured_output=None, result='{"verdict":"no","note":"x"}')
 
@@ -294,7 +360,7 @@ def test_process_timeout_is_retryable_and_the_call_timeout_caps_each_run() -> No
 
     result = make_judge(runner, call_timeout_seconds=5).judge(cli_request(), JudgeOptions(max_attempts=2))
 
-    assert [call.timeout for call in runner.calls] == [5, 5]
+    assert all(0 < call.timeout <= 5 for call in runner.calls)
     assert result.provenance.attempts[0].failure is not None
     assert result.provenance.attempts[0].failure.category is FailureCategory.TIMEOUT
 

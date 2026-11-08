@@ -82,7 +82,11 @@ async def aevaluate(
     options: EvaluationOptions | None = None,
     request_key: str = "evaluation",
 ) -> EvaluationResult:
-    """Asynchronous wrapper; cancelling the task cancels the underlying run."""
+    """Asynchronous wrapper with cooperative cancellation between units of work.
+
+    Cancelling the task signals the underlying run; an in-flight synchronous
+    judge call may continue until it finishes or reaches its provider timeout.
+    """
     resolved_options = options if options is not None else EvaluationOptions(request_key=request_key)
     try:
         return await asyncio.to_thread(evaluate, evaluators, evaluation_input, options=resolved_options)
@@ -98,7 +102,7 @@ async def aevaluate_many(
     options: EvaluationOptions | None = None,
     request_key: str = "evaluation",
 ) -> tuple[EvaluationResult, ...]:
-    """Asynchronous wrapper over ``evaluate_many``."""
+    """Asynchronous wrapper with the same cooperative cancellation as ``aevaluate``."""
     resolved_options = options if options is not None else EvaluationOptions(request_key=request_key)
     try:
         return await asyncio.to_thread(evaluate_many, evaluators, inputs, options=resolved_options)

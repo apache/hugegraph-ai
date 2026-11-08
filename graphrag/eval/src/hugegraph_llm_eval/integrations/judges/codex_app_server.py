@@ -25,6 +25,7 @@ import threading
 import time
 import weakref
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -282,7 +283,14 @@ class CodexAppServerJudge(AttemptLoopJudge):
             if self._effort is not None:
                 turn_params["effort"] = self._effort
             started = connection.request("turn/start", turn_params, self._left(deadline))
-            turn = self._await_turn(connection, events, thread_id, _identifier(started, "turn"), deadline)
+            turn_id = _identifier(started, "turn")
+            try:
+                turn = self._await_turn(connection, events, thread_id, turn_id, deadline)
+            except BaseException as exc:
+                if not isinstance(exc, Exception):
+                    with suppress(Exception):
+                        connection.fire("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
+                raise
             return self._outcome(request, turn, thread_id, thread.get("model"))
         finally:
             connection.unwatch(thread_id)

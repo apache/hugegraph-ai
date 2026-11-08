@@ -155,6 +155,18 @@ print(result.status, [record.status for record in result.records])
 `status` is `completed`, `partial`, `failed` or `cancelled`; record-level failures
 stay in the result instead of raising.
 
+Cancellation is cooperative: it prevents work that has not started, including
+judge calls waiting for a concurrency slot, but does not interrupt a synchronous
+judge call already in progress. Cancelling `aevaluate` or `aevaluate_many`
+signals the underlying run and returns cancellation to the caller; an in-flight
+provider call can continue and incur usage until it finishes or times out. Set a
+deadline or provider timeout to bound that wait.
+
+For the Codex app-server judge, an interruption after the turn ID is known
+requests that the turn stop. If interruption or timeout occurs while the
+`turn/start` response is still pending, the turn ID is unavailable and the
+provider may continue processing; interruption is best-effort.
+
 Two knobs bound the work, and both have a hard upper bound of 8:
 
 | Option | Bounds |

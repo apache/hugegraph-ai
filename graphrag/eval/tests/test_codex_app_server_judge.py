@@ -147,6 +147,32 @@ def test_hung_turn_is_interrupted_at_the_call_timeout(tmp_path: Path) -> None:
     assert "turn/interrupt" in [entry["method"] for entry in requests(tmp_path)]
 
 
+def test_keyboard_interrupt_stops_started_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with make_judge(tmp_path) as judge:
+
+        def interrupted(*args: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(judge, "_await_turn", interrupted)
+        with pytest.raises(KeyboardInterrupt):
+            judge.judge(cli_request("hang"), ONCE)
+
+    methods = [entry["method"] for entry in requests(tmp_path)]
+    assert "turn/interrupt" in methods
+    assert "thread/unsubscribe" in methods
+
+
+def test_turn_start_timeout_before_ack_cannot_send_interrupt(tmp_path: Path) -> None:
+    with make_judge(tmp_path, call_timeout_seconds=0.3) as judge:
+        error = failed_judge(judge, "delayed-ack")
+
+    methods = [entry["method"] for entry in requests(tmp_path)]
+    assert error.failure.category is FailureCategory.TIMEOUT
+    assert "turn/start" in methods
+    assert "thread/unsubscribe" in methods
+    assert "turn/interrupt" not in methods
+
+
 def test_concurrent_calls_share_one_server_process(tmp_path: Path) -> None:
     with make_judge(tmp_path) as judge, ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(lambda _: judge.judge(cli_request(), ONCE), range(8)))

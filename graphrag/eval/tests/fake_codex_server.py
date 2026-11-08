@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 LOG = Path(os.environ["FAKE_CODEX_LOG"])
@@ -90,9 +91,12 @@ for line in sys.stdin:
         send({"id": request_id, "result": {"model": "fake-model-resolved", "thread": {"id": f"thread-{turns}"}}})
     elif method == "turn/start":
         thread_id = params["threadId"]
-        send({"id": request_id, "result": {"turn": {"id": f"turn-{thread_id}", "status": "inProgress", "items": []}}})
         marker = re.search(r"\[scenario:([a-z-]+)\]", params["input"][0]["text"])
-        run_turn(thread_id, f"turn-{thread_id}", marker.group(1) if marker else "ok")
+        scenario = marker.group(1) if marker else "ok"
+        if scenario == "delayed-ack":
+            time.sleep(0.8)
+        send({"id": request_id, "result": {"turn": {"id": f"turn-{thread_id}", "status": "inProgress", "items": []}}})
+        run_turn(thread_id, f"turn-{thread_id}", "hang" if scenario == "delayed-ack" else scenario)
     elif method == "turn/interrupt":
         send({"id": request_id, "result": {}})
         finish(params["threadId"], params["turnId"], "interrupted")

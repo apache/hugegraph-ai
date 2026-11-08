@@ -222,17 +222,25 @@ class ClaudeCodeJudge(AttemptLoopJudge):
             if not key.upper().startswith(_PROVIDER_ENV_PREFIXES) and key.upper() not in _PROVIDER_ENV_NAMES
         }
 
-    def _verify_subscription(self) -> None:
+    def _remaining(self, deadline: float) -> float:
+        remaining = deadline - self._monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired([self._executable], 0)
+        return remaining
+
+    def _verify_subscription(self, deadline: float) -> None:
         if self._auth_mode != "subscription" or self._auth_verified:
             return
-        with self._auth_lock:
+        if not self._auth_lock.acquire(timeout=self._remaining(deadline)):
+            raise subprocess.TimeoutExpired([self._executable, "auth", "status"], 0)
+        try:
             if self._auth_verified:
                 return
             completed = self._auth_status_runner(
                 [self._executable, "auth", "status"],
                 env=self._environment(),
                 cwd=self._workdir,
-                timeout=min(self._call_timeout, _AUTH_STATUS_TIMEOUT_SECONDS),
+                timeout=min(self._remaining(deadline), _AUTH_STATUS_TIMEOUT_SECONDS),
             )
             payload = _parse_payload(completed.stdout)
             if completed.returncode == 1:
@@ -252,19 +260,22 @@ class ClaudeCodeJudge(AttemptLoopJudge):
                 detail = failure(FailureCategory.PROVIDER_UNAVAILABLE, "provider_account_not_subscription", False)
                 raise AttemptFailureError(detail)
             self._auth_verified = True
+        finally:
+            self._auth_lock.release()
 
     def _attempt(self, request: JudgeRequest[OutputT], timeout: float | None) -> AttemptOutcome:
-        self._verify_subscription()
+        limit = self._call_timeout if timeout is None else min(timeout, self._call_timeout)
+        deadline = self._monotonic() + limit
+        self._verify_subscription(deadline)
         system, prompt = split_messages(request)
         if system is not None and len(system.encode("utf-8")) > _MAX_SYSTEM_PROMPT_BYTES:
             system, prompt = None, f"{system}\n\n{prompt}"
-        limit = self._call_timeout if timeout is None else min(timeout, self._call_timeout)
         completed = self._runner(
             self._argv(request, system),
             prompt=prompt,
             env=self._environment(),
             cwd=self._workdir,
-            timeout=limit,
+            timeout=self._remaining(deadline),
         )
         return self._outcome(request, completed)
 

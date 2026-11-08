@@ -112,6 +112,7 @@ Install workspace dependencies and run the checks for the modules you changed:
 
 ```bash
 uv sync --all-extras
+uv run --extra dev pre-commit install
 uv run --extra dev ruff format --check .
 uv run --extra dev ruff check .
 uv run --extra dev ty check hugegraph-llm/src/hugegraph_llm hugegraph-python-client/src/pyhugegraph

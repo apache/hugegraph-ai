@@ -65,6 +65,8 @@ Other groups: **audit** (/audit/revisions) · **evolve** (/evolve/signals · agg
 
 The normal `serve`/ASGI factory runs an outbox dispatch tick about every second and drains derivations. This does not schedule source synchronization: `sync.schedule` is declarative, and repeated source pulls require an external scheduler calling the CLI or admin sync endpoint. Manual `/api/v1/admin/outbox/dispatch` remains available and shares the background loop’s process lock.
 
+**Outbox upgrade:** Stop all old dispatcher processes before upgrading. Start the new version only after the old workers have stopped; startup adds the pending columns and indexes, and the first dispatch reconciles pending state with existing receipts transactionally, including after a rollback. Do not run old and new dispatchers against the same database at the same time. Keep one server process per database; dispatch and replay coordination is in-process.
+
 ## 12.5 Frontend routes
 
 | Route | Page |

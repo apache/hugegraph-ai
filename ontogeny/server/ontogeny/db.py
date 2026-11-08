@@ -60,6 +60,13 @@ ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
     },
     "ontogeny_outbox_cursor": {
         "receipts_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "pending_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
+    },
+    "ontogeny_outbox": {
+        "pending_webhook": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "pending_projection": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "pending_derivation": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "pending_sse": "BOOLEAN NOT NULL DEFAULT TRUE",
     },
     "ontogeny_agent_session": {
         "expires_at": "TEXT",
@@ -121,6 +128,28 @@ async def init_schema(engine: AsyncEngine) -> None:
         await conn.run_sync(Base.metadata.create_all)
         await _add_missing_columns(conn)
         await _migrate_idempotency_index(conn)
+        await _ensure_outbox_pending_indexes(conn)
+        await _reset_outbox_pending_initialization(conn)
+
+
+async def _ensure_outbox_pending_indexes(conn) -> None:
+    """Keep pending scans small without assuming event IDs commit in order."""
+    from sqlalchemy import text
+
+    for consumer in ("webhook", "projection", "derivation", "sse"):
+        await conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS ix_outbox_pending_{consumer} "
+                f"ON ontogeny_outbox (id) WHERE pending_{consumer} IS TRUE"
+            )
+        )
+
+
+async def _reset_outbox_pending_initialization(conn) -> None:
+    """Reconcile after restart, including a rollback to a receipt-only worker."""
+    from sqlalchemy import text
+
+    await conn.execute(text("UPDATE ontogeny_outbox_cursor SET pending_initialized = FALSE"))
 
 
 async def _migrate_idempotency_index(conn) -> None:

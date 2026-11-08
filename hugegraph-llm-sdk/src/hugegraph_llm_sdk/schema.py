@@ -191,7 +191,7 @@ def validate_schema(schema: object) -> list[Issue]:
                 strategy = entry.get("id_strategy")
                 if strategy == "PRIMARY_KEY" and not references["primary_keys"]:
                     issue(f"{path}.primary_keys", "PRIMARY_KEY requires at least one primary key")
-                if strategy in (None, "PRIMARY_KEY"):
+                if strategy in (None, "DEFAULT", "PRIMARY_KEY"):
                     for name in references["primary_keys"]:
                         if name in references["nullable_keys"]:
                             issue(f"{path}.nullable_keys", f"Primary key {name!r} cannot be nullable")

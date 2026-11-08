@@ -109,6 +109,30 @@ def test_extract_graph_prompt_cn_example_matches_parser_contract():
     _assert_prompt_example_contract(PromptConfig.extract_graph_prompt_CN, "## 示例")
 
 
+@pytest.mark.parametrize("language", ["en", "cn"])
+def test_snapshot_default_prompts_use_conditional_default_id_strategy(language, monkeypatch):
+    from hugegraph_llm.extraction_runtime import property_graph as app_runtime
+
+    config = PromptConfig(SimpleNamespace(language=language))
+    config._set_language_defaults()
+    monkeypatch.setattr(app_runtime, "prompt", config)
+
+    prompts = app_runtime.snapshot_graph_prompts()
+    if language == "en":
+        assert "DEFAULT or an undeclared ID strategy when primary_keys is non-empty" in prompts.extract
+        assert "without primary_keys uses AUTOMATIC" in prompts.extract
+        assert "temporary IDs for edge references" in prompts.extract
+    else:
+        assert "primary_keys 非空的 DEFAULT 与未声明 ID 策略" in prompts.extract
+        assert "primary_keys 为空时使用 AUTOMATIC" in prompts.extract
+        assert "边引用应使用一致的临时 ID" in prompts.extract
+
+    for instruction in (prompts.review, prompts.repair):
+        assert "DEFAULT or an undeclared ID strategy when primary_keys is non-empty" in instruction
+        assert "without primary_keys uses AUTOMATIC" in instruction
+        assert "temporary IDs for edge references" in instruction
+
+
 def test_review_and_repair_prompts_survive_yaml_save_and_load(tmp_path, monkeypatch):
     from hugegraph_llm.config.models import base_prompt_config
 

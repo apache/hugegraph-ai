@@ -15,14 +15,6 @@
 - **[Vermeer Python Client](./vermeer-python-client/README.md)**: SDK/Interface for Graph Computing with [Vermeer](https://github.com/apache/hugegraph-computer/tree/master/vermeer#readme)
 - **[MCP Server](./hugegraph-mcp/README.md)**: Connect MCP clients to typed graph tools with read-only defaults and controlled writes
 
-### See it in action
-
-<p align="center">
-  <img src="docs/images/gradio/graph-extraction.png" alt="HugeGraph RAG interface showing text input, graph schema and extracted graph output" width="720" />
-</p>
-
-Build a knowledge graph from text in the HugeGraph RAG interface. See the [knowledge graph construction guide](./hugegraph-llm/README.md#knowledge-graph-construction) for the workflow.
-
 ## 🧩 Architecture
 
 The LLM application builds GraphRAG and extraction workflows on the reusable SDK and the HugeGraph Python client. The SDK can also be used by another Python application without the UI or database service. The MCP server offers a separate entry point for MCP clients.
@@ -111,7 +103,7 @@ are sibling packages: `hugegraph-llm` depends on `hugegraph-llm-sdk`, while exte
 alone. See its [integration guide](./hugegraph-llm-sdk/README.md) for source installation and offline examples,
 and [architecture](./docs/sdk/architecture.md) for module responsibilities and extension boundaries.
 
-### [hugegraph-llm](./hugegraph-llm) [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/apache/hugegraph-ai)
+### [hugegraph-llm](./hugegraph-llm)
 
 Large language model integration for graph applications:
 

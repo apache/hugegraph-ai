@@ -1,0 +1,57 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and
+# limitations under the License.
+
+# Planning copilot: the planner-role agent. Reads master data, runs the
+# feasibility functions (capacity / material availability / yield) and drafts
+# planning actions — every write lands in the approval queue, exactly like a
+# human planner's PR goes through review.
+apiVersion: ontogeny/v1
+kind: AgentPlugin
+metadata:
+  name: planning-copilot
+  display: Planning copilot
+  description: 'Planner-role agent: search master data, run capacity / material-availability /
+    yield checks and draft planning actions (create, release, assign, cancel orders) —
+    every write waits for human approval.'
+spec:
+  engine: { kind: builtin-llm }
+  principal:
+    id: "agent:planning-copilot"
+    Role: [planner]
+    site: plant-north
+  transport: { kind: http }
+  tools:
+    allow:
+    - describe_ontology
+    - traverse_graph
+    - search_bom
+    - search_material
+    - search_product
+    - search_production_order
+    - search_operation
+    - search_work_center
+    - search_quality_inspection
+    - call_capacity_check
+    - call_material_availability
+    - call_order_yield
+    - act_create_production_order
+    - act_release_production_order
+    - act_assign_operation
+    - act_cancel_production_order
+    deny: []
+  approval: { writes: confirm }
+  budget: { steps: 40, wall_ms: 120000, writes_per_session: 3 }

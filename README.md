@@ -1,156 +1,116 @@
-# hugegraph-ai
+# Ontogeny
 
 [![License](https://img.shields.io/badge/license-Apache%202-0E78BA.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/apache/hugegraph-ai)
+[![Backend Tests](https://img.shields.io/badge/pytest-561%20passed-brightgreen.svg)](#contributing)
+[![Frontend Tests](https://img.shields.io/badge/vitest-245%20passed-brightgreen.svg)](#contributing)
 
-`hugegraph-ai` integrates [HugeGraph](https://github.com/apache/hugegraph) with artificial intelligence capabilities, providing comprehensive support for developers to build AI-powered graph applications.
+`ontogeny` — Greek *onto-* (being, the root of *ontology*) + *genesis* (birth, development): in biology the word names the **full-life-cycle development of an individual organism**. The name is the thesis: an ontology here is not a static schema but a living thing — declared in Git, compiled into tables and a graph, and grown through use. It is a **self-improving operational ontology platform** built on [Apache HugeGraph](https://github.com/apache/hugegraph): it models an enterprise's business semantics (objects, properties, links) and business actions (actions, functions, policies) as declarative, Git-native YAML, and serves them to applications, analytics and AI agents through one governed API — optionally projected onto HugeGraph for deep-graph queries.
+
+The design pairs a **semantic layer** (what the business is) with a **kinetic layer** (what it can do), and stays fully open: **the DSL is the single source of truth** — object tables and the graph schema are compiled artifacts that can be deleted and rebuilt at any time.
+
+The whole system on one board — this is the console's Overview dashboard, and the map for everything below:
+
+![Overall architecture board](./ontogeny/docs/en/img/arch-board.png)
+
+*Top: the eight first-class DSL citizens (Action = the only write gate, EvalSuite = the selection box). Middle: the online pipeline (build → explore → act → control → audit) and the offline RSI loop, joined by the agent spine — its reads/writes cross the same gates, its traces and approvals flow back as evolution signals. Bottom: the supporting layer and the three cross-cutting invariants (ownership, one gate, Git as source).*
 
 Contributor workflows: [CI selection and full validation](docs/quality/ci.md), [release preparation](docs/releasing.md).
 
 ## ✨ Key Features
 
-- **[LLM/GraphRAG](./hugegraph-llm/README.md#graphrag)**: Build intelligent question-answering systems with graph-enhanced retrieval
-- **[Knowledge Graph Construction](./hugegraph-llm/README.md#knowledge-graph-construction)**: Automated graph building from text using LLMs
-- **[HugeGraph-LLM SDK](./hugegraph-llm-sdk/README.md)**: Design schemas and extract reviewed property graphs in your own Python project, without a UI or database service
-- **[Graph ML](./hugegraph-ml/README.md)**: Integration with 20+ graph learning algorithms (GCN, GAT, GraphSAGE, etc.)
-- **[HG-Python Client](./hugegraph-python-client/README.md)**: Easy-to-use Python interface for HugeGraph operations
-- **[Vermeer Python Client](./vermeer-python-client/README.md)**: SDK/Interface for Graph Computing with [Vermeer](https://github.com/apache/hugegraph-computer/tree/master/vermeer#readme)
+- **Git-native ontology** — modeling is YAML + pull requests; consensus happens in code review, not a locked GUI
+- **Single-process kernel** — `ontogeny serve` = Registry + query engine + Action runtime on SQLite / Postgres
+- **Agent-first** — a governed MCP tool surface at `/mcp`; agents and humans share one policy surface, writes pass human approval gates
+- **Self-improving (RSI)** — observe → mutate (LLM-generated DSL diffs) → select (deterministic eval suites) → release (T0 auto-merge / T1 PR / T2 canary); *mutation is outsourced to the LLM, the selection function is not*
+- **Constitutional guardrails** — machine proposals travel the same Git/CI channel as humans; policy relaxation, markings and tier definitions always require human review
+- **Bilingual enterprise console** — React 19 + TypeScript: ontology canvas (browse *and* edit), graph exploration, action runner, audit, self-evolution console
+
+Modeling is code review, not form-filling — the ontology canvas shows every object, link, action and function of the domain, with references highlighted on hover:
+
+![Ontology definition canvas](./ontogeny/docs/en/img/tour-ontology.png)
 
 ## 🚀 Quick Start
 
-> [!NOTE]
-> For a complete deployment guide and detailed examples, please refer to [hugegraph-llm/README.md](./hugegraph-llm/README.md)
-
-### Prerequisites
-
-- Python 3.12–3.14 for the LLM application, SDK, Python client and MCP
-- [uv](https://docs.astral.sh/uv/) 0.13.6+ (required for workspace management)
-- HugeGraph Server 1.3+ for the LLM/client modules (1.5+ recommended); `hugegraph-mcp` requires 1.7.0+
-- Docker (optional, for containerized deployment)
-
-### Option 1: Docker Deployment (Recommended)
+### Option 1: Docker (Recommended)
 
 ```bash
-# Clone the repository
 git clone https://github.com/apache/hugegraph-ai.git
-cd hugegraph-ai
+cd hugegraph-ai/ontogeny
 
-# Set up environment and start services
-cp docker/env.template docker/.env
-# Edit docker/.env to set your PROJECT_PATH
-cd docker
-# same as `docker-compose` (Legacy)
-docker compose -f docker-compose-network.yml up -d
-
-# Access services:
-# - HugeGraph Server: http://localhost:8080
-# - RAG Service: http://localhost:8001
+docker compose up -d          # self-contained demo (SQLite + seeded data)
+# docker compose --profile postgres up -d   # Postgres-backed
+# docker compose --profile graph up -d      # + HugeGraph projection
 ```
 
-The RAG service is published on the host port by default, and the HTTP API is unauthenticated by default. Before
-using this deployment outside a trusted local environment, either enable the built-in Bearer authentication with
-`ENABLE_LOGIN=true` and a strong, non-default `USER_TOKEN`, or configure reverse proxy authentication. Also restrict
-access with a firewall or trusted network.
+Console + API: **http://localhost:8000** — the first boot creates an `admin` account and prints the generated password to the container log (or preset `ONTOGENY_ADMIN_PASSWORD`). One command gets you a live dashboard seeded with a real manufacturing domain — the ontology model, the agent surface and the RSI loop at a glance:
 
-### Option 2: Source Installation
+![The Overview dashboard](./ontogeny/docs/en/img/qs-dashboard.png)
+
+### Option 2: From Source
 
 ```bash
-# 1. Start HugeGraph Server
-docker run -itd --name=server -p 8080:8080 hugegraph/hugegraph
+cd ontogeny
 
-# 2. Clone and set up the project
-git clone https://github.com/apache/hugegraph-ai.git
-cd hugegraph-ai
+# backend (with the MCP extra so /mcp is served)
+uv venv && source .venv/bin/activate && uv pip install -e '.[mcp]'
 
-# 3. Install dependencies with workspace management
-# uv sync automatically creates venv (.venv) and installs base dependencies
-# NOTE: If download is slow, uncomment mirror lines in pyproject.toml or use: uv config --global index.url https://pypi.tuna.tsinghua.edu.cn/simple
-# Or create local uv.toml with mirror settings to avoid git diff (see uv.toml example in root)
-uv sync --extra llm  # Install LLM-specific dependencies
-# For HugeGraph MCP source development, install its standalone package directly.
-# Or install all optional dependencies: uv sync --all-extras
+# web console
+cd web && npm install && npm run build && cd ..
 
-# 4. Activate virtual environment (recommended for easier commands)
-source .venv/bin/activate
-
-# 5. Start the demo (no uv run prefix needed when venv activated)
-cd hugegraph-llm
-python -m hugegraph_llm.demo.rag_demo.app
-# Visit http://127.0.0.1:8001
+# one-command demo: seeds a source db, installs the example ontology, serves UI + API
+ontogeny serve --demo --open   # → http://127.0.0.1:8000/
 ```
 
-The source launcher binds to `127.0.0.1` by default and warns when a non-loopback `--host` is selected.
-
-### Basic Usage Examples
-
 > [!NOTE]
-> Examples assume you've activated the virtual environment with `source .venv/bin/activate`
+> The API is session/bearer authenticated. The `X-Ontogeny-Principal` dev header is **enabled by default** for evaluation (`ONTOGENY_DEV_AUTH=0` disables it) — turn it off in production, where the agent surfaces (REST + `/mcp`) then require a signed-in driver and every session records WHO drove it.
 
-#### Graph Machine Learning
+## 🤖 Connecting an Agent (MCP)
 
-ML remains outside this workspace and is not part of the dependency modernization.
-Its standalone environment requires Python 3.12+ because it uses the local Python
-client. Follow [the ML module](./hugegraph-ml) for installation and examples.
+Point any MCP client (Claude Desktop, ZCode, LangGraph, the `mcp` SDK) at **`http://<host>/mcp`**:
+
+1. `agent_open_session(plugin, task)` — opens a governed session for a declared plugin;
+2. call any tool with `plugin` / `session_id` / `thought` — budget, tool catalog, approval gates and the step trail apply identically to the REST session protocol;
+3. writes park for human approval in the console; session-less calls are read-only.
+
+The builtin LLM engine drives its sessions over the same MCP surface (in-process), so the transport is exercised in production. In the console, the same surface lives behind the floating icon at the bottom-right of every page — hand a task to a declared plugin from anywhere:
+
+![The agent console — session trail and the pending-approval queue](./ontogeny/docs/en/img/agent-console.png)
+
+Governance you can point at: every execution and every refusal lands in an immutable audit stream (executed / rule-rejected / policy-denied), and every agent step is attributable and replayable:
+
+![The audit stream](./ontogeny/docs/en/img/tour-audit.png)
 
 ## 📦 Modules
 
-### [hugegraph-llm-sdk](./hugegraph-llm-sdk)
+### [ontogeny](./ontogeny) — the platform
 
-HugeGraph-LLM SDK is an independently installable Python interface for reusable LLM capabilities. Its current
-scope is schema design, validation, and reviewed property-graph extraction. Inject your own model or install an
-optional provider adapter; synchronous and asynchronous APIs share the same graph rules. The SDK and application
-are sibling packages: `hugegraph-llm` depends on `hugegraph-llm-sdk`, while external projects can install the SDK
-alone. See its [integration guide](./hugegraph-llm-sdk/README.md) for source installation and offline examples,
-and [architecture](./docs/sdk/architecture.md) for module responsibilities and extension boundaries.
+The self-improving operational ontology platform described above: [`server/ontogeny`](./ontogeny/server/ontogeny) (Python kernel — DSL, registry, versioned stores, five-stage action runtime, Cedar-subset policy, query engine, sandboxed functions, RSI loop, graph projection, agent governance), [`extensions`](./ontogeny/extensions) (llm-ollama / graph-hugegraph / agent-builtin-llm), [`web`](./ontogeny/web) (React 19 + TypeScript console, bilingual EN/zh-CN) and [`domains`](./ontogeny/domains) (the product-manufacturing showcase, which doubles as the test-suite golden package). One `ServiceContext` behind three thin shells — HTTP, MCP and CLI — a single governance channel. See [ontogeny/README.md](./ontogeny/README.md) for the full documentation index.
 
-### [hugegraph-llm](./hugegraph-llm) [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/apache/hugegraph-ai)
+### Existing modules (hugegraph-ai)
 
-Large language model integration for graph applications:
+These modules predate Ontogeny and continue to work standalone. **They are being integrated step by step as Ontogeny's core capability modules**, boosting Ontogeny's **graph construction** (knowledge-graph building from text) and **graph reasoning** (GraphRAG-style retrieval and answering) — under Ontogeny's governance: LLM calls through the platform gateway, writes through the Action runtime, tools under the governed MCP surface. Until each stage lands, the boundary is enforced by a zero-coupling gate in CI (the `ontogeny` module does not import `hugegraph_llm` / `hugegraph_ml`).
 
-- **GraphRAG**: Retrieval-augmented generation with graph data
-- **Knowledge Graph Construction**: Build KGs from text automatically
-- **Natural Language Interface**: Query graphs using natural language
-- **AI Agents**: Intelligent graph analysis and reasoning
+| Module | What it does today | Role in Ontogeny's roadmap |
+|---|---|---|
+| [hugegraph-llm-sdk](./hugegraph-llm-sdk) | Standalone SDK for schema design, validation, and reviewed property-graph extraction; see its [integration guide](./hugegraph-llm-sdk/README.md) and [architecture](./docs/sdk/architecture.md) | Provides reusable graph construction capabilities |
+| [hugegraph-llm](./hugegraph-llm) | LLM integration for graph applications: **GraphRAG** (retrieval-augmented generation with graph data), **knowledge-graph construction** from text, natural-language graph querying, AI agents for graph reasoning | **Step 2**: GraphRAG Q&A over the ontology's HugeGraph projection; text-to-ontology proposals feeding the RSI loop (LLM proposes, deterministic evals select) |
+| [hugegraph-mcp](./hugegraph-mcp) | MCP server for safe HugeGraph access — typed graph/schema/Gremlin/extraction tools, read-only defaults, dry-run and single-use confirmation for writes | Referenced as a library behind Ontogeny's governed MCP surface (one tool surface, not two) |
+| [hugegraph-ml](./hugegraph-ml) | Graph machine learning: node classification (GCN, GAT, GraphSAGE, APPNP), graph classification, embeddings (DeepWalk, Node2Vec, GRACE), link prediction (SEAL, GATNE) | **Step 3**: semantic search over objects; analytics as derived signals for the evolution loop |
+| [hugegraph-python-client](./hugegraph-python-client) | Full-coverage Python client for HugeGraph (schema management, CRUD, Gremlin, REST), distributed as `hugegraph-python` | Used inside Ontogeny's extensions where full REST coverage is needed (async adapters remain the primary path) |
+| [vermeer-python-client](./vermeer-python-client) | SDK for graph computing with [Vermeer](https://github.com/apache/hugegraph-computer/tree/master/vermeer#readme) | **Step 3**: powers `POST /graph/algorithm` (pagerank / community / shortest-path) — results return as ID sets re-assembled through the governed query path |
 
-### [hugegraph-mcp](./hugegraph-mcp)
-
-Model Context Protocol server for safe, controlled HugeGraph access:
-
-- **Stable Tool Contract**: Typed graph, schema, Gremlin, and extraction tools for MCP clients
-- **Safe Writes**: Read-only defaults plus dry-run, persistent single-use confirmation, and target revalidation
-- **Compatibility**: Default `core` toolset with an opt-in `legacy` compatibility mode; the previous `1.7.1` release uses `v2_core` / `v1`
-
-### [hugegraph-ml](./hugegraph-ml)
-
-Graph machine learning with 20+ implemented algorithms:
-
-- **Node Classification**: GCN, GAT, GraphSAGE, APPNP, etc.
-- **Graph Classification**: DiffPool, P-GNN, etc.
-- **Graph Embedding**: DeepWalk, Node2Vec, GRACE, etc.
-- **Link Prediction**: SEAL, GATNE, etc.
-
-> [!NOTE]
-> hugegraph-ml is not part of the uv workspace.
-
-### [hugegraph-python-client](./hugegraph-python-client)
-
-Python client for HugeGraph operations, distributed as `hugegraph-python` (`uv pip install hugegraph-python`) and imported as `pyhugegraph`:
-
-- **Schema Management**: Define vertex/edge labels and properties
-- **CRUD Operations**: Create, read, update, delete graph data
-- **Gremlin Queries**: Execute graph traversal queries
-- **REST API**: Complete HugeGraph REST API coverage
+The LLM application, SDK, Python client and MCP require Python 3.12–3.14. Ontogeny is a standalone package requiring Python 3.10 or later; `hugegraph-ml` is outside the uv workspace and requires Python 3.12 or later. See each module’s README for setup.
 
 ## 📚 Learn More
 
 - [Project Homepage](https://hugegraph.apache.org/docs/quickstart/hugegraph-ai/)
+- [Ontogeny module docs](./ontogeny/README.md) — architecture & usage documentation index
 - [LLM Quick Start Guide](./hugegraph-llm/quick_start.md)
-- [Reviewed Property-Graph Extraction](./hugegraph-llm/docs/extraction-runtime.md) — optional API review, bounded repair, concurrent chunks, and per-chunk results
+- [Reviewed Property-Graph Extraction](./hugegraph-llm/docs/extraction-runtime.md)
 - [DeepWiki AI Documentation](https://deepwiki.com/apache/hugegraph-ai)
 
 ## 🔗 Related HugeGraph Projects
-
-And here are links of other repositories:
 
 1. [hugegraph](https://github.com/apache/hugegraph) (graph's core component - Graph server + PD + Store)
 2. [hugegraph-toolchain](https://github.com/apache/hugegraph-toolchain) (graph tools **[loader](https://github.com/apache/hugegraph-toolchain/tree/master/hugegraph-loader)/[dashboard](https://github.com/apache/hugegraph-toolchain/tree/master/hugegraph-hubble)/[tool](https://github.com/apache/hugegraph-toolchain/tree/master/hugegraph-tools)/[client](https://github.com/apache/hugegraph-toolchain/tree/master/hugegraph-client)**)
@@ -181,24 +141,21 @@ We welcome contributions! Please see our [contribution guidelines](https://hugeg
 git clone https://github.com/apache/hugegraph-ai.git
 cd hugegraph-ai
 
-# 2. Install all development dependencies
-# uv sync creates venv automatically and installs base dependencies
+# 2. Install all development dependencies (upstream workspace)
 uv sync --all-extras  # Install all optional dependency groups
 source .venv/bin/activate  # Activate for easier command usage
 
-# 3. Run tests for workspace members
-cd hugegraph-llm && pytest
+# 3. Run tests for the ontogeny module
+cd ontogeny
+pytest                                        # backend (live-LLM cases auto-skip)
+cd web && npx vitest run && npm run build     # frontend + typecheck + build
+
+# 4. Run tests for the other workspace members
+cd ../../hugegraph-llm && pytest
 cd ../hugegraph-python-client && pytest
 
-# 4. Run tests for path dependencies
-cd ../hugegraph-ml && pytest  # If tests exist
-
 # 5. Format and lint code
-./style/code_format_and_analysis.sh
-
-# 6. Add new dependencies to workspace
-uv add numpy  # Add to base dependencies
-uv add --group dev pytest-mock  # Add to dev group
+cd .. && ./style/code_format_and_analysis.sh
 ```
 
 ### Code Quality (uv + Ruff + ty)
@@ -218,6 +175,7 @@ checks in existing runners; application type checks remain advisory while the
 existing diagnostic baseline is resolved. See [CI policy](docs/quality/ci.md).
 
 **Key Points:**
+
 - Use [GitHub Desktop](https://desktop.github.com/) for easier PR management
 - Check existing issues before reporting bugs
 

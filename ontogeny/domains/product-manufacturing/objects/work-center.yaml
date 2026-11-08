@@ -1,0 +1,71 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+metadata:
+  name: work-center
+  display: Work centre
+  description: A production resource that performs operations
+kind: ObjectType
+spec:
+  primaryKey:
+  - work_center_id
+  properties:
+    work_center_id:
+      type: string
+      display: Work centre ID
+      required: true
+    name:
+      type: string
+      display: Name
+      required: true
+    process:
+      type: string
+      display: Process type
+      required: false
+    site:
+      type: string
+      display: Site
+      required: false
+    capacity_per_shift:
+      type: integer
+      display: Capacity per shift
+      required: false
+    shifts_per_day:
+      type: integer
+      display: Shifts per day
+      required: false
+    status:
+      type: enum[ACTIVE, IDLE, DOWN]
+      display: Status
+      required: false
+    created_at:
+      type: timestamp
+      display: Created at
+      required: false
+  backing:
+    store: mes
+    mode: materialized
+    source:
+      schema: mes
+      table: work_centers
+    mapping: {}
+    sync:
+      strategy: watermark
+      watermark:
+        column: updated_at
+      schedule: '*/5 * * * *'

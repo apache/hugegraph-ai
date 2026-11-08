@@ -114,10 +114,8 @@ Install workspace dependencies and run the checks for the modules you changed:
 uv sync --all-extras
 uv run --extra dev ruff format --check .
 uv run --extra dev ruff check .
-uv run --extra dev ty check \
-  hugegraph-llm-sdk/src/hugegraph_llm_sdk \
-  hugegraph-llm/src/hugegraph_llm \
-  hugegraph-python-client/src/pyhugegraph
+uv run --extra dev ty check hugegraph-llm/src/hugegraph_llm hugegraph-python-client/src/pyhugegraph
+uv run --extra dev ty check hugegraph-llm-sdk/src/hugegraph_llm_sdk
 ```
 
 Run tests from the affected module. Shared SDK or Python-client changes also require the relevant `hugegraph-llm` tests. See [CI policy](docs/quality/ci.md) and [`AGENTS.md`](AGENTS.md) for test selection; do not default to an expensive full-repository sweep when a precise affected-module set is available.

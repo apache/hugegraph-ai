@@ -869,7 +869,7 @@ spec:
         # different agent is a different extractor and must not reuse packets
         agent_id = self.sc.settings.doc_agent_url or self.sc.settings.doc_agent_cmd or "unconfigured"
         model = "agent:" + _sha(agent_id)[:16]
-        scanned = corpus.scan(root, cfg, self._selector(store, targets))
+        scanned = await self._scan_documents(store, cfg, root, targets)
 
         summary: dict[str, Any] = {
             "store": store_name,
@@ -1244,6 +1244,27 @@ spec:
             "extractor": "loaded" if self._extractor() is not None else "missing",
         }
 
+    async def _scan_documents(self, store, cfg, root, targets) -> list[corpus.ScannedDocument]:
+        from dataclasses import replace
+
+        store_name = store.metadata.name
+        scanned = corpus.scan(root, cfg, self._selector(store, targets), store_name=store_name)
+        async with self.sc.sessionmaker() as session:
+            existing = set(
+                (await session.execute(select(DocumentRow.id).where(DocumentRow.store == store_name))).scalars().all()
+            )
+        resolved = []
+        for item in scanned:
+            if item.doc_id in existing and item.legacy_id in existing:
+                raise DocumentError(
+                    f"document {item.path} has both legacy and store-scoped records in store {store_name!r}; "
+                    "reconcile the duplicate records and their references before scanning"
+                )
+            if item.legacy_id in existing:
+                item = replace(item, doc_id=item.legacy_id)
+            resolved.append(item)
+        return resolved
+
     async def scan_corpus(self, store_name: str) -> int:
         """Register files that exist on disk, without extracting anything.
 
@@ -1254,7 +1275,7 @@ spec:
         cfg = self._cfg(store)
         root = self._root(store)
         targets = self.object_types(store_name)
-        scanned = corpus.scan(root, cfg, self._selector(store, targets))
+        scanned = await self._scan_documents(store, cfg, root, targets)
         async with self.sc.sessionmaker() as session:
             await self._sync_documents(session, store, cfg, scanned)
             await session.commit()

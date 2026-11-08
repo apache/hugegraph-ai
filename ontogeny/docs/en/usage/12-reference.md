@@ -67,6 +67,8 @@ The normal `serve`/ASGI factory runs an outbox dispatch tick about every second 
 
 **Outbox upgrade:** Stop all old dispatcher processes before upgrading. Start the new version only after the old workers have stopped; startup adds the pending columns and indexes, and the first dispatch reconciles pending state with existing receipts transactionally, including after a rollback. Do not run old and new dispatchers against the same database at the same time. Keep one server process per database; dispatch and replay coordination is in-process.
 
+**Document ID upgrade and rollback:** Existing document IDs and their references are retained; newly discovered documents use store-scoped IDs. Before upgrading, back up the database and document corpus together. Older versions do not understand the new IDs: after a downgrade they can create duplicate records or encounter conflicts. To roll back safely, stop all writers and restore the matched pre-upgrade database and corpus backups before starting the older version; changes made after the backup are not preserved by that restore. Do not run old and new versions against the same database. If a scan reports both legacy and store-scoped records for one document, stop writers, back up the current state, and reconcile the records and all references with a reviewed migration before retrying; the scanner does not delete either record.
+
 ## 12.5 Frontend routes
 
 | Route | Page |

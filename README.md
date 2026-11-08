@@ -20,25 +20,24 @@
 The LLM application builds GraphRAG and extraction workflows on the reusable SDK and the HugeGraph Python client. The SDK can also be used by another Python application without the UI or database service. The MCP server offers a separate entry point for MCP clients.
 
 ```text
-  Applications                           MCP clients
-       |                                      |
-       v                                      v
-+--------------------------+   +--------------------------+
-| HugeGraph LLM            |   | HugeGraph MCP            |
-| GraphRAG / API / UI      |   | Typed graph tools        |
-| Uses SDK + Python client |   | Uses Python client       |
-+-------------+------------+   +-------------+------------+
-              |                              |
-              v                              v
-+--------------------------+   +--------------------------+
-| HugeGraph LLM SDK        |   | HugeGraph Python client  |
-| Schema and extraction    |   | HugeGraph access         |
-+-------------+------------+   +-------------+------------+
-              |                              |
-              v                              v
-+--------------------------+   +--------------------------+
-| Model providers          |   | HugeGraph Server         |
-+--------------------------+   +--------------------------+
+┌────────────────────────────────────────────────────────────────────┐
+│                            HugeGraph AI                            │
+│                                                                    │
+│   ┌───────────────────────┐           ┌────────────────────────┐   │
+│   │    LLM Application    │           │       MCP Server       │   │
+│   └───────────────────────┘           └────────────────────────┘   │
+│               │     │                             │                │
+│               │     └───────────────────────┐     │                │
+│               ▼                             ▼     ▼                │
+│   ┌───────────────────────┐           ┌────────────────────────┐   │
+│   │        LLM SDK        │           │     Python Client      │   │
+│   └───────────────────────┘           └────────────────────────┘   │
+│               │                                   │                │
+└───────────────┼───────────────────────────────────┼────────────────┘
+                ▼                                   ▼
+    ┌───────────────────────┐           ┌────────────────────────┐
+    │    Model Providers    │           │    HugeGraph Server    │
+    └───────────────────────┘           └────────────────────────┘
 ```
 
 ## 🚀 Quick Start

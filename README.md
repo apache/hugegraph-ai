@@ -19,16 +19,20 @@
 
 The LLM application builds GraphRAG and extraction workflows on the reusable SDK and the HugeGraph Python client. The SDK can also be used by another Python application without the UI or database service. The MCP server offers a separate entry point for MCP clients.
 
-```mermaid
-flowchart LR
-    Apps["Applications"] --> LLM["HugeGraph LLM<br/>GraphRAG · API · UI"]
-    Apps --> SDK["HugeGraph LLM SDK<br/>Schema · extraction"]
-    LLM --> SDK
-    SDK --> Providers["Model providers"]
-    LLM --> Client["HugeGraph Python client"]
-    MCPClients["MCP clients"] --> MCP["HugeGraph MCP"]
-    MCP --> Client
-    Client --> Server["HugeGraph Server"]
+```text
+  Applications                           MCP clients
+       |                                      |
+       +-------> HugeGraph LLM                v
+       |         GraphRAG / API / UI    HugeGraph MCP
+       |             |          |             |
+       v             v          |             |
+  HugeGraph LLM SDK <+          +------+------+
+  Schema / extraction                  |
+       |                               v
+       v                      HugeGraph Python client
+  Model providers                      |
+                                       v
+                              HugeGraph Server
 ```
 
 ## 🚀 Quick Start

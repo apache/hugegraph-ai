@@ -26,7 +26,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = ROOT / "docker" / "Dockerfile.nk"
-GRADIO_PILLOW13_COMMIT = "1028366300f10b26f0b54a1d6cda6d520895acbb"
 
 
 class RagBinDockerfileContractTest(unittest.TestCase):
@@ -83,19 +82,14 @@ class RagBinDockerfileContractTest(unittest.TestCase):
         self.assertNotIn("uv sync --no-install-workspace --extra nk-llm", self.dockerfile)
         self.assertGreaterEqual(self.dockerfile.count("uv sync --locked"), 2)
 
-    def test_gradio_pillow13_source_is_locked(self) -> None:
-        """Use upstream metadata and code that both support Pillow 13."""
+    def test_gradio_is_locked_to_a_published_wheel(self) -> None:
+        """Use a published Gradio package that includes the built frontend."""
 
-        source = self.llm_config["tool"]["uv"]["sources"]["gradio"]
-        self.assertEqual("https://github.com/gradio-app/gradio.git", source["git"])
-        self.assertEqual(GRADIO_PILLOW13_COMMIT, source["rev"])
-
+        self.assertNotIn("gradio", self.llm_config["tool"]["uv"]["sources"])
         gradio = [package for package in self.lock["package"] if package["name"] == "gradio"]
         self.assertEqual(1, len(gradio))
-        self.assertIn(GRADIO_PILLOW13_COMMIT, gradio[0]["source"]["git"])
-
-        pillow_versions = [package["version"] for package in self.lock["package"] if package["name"] == "pillow"]
-        self.assertEqual(["13.0.0"], pillow_versions)
+        self.assertEqual({"registry": "https://pypi.org/simple"}, gradio[0]["source"])
+        self.assertTrue(gradio[0]["wheels"], "Gradio must have a published wheel with frontend assets")
 
     def test_filelock_security_constraint_is_locked(self) -> None:
         """Keep local-lock consumers above the first fully patched release."""

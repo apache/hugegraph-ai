@@ -17,6 +17,8 @@
 
 import unittest
 
+from hugegraph_llm.enums.property_cardinality import PropertyCardinality
+from hugegraph_llm.enums.property_data_type import PropertyDataType
 from hugegraph_llm.operators.common_op.check_schema import CheckSchema
 
 
@@ -84,3 +86,39 @@ class TestCheckSchema(unittest.TestCase):
         check_schema = CheckSchema(data)
         with self.assertRaises(ValueError):
             check_schema.run()
+
+    def test_schema_check_rejects_non_list_edge_properties(self):
+        data = {
+            "vertexlabels": [{"name": "person", "properties": ["name"]}],
+            "edgelabels": [
+                {
+                    "name": "knows",
+                    "source_label": "person",
+                    "target_label": "person",
+                    "properties": "since",
+                }
+            ],
+        }
+        check_schema = CheckSchema(data)
+        with self.assertRaisesRegex(ValueError, "'properties' in edge_label"):
+            check_schema.run()
+
+    def test_schema_check_adds_edge_properties_as_default_property_keys(self):
+        data = {
+            "vertexlabels": [{"name": "person", "properties": ["name"]}],
+            "edgelabels": [
+                {
+                    "name": "knows",
+                    "source_label": "person",
+                    "target_label": "person",
+                    "properties": ["since"],
+                }
+            ],
+        }
+
+        schema = CheckSchema(data).run()["schema"]
+
+        self.assertEqual([key["name"] for key in schema["propertykeys"]], ["name", "since"])
+        since = schema["propertykeys"][1]
+        self.assertEqual(since["data_type"], PropertyDataType.DEFAULT.value)
+        self.assertEqual(since["cardinality"], PropertyCardinality.DEFAULT.value)

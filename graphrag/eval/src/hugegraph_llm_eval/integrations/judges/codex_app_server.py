@@ -193,24 +193,31 @@ class CodexAppServerJudge(AttemptLoopJudge):
     ) -> None:
         self.close()
 
-    def _connection(self, timeout: float) -> AppServerConnection:
-        with self._lock:
+    def _connection(self, deadline: float) -> AppServerConnection:
+        if not self._lock.acquire(timeout=self._left(deadline)):
+            raise TimeoutError("connection deadline reached")
+        try:
             connection = self._holder.connection
             if connection is None or not connection.alive:
                 self._holder.close()
-                connection = self._start(min(timeout, _STARTUP_TIMEOUT_SECONDS))
+                startup_deadline = min(deadline, self._monotonic() + _STARTUP_TIMEOUT_SECONDS)
+                connection = self._start(startup_deadline)
                 self._holder.connection = connection
             return connection
+        finally:
+            self._lock.release()
 
-    def _start(self, timeout: float) -> AppServerConnection:
+    def _start(self, deadline: float) -> AppServerConnection:
         process = self._spawn([self._executable, "app-server"], cwd=self._workdir, env=self._environment())
         connection = AppServerConnection(process)
         try:
-            connection.request("initialize", {"clientInfo": {"name": "hugegraph-llm-eval", "version": "1"}}, timeout)
+            connection.request(
+                "initialize", {"clientInfo": {"name": "hugegraph-llm-eval", "version": "1"}}, self._left(deadline)
+            )
             connection.notify("initialized")
             if self._auth_mode == "subscription":
-                self._require_chatgpt_account(connection, timeout)
-            self._mcp_overrides = self._verified_isolation_overrides(connection, timeout)
+                self._require_chatgpt_account(connection, self._left(deadline))
+            self._mcp_overrides = self._verified_isolation_overrides(connection, self._left(deadline))
         except BaseException:
             connection.close()
             raise
@@ -269,7 +276,7 @@ class CodexAppServerJudge(AttemptLoopJudge):
     def _attempt(self, request: JudgeRequest[OutputT], timeout: float | None) -> AttemptOutcome:
         limit = self._call_timeout if timeout is None else min(timeout, self._call_timeout)
         deadline = self._monotonic() + limit
-        connection = self._connection(limit)
+        connection = self._connection(deadline)
         system, prompt = split_messages(request)
         thread = connection.request("thread/start", self._thread_params(system), self._left(deadline))
         thread_id = _identifier(thread, "thread")
@@ -335,14 +342,14 @@ class CodexAppServerJudge(AttemptLoopJudge):
             remaining = deadline - self._monotonic()
             if remaining <= 0:
                 connection.fire("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
-                detail = failure(FailureCategory.TIMEOUT, "provider_timeout", True)
+                detail = failure(FailureCategory.TIMEOUT, "provider_timeout", False)
                 raise AttemptFailureError(detail, usage=self._usage(turn.tokens))
             try:
                 message = events.get(timeout=remaining)
             except queue.Empty:
                 continue
             if message is None:
-                detail = failure(FailureCategory.PROVIDER_UNAVAILABLE, "provider_connection_lost", True)
+                detail = failure(FailureCategory.PROVIDER_UNAVAILABLE, "provider_connection_lost", False)
                 raise AttemptFailureError(detail, usage=self._usage(turn.tokens))
             turn.apply(message, turn_id)
         return turn

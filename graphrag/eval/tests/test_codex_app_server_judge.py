@@ -20,6 +20,7 @@
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -134,21 +135,64 @@ def test_unparseable_answer_is_retryable_and_billed(tmp_path: Path) -> None:
     assert [attempt.usage is not None for attempt in error.provenance.attempts] == [True, True]
 
 
-def test_server_crash_is_retried_on_a_fresh_process(tmp_path: Path) -> None:
+def test_server_crash_with_unknown_turn_outcome_is_not_retried(tmp_path: Path) -> None:
     with make_judge(tmp_path) as judge:
-        result = judge.judge(cli_request("crash-once"), JudgeOptions(max_attempts=2))
+        error = failed_judge(judge, "crash-once", attempts=2)
 
-    assert len(result.provenance.attempts) == 2
+    assert not error.failure.retryable
+    assert error.failure.code in {"provider_start_outcome_unknown", "provider_connection_lost"}
+    assert len(error.provenance.attempts) == 1
     starts = [entry["pid"] for entry in requests(tmp_path) if entry["method"] == "initialize"]
-    assert len(set(starts)) == 2
+    assert len(set(starts)) == 1
 
 
 def test_hung_turn_is_interrupted_at_the_call_timeout(tmp_path: Path) -> None:
     with make_judge(tmp_path, call_timeout_seconds=0.5) as judge:
-        error = failed_judge(judge, "hang")
+        error = failed_judge(judge, "hang", attempts=3)
 
     assert (error.failure.category, error.failure.code) == (FailureCategory.TIMEOUT, "provider_timeout")
-    assert "turn/interrupt" in [entry["method"] for entry in requests(tmp_path)]
+    methods = [entry["method"] for entry in requests(tmp_path)]
+    assert "turn/interrupt" in methods
+    assert methods.count("turn/start") == 1
+    assert not error.failure.retryable
+
+
+def test_connection_lock_wait_obeys_deadline(tmp_path: Path) -> None:
+    judge = make_judge(tmp_path, call_timeout_seconds=0.1)
+    judge._lock.acquire()
+    try:
+        error = failed_judge(judge, "ok")
+    finally:
+        judge._lock.release()
+        judge.close()
+
+    assert (error.failure.category, error.failure.code) == (FailureCategory.TIMEOUT, "provider_timeout")
+
+
+def test_startup_rpcs_share_remaining_deadline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    elapsed = [0.0]
+    original = AppServerConnection.request
+    seen = []
+
+    def request(connection, method, params, timeout):
+        response = original(connection, method, params, timeout)
+        if method in {"initialize", "account/read", "config/read"}:
+            seen.append((method, timeout))
+            elapsed[0] += 0.35
+        return response
+
+    monkeypatch.setattr(AppServerConnection, "request", request)
+    with (
+        make_judge(tmp_path, auth_mode="subscription", clock=lambda: now, monotonic=lambda: elapsed[0]) as judge,
+        pytest.raises(JudgeCallError) as caught,
+    ):
+        judge.judge(cli_request(), JudgeOptions(max_attempts=1, deadline=now + timedelta(seconds=1)))
+
+    assert [method for method, _ in seen] == ["initialize", "account/read", "config/read"]
+    assert [timeout for _, timeout in seen] == pytest.approx([1, 0.65, 0.30])
+    assert caught.value.failure.category is FailureCategory.TIMEOUT
+    assert "turn/start" not in [entry["method"] for entry in requests(tmp_path)]
 
 
 def test_keyboard_interrupt_stops_started_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

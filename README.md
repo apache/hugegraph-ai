@@ -22,17 +22,23 @@ The LLM application builds GraphRAG and extraction workflows on the reusable SDK
 ```text
   Applications                           MCP clients
        |                                      |
-       +-------> HugeGraph LLM                v
-       |         GraphRAG / API / UI    HugeGraph MCP
-       |             |          |             |
-       v             v          |             |
-  HugeGraph LLM SDK <+          +------+------+
-  Schema / extraction                  |
-       |                               v
-       v                      HugeGraph Python client
-  Model providers                      |
-                                       v
-                              HugeGraph Server
+       v                                      v
++--------------------------+   +--------------------------+
+| HugeGraph LLM            |   | HugeGraph MCP            |
+| GraphRAG / API / UI      |   | Typed graph tools        |
+| Uses SDK + Python client |   | Uses Python client       |
++-------------+------------+   +-------------+------------+
+              |                              |
+              v                              v
++--------------------------+   +--------------------------+
+| HugeGraph LLM SDK        |   | HugeGraph Python client  |
+| Schema and extraction    |   | HugeGraph access         |
++-------------+------------+   +-------------+------------+
+              |                              |
+              v                              v
++--------------------------+   +--------------------------+
+| Model providers          |   | HugeGraph Server         |
++--------------------------+   +--------------------------+
 ```
 
 ## 🚀 Quick Start

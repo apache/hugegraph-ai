@@ -29,7 +29,11 @@ from cli_support import CliVerdict, cli_request
 from hugegraph_llm_eval import CodexAppServerJudge
 from hugegraph_llm_eval.contracts.errors import FailureCategory
 from hugegraph_llm_eval.evaluation.judges.base import JudgeCallError, JudgeOptions
-from hugegraph_llm_eval.integrations.judges.codex_connection import spawn_app_server
+from hugegraph_llm_eval.integrations.judges.codex_connection import (
+    AppServerConnection,
+    ConnectionClosedError,
+    spawn_app_server,
+)
 
 SERVER = Path(__file__).with_name("fake_codex_server.py")
 ONCE = JudgeOptions(max_attempts=1)
@@ -164,13 +168,35 @@ def test_keyboard_interrupt_stops_started_turn(tmp_path: Path, monkeypatch: pyte
 
 def test_turn_start_timeout_before_ack_cannot_send_interrupt(tmp_path: Path) -> None:
     with make_judge(tmp_path, call_timeout_seconds=0.3) as judge:
-        error = failed_judge(judge, "delayed-ack")
+        error = failed_judge(judge, "delayed-ack", attempts=3)
 
     methods = [entry["method"] for entry in requests(tmp_path)]
     assert error.failure.category is FailureCategory.TIMEOUT
-    assert "turn/start" in methods
+    assert error.failure.code == "provider_start_outcome_unknown"
+    assert error.failure.retryable is False
+    assert methods.count("turn/start") == 1
     assert "thread/unsubscribe" in methods
     assert "turn/interrupt" not in methods
+
+
+def test_turn_start_connection_loss_does_not_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    original = AppServerConnection.request
+    start_calls = []
+
+    def request(connection, method, params, timeout):
+        if method == "turn/start":
+            start_calls.append(method)
+            raise ConnectionClosedError("response lost")
+        return original(connection, method, params, timeout)
+
+    monkeypatch.setattr(AppServerConnection, "request", request)
+    with make_judge(tmp_path) as judge:
+        error = failed_judge(judge, "hang", attempts=3)
+
+    assert error.failure.category is FailureCategory.PROVIDER_UNAVAILABLE
+    assert error.failure.code == "provider_start_outcome_unknown"
+    assert error.failure.retryable is False
+    assert len(start_calls) == 1
 
 
 def test_concurrent_calls_share_one_server_process(tmp_path: Path) -> None:

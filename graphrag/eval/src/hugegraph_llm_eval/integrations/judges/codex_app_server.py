@@ -282,7 +282,17 @@ class CodexAppServerJudge(AttemptLoopJudge):
             }
             if self._effort is not None:
                 turn_params["effort"] = self._effort
-            started = connection.request("turn/start", turn_params, self._left(deadline))
+            start_timeout = self._left(deadline)
+            try:
+                started = connection.request("turn/start", turn_params, start_timeout)
+            except (TimeoutError, ConnectionClosedError) as exc:
+                # The server may have accepted the request before the response
+                # was lost. Retrying could start another billable turn.
+                category = (
+                    FailureCategory.TIMEOUT if isinstance(exc, TimeoutError) else FailureCategory.PROVIDER_UNAVAILABLE
+                )
+                detail = failure(category, "provider_start_outcome_unknown", False)
+                raise AttemptFailureError(detail) from exc
             turn_id = _identifier(started, "turn")
             try:
                 turn = self._await_turn(connection, events, thread_id, turn_id, deadline)

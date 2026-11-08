@@ -165,7 +165,9 @@ deadline or provider timeout to bound that wait.
 For the Codex app-server judge, an interruption after the turn ID is known
 requests that the turn stop. If interruption or timeout occurs while the
 `turn/start` response is still pending, the turn ID is unavailable and the
-provider may continue processing; interruption is best-effort.
+provider may continue processing; interruption is best-effort. A timed-out or
+disconnected start with an unknown outcome is not automatically retried, to
+avoid starting another potentially billable turn.
 
 Two knobs bound the work, and both have a hard upper bound of 8:
 

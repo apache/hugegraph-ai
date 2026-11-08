@@ -33,6 +33,8 @@ Repository guidance for coding agents. Keep product usage in README files and us
 
 ## Build, type and style checks
 
+Run these commands from the repository root.
+
 ```bash
 uv sync --all-extras
 uv run --extra dev ruff format --check .

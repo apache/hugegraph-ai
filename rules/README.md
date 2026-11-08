@@ -4,15 +4,15 @@ This directory provides a staged development workflow for changes that are diffi
 
 ## Choose only the stages you need
 
-| Stage | Read | Durable output |
+| Stage | Read | Working output |
 |---|---|---|
 | Establish repository constraints | [basic.md](basic.md) | None; apply the relevant repository and module guidance |
 | Clarify an ambiguous or high-risk requirement | [requirements.md](requirements.md) | `.workflow/<topic>/requirements.md` |
 | Compare alternatives and define boundaries | [design.md](design.md) | `.workflow/<topic>/design.md` |
-| Split an approved design into verifiable steps | [plan.md](plan.md) | `.workflow/<topic>/tasks.md` |
+| Split the agreed scope into verifiable steps | [plan.md](plan.md) | `.workflow/<topic>/tasks.md` |
 | Implement and verify the planned change | [execute.md](execute.md) | Code, tests and concise evidence in the pull request |
 
-A stage document is a tool for resolving uncertainty, not a mandatory ceremony. Skip a stage when its questions are already answered by an issue, an existing design or a narrow code contract.
+A stage document is a tool for resolving uncertainty, not a mandatory ceremony. Skip a stage when its questions are already answered by an issue, an existing design or a narrow code contract. `.workflow/` is ignored by Git: its files are local working notes and are not shared in a pull request. Record decisions and evidence needed by collaborators in a tracked document or issue.
 
 ## Core principles
 

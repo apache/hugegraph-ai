@@ -57,13 +57,15 @@ Open `http://127.0.0.1:8001`. The source launcher binds to loopback by default. 
 
 ```bash
 git clone https://github.com/apache/hugegraph-ai.git
-cd hugegraph-ai/docker
-cp env.template .env
-# Set PROJECT_PATH and required model credentials in .env
-docker compose -f docker-compose-network.yml up -d
+cd hugegraph-ai
 ```
 
-The Compose environment includes HugeGraph and the RAG service. The RAG HTTP API is unauthenticated by default for local use; before exposing it, enable the built-in Bearer authentication with `ENABLE_LOGIN=true` and a strong `USER_TOKEN`, or place it behind an authenticated reverse proxy and trusted network boundary.
+Before starting Compose, follow the [LLM Docker Compose guide](hugegraph-llm/README.md#option-1-docker-compose-recommended) to configure the mounted application `.env` and limit network access. The default Compose file publishes both the Server and unauthenticated RAG API on all host interfaces.
+
+```bash
+cd docker
+docker compose -f docker-compose-network.yml up -d
+```
 
 ### Use a library instead of the application
 

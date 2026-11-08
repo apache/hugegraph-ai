@@ -12,6 +12,8 @@
 # limitations under the License.
 
 
+import pytest
+
 from hugegraph_mcp.tools import mutate_graph_properties as mutate_module
 
 
@@ -327,6 +329,46 @@ def test_collection_append_rejects_non_json_array_before_write(monkeypatch):
     assert tuple_result["ok"] is False
     assert tuple_result["error"]["type"] == "VALIDATION_ERROR"
     assert "JSON array" in tuple_result["error"]["suggestion"]
+
+
+@pytest.mark.parametrize("property_name", ["aliases", "tags"])
+def test_collection_append_rejects_null_value_before_preview(monkeypatch, property_name):
+    _patch_schema(monkeypatch)
+    manager = CollectionGraphManager(property_name=property_name, values=["a"])
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
+
+    result = mutate_module.mutate_graph_properties(
+        target="vertex",
+        operation="append",
+        id="1:alice",
+        properties={property_name: None},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert result["error"]["details"]["property"] == property_name
+    assert "JSON array" in result["error"]["suggestion"]
+
+
+def test_collection_append_without_schema_data_type_rejects_non_array(monkeypatch):
+    schema = _schema()
+    for property_key in schema["schema"]["propertykeys"]:
+        if property_key["name"] == "tags":
+            del property_key["data_type"]
+    monkeypatch.setattr(mutate_module, "current_live_schema", lambda: schema)
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: CollectionGraphManager(values=["a"]))
+
+    for value in (5, "bc"):
+        result = mutate_module.mutate_graph_properties(
+            target="vertex",
+            operation="append",
+            id="1:alice",
+            properties={"tags": value},
+        )
+
+        assert result["ok"] is False
+        assert result["error"]["type"] == "VALIDATION_ERROR"
+        assert result["error"]["details"]["property"] == "tags"
 
 
 def test_mutation_rejects_double_overflow_without_raising(monkeypatch):

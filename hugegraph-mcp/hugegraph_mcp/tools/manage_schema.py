@@ -347,7 +347,8 @@ def _collect_planned_creates(
             continue
 
         name = operation.get("name")
-        if not name:
+        # Non-string names are reported by identifier validation; they may be unhashable.
+        if not isinstance(name, str) or not name:
             continue
 
         if name in planned[planned_key]:

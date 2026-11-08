@@ -19,6 +19,8 @@ import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from hugegraph_mcp.confirmable_workflow import (
     get_write_status,
     load_issued_plan,
@@ -299,6 +301,23 @@ def test_verify_plan_hash_rejects_missing_expires_at(monkeypatch):
         payload_digest="abc123",
         nonce=context.nonce,
         expires_at=None,
+    )
+
+    assert valid is False
+    assert error_type == ErrorType.PLAN_EXPIRED
+
+
+@pytest.mark.parametrize("expires_at", [float("inf"), float("-inf"), float("nan"), "invalid"])
+def test_verify_plan_hash_treats_unusable_expires_at_as_expired(monkeypatch, expires_at):
+    context, plan_hash = build_plan_context(tool_name="test", mode="import", payload_digest="abc123", nonce="mynonce")
+
+    valid, error_type, _details = verify_plan_hash(
+        submitted_hash=plan_hash,
+        tool_name="test",
+        mode="import",
+        payload_digest="abc123",
+        nonce=context.nonce,
+        expires_at=expires_at,
     )
 
     assert valid is False

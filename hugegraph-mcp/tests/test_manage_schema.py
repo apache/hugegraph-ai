@@ -1155,6 +1155,19 @@ def test_dry_run_rejects_non_string_name(monkeypatch):
         assert result["data"]["errors"][0]["reason"].startswith("name must be a non-empty string")
 
 
+@pytest.mark.parametrize("name", [["age"], {"name": "age"}])
+def test_dry_run_rejects_unhashable_name_without_raising(monkeypatch, name):
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
+
+    result = manage_schema(
+        mode="dry_run",
+        operations=[{"type": "create_property_key", "name": name, "data_type": "TEXT"}],
+    )
+
+    _assert_dry_run_invalid(result)
+    assert result["data"]["errors"][0]["reason"].startswith("name must be a non-empty string")
+
+
 def test_dry_run_rejects_blank_name(monkeypatch):
     monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 

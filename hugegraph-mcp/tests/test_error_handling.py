@@ -193,6 +193,32 @@ def test_http_404_error_handling():
         assert result["error"]["retryable"] is False
 
 
+@pytest.mark.parametrize(
+    ("status_code", "error_type", "retryable"),
+    [
+        (401, "authentication_error", False),
+        (403, "authorization_error", False),
+        (404, "not_found_error", False),
+        (500, "server_error", True),
+        (503, "http_error", True),
+    ],
+)
+def test_http_error_with_real_response_keeps_status_code(status_code, error_type, retryable):
+    """requests.Response is falsy for error statuses; the status must still be read."""
+    response = requests.Response()
+    response.status_code = status_code
+    response._content = b"{}"
+    with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:
+        mock_client.return_value.exec.side_effect = requests.exceptions.HTTPError("HTTP error", response=response)
+
+        result = execute_gremlin_read("g.V().limit(10)")
+
+    assert result["ok"] is False
+    assert result["error"]["details"]["status_code"] == status_code
+    assert result["error"]["details"]["error_type"] == error_type
+    assert result["error"]["retryable"] is retryable
+
+
 def test_timeout_error_handling():
     """Test handling of request timeouts."""
     with patch("hugegraph_mcp.gremlin_tools._get_read_client") as mock_client:

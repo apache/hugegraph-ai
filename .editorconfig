@@ -26,7 +26,7 @@ trim_trailing_whitespace = true
 [*.py]
 indent_style = space
 indent_size = 4
-max_line_length = 88
+max_line_length = 120
 
 [*.{yaml,yml,json,toml}]
 indent_style = space

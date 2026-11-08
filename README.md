@@ -84,7 +84,7 @@ cd hugegraph-ai
 # 3. Install dependencies with workspace management
 # uv sync automatically creates venv (.venv) and installs base dependencies
 uv sync --extra llm  # Install LLM-specific dependencies
-# To install all workspace optional dependencies instead: uv sync --all-extras
+# To select all root-project extras instead: uv sync --all-extras
 
 # 4. Activate virtual environment (recommended for easier commands)
 source .venv/bin/activate

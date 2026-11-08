@@ -44,6 +44,8 @@ from .models import (
     DocumentTaskRow,
     ExtractCandidateRow,
     ExtractionSkillRow,
+    ExtractPacketRow,
+    ExtractRunRow,
 )
 from .protocol import DocInput, ExtractOptions, ExtractRequest
 from .schema import compile_extraction_schema
@@ -720,7 +722,47 @@ class TaskService:
             if not text and doc is not None:
                 text, _ = corpus.read_for_agent(Path(doc.path))
             packet = SimpleNamespace(doc_id=task.doc_id, chunk_index=0, text=text)
-            binder = Binder(self.docs.compiled, bundle, self.docs.sc.repo, session, run_id=attempt.id)
+            # Attempt ids and extraction run ids are independent sequences.
+            # Create a real run so candidates and provenance cannot collide
+            # with an unrelated ingest run that happens to have the same id.
+            run = ExtractRunRow(
+                store=task.store,
+                status="running",
+                schema_hash=attempt.schema_hash,
+                prompt_hash=attempt.prompt_hash,
+                model=attempt.model,
+                n_documents=1,
+                n_chunks=max(1, len(attempt.chunks or [])),
+            )
+            session.add(run)
+            await session.flush()
+            # Preserve the agent's raw chunks in the run detail. The reviewed
+            # graph stays on the attempt and may differ after a human edit.
+            chunks = attempt.chunks or [{"text": text, "graph": attempt.raw_graph}]
+            for index, chunk in enumerate(chunks):
+                chunk = chunk if isinstance(chunk, dict) else {}
+                chunk_text = str(chunk.get("text") or "")
+                chunk_graph = chunk.get("graph") or {
+                    "vertices": chunk.get("vertices") or [],
+                    "edges": chunk.get("edges") or [],
+                }
+                session.add(
+                    ExtractPacketRow(
+                        run_id=run.id,
+                        doc_id=task.doc_id,
+                        doc_hash=task.doc_id,
+                        chunk_index=index,
+                        chunk_hash=hashlib.sha256(chunk_text.encode("utf-8")).hexdigest(),
+                        schema_hash=attempt.schema_hash or "",
+                        prompt_hash=attempt.prompt_hash or "",
+                        model=attempt.model,
+                        text=chunk_text,
+                        graph=_json(chunk_graph),
+                        issues=_json(chunk.get("issues") or []),
+                        status="task-raw",
+                    )
+                )
+            binder = Binder(self.docs.compiled, bundle, self.docs.sc.repo, session, run_id=run.id)
             outcome = await binder.bind([(packet, graph)])
             applied: set[tuple[str, str]] = set()
             summary = {"inserted": 0, "updated": 0, "noop": 0, "links": 0, "candidates": 0}
@@ -731,7 +773,7 @@ class TaskService:
                 result = await self.docs._write_object(
                     session,
                     bound,
-                    run_id=attempt.id,
+                    run_id=run.id,
                     principal=principal,
                     created_by=bound.created_by,
                     action="ingest.confirm",
@@ -746,12 +788,12 @@ class TaskService:
                     summary["noop"] += 1
             applied |= outcome.references
             summary["links"] = await self.docs._apply_links(
-                session, attempt, outcome, applied_ids=applied, principal=principal
+                session, run, outcome, applied_ids=applied, principal=principal
             )
             for cand in outcome.candidates:
                 await self.docs._candidate(
                     session,
-                    attempt.id,
+                    run.id,
                     cand.doc_id,
                     cand.chunk_index,
                     cand.kind,
@@ -762,12 +804,20 @@ class TaskService:
                     object_id=cand.object_id,
                 )
             pending = (
-                (await session.execute(select(ExtractCandidateRow).where(ExtractCandidateRow.run_id == attempt.id)))
+                (await session.execute(select(ExtractCandidateRow).where(ExtractCandidateRow.run_id == run.id)))
                 .scalars()
                 .all()
             )
             summary["candidates"] = len(pending)
             summary["graph_hash"] = _sha(graph)
+            run.status = "ok"
+            run.n_objects = len(outcome.objects)
+            run.n_inserted = summary["inserted"]
+            run.n_updated = summary["updated"]
+            run.n_noop = summary["noop"]
+            run.n_links = summary["links"]
+            run.n_candidates = summary["candidates"]
+            run.finished_at = _dt.datetime.now(_dt.UTC)
             attempt.status = "confirmed"
             attempt.finished_at = _dt.datetime.now(_dt.UTC)
             task.status = "confirmed"

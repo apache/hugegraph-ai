@@ -215,6 +215,9 @@ class TestQuery:
             assert n == 4.0
             n_running = await q.aggregate(s, "wafer-lot", SUPER, "count", None, filt={"status": "RUNNING"})
             assert n_running == 2.0  # LOT-2419 and LOT-2501; the rest are COMPLETE
+            assert await q.aggregate(s, "wafer-lot", SUPER, "count", None, filt={"status": "MISSING"}) == 0
+            for fn in ("sum", "avg", "min", "max"):
+                assert await q.aggregate(s, "wafer-lot", SUPER, fn, "qty_wafers", filt={"status": "MISSING"}) is None
 
     async def test_traverse_three_hops(self, env):
         q = env["query"]

@@ -230,6 +230,7 @@ spec:
             (await session.execute(select(DocumentRow).where(DocumentRow.store == store.metadata.name))).scalars().all()
         )
         by_path = {str(r.path): r for r in rows if r.status == "active"}
+        by_id = {r.id: r for r in rows}
         now = utcnow()
         active: list[DocumentRow] = []
         changed: list[DocumentRow] = []
@@ -249,6 +250,19 @@ spec:
                 # one is a different id (content-addressed)
                 row.status = "removed"
                 changed.append(row)
+            # A previously removed version can reappear at the same path.
+            # Its content-addressed id is already present, so restore the row
+            # instead of inserting a duplicate primary key.
+            previous = by_id.get(item.doc_id)
+            if previous is not None:
+                previous.status = "active"
+                previous.path = key
+                previous.media_type = item.media_type
+                previous.size = item.size
+                previous.last_seen_at = now
+                active.append(previous)
+                changed.append(previous)
+                continue
             new = DocumentRow(
                 id=item.doc_id,
                 store=store.metadata.name,
@@ -601,8 +615,9 @@ spec:
                     select(ExtractCandidateRow)
                     .where(
                         ExtractCandidateRow.signature == signature,
-                        ExtractCandidateRow.status == "pending",
+                        ExtractCandidateRow.status.in_(("pending", "rejected")),
                     )
+                    .order_by((ExtractCandidateRow.status == "rejected").desc())
                     .limit(1)
                 )
             )
@@ -610,6 +625,8 @@ spec:
             .first()
         )
         if existing is not None:
+            if existing.status == "rejected":
+                return
             # the same proposal from a newer run: refresh it instead of filling
             # the queue with rows a human must reject one by one
             existing.run_id = run_id

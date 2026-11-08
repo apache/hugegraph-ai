@@ -28,7 +28,7 @@ from doc_fixtures import make_context
 from sqlalchemy import select
 
 from ontogeny.action.models import OutboxRow
-from ontogeny.documents.models import DocumentRow
+from ontogeny.documents.models import DocumentRow, ExtractCandidateRow, ExtractRunRow
 from ontogeny.documents.tasks import TaskError
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -123,6 +123,40 @@ async def test_unresolved_reference_blocks_confirm(doc_context):
         await sc.documents.tasks.confirm(task_id, "tester")
     _rows, total = await _notes(sc)
     assert total == 0
+
+
+async def test_task_confirmation_does_not_share_an_ingest_run_id(doc_context):
+    sc, _, _ = doc_context
+    await sc.sync("supplier")
+    async with sc.sessionmaker() as session:
+        unrelated_run = ExtractRunRow(store="other-store", status="ok")
+        session.add(unrelated_run)
+        await session.flush()
+        session.add(ExtractCandidateRow(run_id=unrelated_run.id, doc_id="other", kind="object", status="pending"))
+        await session.commit()
+        unrelated_id = unrelated_run.id
+
+    created = await sc.documents.tasks.create_tasks(
+        "supplier-docs", _file("task-note.md", NOTE), scope=None, skill=None, principal="tester"
+    )
+    task_id = created["tasks"][0]["id"]
+    detail = await sc.documents.tasks.run(task_id, "tester")
+    assert detail["attempt"]["id"] == unrelated_id
+    confirmed = await sc.documents.tasks.confirm(task_id, "tester")
+    assert confirmed["summary"]["candidates"] == 0
+    async with sc.sessionmaker() as session:
+        runs = (
+            (await session.execute(select(ExtractRunRow).where(ExtractRunRow.store == "supplier-docs"))).scalars().all()
+        )
+    assert len(runs) == 1
+    assert runs[0].id != unrelated_id
+    assert runs[0].status == "ok"
+    assert runs[0].n_inserted == 1
+    run_detail = await sc.documents.run_detail(runs[0].id)
+    assert len(run_detail["documents"]) == 1
+    assert run_detail["documents"][0]["doc_id"] == created["tasks"][0]["doc_id"]
+    assert len(run_detail["documents"][0]["chunks"]) == runs[0].n_chunks
+    assert all(chunk["status"] == "task-raw" for chunk in run_detail["documents"][0]["chunks"])
 
 
 async def test_rerun_after_confirm_creates_a_revision(doc_context):

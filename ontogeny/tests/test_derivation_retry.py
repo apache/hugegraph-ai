@@ -16,6 +16,7 @@
 # under the License.
 
 from dataclasses import replace
+from pathlib import Path
 
 from sqlalchemy import select
 from test_function_ecosystem import sc as sc
@@ -83,6 +84,33 @@ async def test_bad_values_and_wrong_batch_length_remain_for_retry(sc, monkeypatc
     monkeypatch.setattr(sc.functions, "map_rows", recover)
     await sc.derivation.drain()
     assert not await pending(sc)
+
+
+async def test_poisoned_row_does_not_block_other_rows(sc):
+    await sc.outbox.dispatch_pending()
+    for oid in (OTHER, COUNTED):
+        await sc.derivation.handle_event(OutboxRow(object_type=OWNER, object_id=oid, op="upsert"))
+
+    # Exercise the real function subprocess and durable queue: the batched
+    # call fails, but a valid object must still be materialized and removed.
+    source = Path(sc.compiled.package_root) / "functions" / "lot_count.py"
+    source.write_text(
+        "def open_lot_count(obj):\n"
+        "    if obj['version_id'] == 'TO-A1':\n"
+        "        raise ValueError('bad object')\n"
+        "    return 7\n",
+        encoding="utf-8",
+    )
+    await sc.derivation.drain()
+    assert set(await pending(sc)) == {OTHER}
+    async with sc.sessionmaker() as session:
+        assert (await sc.repo.get(session, OWNER, COUNTED))["open_lot_count"] == 7
+
+    source.write_text("def open_lot_count(obj):\n    return 9\n", encoding="utf-8")
+    await sc.derivation.drain()
+    assert not await pending(sc)
+    async with sc.sessionmaker() as session:
+        assert (await sc.repo.get(session, OWNER, OTHER))["open_lot_count"] == 9
 
 
 async def test_new_event_during_compute_is_not_acknowledged_or_overwritten(sc, monkeypatch):

@@ -165,7 +165,7 @@ class QueryService:
         field: str | None,
         *,
         filt: Any = None,
-    ) -> float:
+    ) -> float | None:
         if fn not in ("count", "sum", "avg", "min", "max"):
             raise StoreError(f"unknown aggregate {fn!r}")
         if field is not None:
@@ -184,7 +184,8 @@ class QueryService:
                         f"{pdef.marking!r} the principal does not hold",
                         details={"object_type": object_type, "field": field, "marking": pdef.marking},
                     )
-        return float(await self.repo.aggregate(session, object_type, fn, field, filt=filt, principal=principal))
+        value = await self.repo.aggregate(session, object_type, fn, field, filt=filt, principal=principal)
+        return None if value is None else float(value)
 
     # ----------------------------------------------------------------- links
 

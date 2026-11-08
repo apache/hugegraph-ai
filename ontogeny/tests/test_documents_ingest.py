@@ -177,6 +177,87 @@ async def test_document_removal_retracts_links_and_archives(doc_context):
     assert await _note(sc, "Globex Materials") is not None
 
 
+async def test_reupload_removed_document_reuses_its_original_row(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    original = path.read_bytes()
+    doc = next(d for d in await _rows(sc, DocumentRow) if d.path == str(path))
+    await sc.documents.remove_document(doc.id)
+    path.write_bytes(original)
+
+    await sc.documents.list_documents("supplier-docs")
+    await sc.sync("supplier-note")
+    rows = [d for d in await _rows(sc, DocumentRow) if d.id == doc.id]
+    assert len(rows) == 1
+    assert rows[0].status == "active"
+    assert await _note(sc, "Acme Components") is not None
+
+
+async def test_document_can_revert_to_previous_contents(doc_context):
+    sc, pkg, _ = doc_context
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    original = path.read_bytes()
+    await sc.sync("supplier-note")
+    original_id = next(d.id for d in await _rows(sc, DocumentRow) if d.path == str(path))
+    path.write_bytes(original + b"\nUpdated text\n")
+    await sc.documents.list_documents("supplier-docs")
+    path.write_bytes(original)
+    await sc.documents.list_documents("supplier-docs")
+
+    rows = [d for d in await _rows(sc, DocumentRow) if d.path == str(path)]
+    assert len(rows) == 2
+    assert next(d for d in rows if d.id == original_id).status == "active"
+    assert sum(d.status == "active" for d in rows) == 1
+
+
+async def test_document_scan_updates_path_when_corpus_root_changes(doc_context, tmp_path):
+    from ontogeny.documents.corpus import ScannedDocument
+
+    sc, _, _ = doc_context
+    await sc.documents.list_documents("supplier-docs")
+    old = next(d for d in await _rows(sc, DocumentRow) if d.path.endswith("acme-2026-03.md"))
+    moved = tmp_path / "moved" / "acme-2026-03.md"
+    scanned = [ScannedDocument(old.id, moved, moved.name, old.size, old.media_type)]
+    store = sc.documents.store("supplier-docs")
+    async with sc.sessionmaker() as session:
+        active, _ = await sc.documents._sync_documents(session, store, sc.documents._cfg(store), scanned)
+        await session.commit()
+        assert active[0].id == old.id
+        assert active[0].path == str(moved)
+        assert active[0].status == "active"
+
+
+async def test_replacing_document_retracts_old_document_links(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    old_note = await _note(sc, "Acme Components")
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    path.write_text(
+        "Supplier: Initech Fasteners\nEffective date: 2026-04-02\nRisk level: MEDIUM\nSummary: Replaced.\n",
+        encoding="utf-8",
+    )
+    await sc.sync("supplier-note")
+    assert ("SUP-001", old_note["note_id"]) not in await _link_pairs(sc)
+    assert await _note(sc, "Acme Components") is None
+    assert await _note(sc, "Initech Fasteners") is not None
+
+
+async def test_rejected_candidate_is_not_recreated_on_reingest(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    add_note(pkg, "globex-conflict.md", "Globex Materials", "2026-02-14", "HIGH", "Different finding")
+    await sc.sync("supplier-note")
+    candidate = next(c for c in await _rows(sc, ExtractCandidateRow) if c.reason == "CONFLICT")
+    await sc.documents.reject_candidate(candidate.id, principal="reviewer", reason="not credible")
+
+    await sc.sync("supplier-note")
+    matching = [c for c in await _rows(sc, ExtractCandidateRow) if c.signature == candidate.signature]
+    assert len(matching) == 1
+    assert matching[0].status == "rejected"
+    assert matching[0].decided_by == "reviewer"
+
+
 async def test_dry_run_never_writes(doc_context):
     sc, _, _ = doc_context
     summary = await sc.documents.ingest("supplier-docs", dry_run=True)

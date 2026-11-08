@@ -35,6 +35,9 @@ def test_coercion_is_forgiving_before_validation():
     assert coerce_value(PropertyType.parse("decimal(10,2)"), "$1,234.50", prop="x") == 1234.5
     assert coerce_value(PropertyType.parse("integer"), "1,200", prop="n") == 1200
     assert coerce_value(PropertyType.parse("boolean"), "yes", prop="b") is True
+    for text in ("1,2,3", "15%", "$1,200"):
+        assert coerce_value(PropertyType.parse("string"), text, prop="text") == text
+    assert coerce_value(PropertyType.parse("decimal(10,2)"), "15%", prop="ratio") == 0.15
 
 
 def test_quote_finds_the_sentence():

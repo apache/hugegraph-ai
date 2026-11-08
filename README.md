@@ -40,6 +40,8 @@ The LLM application builds GraphRAG and extraction workflows on the reusable SDK
     └───────────────────────┘           └────────────────────────┘
 ```
 
+The diagram shows the main module relationships. The LLM application can also call model providers directly; SDK provider adapters are optional.
+
 ## 🚀 Quick Start
 
 > [!NOTE]

@@ -25,7 +25,7 @@ Already have a domain package? Sidebar domain switcher → **New domain → Impo
 
 ## 8.2 First login
 
-A fresh deployment auto-creates an `admin` account; unless `ONTOGENY_ADMIN_PASSWORD` was preset, the generated six-digit password is saved to the owner-only `admin-bootstrap-password` file in the demo data directory (default `.ontogeny-demo`, or `/data` in Compose). Logs show its path, never the password; read it from another terminal with `cat .ontogeny-demo/admin-bootstrap-password`. Change the password after login and securely delete the file. After logging in you land on the Overview dashboard: Ontogeny intro & overall architecture, the ontology model, agents and the RSI loop — four sections on one screen.
+A fresh deployment auto-creates an `admin` account; unless `ONTOGENY_ADMIN_PASSWORD` was preset, the generated high-entropy password is saved to the owner-only `admin-bootstrap-password` file in the demo data directory (default `.ontogeny-demo`, or `/data` in Compose). Logs show its path, never the password; read it from another terminal with `cat .ontogeny-demo/admin-bootstrap-password`. Change the password after login and securely delete the file. After logging in you land on the Overview dashboard: Ontogeny intro & overall architecture, the ontology model, agents and the RSI loop — four sections on one screen.
 
 ![The Ontogeny dashboard](../img/qs-dashboard.png)
 

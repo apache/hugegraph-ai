@@ -219,6 +219,27 @@ class TestEvalRunner:
         # overall suite green (queries included)
         assert report["passed"] is True
 
+    async def test_replay_sees_derived_properties_on_both_revision_states(self, env):
+        from ontogeny.core.models import PropertyDef, Rule
+
+        compiled = env["compiled"]
+        compiled.objects["process-step"].spec.properties["blocked"] = PropertyDef(
+            type="boolean", derived="target.status != 'RUNNING'"
+        )
+        compiled.actions["complete-process-step"].spec.rules = [Rule(expr="target.blocked != true")]
+        async with env["maker"]() as s:
+            revision = await self._complete_running_step(s, env["runtime"])
+            await s.commit()
+            assert revision.before["blocked"] is False
+            assert revision.after["blocked"] is True
+        async with env["maker"]() as s:
+            report = await env["runner"].run(s, compiled.eval_suites["lifecycle-flow-suite"])
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["replays"] == 1
+        assert replay["outcome_matches"] == 1
+        assert replay["after_state_rejections"] == 1
+        assert replay["ok"] is True
+
     async def test_replay_ignores_unreplayable_revisions(self, env):
         """Revisions left over from an earlier package binding (the action since
         retargeted, so the object does not exist under the current target type)
@@ -743,6 +764,39 @@ class TestDirectionAKeepTheReasoning:
             on_live = (await runner.run(s, probe))["passed"]
         assert on_candidate is True
         assert on_live is False
+
+    async def test_eval_includes_new_candidate_regression_case(self, client):
+        c, sc = client
+        async with sc.sessionmaker() as s:
+            row = ProposalRow(
+                gap_kind="eval-case-synth",
+                diff=[
+                    {
+                        "mutation": "eval-case-synth",
+                        "suite": "lifecycle-flow-suite",
+                        "case": {
+                            "name": "candidate-must-fail",
+                            "query": {"object": "wafer-lot", "filter": {"status": "NEVER_PRESENT"}},
+                            "expect": {"columns": ["not_a_declared_column"]},
+                        },
+                    }
+                ],
+                rationale="candidate regression coverage",
+            )
+            s.add(row)
+            await s.commit()
+            pid = row.id
+        response = await c.post(f"/api/v1/evolve/proposals/{pid}/eval")
+        assert response.status_code == 200
+        assert response.json() == {"passed": False, "candidate_evaluated": True}
+        detail = (await c.get(f"/api/v1/evolve/proposals/{pid}")).json()
+        cases = detail["eval_report"]["suites"]["lifecycle-flow-suite"]["cases"]
+        case = next(case for case in cases if case.get("name") == "candidate-must-fail")
+        assert case["ok"] is False
+        assert case["missing_columns"] == ["not_a_declared_column"]
+        assert all(
+            case.name != "candidate-must-fail" for case in sc.compiled.eval_suites["lifecycle-flow-suite"].spec.queries
+        )
 
 
 class TestRuleTightenAndCaseSynth:

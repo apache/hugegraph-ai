@@ -237,8 +237,9 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
                 except Exception as exc:
                     candidate_error = f"{type(exc).__name__}: {exc}"
             reports = {}
-            passed = len(sc.compiled.eval_suites) > 0  # vacuous green: no suites = no evidence
-            for suite in sc.compiled.eval_suites.values():
+            suites = candidate.eval_suites() if candidate is not None else list(sc.compiled.eval_suites.values())
+            passed = len(suites) > 0  # vacuous green: no suites = no evidence
+            for suite in suites:
                 report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
                 if candidate is not None:
                     report["candidate"] = True

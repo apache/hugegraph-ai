@@ -30,7 +30,7 @@ from test_agent_governance import _make
 
 from ontogeny.core import load_package
 from ontogeny.db import make_engine, make_sessionmaker
-from ontogeny.errors import ConflictError, StoreError
+from ontogeny.errors import ConflictError, RuleRejectedError, StoreError
 from ontogeny.registry.compiled import compile_package
 from ontogeny.stores.ddl import live_index_name
 from ontogeny.stores.repo import ObjectRepository, utcnow
@@ -196,3 +196,23 @@ async def test_postgres_concurrent_creates_one_live_version(
         assert count == 1
     finally:
         await sc.engine.dispose()
+
+
+async def test_action_update_preserves_composite_key(golden_pkg_path, tmp_path):
+    compiled = replace(compile_package(load_package(golden_pkg_path)), content_hash=uuid.uuid4().hex)
+    compiled.objects["tapeout-version"].spec.primaryKey = ["version_id", "project"]
+    engine = make_engine(f"sqlite+aiosqlite:///{tmp_path / 'composite-update.db'}")
+    repo, maker = ObjectRepository(compiled), make_sessionmaker(engine)
+    try:
+        async with maker() as db:
+            await repo.ensure(db)
+            await repo.action_insert(db, "tapeout-version", {"version_id": "TO-1", "project": "A"}, utcnow())
+            await repo.action_update(db, "tapeout-version", ("TO-1", "A"), {"version_id": "TO-1"}, utcnow())
+            with pytest.raises(RuleRejectedError, match="cannot change the primary key"):
+                await repo.action_update(db, "tapeout-version", ("TO-1", "A"), {"project": "B"}, utcnow())
+            assert (await repo.get(db, "tapeout-version", ("TO-1", "A")))["project"] == "A"
+            assert await repo.get(db, "tapeout-version", ("TO-1", "B")) is None
+            assert len(await repo.history(db, "tapeout-version", ("TO-1", "A"))) == 2
+            await db.commit()
+    finally:
+        await engine.dispose()

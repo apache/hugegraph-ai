@@ -228,6 +228,10 @@ class ObjectRepository:
             if principal is not None
             else set()
         )
+        properties = {
+            self.compiled.col(prop): definition
+            for prop, definition in self.compiled.objects[object_type].spec.properties.items()
+        }
 
         def one(f: dict) -> ColumnElement:
             if "and" in f:
@@ -253,6 +257,12 @@ class ObjectRepository:
             col = t.c.get(self.compiled.col(name))
             if col is None:
                 raise NotFoundError(f"unknown filter field {name!r} on {object_type}")
+            if op in {"eq", "ne", "lt", "le", "gt", "ge", "in"}:
+                ptype = properties[col.name].ptype()
+                if op == "in":
+                    value = [ptype.coerce(item, prop=name) for item in (value if isinstance(value, list) else [value])]
+                else:
+                    value = ptype.coerce(value, prop=name)
             if op == "eq":
                 return col.is_(None) if value is None else col == value
             if op == "ne":

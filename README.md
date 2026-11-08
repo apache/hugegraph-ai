@@ -83,8 +83,7 @@ cd hugegraph-ai
 # 3. Install dependencies with workspace management
 # uv sync automatically creates venv (.venv) and installs base dependencies
 uv sync --extra llm  # Install LLM-specific dependencies
-# For HugeGraph MCP source development, install its standalone package directly.
-# Or install all optional dependencies: uv sync --all-extras
+# To install all workspace optional dependencies instead: uv sync --all-extras
 
 # 4. Activate virtual environment (recommended for easier commands)
 source .venv/bin/activate
@@ -94,6 +93,8 @@ cd hugegraph-llm
 python -m hugegraph_llm.demo.rag_demo.app
 # Visit http://127.0.0.1:8001
 ```
+
+For MCP source development, follow the separate [MCP installation guide](./hugegraph-mcp/README.md); `uv sync --all-extras` does not install MCP.
 
 The source launcher binds to `127.0.0.1` by default and warns when a non-loopback `--host` is selected. The Server example also binds its port to loopback; configure authentication and network restrictions before remote access.
 

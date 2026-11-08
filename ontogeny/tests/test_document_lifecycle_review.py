@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
 
 import pytest
@@ -155,3 +156,24 @@ async def test_manually_accepted_link_records_assertion_and_retracts(tmp_path, w
             assert await sc.repo.link_members(session, "supplier-risk-note") == []
     finally:
         await sc.engine.dispose()
+
+
+async def test_task_with_no_selected_links_preserves_existing_document_links(lifecycle_context):
+    sc, pkg, _ = lifecycle_context
+    await sc.sync("supplier-note")
+    path = pkg / "data/docs/supplier-notes/acme-2026-03.md"
+    async with sc.sessionmaker() as session:
+        before = await sc.repo.link_members(session, "supplier-risk-note")
+    created = await sc.documents.tasks.create_tasks(
+        "supplier-docs",
+        [{"name": path.name, "content_b64": base64.b64encode(path.read_bytes()).decode()}],
+        scope={"objects": {"supplier-note": ["supplier_name", "effective_date", "risk_level"]}, "links": []},
+        skill=None,
+        principal="tester",
+    )
+    task_id = created["tasks"][0]["id"]
+    sc.document_extractor.skip_supplier_edge = True
+    await sc.documents.tasks.run(task_id, "tester")
+    await sc.documents.tasks.confirm(task_id, "tester")
+    async with sc.sessionmaker() as session:
+        assert await sc.repo.link_members(session, "supplier-risk-note") == before

@@ -780,7 +780,13 @@ class TaskService:
                     summary["noop"] += 1
             applied |= outcome.references
             summary["links"] = await self.docs._apply_links(
-                session, run, outcome, applied_ids=applied, doc_ids={task.doc_id}, principal=principal
+                session,
+                run,
+                outcome,
+                applied_ids=applied,
+                doc_ids={task.doc_id},
+                link_names=set(bundle.link_labels.values()),
+                principal=principal,
             )
             for cand in outcome.candidates:
                 await self.docs._candidate(

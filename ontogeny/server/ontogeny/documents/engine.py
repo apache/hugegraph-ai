@@ -709,6 +709,7 @@ spec:
         *,
         applied_ids: set[tuple[str, str]],
         doc_ids: set[str],
+        link_names: set[str],
         principal: str,
     ) -> int:
         ts = utcnow()
@@ -726,7 +727,9 @@ spec:
                 (
                     await session.execute(
                         select(ExtractAssertionRow).where(
-                            ExtractAssertionRow.doc_id.in_(docs), ExtractAssertionRow.kind == "link"
+                            ExtractAssertionRow.doc_id.in_(docs),
+                            ExtractAssertionRow.kind == "link",
+                            ExtractAssertionRow.object_type.in_(link_names),
                         )
                     )
                 )
@@ -1076,6 +1079,7 @@ spec:
                     outcome,
                     applied_ids=applied_ids,
                     doc_ids={packet.doc_id for packet, _ in packets},
+                    link_names=set(schema.link_labels.values()),
                     principal=f"extractor:{run_id}",
                 )
                 await session.flush()

@@ -240,6 +240,275 @@ class TestEvalRunner:
         assert replay["after_state_rejections"] == 1
         assert replay["ok"] is True
 
+    def test_replay_preserves_absent_and_archive_sentinels(self, env):
+        from ontogeny.evolve.evalrunner import assemble_revision_state
+
+        assert assemble_revision_state(env["compiled"], "process-step", None) is None
+        assert assemble_revision_state(env["compiled"], "process-step", {"archived": True}) == {"archived": True}
+
+    async def test_candidate_replay_assembles_derived_values_in_old_snapshots(self, env):
+        from ontogeny.core.models import PropertyDef, Rule
+
+        async with env["maker"]() as s:
+            revision = await self._complete_running_step(s, env["runtime"])
+            await s.commit()
+            revision_id = revision.id
+            original_before = dict(revision.before)
+            original_after = dict(revision.after)
+            assert "blocked" not in original_before and "blocked" not in original_after
+
+        candidate = load_package(env["pkg_root"])
+        candidate.find("ObjectType", "process-step").spec.properties["blocked"] = PropertyDef(
+            type="boolean", derived="target.status != 'RUNNING'"
+        )
+        candidate.find("Action", "complete-process-step").spec.rules = [Rule(expr="target.blocked != true")]
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+            replay = next(c for c in report["cases"] if c["kind"] == "replay")
+            assert replay["replays"] == 1 and replay["outcome_matches"] == 1
+            assert replay["after_state_rejections"] == 1 and replay["ok"] is True
+            from ontogeny.action.models import RevisionRow
+
+            revision = await s.get(RevisionRow, revision_id)
+            assert revision.before == original_before and revision.after == original_after
+
+    async def test_replay_reports_unknown_when_candidate_dependency_is_missing(self, env):
+        from ontogeny.core.models import PropertyDef, Rule
+
+        async with env["maker"]() as s:
+            revision = await self._complete_running_step(s, env["runtime"])
+            await s.commit()
+            revision_id = revision.id
+        candidate = load_package(env["pkg_root"])
+        props = candidate.find("ObjectType", "process-step").spec.properties
+        props["new_flag"] = PropertyDef(type="boolean")
+        props["blocked"] = PropertyDef(type="boolean", derived="target.new_flag == true")
+        candidate.find("Action", "complete-process-step").spec.rules = [Rule(expr="target.blocked != true")]
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["replays"] == 0 and replay["ok"] is False and report["passed"] is False
+        assert replay["unknown_revisions"] == [{"revision": revision_id, "missing_fields": ["new_flag"]}]
+
+    def test_replay_unknown_distinguishes_null_and_missing(self, env):
+        from ontogeny.core.models import PropertyDef
+        from ontogeny.evolve.evalrunner import missing_revision_fields
+
+        compiled = env["compiled"]
+        compiled.objects["process-step"].spec.properties["blocked"] = PropertyDef(
+            type="boolean", derived="target.status != 'RUNNING'"
+        )
+        rules = ["target.blocked == true"]
+        assert missing_revision_fields(compiled, "process-step", {}, rules) == {"status"}
+        assert missing_revision_fields(compiled, "process-step", {"status": None}, rules) == set()
+        assert missing_revision_fields(compiled, "process-step", {"archived": True}, rules) == {"status"}
+        assert missing_revision_fields(compiled, "process-step", {}, ["target has status"]) == {"status"}
+        assert missing_revision_fields(compiled, "process-step", {"meta": {}}, ["target.meta has key"]) == {"meta.key"}
+        assert missing_revision_fields(compiled, "process-step", {"meta": None}, ["target.meta has key"]) == set()
+        assert missing_revision_fields(compiled, "process-step", {}, ["target.status >< 1"]) == {"<invalid expression>"}
+        props = compiled.objects["process-step"].spec.properties
+        props["meta"] = PropertyDef(type="struct{present:string}")
+        props["mirror"] = PropertyDef(type="struct{present:string}", derived="target.meta")
+        exprs = ["target.mirror.present == 'x'"]
+        assert missing_revision_fields(compiled, "process-step", {}, exprs) == {"meta"}
+        assert missing_revision_fields(compiled, "process-step", {"meta": None}, exprs) == set()
+        assert missing_revision_fields(compiled, "process-step", {"meta": {}}, exprs) == {"mirror.present"}
+        assert missing_revision_fields(compiled, "process-step", {"meta": {"present": None}}, exprs) == set()
+
+    async def test_replay_binds_candidate_parameters_and_reports_missing_required(self, env):
+        from ontogeny.core.models import ParamDef, Rule
+
+        async with env["maker"]() as s:
+            rev = await self._complete_running_step(s, env["runtime"])
+            await s.commit()
+            revision_id = rev.id
+        candidate = load_package(env["pkg_root"])
+        action = candidate.find("Action", "complete-process-step")
+        action.spec.parameters["threshold"] = ParamDef(type="integer", default=5)
+        action.spec.rules = [Rule(expr="target.status != 'COMPLETED' and parameters.threshold == 5")]
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["replays"] == 1 and replay["ok"] is True
+        action.spec.parameters["threshold"] = ParamDef(type="integer", required=True)
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["ok"] is False and replay["replays"] == 0
+        assert replay["unknown_revisions"] == [{"revision": revision_id, "missing_fields": ["parameters.threshold"]}]
+
+    async def test_replay_excludes_snapshot_from_different_target_type(self, env):
+        from ontogeny.action.models import RevisionRow
+
+        async with env["maker"]() as s:
+            real = await self._complete_running_step(s, env["runtime"])
+            s.add(
+                RevisionRow(
+                    action="complete-process-step",
+                    object_type="wafer-lot",
+                    object_id="other",
+                    outcome="executed",
+                    principal="u-fab",
+                    params={},
+                    before=real.before,
+                    after=real.after,
+                )
+            )
+            await s.commit()
+        async with env["maker"]() as s:
+            report = await env["runner"].run(s, env["compiled"].eval_suites["lifecycle-flow-suite"])
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["replays"] == 1 and replay["ok"] is True
+
+    async def test_replay_and_shadow_mark_rule_execution_errors_unknown(self, env):
+        from ontogeny.core.models import Rule
+
+        async with env["maker"]() as s:
+            rev = await self._complete_running_step(s, env["runtime"])
+            await s.commit()
+            revision_id = rev.id
+        candidate = load_package(env["pkg_root"])
+        candidate.find("Action", "complete-process-step").spec.rules.append(Rule(expr="1 / 0 > 0"))
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+            shadow = await env["promoter"].shadow_diff(
+                s,
+                env["pkg_root"],
+                [{"mutation": "rule-tighten", "action": "complete-process-step", "expr": "1 / 0 > 0"}],
+            )
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["ok"] is False and replay["replays"] == 0
+        assert replay["unknown_revisions"][0]["revision"] == revision_id
+        assert "division by zero" in replay["unknown_revisions"][0]["error"]
+        assert shadow["clean"] is False and shadow["actions"][0]["would_reject"] == 0
+        assert shadow["actions"][0]["unknown_revisions"][0]["revision"] == revision_id
+        assert "division by zero" in shadow["actions"][0]["unknown_revisions"][0]["error"]
+
+    def test_struct_parameter_detection_distinguishes_defaults_and_explicit_null(self, env):
+        from ontogeny.core.models import ParamDef
+        from ontogeny.evolve.evalrunner import bind_revision_parameters, missing_revision_parameters
+
+        action = env["compiled"].actions["complete-process-step"]
+        action.spec.parameters["options"] = ParamDef(
+            type="struct{present:string,newflag:string}", default={"present": "yes"}
+        )
+        rule = ["parameters.options.newflag == null"]
+        raw = {"options": {"present": "yes"}}
+        bound, unknown = bind_revision_parameters(action, raw)
+        assert not unknown
+        assert missing_revision_parameters(action, raw, bound, rule) == {"parameters.options.newflag"}
+        assert missing_revision_parameters(action, raw, bound, ["parameters.options has newflag"]) == {
+            "parameters.options.newflag"
+        }
+        for raw in ({}, {"options": None}, {"options": {"present": "yes", "newflag": None}}):
+            bound, unknown = bind_revision_parameters(action, raw)
+            assert not unknown
+            assert missing_revision_parameters(action, raw, bound, rule) == set()
+
+    async def test_replay_and_shadow_do_not_invent_struct_parameter_fields(self, env):
+        import yaml
+
+        from ontogeny.core.models import ParamDef, Rule
+
+        async with env["maker"]() as s:
+            rev = await self._complete_running_step(s, env["runtime"])
+            rev.params = {**rev.params, "options": {"present": "yes"}}
+            await s.commit()
+            revision_id = rev.id
+        candidate = load_package(env["pkg_root"])
+        action = candidate.find("Action", "complete-process-step")
+        action.spec.parameters["options"] = ParamDef(type="struct{present:string,newflag:string}")
+        action.spec.rules = [Rule(expr="target.status != 'COMPLETED' and parameters.options.newflag == null")]
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["ok"] is False and replay["replays"] == 0
+        assert replay["unknown_revisions"] == [
+            {"revision": revision_id, "missing_fields": ["parameters.options.newflag"]}
+        ]
+
+        action_path = Path(env["pkg_root"]) / "actions" / "complete-process-step.yaml"
+        on_disk = yaml.safe_load(action_path.read_text())
+        on_disk["spec"]["parameters"]["options"] = {"type": "struct{present:string,newflag:string}"}
+        action_path.write_text(yaml.safe_dump(on_disk, allow_unicode=True, sort_keys=False))
+        async with env["maker"]() as s:
+            shadow = await env["promoter"].shadow_diff(
+                s,
+                env["pkg_root"],
+                [
+                    {
+                        "mutation": "rule-tighten",
+                        "action": "complete-process-step",
+                        "expr": "parameters.options.newflag == null",
+                    }
+                ],
+            )
+        assert shadow["clean"] is False
+        assert shadow["actions"][0]["unknown_revisions"] == [
+            {"revision": revision_id, "missing_fields": ["parameters.options.newflag"]}
+        ]
+
+    async def test_replay_counts_archived_target_as_rejected_on_repeat(self, env):
+        from ontogeny.core.models import ReplayCase, Rule
+        from ontogeny.errors import NotFoundError
+
+        action = env["compiled"].actions["retract-wafer-test"]
+        action.spec.rules = [Rule(expr="target.test_id == 'WT-503'")]
+        async with env["maker"]() as s:
+            revision = await env["runtime"].execute(s, "retract-wafer-test", FAB, {"reason": "mistake"}, "WT-503")
+            assert revision.after == {"archived": True}
+            await s.commit()
+            with pytest.raises(NotFoundError):
+                await env["runtime"].execute(s, "retract-wafer-test", FAB, {"reason": "mistake"}, "WT-503")
+        suite = env["compiled"].eval_suites["lifecycle-flow-suite"].model_copy(deep=True)
+        suite.spec.queries = []
+        suite.spec.replays = [ReplayCase(action="retract-wafer-test", cases="from-revisions", since="90d")]
+        async with env["maker"]() as s:
+            report = await env["runner"].run(s, suite)
+        replay = report["cases"][0]
+        assert replay["replays"] == 1 and replay["outcome_matches"] == 1
+        assert replay["after_state_rejections"] == 1 and replay["ok"] is True
+        assert "unknown_revisions" not in replay
+
+    async def test_replay_detects_missing_nested_derived_field_in_historical_snapshot(self, env):
+        from ontogeny.action.models import RevisionRow
+        from ontogeny.core.models import PropertyDef, Rule
+
+        async with env["maker"]() as s:
+            rev = await self._complete_running_step(s, env["runtime"])
+            # Model an older persisted audit snapshot with an input struct.
+            rev.before = {**rev.before, "meta": {"present": "value"}}
+            rev.after = {**rev.after, "meta": {"present": "value"}}
+            await s.commit()
+            revision_id = rev.id
+        candidate = load_package(env["pkg_root"])
+        props = candidate.find("ObjectType", "process-step").spec.properties
+        props["meta"] = PropertyDef(type="struct{present:string}")
+        props["mirror"] = PropertyDef(type="struct{present:string}", derived="target.meta")
+        candidate.find("Action", "complete-process-step").spec.rules = [
+            Rule(expr="target.mirror.missing != 'restricted'")
+        ]
+        async with env["maker"]() as s:
+            report = await env["runner"].run(
+                s, env["compiled"].eval_suites["lifecycle-flow-suite"], candidate_pkg=candidate
+            )
+            assert (await s.get(RevisionRow, revision_id)).before["meta"] == {"present": "value"}
+        replay = next(c for c in report["cases"] if c["kind"] == "replay")
+        assert replay["ok"] is False and replay["replays"] == 0
+        assert replay["unknown_revisions"] == [{"revision": revision_id, "missing_fields": ["mirror.missing"]}]
+
     async def test_replay_ignores_unreplayable_revisions(self, env):
         """Revisions left over from an earlier package binding (the action since
         retargeted, so the object does not exist under the current target type)
@@ -776,7 +1045,7 @@ class TestDirectionAKeepTheReasoning:
                         "suite": "lifecycle-flow-suite",
                         "case": {
                             "name": "candidate-must-fail",
-                            "query": {"object": "wafer-lot", "filter": {"status": "NEVER_PRESENT"}},
+                            "query": {"object": "wafer-lot", "filter": {"lot_id": "NONEXISTENT-LOT"}},
                             "expect": {"columns": ["not_a_declared_column"]},
                         },
                     }
@@ -1308,6 +1577,86 @@ class TestDirectionB2B3:
         act = dirty["actions"][0]
         assert act["would_reject"] == 1 and act["revisions"] == 1
         assert clean["clean"] is True and clean["actions"][0]["would_reject"] == 0
+
+    async def test_shadow_diff_uses_candidate_derived_values_on_old_snapshots(self, env):
+        import yaml
+
+        async with env["maker"]() as s:
+            await TestEvalRunner._complete_running_step(self, s, env["runtime"])
+            await s.commit()
+        object_path = Path(env["pkg_root"]) / "objects" / "process-step.yaml"
+        obj = yaml.safe_load(object_path.read_text())
+        obj["spec"]["properties"]["is_running"] = {"type": "boolean", "derived": "target.status == 'RUNNING'"}
+        object_path.write_text(yaml.safe_dump(obj, allow_unicode=True, sort_keys=False))
+        async with env["maker"]() as s:
+            result = await env["promoter"].shadow_diff(
+                s,
+                env["pkg_root"],
+                [{"mutation": "rule-tighten", "action": "complete-process-step", "expr": "target.is_running == true"}],
+            )
+        assert result["clean"] is True
+        assert result["actions"][0]["would_reject"] == 0
+
+    async def test_shadow_diff_unknown_when_candidate_needs_new_field(self, env):
+        import yaml
+
+        async with env["maker"]() as s:
+            revision = await TestEvalRunner._complete_running_step(self, s, env["runtime"])
+            await s.commit()
+            revision_id = revision.id
+        object_path = Path(env["pkg_root"]) / "objects" / "process-step.yaml"
+        obj = yaml.safe_load(object_path.read_text())
+        obj["spec"]["properties"]["new_flag"] = {"type": "boolean"}
+        obj["spec"]["properties"]["blocked"] = {"type": "boolean", "derived": "target.new_flag == true"}
+        object_path.write_text(yaml.safe_dump(obj, allow_unicode=True, sort_keys=False))
+        async with env["maker"]() as s:
+            result = await env["promoter"].shadow_diff(
+                s,
+                env["pkg_root"],
+                [{"mutation": "rule-tighten", "action": "complete-process-step", "expr": "target.blocked != true"}],
+            )
+        assert result["clean"] is False
+        assert result["actions"][0]["would_reject"] == 0
+        assert result["actions"][0]["unknown_revisions"] == [{"revision": revision_id, "missing_fields": ["new_flag"]}]
+
+    async def test_shadow_binds_candidate_parameters_and_excludes_other_target_types(self, env):
+        import yaml
+
+        from ontogeny.action.models import RevisionRow
+
+        async with env["maker"]() as s:
+            real = await TestEvalRunner._complete_running_step(self, s, env["runtime"])
+            revision_id = real.id
+            s.add(
+                RevisionRow(
+                    action="complete-process-step",
+                    object_type="wafer-lot",
+                    object_id="other",
+                    outcome="executed",
+                    principal="u-fab",
+                    params={},
+                    before=real.before,
+                    after=real.after,
+                )
+            )
+            await s.commit()
+        action_path = Path(env["pkg_root"]) / "actions" / "complete-process-step.yaml"
+        action = yaml.safe_load(action_path.read_text())
+        action["spec"]["parameters"]["threshold"] = {"type": "integer", "default": 5}
+        action_path.write_text(yaml.safe_dump(action, allow_unicode=True, sort_keys=False))
+        diff = [{"mutation": "rule-tighten", "action": "complete-process-step", "expr": "parameters.threshold == 5"}]
+        async with env["maker"]() as s:
+            result = await env["promoter"].shadow_diff(s, env["pkg_root"], diff)
+        assert result["clean"] is True and result["actions"][0]["would_reject"] == 0
+        assert result["actions"][0]["unknown_revisions"] == []
+        action["spec"]["parameters"]["threshold"] = {"type": "integer", "required": True}
+        action_path.write_text(yaml.safe_dump(action, allow_unicode=True, sort_keys=False))
+        async with env["maker"]() as s:
+            result = await env["promoter"].shadow_diff(s, env["pkg_root"], diff)
+        assert result["clean"] is False
+        assert result["actions"][0]["unknown_revisions"] == [
+            {"revision": revision_id, "missing_fields": ["parameters.threshold"]}
+        ]
 
     async def test_t2_promote_attaches_shadow_report(self, env):
         prom = env["promoter"]

@@ -263,6 +263,12 @@ class Promoter:
         approving a T2 canary.
         """
         from ..action.models import RevisionRow
+        from .evalrunner import (
+            assemble_revision_state,
+            bind_revision_parameters,
+            missing_revision_fields,
+            missing_revision_parameters,
+        )
 
         live_compiled = await self.registry.load_latest(session)
         if live_compiled is None:
@@ -299,19 +305,39 @@ class Promoter:
                 .all()
             )
             would_reject: list[dict[str, Any]] = []
+            unknown: list[dict[str, Any]] = []
             for rev in revs:
+                if rev.object_type != live.spec.target or rev.object_type != cand.spec.target:
+                    continue
                 before = rev.before
                 if before is None:
                     continue
-                ctx = ExprContext(target=before, parameters=rev.params or {}, principal={"id": rev.principal})
+                raw_params = rev.params or {}
+                live_params, missing = bind_revision_parameters(live, raw_params)
+                candidate_params, candidate_missing = bind_revision_parameters(cand, raw_params)
+                missing |= candidate_missing
+                missing |= missing_revision_parameters(live, raw_params, live_params, live_rules)
+                missing |= missing_revision_parameters(cand, raw_params, candidate_params, cand_rules)
+                missing |= missing_revision_fields(live_compiled, live.spec.target, before, live_rules)
+                missing |= missing_revision_fields(candidate, cand.spec.target, before, cand_rules)
+                if missing:
+                    unknown.append({"revision": rev.id, "missing_fields": sorted(missing)})
+                    continue
+                live_target = assemble_revision_state(live_compiled, live.spec.target, before)
+                candidate_target = assemble_revision_state(candidate, cand.spec.target, before)
+                live_ctx = ExprContext(target=live_target, parameters=live_params, principal={"id": rev.principal})
+                cand_ctx = ExprContext(
+                    target=candidate_target, parameters=candidate_params, principal={"id": rev.principal}
+                )
                 try:
-                    live_pass = all(bool(_expr.evaluate(rx, ctx)) for rx in live_rules)
-                    cand_pass = all(bool(_expr.evaluate(rx, ctx)) for rx in cand_rules)
-                except Exception:
+                    live_pass = all(bool(_expr.evaluate(rx, live_ctx)) for rx in live_rules)
+                    cand_pass = all(bool(_expr.evaluate(rx, cand_ctx)) for rx in cand_rules)
+                except _expr.ExpressionError as exc:
+                    unknown.append({"revision": rev.id, "error": str(exc)})
                     continue
                 if live_pass and not cand_pass:
                     would_reject.append({"revision": rev.id, "object_id": rev.object_id, "principal": rev.principal})
-            if would_reject:
+            if would_reject or unknown:
                 clean = False
             actions.append(
                 {
@@ -319,6 +345,7 @@ class Promoter:
                     "revisions": len(revs),
                     "would_reject": len(would_reject),
                     "details": would_reject[:20],
+                    "unknown_revisions": unknown,
                 }
             )
         return {"clean": clean, "actions": actions}

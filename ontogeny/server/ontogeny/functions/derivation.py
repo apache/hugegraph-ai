@@ -207,13 +207,29 @@ class DerivationWorker:
                 values = await self.sandbox.map_rows(s, fn, assembled, {}, object_param=object_param)
             except Exception as exc:
                 log.warning("derivation %s.%s failed for %d rows: %s", object_type, prop, len(rows), exc)
-                return 0, set()
-            if len(values) != len(assembled):
-                log.warning(
-                    "derivation %s.%s returned %d values for %d rows", object_type, prop, len(values), len(rows)
-                )
-                return 0, set()
-            for row_id, value in zip([r[pk] for r in assembled], values, strict=False):
+                # A bad input must not permanently block every other object in
+                # the batch. Roll back any failed query before retrying rows;
+                # materialized writes happen only after all retries complete.
+                await s.rollback()
+                pairs = []
+                for row in assembled:
+                    try:
+                        one = await self.sandbox.map_rows(s, fn, [row], {}, object_param=object_param)
+                        if len(one) != 1:
+                            log.warning("derivation %s.%s returned %d values for one row", object_type, prop, len(one))
+                            continue
+                        pairs.append((row[pk], one[0]))
+                    except Exception as row_exc:
+                        await s.rollback()
+                        log.warning("derivation %s.%s failed for object %s: %s", object_type, prop, row[pk], row_exc)
+            else:
+                if len(values) != len(assembled):
+                    log.warning(
+                        "derivation %s.%s returned %d values for %d rows", object_type, prop, len(values), len(rows)
+                    )
+                    return 0, succeeded
+                pairs = list(zip([r[pk] for r in assembled], values, strict=True))
+            for row_id, value in pairs:
                 if value is None and pdef.required:
                     continue
                 try:

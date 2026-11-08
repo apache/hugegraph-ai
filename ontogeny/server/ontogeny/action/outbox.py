@@ -32,7 +32,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from sqlalchemy import delete, exists, insert, literal, select
+from sqlalchemy import delete, insert, literal, select, text, update
 
 from ..config import Settings
 from .models import OutboxConsumerRow, OutboxReceiptRow, OutboxRow
@@ -183,6 +183,18 @@ class OutboxDispatcher:
             cursor = await session.get(OutboxConsumerRow, consumer)
             if cursor is None or not cursor.receipts_initialized:
                 raise ValueError("consumer receipts have not been initialized; dispatch first")
+            await self._initialize_pending(session, cursor)
+            receipt_ids = select(OutboxReceiptRow.event_id).where(
+                OutboxReceiptRow.consumer == consumer,
+                OutboxReceiptRow.event_id >= from_id,
+                OutboxReceiptRow.event_id <= through_id,
+            )
+            await session.execute(
+                update(OutboxRow)
+                .where(OutboxRow.id.in_(receipt_ids))
+                .values({f"pending_{consumer}": True})
+                .execution_options(synchronize_session=False)
+            )
             result = await session.execute(
                 delete(OutboxReceiptRow).where(
                     OutboxReceiptRow.consumer == consumer,
@@ -192,6 +204,36 @@ class OutboxDispatcher:
             )
             await session.commit()
             return int(result.rowcount)
+
+    async def _initialize_pending(self, session, cursor: OutboxConsumerRow) -> None:
+        """Reconcile flags from authoritative receipts once per server start.
+
+        Receipt-only workers may have delivered or replayed events between
+        versions, so both directions must be repaired. This scan happens once
+        at startup, rather than on every polling tick.
+        """
+        if cursor.pending_initialized:
+            return
+        name = cursor.consumer
+        receipt = (
+            select(OutboxReceiptRow.event_id)
+            .where(OutboxReceiptRow.consumer == name, OutboxReceiptRow.event_id == OutboxRow.id)
+            .exists()
+        )
+        await session.execute(
+            update(OutboxRow)
+            .where(text(f"pending_{name} IS FALSE"), ~receipt)
+            .values({f"pending_{name}": True})
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(
+            update(OutboxRow)
+            .where(text(f"pending_{name} IS TRUE"), receipt)
+            .values({f"pending_{name}": False})
+            .execution_options(synchronize_session=False)
+        )
+        cursor.pending_initialized = True
+        await session.flush()
 
     async def _dispatch_pending(self, *, limit: int = 100) -> dict[str, int]:
         stats: dict[str, int] = {}
@@ -222,15 +264,15 @@ class OutboxDispatcher:
                     )
                     cursor.receipts_initialized = True
                     await session.flush()
+                await self._initialize_pending(session, cursor)
                 rows = (
                     (
                         await session.execute(
                             select(OutboxRow)
-                            .where(
-                                ~exists().where(
-                                    OutboxReceiptRow.consumer == name, OutboxReceiptRow.event_id == OutboxRow.id
-                                )
-                            )
+                            # The fixed consumer names come from the mapping
+                            # above. Match the partial-index predicate exactly
+                            # on SQLite as well as PostgreSQL.
+                            .where(text(f"pending_{name} IS TRUE"))
                             .order_by(OutboxRow.id)
                             .limit(limit)
                         )
@@ -249,6 +291,7 @@ class OutboxDispatcher:
                         break
                     delivered += 1
                     session.add(OutboxReceiptRow(consumer=name, event_id=row.id))
+                    setattr(row, f"pending_{name}", False)
                     cursor.last_id = max(cursor.last_id, row.id)
                     # First successful delivery stamps the row; used to be a
                     # self-assignment (always NULL), so delivery latency was

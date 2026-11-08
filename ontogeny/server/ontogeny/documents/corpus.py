@@ -44,6 +44,7 @@ class ScannedDocument:
     rel: str
     size: int
     media_type: str
+    legacy_id: str | None = None
 
 
 def resolve_root(store: StoreResource, package_root: str | None) -> Path:
@@ -90,7 +91,7 @@ def _selector_root(root: Path, selector: str | None) -> Path:
     return root
 
 
-def scan(root: Path, cfg: DocumentCfg, selector: str | None = None) -> list[ScannedDocument]:
+def scan(root: Path, cfg: DocumentCfg, selector: str | None = None, *, store_name: str) -> list[ScannedDocument]:
     base = _selector_root(root, selector)
     globs = [selector] if selector and any(ch in selector for ch in "*?[") else None
     out: list[ScannedDocument] = []
@@ -106,9 +107,14 @@ def scan(root: Path, cfg: DocumentCfg, selector: str | None = None) -> list[Scan
         data = path.read_bytes()
         # identity is (path, content): two identical files are two documents,
         # and a file that moves is a different document (its old row retracts)
-        doc_id = hashlib.sha256(rel.encode("utf-8") + b"\0" + data).hexdigest()
+        legacy_id = hashlib.sha256(rel.encode("utf-8") + b"\0" + data).hexdigest()
+        # Domain separation avoids collisions between different stores without
+        # making identity dependent on a deployment's absolute root path.
+        doc_id = hashlib.sha256(
+            b"ontogeny-document-v2\0" + store_name.encode("utf-8") + b"\0" + bytes.fromhex(legacy_id)
+        ).hexdigest()
         media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        out.append(ScannedDocument(doc_id, path, rel, len(data), media))
+        out.append(ScannedDocument(doc_id, path, rel, len(data), media, legacy_id))
     return out
 
 

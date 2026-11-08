@@ -273,7 +273,7 @@ def _read_schema_and_target(
 
     try:
         manager = _graph_manager()
-        raw_item = manager.getVertexById(id) if target == "vertex" else manager.getEdgeById(id)
+        raw_item = manager.get_vertex_by_id(id) if target == "vertex" else manager.get_edge_by_id(id)
     except Exception as exc:
         classification = classify_hugegraph_exception(exc)
         return (
@@ -366,6 +366,9 @@ def _validate_properties_against_schema(
                 value=value,
                 spec=spec,
             )
+            if value_error is None and not isinstance(value, list) and cardinalities.get(name) in {"LIST", "SET"}:
+                # The append preview unpacks the value, so a collection append needs a JSON array.
+                value_error = f"{target} 0 property '{name}' expects a JSON array to append, got {type(value).__name__}"
             if value_error is not None:
                 data_type, cardinality = spec or (
                     None,
@@ -535,6 +538,9 @@ def _plain_item(item: Any) -> dict[str, Any] | None:
         return None
     if isinstance(item, dict):
         return dict(item)
+    serializer = getattr(item, "to_dict", None)
+    if callable(serializer):
+        return serializer()
     result: dict[str, Any] = {}
     for name in (
         "id",

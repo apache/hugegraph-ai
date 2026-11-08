@@ -24,7 +24,7 @@ import gradio as gr
 import pandas as pd
 from gradio.utils import NamedString
 
-from hugegraph_llm.config import llm_settings, prompt, resource_path
+from hugegraph_llm.config import llm_settings, prompt, resource_file, resource_path
 from hugegraph_llm.flows import FlowName
 from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.decorators import with_task_id
@@ -54,16 +54,9 @@ def rag_answer(
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
     """
-    graph_search, gremlin_prompt, vector_search = update_ui_configs(
-        answer_prompt,
-        custom_related_information,
-        graph_only_answer,
-        graph_vector_answer,
-        gremlin_prompt,
-        keywords_extract_prompt,
-        text,
-        vector_only_answer,
-    )
+    gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
+    vector_search = vector_only_answer or graph_vector_answer
+    graph_search = graph_only_answer or graph_vector_answer
     if raw_answer is False and not vector_search and not graph_search:
         gr.Warning("Please select at least one generate mode.")
         return "", "", "", ""
@@ -120,36 +113,6 @@ def rag_answer(
         raise gr.Error(f"An unexpected error occurred: {str(e)}")
 
 
-def update_ui_configs(
-    answer_prompt,
-    custom_related_information,
-    graph_only_answer,
-    graph_vector_answer,
-    gremlin_prompt,
-    keywords_extract_prompt,
-    text,
-    vector_only_answer,
-):
-    gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
-    should_update_prompt = (
-        prompt.default_question != text
-        or prompt.answer_prompt != answer_prompt
-        or prompt.keywords_extract_prompt != keywords_extract_prompt
-        or prompt.gremlin_generate_prompt != gremlin_prompt
-        or prompt.custom_rerank_info != custom_related_information
-    )
-    if should_update_prompt:
-        prompt.custom_rerank_info = custom_related_information
-        prompt.default_question = text
-        prompt.answer_prompt = answer_prompt
-        prompt.keywords_extract_prompt = keywords_extract_prompt
-        prompt.gremlin_generate_prompt = gremlin_prompt
-        prompt.update_yaml_file()
-    vector_search = vector_only_answer or graph_vector_answer
-    graph_search = graph_only_answer or graph_vector_answer
-    return graph_search, gremlin_prompt, vector_search
-
-
 async def rag_answer_streaming(
     text: str,
     raw_answer: bool,
@@ -169,16 +132,9 @@ async def rag_answer_streaming(
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
     Fetch the Scheduler to deal with the request
     """
-    graph_search, gremlin_prompt, vector_search = update_ui_configs(
-        answer_prompt,
-        custom_related_information,
-        graph_only_answer,
-        graph_vector_answer,
-        gremlin_prompt,
-        keywords_extract_prompt,
-        text,
-        vector_only_answer,
-    )
+    gremlin_prompt = gremlin_prompt or prompt.gremlin_generate_prompt
+    vector_search = vector_only_answer or graph_vector_answer
+    graph_search = graph_only_answer or graph_vector_answer
     if raw_answer is False and not vector_search and not graph_search:
         gr.Warning("Please select at least one generate mode.")
         yield "", "", "", ""
@@ -361,7 +317,7 @@ def create_rag_block():
     # FIXME: "demo" might conflict with the graph name, it should be modified.
     answers_path = os.path.join(resource_path, "demo", "questions_answers.xlsx")
     questions_path = os.path.join(resource_path, "demo", "questions.xlsx")
-    questions_template_path = os.path.join(resource_path, "demo", "questions_template.xlsx")
+    questions_template_path = resource_file("demo", "questions_template.xlsx", root=resource_path)
 
     def read_file_to_excel(file: NamedString, line_count: Optional[int] = None):
         df = None
@@ -371,6 +327,7 @@ def create_rag_block():
             df = pd.read_excel(file.name, nrows=line_count) if file else pd.DataFrame()
         elif file.name.endswith(".csv"):
             df = pd.read_csv(file.name, nrows=line_count) if file else pd.DataFrame()
+        os.makedirs(os.path.dirname(questions_path), exist_ok=True)
         df.to_excel(questions_path, index=False)
         if df.empty:
             df = pd.DataFrame([[""] * len(tests_df_headers)], columns=tests_df_headers)
@@ -439,7 +396,7 @@ def create_rag_block():
         with gr.Column():
             questions_file = gr.File(file_types=[".xlsx", ".csv"], label="Questions File (.xlsx & csv)")
         with gr.Column():
-            test_template_file = os.path.join(resource_path, "demo", "questions_template.xlsx")
+            test_template_file = resource_file("demo", "questions_template.xlsx", root=resource_path)
             gr.File(value=test_template_file, label="Download Template File")
             answer_max_line_count = gr.Number(1, label="Max Lines To Show", minimum=1, maximum=40)
             answers_btn = gr.Button("Generate Answer (Batch)", variant="primary")

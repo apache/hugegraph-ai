@@ -26,14 +26,8 @@ from unittest.mock import Mock
 
 import pytest
 import requests
-from fastapi import APIRouter, FastAPI
-from fastapi.testclient import TestClient
 from requests.auth import HTTPBasicAuth
 
-from hugegraph_llm import config
-from hugegraph_llm.api import rag_api
-from hugegraph_llm.config.llm_config import LLMConfig
-from hugegraph_llm.config.models import base_config
 from hugegraph_llm.demo.rag_demo import configs_block
 
 pytestmark = pytest.mark.contract
@@ -154,62 +148,3 @@ def test_transport_failure_diagnostics_do_not_expose_exception_or_chain(
         rendered = formatted_error(exc_info)
     assert "Connection" in captured_log.getvalue()
     assert_safe(captured_log.getvalue(), rendered)
-
-
-@pytest.mark.parametrize("failure", ["response", "exception"])
-def test_real_config_api_rejects_without_logging_credentials_and_rolls_back(
-    monkeypatch,
-    tmp_path,
-    captured_log,
-    failure,
-):
-    settings = LLMConfig.model_construct()
-    for field in settings.model_dump():
-        if field.endswith("api_key"):
-            setattr(settings, field, "synthetic-old-key")
-    for role in ("chat", "extract", "text2gql"):
-        setattr(settings, f"{role}_llm_type", "ollama/local")
-    for module in (config, rag_api, configs_block):
-        monkeypatch.setattr(module, "llm_settings", settings)
-    env_file = tmp_path / ".env"
-    monkeypatch.setattr(base_config, "env_path", str(env_file))
-    before = settings.model_dump()
-    env_file.write_text(
-        "".join(f"{key.upper()}={value if value is not None else ''}\n" for key, value in before.items()),
-        encoding="utf-8",
-    )
-    file_before = env_file.read_bytes()
-    if failure == "exception":
-        transport = Mock(side_effect=requests.exceptions.ConnectionError(f"{SENSITIVE_URL}: {SECRETS['exception']}"))
-    else:
-        body = json.dumps({"message": f"Credentials: {SECRETS['header']} {SECRETS['response']}"})
-        transport = Mock(return_value=Mock(status_code=503, text=body))
-    monkeypatch.setattr(configs_block.requests, "post", transport)
-    router = APIRouter()
-    rag_api.rag_http_api(
-        router,
-        Mock(),
-        Mock(),
-        Mock(),
-        configs_block.apply_llm_config,
-        configs_block.apply_embedding_config,
-        configs_block.apply_reranker_config,
-        Mock(),
-    )
-    app = FastAPI()
-    app.include_router(router)
-    with TestClient(app) as client:
-        response = client.post(
-            "/config/llm",
-            json={
-                "llm_type": "openai",
-                "api_key": SECRETS["header"],
-                "api_base": SENSITIVE_URL,
-                "language_model": "synthetic-model",
-            },
-        )
-    assert response.status_code == (400 if failure == "exception" else 503)
-    transport.assert_called_once()
-    assert settings.model_dump() == before
-    assert env_file.read_bytes() == file_before
-    assert_safe(captured_log.getvalue(), response.text)

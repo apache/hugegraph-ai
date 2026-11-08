@@ -19,7 +19,7 @@
 from pyhugegraph.api.common import HugeParamsBase
 from pyhugegraph.structure.gremlin_data import GremlinData
 from pyhugegraph.structure.response_data import ResponseData
-from pyhugegraph.utils import huge_router as router
+from pyhugegraph.utils.compat import ServerAdapter
 from pyhugegraph.utils.exceptions import ResponseParseError
 from pyhugegraph.utils.log import log
 
@@ -27,30 +27,38 @@ _REQUIRED_RESPONSE_FIELDS = {"requestId", "status", "result"}
 
 
 class GremlinManager(HugeParamsBase):
-    @router.http("POST", "/gremlin")
     def exec(self, gremlin):
         gremlin_data = GremlinData(gremlin)
 
-        # Version-specific gremlin request handling
-        if self._sess.cfg.gs_supported:
-            # For graphspace-supported versions, use graphspace-scoped aliases.
-            # This includes HugeGraph 1.7.0+ when graphspace support is enabled.
-            gremlin_data.aliases = {
-                "graph": f"{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
-                "g": f"__g_{self._sess.cfg.graphspace}-{self._sess.cfg.graph_name}",
-            }
-        else:
-            # For HugeGraph versions without graphspace support, always include aliases
-            # so `g` is bound.
-            gremlin_data.aliases = {
-                "graph": f"{self._sess.cfg.graph_name}",
-                "g": f"__g_{self._sess.cfg.graph_name}",
-            }
+        gremlin_data.aliases = ServerAdapter(self.session.cfg).aliases()
 
-        response = self._invoke_request(data=gremlin_data.to_json())
+        response = self.request("gremlin.post", data=gremlin_data.to_json())
         if response is not None:
             if not isinstance(response, dict) or not _REQUIRED_RESPONSE_FIELDS.issubset(response):
                 raise ResponseParseError(f"Invalid Gremlin response payload: {response}")
             return ResponseData(response).result
         log.error("Gremlin can't get results: %s", str(response))
         return None
+
+    def submit(self, gremlin: str, *, bindings=None, language="gremlin-groovy") -> dict:
+        """Submit an asynchronous Gremlin job; inspect it with client.task()."""
+        return self.request(
+            "gremlin_job.post",
+            body={
+                "gremlin": gremlin,
+                "bindings": bindings or {},
+                "language": language,
+            },
+        )
+
+    def query(self, gremlin: str, *, bindings=None, language="gremlin-groovy") -> dict:
+        """Return the complete synchronous Gremlin response envelope."""
+        return self.request(
+            "gremlin.post",
+            body={
+                "gremlin": gremlin,
+                "bindings": bindings or {},
+                "language": language,
+                "aliases": ServerAdapter(self.session.cfg).aliases(),
+            },
+        )

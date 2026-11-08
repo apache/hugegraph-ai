@@ -47,8 +47,7 @@ Pydantic 2, NumPy 2 and current provider libraries. Unused PyArrow and igraph
 requirements and root-level ML constraints have been removed; ML remains outside
 the workspace.
 
-A few upstream compatibility limits remain: LiteLLM requires OpenAI 2.x and its
-Botocore dependency requires dateutil below 3. Jieba uses its built-in resource
+A few upstream compatibility limits remain: Jieba uses its built-in resource
 fallback without requiring setuptools. `pycgraph` stays on 3.2.2 because 3.3.0 has no
 CPython 3.14 Linux wheel or source distribution on PyPI. These limits do not prevent using
 Python 3.12, 3.13 or 3.14.
@@ -100,27 +99,24 @@ development/testing. For reproducible deployments, set `HUGEGRAPH_SERVER_IMAGE`
 in `docker/.env` to a verified release tag or immutable digest. The override
 does not change the CI image policy.
 
+From the repository root, prepare the two separate configuration files:
+
 ```bash
-# 1. Set up environment
 cp docker/env.template docker/.env
-# Edit docker/.env and set PROJECT_PATH to your actual project path
-# See "config.md" for all available configuration options
-# If there is not a configuration file (named .env) under hugegraph-llm, run the following command
-cd hugegraph-llm && touch .env && cd ..
-
-# 2. Deploy services
-cd docker
-docker-compose -f docker-compose-network.yml up -d
-
-# 3. Verify deployment
-docker-compose -f docker-compose-network.yml ps
-
-# 4. Access services
-# HugeGraph Server: http://localhost:8080
-# RAG Service: http://localhost:8001
+touch hugegraph-llm/.env
 ```
 
-The Compose configuration publishes the RAG service only on the host loopback interface by default.
+Edit `docker/.env` and set `PROJECT_PATH` to the absolute path of this checkout. It is used for Compose variable substitution, not passed to the RAG application. Edit `hugegraph-llm/.env`, the file mounted into the RAG container, to set `GRAPH_URL=http://server:8080`, model provider settings and credentials. If Server authentication is enabled, set `GRAPH_USER` and `GRAPH_PWD` to the configured credentials. See [configuration](config.md) for the available settings. The `HUGEGRAPH_HOST` and `HUGEGRAPH_PORT` values in Compose do not configure the application's `GRAPH_URL`.
+
+**Before starting**, restrict access: the supplied Compose file publishes Server on `8080:8080` and RAG on `8001:8001` on all host interfaces. The RAG HTTP API has authentication disabled by default, and Server authentication must be configured separately. For local use, change those port mappings in `docker/docker-compose-network.yml` to `127.0.0.1:8080:8080` and `127.0.0.1:8001:8001`. For remote access, configure the Server's authentication and network controls, and enable RAG Bearer authentication with `ENABLE_LOGIN=true` and a strong `USER_TOKEN` in `hugegraph-llm/.env`, or use an authenticated reverse proxy and trusted network boundary.
+
+```bash
+cd docker
+docker compose -f docker-compose-network.yml up -d
+docker compose -f docker-compose-network.yml ps
+```
+
+The services are available at `http://127.0.0.1:8080` and `http://127.0.0.1:8001` when bound to loopback.
 
 ### Option 2: Individual Docker Containers
 
@@ -163,7 +159,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/apache/hugegraph-ai.git
 cd hugegraph-ai
 
-# Configure environment (see config.md for detailed options), .env will auto create if not exists
+# Configure environment if needed (see config.md); absent .env uses defaults
 
 # 4. Install dependencies and activate environment
 # NOTE: If download is slow, uncomment mirror lines in ../pyproject.toml or use: uv config --global index.url https://pypi.tuna.tsinghua.edu.cn/simple
@@ -233,10 +229,10 @@ After loading the extracted graph, open **Graph Tools** to run a Gremlin query:
 
 ## 🔧 Configuration
 
-After running the demo, configuration files are automatically generated:
+Configuration paths for source checkouts (see [external configuration](config.md#外部挂载与配置所有权)):
 
-- **Environment**: `hugegraph-llm/.env`
-- **Prompts**: `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`
+- **Environment**: optional `hugegraph-llm/.env`; startup reads it without modifying it
+- **Prompts**: optional `hugegraph-llm/src/hugegraph_llm/resources/demo/config_prompt.yaml`; absent files use built-in defaults
 
 Provider settings can also be edited in the web interface. This example uses a
 local model endpoint:
@@ -256,7 +252,7 @@ The system supports both English and Chinese prompts. To switch languages:
 - `LANGUAGE=CN` - Chinese prompts (中文提示词)
 
 > [!NOTE]
-> Configuration changes are automatically saved when using the web interface. For manual changes, simply refresh the page to load updates.
+> Save model connections in the web interface or API; test connectivity separately. Saved complete connections in `settings.yaml` override deployment defaults across restarts/upgrades. Blank keys retain the saved key; use the explicit clear action to remove it. Unconfigured extraction/Text2GQL follow Chat. Persist the writable resource directory (or `HUGEGRAPH_LLM_SETTINGS_PATH`); readonly `.env`/Secret mounts remain supported as bootstrap defaults. See [configuration rules](config.md#网页api-配置与部署默认值).
 
 ### Legacy Thin API writes
 
@@ -268,7 +264,7 @@ replace the default `USER_TOKEN=4321` with a strong random secret, and set
 Bearer token. Prefer the HugeGraph MCP guarded write tools for user-facing
 workflows.
 
-**LLM Provider Support**: This project uses [LiteLLM](https://docs.litellm.ai/docs/providers) for multi-provider LLM support.
+**LLM Provider Support**: Configure an OpenAI-compatible endpoint, model name, and API key, or use the built-in Ollama client. Provider support depends on the endpoint implementing the APIs and request parameters used by the application; an OpenAI-compatible URL alone does not guarantee compatibility.
 
 ### Programmatic Examples (new workflow engine)
 

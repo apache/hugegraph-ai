@@ -74,3 +74,32 @@ class ServerError(Exception):
     """
     Server returned an error response
     """
+
+
+class UnsupportedOperationError(Exception):
+    """The configured server profile does not provide this operation."""
+
+
+class TaskError(Exception):
+    """A task failed or was cancelled; the original task is available as .task."""
+
+    def __init__(self, task):
+        self.task = task
+        self.task_id = task.get("id")
+        super().__init__(f"Task {self.task_id}: {task.get('task_status')}: {task.get('task_result', '')}")
+
+
+class TaskFailedError(TaskError):
+    """The server reported a failed task."""
+
+
+class TaskCancelledError(TaskError):
+    """The server reported a cancelled task."""
+
+
+class TaskTimeoutError(TimeoutError):
+    """Waiting timed out; the remote task was not cancelled."""
+
+    def __init__(self, task_id, timeout):
+        self.task_id = task_id
+        super().__init__(f"Task {task_id} did not complete within {timeout} seconds")

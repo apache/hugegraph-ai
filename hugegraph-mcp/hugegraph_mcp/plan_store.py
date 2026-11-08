@@ -20,6 +20,7 @@ import os
 import sqlite3
 import time
 import uuid
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -123,7 +124,7 @@ class SQLitePlanStore:
 
     def prepare(self) -> None:
         self._prepare_storage()
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("PRAGMA synchronous = FULL")
             version = int(connection.execute("PRAGMA user_version").fetchone()[0])
@@ -139,7 +140,7 @@ class SQLitePlanStore:
         """Persist one immutable plan and its ordered operations atomically."""
         self.prepare()
         payload_json = canonical_plan_json(plan)
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -233,7 +234,7 @@ class SQLitePlanStore:
         if not can_transition(expected, target):
             raise PlanTransitionError(f"illegal transition: {expected} -> {target}")
         self.prepare()
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             confirmed_at_sql = (
                 ", confirmed_at = COALESCE(confirmed_at, strftime('%s','now'))"
@@ -271,7 +272,7 @@ class SQLitePlanStore:
         owner_token = owner_token or uuid.uuid4().hex
         now = int(time.time())
         claimed = False
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT status, lease_expires_at FROM write_plans WHERE plan_id = ?",
@@ -329,7 +330,7 @@ class SQLitePlanStore:
             PlanStatus.ISSUED.value,
             PlanStatus.RETRYABLE_NOT_APPLIED.value,
         }
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             plan_row = connection.execute(
                 "SELECT lease_owner, lease_expires_at FROM write_plans WHERE plan_id = ?",
@@ -394,7 +395,7 @@ class SQLitePlanStore:
             raise ValueError("canonical receipt requires plan_id and operation_id")
         self.prepare()
         operation_status = PlanStatus(receipt.status.value)
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             operation_row = connection.execute(
                 """
@@ -476,7 +477,7 @@ class SQLitePlanStore:
         """Fence an expired executor before any read-only reconciliation."""
         self.prepare()
         now = int(time.time())
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT status, lease_expires_at FROM write_plans WHERE plan_id = ?",
@@ -522,7 +523,7 @@ class SQLitePlanStore:
         if not receipt.plan_id or not receipt.operation_id:
             raise ValueError("canonical receipt requires plan_id and operation_id")
         self.prepare()
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             plan_row = connection.execute(
                 "SELECT lease_owner FROM write_plans WHERE plan_id = ?",
@@ -586,7 +587,7 @@ class SQLitePlanStore:
 
     def get_plan_record(self, plan_id: str) -> dict[str, Any] | None:
         self.prepare()
-        with sqlite3.connect(self.database_path, timeout=30) as connection:
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
             connection.row_factory = sqlite3.Row
             plan = connection.execute(
                 "SELECT * FROM write_plans WHERE plan_id = ?",
@@ -694,7 +695,7 @@ class SQLitePlanStore:
     def _migrate_legacy(self, connection: sqlite3.Connection) -> None:
         if not self.legacy_database_path.exists():
             return
-        with sqlite3.connect(self.legacy_database_path, timeout=30) as legacy:
+        with closing(sqlite3.connect(self.legacy_database_path, timeout=30)) as legacy, legacy:
             legacy.row_factory = sqlite3.Row
             issued = self._legacy_rows(legacy, "issued_confirmations", "plan_hash")
             consumed = self._legacy_rows(legacy, "consumed_confirmations", "plan_hash")

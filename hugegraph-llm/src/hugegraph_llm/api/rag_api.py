@@ -16,6 +16,7 @@
 # under the License.
 
 import json
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, status
@@ -30,7 +31,7 @@ from hugegraph_llm.api.models.rag_requests import (
     RerankerConfigRequest,
 )
 from hugegraph_llm.api.models.rag_response import RAGResponse
-from hugegraph_llm.config import huge_settings, llm_settings, prompt, runtime_config_lock
+from hugegraph_llm.config import huge_settings, prompt
 from hugegraph_llm.utils.graph_index_utils import get_vertex_details
 from hugegraph_llm.utils.log import log
 
@@ -41,69 +42,6 @@ _GRAPH_CONFIG_FIELD_MAP = {
     "pwd": "graph_pwd",
     "gs": "graph_space",
 }
-_LLM_TYPE_FIELDS = ("chat_llm_type", "extract_llm_type", "text2gql_llm_type")
-_LLM_CONFIG_FIELDS = _LLM_TYPE_FIELDS + (
-    "openai_chat_api_key",
-    "openai_chat_api_base",
-    "openai_chat_language_model",
-    "openai_chat_tokens",
-    "openai_extract_api_key",
-    "openai_extract_api_base",
-    "openai_extract_language_model",
-    "openai_extract_tokens",
-    "openai_text2gql_api_key",
-    "openai_text2gql_api_base",
-    "openai_text2gql_language_model",
-    "openai_text2gql_tokens",
-    "ollama_chat_host",
-    "ollama_chat_port",
-    "ollama_chat_language_model",
-    "ollama_extract_host",
-    "ollama_extract_port",
-    "ollama_extract_language_model",
-    "ollama_text2gql_host",
-    "ollama_text2gql_port",
-    "ollama_text2gql_language_model",
-    "litellm_chat_api_key",
-    "litellm_chat_api_base",
-    "litellm_chat_language_model",
-    "litellm_chat_tokens",
-    "litellm_extract_api_key",
-    "litellm_extract_api_base",
-    "litellm_extract_language_model",
-    "litellm_extract_tokens",
-    "litellm_text2gql_api_key",
-    "litellm_text2gql_api_base",
-    "litellm_text2gql_language_model",
-    "litellm_text2gql_tokens",
-)
-_EMBEDDING_CONFIG_FIELDS = (
-    "embedding_type",
-    "openai_embedding_api_key",
-    "openai_embedding_api_base",
-    "openai_embedding_model",
-    "ollama_embedding_host",
-    "ollama_embedding_port",
-    "ollama_embedding_model",
-    "litellm_embedding_api_key",
-    "litellm_embedding_api_base",
-    "litellm_embedding_model",
-)
-_RERANKER_CONFIG_FIELDS = (
-    "reranker_type",
-    "reranker_api_key",
-    "reranker_model",
-    "cohere_base_url",
-)
-
-
-def _snapshot_settings(settings, fields):
-    return {field: getattr(settings, field) for field in fields}
-
-
-def _restore_settings(settings, values):
-    for field, value in values.items():
-        setattr(settings, field, value)
 
 
 def _request_graph_connection(req):
@@ -309,69 +247,68 @@ def rag_http_api(
         res = apply_graph_conf(req.url, req.graph, req.user, req.pwd, req.gs, origin_call="http")
         return generate_response(RAGResponse(status_code=res, message="Missing Value"))
 
-    # TODO: restructure the implement of llm to three types, like "/config/chat_llm"
+    def save_model(callback, *args, **kwargs):
+        try:
+            res = callback(*args, origin_call="http", **kwargs)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                400, detail="Invalid configuration. Check the fields and destination/key pairing."
+            ) from None
+        except OSError:
+            raise HTTPException(503, detail="Configuration could not be saved. Check storage permissions.") from None
+        if not 200 <= res < 300:
+            raise HTTPException(400, detail="Configuration was not saved.")
+        return {"message": "Configuration saved."}
+
     @router.post("/config/llm", status_code=status.HTTP_201_CREATED)
     def llm_config_api(req: LLMConfigRequest):
-        with runtime_config_lock:
-            original_values = _snapshot_settings(llm_settings, _LLM_CONFIG_FIELDS)
-            try:
-                llm_settings.chat_llm_type = req.llm_type
-                llm_settings.extract_llm_type = req.llm_type
-                llm_settings.text2gql_llm_type = req.llm_type
-
-                if req.llm_type in ("openai", "litellm"):
-                    res = apply_llm_conf(
-                        "all",
-                        req.api_key,
-                        req.api_base,
-                        req.language_model,
-                        req.max_tokens,
-                        origin_call="http",
-                    )
-                else:
-                    res = apply_llm_conf("all", req.host, req.port, req.language_model, None, origin_call="http")
-                if not 200 <= res < 300:
-                    _restore_settings(llm_settings, original_values)
-                return generate_response(RAGResponse(status_code=res, message="Missing Value"))
-            except Exception:
-                _restore_settings(llm_settings, original_values)
-                raise
+        key, base = (req.host, req.port) if req.llm_type == "ollama/local" else (req.api_key, req.api_base)
+        return save_model(
+            apply_llm_conf,
+            req.role,
+            key,
+            base,
+            req.language_model,
+            req.max_tokens,
+            clear_api_key=req.clear_api_key,
+            provider=req.llm_type,
+        )
 
     @router.post("/config/embedding", status_code=status.HTTP_201_CREATED)
     def embedding_config_api(req: LLMConfigRequest):
-        with runtime_config_lock:
-            original_values = _snapshot_settings(llm_settings, _EMBEDDING_CONFIG_FIELDS)
-            try:
-                llm_settings.embedding_type = req.llm_type
-
-                if req.llm_type in ("openai", "litellm"):
-                    res = apply_embedding_conf(req.api_key, req.api_base, req.language_model, origin_call="http")
-                else:
-                    res = apply_embedding_conf(req.host, req.port, req.language_model, origin_call="http")
-                if not 200 <= res < 300:
-                    _restore_settings(llm_settings, original_values)
-                return generate_response(RAGResponse(status_code=res, message="Missing Value"))
-            except Exception:
-                _restore_settings(llm_settings, original_values)
-                raise
+        key, base = (req.host, req.port) if req.llm_type == "ollama/local" else (req.api_key, req.api_base)
+        return save_model(
+            apply_embedding_conf, key, base, req.language_model, clear_api_key=req.clear_api_key, provider=req.llm_type
+        )
 
     @router.post("/config/rerank", status_code=status.HTTP_201_CREATED)
     def rerank_config_api(req: RerankerConfigRequest):
-        with runtime_config_lock:
-            original_values = _snapshot_settings(llm_settings, _RERANKER_CONFIG_FIELDS)
-            try:
-                llm_settings.reranker_type = req.reranker_type
+        return save_model(
+            apply_reranker_conf,
+            req.api_key,
+            req.reranker_model,
+            req.cohere_base_url,
+            clear_api_key=req.clear_api_key,
+            provider=req.reranker_type,
+        )
 
-                if req.reranker_type == "cohere":
-                    res = apply_reranker_conf(req.api_key, req.reranker_model, req.cohere_base_url, origin_call="http")
-                else:
-                    res = apply_reranker_conf(req.api_key, req.reranker_model, None, origin_call="http")
-                if not 200 <= res < 300:
-                    _restore_settings(llm_settings, original_values)
-                return generate_response(RAGResponse(status_code=res, message="Missing Value"))
-            except Exception:
-                _restore_settings(llm_settings, original_values)
-                raise
+    @router.post("/config/model/{role}/test")
+    def test_model_config_api(role: Literal["chat", "extract", "text2gql", "embedding", "reranker"]):
+        from hugegraph_llm.demo.rag_demo.configs_block import test_saved_model
+
+        try:
+            test_saved_model(role)
+        except Exception as exc:
+            raise HTTPException(
+                502, detail=f"Connection test failed ({type(exc).__name__}). Saved configuration is unchanged."
+            ) from None
+        return {"message": "Connection test successful."}
+
+    @router.post("/config/llm/{role}/use-chat")
+    def inherit_chat_api(role: Literal["extract", "text2gql"]):
+        from hugegraph_llm.demo.rag_demo.configs_block import use_chat_connection
+
+        return save_model(use_chat_connection, role, True)
 
     @router.post("/text2gremlin", status_code=status.HTTP_200_OK)
     def text2gremlin_api(req: GremlinGenerateRequest):

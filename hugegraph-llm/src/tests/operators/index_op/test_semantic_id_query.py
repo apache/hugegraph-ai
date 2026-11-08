@@ -42,7 +42,7 @@ class MockPyHugeClient:
 
     def __init__(self, *args, **kwargs):
         self._schema = MagicMock()
-        self._schema.getVertexLabels.return_value = ["person", "movie"]
+        self._schema.get_vertex_labels.return_value = ["person", "movie"]
         self._gremlin = MagicMock()
         self._gremlin.exec.return_value = {
             "data": [

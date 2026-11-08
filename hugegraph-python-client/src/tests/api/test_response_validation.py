@@ -135,6 +135,20 @@ class TestResponseValidation(unittest.TestCase):
 
         assert "中文 payload" in str(log_error.call_args)
 
+    def test_error_log_decodes_escapes_without_garbling_utf8_request_body(self):
+        response = self._mock_error_response(
+            {"message": "bad request"},
+            '{"message":"bad request"}',
+        )
+        response.request.body = '{"name": "张三", "bio": "line1\\nline2", "city": "\\u5317\\u4eac"}'
+        validator = ResponseValidation()
+
+        with pytest.raises(ServerError), unittest.mock.patch("pyhugegraph.utils.util.log.error") as log_error:
+            validator(response, "POST", "/graph/vertices")
+
+        logged_body = log_error.call_args.args[3]
+        assert logged_body == '{"name": "张三", "bio": "line1\nline2", "city": "北京"}'
+
     def test_error_log_redacts_sensitive_request_body(self):
         response = self._mock_error_response(
             {"message": "bad request"},

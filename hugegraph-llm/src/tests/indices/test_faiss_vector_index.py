@@ -147,6 +147,28 @@ class TestVectorIndex(unittest.TestCase):
         results = loaded_index.search(query_vector, top_k=1)
         self.assertEqual(results[0], "doc1")
 
+    def test_load_with_different_dimension_starts_empty_index(self):
+        index = FaissVectorIndex(self.embed_dim)
+        index.add(self.vectors, self.properties)
+        index.save_index_by_name(self.test_dir)
+
+        loaded_index = FaissVectorIndex.from_name(self.embed_dim + 1, self.test_dir)
+
+        self.assertEqual(loaded_index.index.d, self.embed_dim + 1)
+        self.assertEqual(loaded_index.index.ntotal, 0)
+        self.assertEqual(loaded_index.properties, [])
+
+    def test_remove_keeps_remaining_properties_aligned_with_vectors(self):
+        index = FaissVectorIndex(self.embed_dim)
+        index.add(self.vectors, self.properties)
+
+        removed = index.remove([self.properties[0], self.properties[2]])
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(index.index.ntotal, 2)
+        self.assertEqual(index.properties, [self.properties[1], self.properties[3]])
+        self.assertEqual(index.search(self.vectors[3], top_k=1), [self.properties[3]])
+
     def test_load_nonexistent(self):
         """Test loading from a nonexistent directory"""
         nonexistent_dir = os.path.join(self.test_dir, "nonexistent")

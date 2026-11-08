@@ -36,6 +36,10 @@ class TestCISelection(unittest.TestCase):
         selected = ci.select(paths)
         self.assertEqual(set(expected), {key for key in ci.MODULES if selected[key]})
 
+    def assert_deployment_checks(self, paths, expected):
+        selected = ci.deployment_checks(paths)
+        self.assertEqual(set(expected), {key for key in ci.DEPLOYMENT_CHECKS if selected[key]})
+
     def test_multiline_config_does_not_write_any_ci_outputs(self):
         for separator in ("\n", "\r"):
             with self.subTest(separator=repr(separator)), tempfile.TemporaryDirectory() as directory:
@@ -130,8 +134,41 @@ class TestCISelection(unittest.TestCase):
     def test_module_changes_are_isolated(self):
         self.assert_modules(["hugegraph-llm/src/hugegraph_llm/config/hugegraph_config.py"], {"llm"})
         self.assert_modules(["hugegraph-mcp/tests/contracts/write_confirmation_v2.json"], {"mcp"})
-        self.assert_modules(["docker/Dockerfile.llm"], {"llm"})
-        self.assert_modules([".dockerignore"], {"llm"})
+
+    def test_deployment_changes_use_targeted_preflight_checks(self):
+        cases = {
+            "docker/Dockerfile.llm": {"docker_llm"},
+            "docker/Dockerfile.nk": {"docker_nk"},
+            ".dockerignore": {"docker_llm", "docker_nk"},
+            "docker/docker-compose-network.yml": {"compose"},
+            "docker/env.template": {"compose"},
+            "scripts/build_llm_image.sh": {"docker_llm", "image_script"},
+        }
+        for path, expected in cases.items():
+            with self.subTest(path=path):
+                self.assert_modules([path], set())
+                self.assertTrue(ci.select([path])["deployment"])
+                self.assert_deployment_checks([path], expected)
+
+    def test_python_docker_helpers_keep_runtime_and_security_checks(self):
+        helper = "docker/tests/smoke_llm.py"
+        self.assert_modules([helper], {"llm"})
+        self.assertFalse(ci.select([helper])["deployment"])
+        self.assertTrue(ci.select([helper])["quality"])
+        self.assertTrue(ci.select([helper])["codeql"])
+
+    def test_unknown_docker_paths_keep_conservative_llm_fallback(self):
+        for path in ("docker/Dockerfile.worker", "docker/entrypoint.sh", "docker/charts/retired/Chart.yaml"):
+            with self.subTest(path=path):
+                self.assert_modules([path], {"llm"})
+                self.assertFalse(ci.select([path])["deployment"])
+                self.assert_deployment_checks([path], set())
+
+    def test_compose_validation_loads_the_selected_environment_template(self):
+        workflow = (SCRIPTS.parent / ".github" / "workflows" / "ci.yml").read_text()
+        for compose_file in ("docker-compose-llm.yml", "docker-compose-network.yml"):
+            command = f"docker compose --env-file docker/env.template -f docker/{compose_file} config --quiet"
+            self.assertIn(command, workflow)
 
     def test_shared_config_and_workflows_do_not_skip_tests(self):
         for path in ("pyproject.toml", "scripts/ci.py", ".github/actions/setup-python-env/action.yml"):
@@ -159,8 +196,15 @@ class TestCISelection(unittest.TestCase):
 
     def test_full_and_on_demand_selections(self):
         self.assertTrue(all(ci.select([], full=True).values()))
-        selected = ci.select([], test_set="codeql")
-        self.assertEqual({"codeql"}, {key for key, value in selected.items() if value})
+        for test_set in ("codeql", "dependencies"):
+            with self.subTest(test_set=test_set):
+                selected = ci.select([], test_set=test_set)
+                self.assertEqual({test_set}, {key for key, value in selected.items() if value})
+                checks = ci.deployment_checks(["docker/Dockerfile.llm"], test_set=test_set)
+                self.assertFalse(any(checks.values()))
+        selected = ci.select([], test_set="deployment")
+        self.assertEqual({"deployment"}, {key for key, value in selected.items() if value})
+        self.assertTrue(all(ci.deployment_checks([], test_set="deployment").values()))
 
     def test_active_default_codeql_avoids_duplicate_advanced_scanner(self):
         selected = ci.select([], test_set="codeql")
@@ -190,7 +234,7 @@ class TestCISelection(unittest.TestCase):
             patch.object(ci.subprocess, "check_output", side_effect=subprocess.CalledProcessError(1, ["gh", "api"])),
             self.assertRaises(subprocess.CalledProcessError),
         ):
-            ci.codeql_provider(ci.select([], full=True), "hugegraph/hugegraph-ai")
+            ci.codeql_provider(ci.select([], full=True), "apache/hugegraph-ai")
 
     def test_deleted_and_renamed_files_are_selected_from_real_git_diff(self):
         with tempfile.TemporaryDirectory() as directory:

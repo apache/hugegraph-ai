@@ -14,9 +14,11 @@
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 
 import pytest
 
+from hugegraph_mcp import plan_store as plan_store_module
 from hugegraph_mcp.plan_store import (
     SCHEMA_VERSION,
     PlanStoreUnavailableError,
@@ -447,3 +449,31 @@ def test_first_rejected_operation_with_no_writes_rejects_workflow(tmp_path):
     )
 
     assert store.get_plan_record(plan.plan_id)["status"] == "REJECTED"
+
+
+def test_legacy_migration_closes_its_connections(tmp_path, monkeypatch):
+    database_path = _legacy_database(tmp_path)
+    _create_legacy_schema(database_path)
+    with closing(sqlite3.connect(database_path)) as connection, connection:
+        connection.execute(
+            "INSERT INTO issued_confirmations VALUES (?, ?, ?, ?, ?)",
+            (_nonce_digest("issued"), "hash-issued", 200, 100, "{}"),
+        )
+    opened = []
+    connect = sqlite3.connect
+
+    def recording_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr(plan_store_module.sqlite3, "connect", recording_connect)
+
+    store = SQLitePlanStore(tmp_path)
+    store.prepare()
+
+    assert store.get_plan_record(store.legacy_plan_id("hash-issued"))["status"] == "ISSUED"
+    assert len(opened) >= 3
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            connection.execute("SELECT 1")

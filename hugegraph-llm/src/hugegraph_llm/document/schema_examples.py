@@ -36,32 +36,44 @@ def _persisted_json(examples: str | None, label: str) -> str:
     return examples
 
 
-def load_query_examples(*, resource_path: str, persisted: str = "", language: str = "EN") -> str:
+def load_query_examples(
+    *, resource_path: str, persisted: str = "", language: str = "EN", fallback_resource_path: str | None = None
+) -> str:
     """Prefer a saved override, then the language resource, then English examples."""
     saved = _persisted_json(persisted, "schema generator query examples")
     if saved:
         return normalize_query_examples_json(saved)
 
-    directory = Path(resource_path) / "prompt_examples"
+    directories = [Path(resource_path) / "prompt_examples"]
+    if fallback_resource_path:
+        directories.append(Path(fallback_resource_path) / "prompt_examples")
     names = ["query_examples_CN.json", "query_examples.json"] if language.upper() == "CN" else ["query_examples.json"]
-    for name in names:
-        try:
-            examples = json.loads((directory / name).read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
-            continue
-        return normalize_query_examples_json(examples)
+    for directory in directories:
+        for name in names:
+            try:
+                examples = json.loads((directory / name).read_text(encoding="utf-8"))
+                normalized = normalize_query_examples_json(examples)
+                if normalized:
+                    return normalized
+            except (FileNotFoundError, ValueError):
+                continue
     return "[]"
 
 
-def load_schema_fewshot_examples(*, resource_path: str, persisted: str = "") -> str:
+def load_schema_fewshot_examples(
+    *, resource_path: str, persisted: str = "", fallback_resource_path: str | None = None
+) -> str:
     """Load a saved example schema or the application's bundled JSON example."""
     saved = _persisted_json(persisted, "schema generator few-shot examples")
     if saved:
         return normalize_few_shot_schema_json(saved)
-    try:
-        examples = json.loads(
-            (Path(resource_path) / "prompt_examples" / "schema_examples.json").read_text(encoding="utf-8")
-        )
-    except (FileNotFoundError, json.JSONDecodeError):
-        return "[]"
-    return normalize_few_shot_schema_json(examples)
+    roots = [resource_path] + ([fallback_resource_path] if fallback_resource_path else [])
+    for root in roots:
+        try:
+            examples = json.loads((Path(root) / "prompt_examples" / "schema_examples.json").read_text(encoding="utf-8"))
+            normalized = normalize_few_shot_schema_json(examples)
+            if normalized:
+                return normalized
+        except (FileNotFoundError, ValueError):
+            continue
+    return "[]"

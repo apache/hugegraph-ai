@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+import json
 import unittest
 
 import pytest
@@ -51,15 +52,18 @@ class TestGraphsManager(unittest.TestCase):
 
     def test_get_all_graphs(self):
         all_graphs = self.graphs.get_all_graphs()
-        self.assertTrue("hugegraph" in all_graphs)
+        self.assertIsInstance(all_graphs, str)
+        self.assertIn("hugegraph", json.loads(all_graphs)["graphs"])
 
     def test_get_version(self):
         version = self.graphs.get_version()
-        self.assertIsNotNone(version)
+        self.assertIsInstance(version, str)
+        self.assertIn("versions", json.loads(version))
 
     def test_get_graph_info(self):
         graph_info = self.graphs.get_graph_info()
-        self.assertTrue("backend" in graph_info)
+        self.assertIsInstance(graph_info, str)
+        self.assertIn("backend", json.loads(graph_info))
 
     def test_get_graph_config(self):
         # GraphsAPI.getConf serves a local source file and explicitly rejects

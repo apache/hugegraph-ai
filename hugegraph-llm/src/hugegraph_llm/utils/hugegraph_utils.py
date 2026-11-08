@@ -18,7 +18,10 @@
 import json
 import os
 import shutil
+import stat
 from datetime import datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 import requests
@@ -93,36 +96,36 @@ def init_hg_test_data():
     client = get_hg_client()
     client.graphs().clear_graph_all_data()
     schema = client.schema()
-    schema.propertyKey("name").asText().ifNotExist().create()
-    schema.propertyKey("birthDate").asText().ifNotExist().create()
-    schema.vertexLabel("Person").properties("name", "birthDate").useCustomizeStringId().ifNotExist().create()
-    schema.vertexLabel("Movie").properties("name").useCustomizeStringId().ifNotExist().create()
-    schema.edgeLabel("ActedIn").sourceLabel("Person").targetLabel("Movie").ifNotExist().create()
+    schema.property_key("name").as_text().if_not_exist().create()
+    schema.property_key("birthDate").as_text().if_not_exist().create()
+    schema.vertex_label("Person").properties("name", "birthDate").use_customize_string_id().if_not_exist().create()
+    schema.vertex_label("Movie").properties("name").use_customize_string_id().if_not_exist().create()
+    schema.edge_label("ActedIn").source_label("Person").target_label("Movie").if_not_exist().create()
 
-    schema.indexLabel("PersonByName").onV("Person").by("name").secondary().ifNotExist().create()
-    schema.indexLabel("MovieByName").onV("Movie").by("name").secondary().ifNotExist().create()
+    schema.index_label("PersonByName").on_v("Person").by("name").secondary().if_not_exist().create()
+    schema.index_label("MovieByName").on_v("Movie").by("name").secondary().if_not_exist().create()
 
     graph = client.graph()
-    graph.addVertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"}, id="Al Pacino")
-    graph.addVertex(
+    graph.add_vertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"}, id="Al Pacino")
+    graph.add_vertex(
         "Person",
         {"name": "Robert De Niro", "birthDate": "1943-08-17"},
         id="Robert De Niro",
     )
-    graph.addVertex("Movie", {"name": "The Godfather"}, id="The Godfather")
-    graph.addVertex("Movie", {"name": "The Godfather Part II"}, id="The Godfather Part II")
-    graph.addVertex(
+    graph.add_vertex("Movie", {"name": "The Godfather"}, id="The Godfather")
+    graph.add_vertex("Movie", {"name": "The Godfather Part II"}, id="The Godfather Part II")
+    graph.add_vertex(
         "Movie",
         {"name": "The Godfather Coda The Death of Michael Corleone"},
         id="The Godfather Coda The Death of Michael Corleone",
     )
 
-    graph.addEdge("ActedIn", "Al Pacino", "The Godfather", {})
-    graph.addEdge("ActedIn", "Al Pacino", "The Godfather Part II", {})
-    graph.addEdge("ActedIn", "Al Pacino", "The Godfather Coda The Death of Michael Corleone", {})
-    graph.addEdge("ActedIn", "Robert De Niro", "The Godfather Part II", {})
-    schema.getSchema()
-    graph.close()
+    graph.add_edge("ActedIn", "Al Pacino", "The Godfather", {})
+    graph.add_edge("ActedIn", "Al Pacino", "The Godfather Part II", {})
+    graph.add_edge("ActedIn", "Al Pacino", "The Godfather Coda The Death of Michael Corleone", {})
+    graph.add_edge("ActedIn", "Robert De Niro", "The Godfather Part II", {})
+    schema.get_schema()
+    client.close()
     return {
         "vertex": ["Person", "Movie"],
         "edge": ["ActedIn"],
@@ -150,14 +153,15 @@ def backup_data():
         backup_subdir = os.path.join(BACKUP_DIR, f"{date_str}")
         create_dir_safely(backup_subdir)
 
+        schema = client.schema().get_schema()
         files = {
             "vertices.json": f"g.V().limit({MAX_VERTICES})"
             f".aggregate('vertices').count().as('count').select('count','vertices')",
             "edges.json": f"g.E().limit({MAX_EDGES}).aggregate('edges').count().as('count').select('count','edges')",
-            "schema.json": client.schema().getSchema(_format="groovy"),
+            "schema.json": schema,
         }
 
-        vertexlabels = client.schema().getSchema()["vertexlabels"]
+        vertexlabels = schema["vertexlabels"]
         all_pk_flag = all(data.get("id_strategy") == "PRIMARY_KEY" for data in vertexlabels)
 
         for filename, query in files.items():
@@ -173,27 +177,35 @@ def backup_data():
 
 
 def write_backup_file(client, backup_subdir, filename, query, all_pk_flag):
-    with open(os.path.join(backup_subdir, filename), "w", encoding="utf-8") as f:
-        if filename == "edges.json":
-            data = client.gremlin().exec(query)["data"][0]["edges"]
+    if filename == "edges.json":
+        data = client.gremlin().exec(query)["data"][0]["edges"]
+    elif filename == "vertices.json":
+        vertices = client.gremlin().exec(query)["data"][0]["vertices"]
+        data = (
+            [{key: value for key, value in vertex.items() if key != "id"} for vertex in vertices]
+            if all_pk_flag
+            else vertices
+        )
+    elif filename == "schema.json":
+        data = query
+    else:
+        raise ValueError(f"Unsupported backup file: {filename}")
+
+    target = Path(backup_subdir) / filename
+    target_mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else None
+    with TemporaryDirectory(dir=backup_subdir, prefix=f".{filename}.") as directory:
+        temporary = Path(directory) / filename
+        # Exclusive creation lets the kernel apply umask without changing it.
+        with open(temporary, "x", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
-        elif filename == "vertices.json":
-            data_full = client.gremlin().exec(query)["data"][0]["vertices"]
-            data = (
-                [{key: value for key, value in vertex.items() if key != "id"} for vertex in data_full]
-                if all_pk_flag
-                else data_full
-            )
-            json.dump(data, f, ensure_ascii=False)
-        elif filename == "schema.json":
-            data_full = query
-            if isinstance(data_full, dict) and "schema" in data_full:
-                groovy_filename = filename.replace(".json", ".groovy")
-                with open(os.path.join(backup_subdir, groovy_filename), "w", encoding="utf-8") as groovy_file:
-                    groovy_file.write(str(data_full["schema"]))
-            else:
-                data = data_full
-                json.dump(data, f, ensure_ascii=False)
+        if target_mode is not None:
+            temporary.chmod(target_mode)
+        os.replace(temporary, target)
+
+    if filename == "schema.json":
+        stale_schema = Path(backup_subdir) / "schema.groovy"
+        if stale_schema.is_file():
+            stale_schema.unlink()
 
 
 def manage_backup_retention():

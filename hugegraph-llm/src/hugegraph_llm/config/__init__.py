@@ -21,19 +21,22 @@ __all__ = [
     "admin_settings",
     "llm_settings",
     "resource_path",
+    "resource_file",
     "index_settings",
     "runtime_config_lock",
     "snapshot_llm_settings",
 ]
 
-import os
 import threading
 
 from .admin_config import AdminConfig
 from .hugegraph_config import HugeGraphConfig
 from .index_config import IndexConfig
 from .llm_config import LLMConfig
+from .paths import resolve_resource_path, resource_file
 from .prompt_config import PromptConfig
+
+resource_path = str(resolve_resource_path())
 
 llm_settings = LLMConfig()
 prompt = PromptConfig(llm_settings)
@@ -51,7 +54,3 @@ def snapshot_llm_settings() -> LLMConfig:
     """Copy one complete LLM configuration under the shared runtime lock."""
     with runtime_config_lock:
         return llm_settings.model_copy(deep=True)
-
-
-package_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-resource_path = os.path.join(package_path, "resources")

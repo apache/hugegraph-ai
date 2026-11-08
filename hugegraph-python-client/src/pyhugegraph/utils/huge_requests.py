@@ -17,17 +17,41 @@
 
 
 import logging
+from contextvars import ContextVar
+from copy import copy
 from typing import Any
-from urllib.parse import urljoin
 
 import requests
 from requests.adapters import HTTPAdapter
+from requests.structures import CaseInsensitiveDict
 from urllib3.util.retry import Retry
 
+from pyhugegraph.utils.authentication import request_auth
+from pyhugegraph.utils.compat import ServerAdapter
 from pyhugegraph.utils.constants import Constants
-from pyhugegraph.utils.huge_config import HGraphConfig
+from pyhugegraph.utils.huge_config import HGraphConfig, normalize_timeout
 from pyhugegraph.utils.log import log
 from pyhugegraph.utils.util import ResponseValidation, redact_sensitive_data
+
+_REQUEST_RETRIES: ContextVar[bool] = ContextVar("hugegraph_request_retries", default=True)
+
+
+class _RetryAdapter(HTTPAdapter):
+    def __copy__(self):
+        # HTTPAdapter's pickle hooks recreate pools; bypass them for this
+        # request-local policy copy and retain the original pool ownership.
+        adapter = type(self).__new__(type(self))
+        adapter.__dict__.update(self.__dict__)
+        return adapter
+
+    def send(self, request, *args, **kwargs):
+        # Requests has no per-request retry option. A context-local policy and a
+        # shallow adapter copy retain the same pools without mutating other calls.
+        adapter = self
+        if not _REQUEST_RETRIES.get():
+            adapter = copy(self)
+            adapter.max_retries = Retry(total=0)
+        return HTTPAdapter.send(adapter, request, *args, **kwargs)
 
 
 class HGraphSession:
@@ -35,7 +59,7 @@ class HGraphSession:
         self,
         cfg: HGraphConfig,
         retries: int = 3,
-        backoff_factor: int = 0.1,
+        backoff_factor: float = 0.1,
         status_forcelist=(500, 502, 504),
         session: requests.Session | None = None,
     ):
@@ -47,12 +71,14 @@ class HGraphSession:
         :param session: An optional requests.Session instance, for testing or advanced use cases.
         """
         self._cfg = cfg
+        self.adapter = ServerAdapter(cfg)
+        self._closed = False
         self._retries = retries
         self._backoff_factor = backoff_factor
         self._status_forcelist = status_forcelist
         self._auth = (cfg.username, cfg.password)
         self._headers = {"Content-Type": Constants.HEADER_CONTENT_TYPE}
-        self._timeout = cfg.timeout
+        self._timeout = normalize_timeout(cfg.timeout)
         self._session = session if session else requests.Session()
         self.__configure_session()
 
@@ -67,15 +93,18 @@ class HGraphSession:
             backoff_factor=self._backoff_factor,
             status_forcelist=self._status_forcelist,
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
+        adapter = _RetryAdapter(max_retries=retry_strategy)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
-        self._session.keep_alive = False
         log.debug(
             "Session configured with retries=%s and backoff_factor=%s",
             self._retries,
             self._backoff_factor,
         )
+
+    @property
+    def timeout(self) -> tuple[float, float]:
+        return self._timeout
 
     @property
     def cfg(self):
@@ -110,15 +139,15 @@ class HGraphSession:
         - The result will be "http://127.0.0.1:8000/graphspaces/default/graphs/test_graph/some/things"
         """
 
-        url = f"{self._cfg.url}/"
-        if self._cfg.gs_supported:
-            url = urljoin(
-                url,
-                f"graphspaces/{self._cfg.graphspace}/graphs/{self._cfg.graph_name}/",
-            )
+        return self.adapter.resolve(path)
+
+    def use_token(self, token: str | None) -> None:
+        if token is None:
+            self._headers.pop("Authorization", None)
         else:
-            url = urljoin(url, f"graphs/{self._cfg.graph_name}/")
-        return urljoin(url, path).strip("/")
+            if not token.strip():
+                raise ValueError("token must not be empty")
+            self._headers["Authorization"] = f"Bearer {token}"
 
     def close(self):
         """
@@ -131,25 +160,39 @@ class HGraphSession:
             None
 
         """
-        self._session.close()
+        if not self._closed:
+            self._session.close()
+            self._closed = True
 
     def request(
         self,
         path: str,
         method: str = "GET",
         validator=None,
+        retries: bool = True,
         **kwargs: Any,
-    ) -> dict:
+    ) -> Any:
         if validator is None:
             validator = ResponseValidation()
+        if self._closed:
+            raise RuntimeError("The HugeGraph client is closed")
         url = self.resolve(path)
-        response: requests.Response = getattr(self._session, method.lower())(
-            url,
-            auth=self._auth,
-            headers=self._headers,
-            timeout=self._timeout,
-            **kwargs,
-        )
+        headers = CaseInsensitiveDict(self._headers)
+        request_headers = kwargs.pop("headers", None) or {}
+        headers.update({key: value for key, value in request_headers.items() if value is not None})
+        auth = request_auth(headers, self._auth)
+        timeout = kwargs.pop("timeout", self._timeout)
+        policy = _REQUEST_RETRIES.set(retries)
+        try:
+            response: requests.Response = getattr(self._session, method.lower())(
+                url,
+                auth=auth,
+                headers=headers,
+                timeout=timeout,
+                **kwargs,
+            )
+        finally:
+            _REQUEST_RETRIES.reset(policy)
         if log.isEnabledFor(logging.DEBUG):
             log.debug(
                 "Request: %s %s validator=%s kwargs=%s %s",

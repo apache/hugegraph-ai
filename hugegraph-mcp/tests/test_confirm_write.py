@@ -12,9 +12,9 @@
 # limitations under the License.
 
 import sqlite3
-import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event, Lock
+from types import SimpleNamespace
 
 import pytest
 
@@ -165,14 +165,18 @@ def test_expired_executor_is_fenced_from_overwriting_new_attempt(tmp_path):
     assert record["operations"][0]["attempt"] == 1
 
 
-def test_claiming_each_operation_renews_lease_and_blocks_reconcile(tmp_path):
+def test_claiming_each_operation_renews_lease_and_blocks_reconcile(tmp_path, monkeypatch):
+    now = 1_700_000_000
+    clock = [now]
+    monkeypatch.setattr("hugegraph_mcp.plan_store.time", SimpleNamespace(time=lambda: clock[0]))
     store = SQLitePlanStore(tmp_path)
     store.save_plan(_plan())
     owner = "executor-owner"
     store.claim_plan("wp-confirm", owner_token=owner, lease_seconds=10)
     with sqlite3.connect(store.database_path) as connection:
         connection.execute(
-            "UPDATE write_plans SET lease_expires_at = strftime('%s','now') + 1 WHERE plan_id = 'wp-confirm'"
+            "UPDATE write_plans SET lease_expires_at = ? WHERE plan_id = 'wp-confirm'",
+            (now + 1,),
         )
 
     store.claim_operation(
@@ -185,7 +189,9 @@ def test_claiming_each_operation_renews_lease_and_blocks_reconcile(tmp_path):
 
     record = store.get_plan_record("wp-confirm")
     assert record is not None
-    assert record["lease_expires_at"] >= int(time.time()) + 39
+    assert record["lease_expires_at"] == now + 40
+    # The original lease has expired, so only its renewal blocks reconciliation.
+    clock[0] = now + 2
     result = WriteReconciler(
         store=store,
         readers=ReconcileReaderRegistry(),

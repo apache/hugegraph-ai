@@ -1,13 +1,14 @@
 # CI selection and validation
 
 The **HugeGraph AI CI** workflow owns push/PR selection and shared configuration.
-Its preflight checks synchronized release metadata and runs the release-tooling
-and selection-policy tests. The selected suites and changed paths are recorded
-in the job summary. A failed diff or preflight fails CI rather than skipping tests.
+Its preflight checks synchronized release metadata and runs the release-tooling,
+selection-policy and selected deployment-definition checks. The selected suites,
+deployment checks and changed paths are recorded in the job summary. A failed
+diff or preflight fails CI rather than skipping tests.
 
-| Change | Default runtime tests |
+| Change | Default validation |
 | --- | --- |
-| Repository-level README/Markdown outside tested modules | No runtime environment, Docker or custom CodeQL |
+| Repository-level README/Markdown outside tested modules | No runtime environment, deployment validation or custom CodeQL |
 | Module README/docs, including examples and data files | Owning module, preserving documentation/example contracts |
 | Python client | Client plus downstream LLM and MCP |
 | Standalone LLM SDK | SDK plus downstream LLM compatibility tests |
@@ -16,13 +17,21 @@ in the job summary. A failed diff or preflight fails CI rather than skipping tes
 | MCP | MCP |
 | Root dependency/release configuration or shared CI setup | Client, SDK, Eval, LLM and MCP |
 | Module CI workflow | That module and its downstream consumers |
-| Docker configuration or LLM image build script | LLM |
+| Dockerfile, `.dockerignore` or LLM image build script | Targeted BuildKit/shell validation in preflight; no full LLM runner |
+| Docker Compose or environment template | Compose config validation in preflight |
+| Python helper under `docker/` | LLM plus quality/security checks |
+| Other non-documentation file under `docker/` | Conservative LLM fallback until a targeted validator is defined |
 | Archive exclusions (`.gitattributes`) | Client archive installation guard and downstream LLM/MCP |
 
 Ruff runs once for Python/lint/shared configuration changes using `uvx`, without
-installing application dependencies. License checks share the preflight runner.
-Every `pyproject.toml` change selects quality checks, including module and
-nested configurations that may change Ruff/type-check behavior.
+installing application dependencies. License and deployment-definition checks
+share the preflight runner. BuildKit `--check` validates affected Docker build
+configuration without executing image build steps; Compose changes use native
+config validation with the repository environment template. Pure recognized
+deployment changes therefore do not allocate the LLM dependency/test runner.
+Unknown deployment paths fail safe by retaining the LLM job instead of silently
+skipping validation. Every `pyproject.toml` change selects quality checks,
+including module and nested configurations that may change Ruff/type-check behavior.
 Dependency review runs for dependency changes on same-repository PRs; its token
 restrictions for fork PRs are unchanged. Deleted files and both sides of a rename
 participate in selection.
@@ -83,10 +92,12 @@ in the existing quality runner, using their Python 3.12+ target.
 
 - Weekly on ASF main (Monday 06:00 Asia/Taipei), release-branch pushes, and manual
   **full** runs validate the client, LLM, MCP and SDK on Python 3.12–3.14,
-  plus CodeQL. Python 3.11 and older are no longer supported by these modules. Docker integration runs
-  once per module on the primary Python runtime.
+  plus deployment definitions and CodeQL. Python 3.11 and older are no longer
+  supported by these modules. Docker integration runs once per module on the
+  primary Python runtime.
 - Use **Run workflow → mainline** for the primary-runtime checks on the selected
-  branch, **full** for the complete matrix, **codeql** for security scanning, or
+  branch, **full** for the complete matrix, **deployment** for all lightweight
+  Dockerfile/Compose/image-script checks, **codeql** for security scanning, or
   **dependencies** with a base ref for dependency review.
 - **Rerun CI** is manual and accepts a failed run ID. Automatic delayed retries
   were removed; a deterministic test failure no longer allocates retry runners.

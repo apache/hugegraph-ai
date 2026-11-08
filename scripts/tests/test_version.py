@@ -51,17 +51,21 @@ class TestReleaseVersion(unittest.TestCase):
         path.write_text(path.read_text().replace(f'version = "{current}"', 'version = "1.9.2"'))
 
     def test_root_bump_syncs_packages_dependency_and_deployment(self):
+        config = self.root / "pyproject.toml"
+        server = "registry.example:5000/team/server@sha256:" + "a" * 64
+        config.write_text(config.read_text().replace(version.release_config(self.root)["server-image"], server))
         self.bump_root()
         self.assertEqual(0, self.run_command("sync"))
         for module in version.MODULES:
             project = tomllib.loads((self.root / module / "pyproject.toml").read_text())["project"]
             self.assertEqual("1.9.2", project["version"])
-            if module == "hugegraph-mcp":
+            if any(dependency.startswith("hugegraph-python>=") for dependency in project.get("dependencies", [])):
                 self.assertIn("hugegraph-python>=1.9.2,<2", project["dependencies"])
             if module == "hugegraph-llm":
                 self.assertIn("hugegraph-llm-sdk==1.9.2", project["dependencies"])
-        self.assertIn('appVersion: "1.9.2"', (self.root / version.DEPLOYMENT[0]).read_text())
-        self.assertIn("hugegraph/rag:1.9.2", (self.root / version.DEPLOYMENT[2]).read_text())
+        compose = (self.root / version.DEPLOYMENT[0]).read_text()
+        self.assertIn(f"image: ${{HUGEGRAPH_SERVER_IMAGE:-{server}}}", compose)
+        self.assertIn("hugegraph/rag:1.9.2", compose)
         self.assertIn("hugegraph-mcp@1.9.2", (self.root / version.DOCS[0]).read_text())
         self.assertIn("hugegraph_llm_sdk-1.9.2-py3", (self.root / "hugegraph-llm-sdk/README.md").read_text())
         self.assertIn("hugegraph_llm_eval-1.9.2-py3", (self.root / "graphrag/eval/README.md").read_text())

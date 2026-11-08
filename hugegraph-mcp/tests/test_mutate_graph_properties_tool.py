@@ -12,6 +12,8 @@
 # limitations under the License.
 
 
+import pytest
+
 from hugegraph_mcp.tools import mutate_graph_properties as mutate_module
 
 
@@ -59,13 +61,13 @@ class FakeGraphManager:
         self.append_calls = []
         self.eliminate_calls = []
 
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         self.read_count += 1
         if self.changed_vertex is not None and self.read_count >= 2:
             return self.changed_vertex
         return self.vertex
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         return {
             "id": edge_id,
             "label": "knows",
@@ -73,7 +75,7 @@ class FakeGraphManager:
             "properties": {"age": 1},
         }
 
-    def appendVertex(self, vertex_id, properties):
+    def append_vertex(self, vertex_id, properties):
         self.append_calls.append((vertex_id, properties))
         self.vertex = {
             **self.vertex,
@@ -81,7 +83,7 @@ class FakeGraphManager:
         }
         return self.vertex
 
-    def eliminateVertex(self, vertex_id, properties):
+    def eliminate_vertex(self, vertex_id, properties):
         self.eliminate_calls.append((vertex_id, properties))
         self.vertex = {
             **self.vertex,
@@ -91,10 +93,10 @@ class FakeGraphManager:
 
 
 class MissingTargetManager:
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         raise RuntimeError("404 Not Found: vertex does not exist")
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         raise RuntimeError("404 Not Found: edge does not exist")
 
 
@@ -105,31 +107,31 @@ class PostReadFailureManager(FakeGraphManager):
             "post read failed: Authorization: Bearer abc123 token=xyz http://user:pass@example.com"
         )
 
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         if self.append_calls:
             raise self.post_read_error
-        return super().getVertexById(vertex_id)
+        return super().get_vertex_by_id(vertex_id)
 
 
 class PostReadMissingManager(FakeGraphManager):
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         if self.append_calls:
             return None
-        return super().getVertexById(vertex_id)
+        return super().get_vertex_by_id(vertex_id)
 
 
 class PostReadMismatchManager(FakeGraphManager):
-    def getVertexById(self, vertex_id):
+    def get_vertex_by_id(self, vertex_id):
         if self.append_calls:
             return {
                 **self.vertex,
                 "properties": {"name": "Alice", "age": 31},
             }
-        return super().getVertexById(vertex_id)
+        return super().get_vertex_by_id(vertex_id)
 
 
 class ExecutionFailureManager(FakeGraphManager):
-    def appendVertex(self, vertex_id, properties):
+    def append_vertex(self, vertex_id, properties):
         self.append_calls.append((vertex_id, properties))
         raise RuntimeError("404 Not Found: vertex does not exist")
 
@@ -153,15 +155,15 @@ class CollectionGraphManager(FakeGraphManager):
             "properties": {property_name: list(values or [])},
         }
 
-    def getEdgeById(self, edge_id):
+    def get_edge_by_id(self, edge_id):
         return self.edge
 
-    def appendVertex(self, vertex_id, properties):
+    def append_vertex(self, vertex_id, properties):
         self.append_calls.append((vertex_id, properties))
         self.vertex = self._append(self.vertex, properties)
         return self.vertex
 
-    def appendEdge(self, edge_id, properties):
+    def append_edge(self, edge_id, properties):
         self.append_calls.append((edge_id, properties))
         self.edge = self._append(self.edge, properties)
         return self.edge
@@ -177,8 +179,8 @@ class CollectionGraphManager(FakeGraphManager):
 
 
 class ReorderedSetGraphManager(CollectionGraphManager):
-    def getVertexById(self, vertex_id):
-        item = super().getVertexById(vertex_id)
+    def get_vertex_by_id(self, vertex_id):
+        item = super().get_vertex_by_id(vertex_id)
         if self.append_calls:
             return {
                 **item,
@@ -327,6 +329,46 @@ def test_collection_append_rejects_non_json_array_before_write(monkeypatch):
     assert tuple_result["ok"] is False
     assert tuple_result["error"]["type"] == "VALIDATION_ERROR"
     assert "JSON array" in tuple_result["error"]["suggestion"]
+
+
+@pytest.mark.parametrize("property_name", ["aliases", "tags"])
+def test_collection_append_rejects_null_value_before_preview(monkeypatch, property_name):
+    _patch_schema(monkeypatch)
+    manager = CollectionGraphManager(property_name=property_name, values=["a"])
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: manager)
+
+    result = mutate_module.mutate_graph_properties(
+        target="vertex",
+        operation="append",
+        id="1:alice",
+        properties={property_name: None},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "VALIDATION_ERROR"
+    assert result["error"]["details"]["property"] == property_name
+    assert "JSON array" in result["error"]["suggestion"]
+
+
+def test_collection_append_without_schema_data_type_rejects_non_array(monkeypatch):
+    schema = _schema()
+    for property_key in schema["schema"]["propertykeys"]:
+        if property_key["name"] == "tags":
+            del property_key["data_type"]
+    monkeypatch.setattr(mutate_module, "current_live_schema", lambda: schema)
+    monkeypatch.setattr(mutate_module, "_graph_manager", lambda: CollectionGraphManager(values=["a"]))
+
+    for value in (5, "bc"):
+        result = mutate_module.mutate_graph_properties(
+            target="vertex",
+            operation="append",
+            id="1:alice",
+            properties={"tags": value},
+        )
+
+        assert result["ok"] is False
+        assert result["error"]["type"] == "VALIDATION_ERROR"
+        assert result["error"]["details"]["property"] == "tags"
 
 
 def test_mutation_rejects_double_overflow_without_raising(monkeypatch):

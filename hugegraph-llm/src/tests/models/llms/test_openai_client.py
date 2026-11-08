@@ -19,6 +19,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import openai
 import pytest
 
 from hugegraph_llm.models.llms.openai import OpenAIClient
@@ -63,7 +64,7 @@ class TestOpenAIClient(unittest.TestCase):
         # Verify the API was called with correct parameters
         mock_client.chat.completions.create.assert_called_once_with(
             model="gpt-3.5-turbo",
-            temperature=0.01,
+            temperature=openai.NOT_GIVEN,
             max_tokens=8092,
             messages=[{"role": "user", "content": "What is the capital of France?"}],
         )
@@ -91,7 +92,7 @@ class TestOpenAIClient(unittest.TestCase):
         # Verify the API was called with correct parameters
         mock_client.chat.completions.create.assert_called_once_with(
             model="gpt-3.5-turbo",
-            temperature=0.01,
+            temperature=openai.NOT_GIVEN,
             max_tokens=8092,
             messages=messages,
         )
@@ -144,7 +145,7 @@ class TestOpenAIClient(unittest.TestCase):
             # Verify the API was called with correct parameters
             mock_async_client.chat.completions.create.assert_called_once_with(
                 model="gpt-3.5-turbo",
-                temperature=0.01,
+                temperature=openai.NOT_GIVEN,
                 max_tokens=8092,
                 messages=[{"role": "user", "content": "What is the capital of France?"}],
             )
@@ -200,7 +201,7 @@ class TestOpenAIClient(unittest.TestCase):
         # Verify the API was called with correct parameters
         mock_client.chat.completions.create.assert_called_once_with(
             model="gpt-3.5-turbo",
-            temperature=0.01,
+            temperature=openai.NOT_GIVEN,
             max_tokens=8092,
             messages=[{"role": "user", "content": "What is the capital of France?"}],
             stream=True,
@@ -243,7 +244,7 @@ class TestOpenAIClient(unittest.TestCase):
             # Verify the API was called with correct parameters
             mock_async_client.chat.completions.create.assert_called_once_with(
                 model="gpt-3.5-turbo",
-                temperature=0.01,
+                temperature=openai.NOT_GIVEN,
                 max_tokens=8092,
                 messages=[{"role": "user", "content": "What is the capital of France?"}],
                 stream=True,

@@ -175,7 +175,7 @@ def test_gremlin_exec_preserves_auth_exception_type():
 
 def test_gremlin_exec_does_not_silently_drop_empty_payload(monkeypatch):
     gremlin = GremlinManager(_FailingGremlinSession())
-    monkeypatch.setattr(gremlin, "_invoke_request", mock.Mock(return_value={}))
+    monkeypatch.setattr(gremlin, "request", mock.Mock(return_value={}))
 
     with pytest.raises(ResponseParseError, match="Invalid Gremlin response payload"):
         gremlin.exec("g.V()")

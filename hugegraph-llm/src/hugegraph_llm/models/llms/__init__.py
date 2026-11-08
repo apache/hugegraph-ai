@@ -22,7 +22,6 @@ This package contains various LLM client implementations including:
 - OpenAI clients
 - Qianfan clients
 - Ollama clients
-- LiteLLM clients
 """
 
 # Import base class to make it available at package level

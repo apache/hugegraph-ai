@@ -67,6 +67,7 @@ class MilvusVectorIndex(VectorStoreBase):
                             self.embed_dim,
                         )
                         utility.drop_collection(self.name)
+                        self._create_collection()
                         break
 
         self.collection = Collection(self.name)

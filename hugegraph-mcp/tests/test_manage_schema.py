@@ -67,27 +67,27 @@ class RecordingPropertyBuilder:
     def add_parameter(self, key, value):
         setattr(self, key, value)
 
-    def asInt(self):
+    def as_int(self):
         self.data_type = "INT"
         return self
 
-    def asBool(self):
+    def as_bool(self):
         self.data_type = "BOOLEAN"
         return self
 
-    def valueSingle(self):
+    def value_single(self):
         self.cardinality = "SINGLE"
         return self
 
-    def valueSet(self):
+    def value_set(self):
         self.cardinality = "SET"
         return self
 
-    def valueList(self):
+    def value_list(self):
         self.cardinality = "LIST"
         return self
 
-    def calcSum(self):
+    def calc_sum(self):
         self.aggregate_type = "SUM"
         return self
 
@@ -109,7 +109,7 @@ class RecordingPropertyManager:
         self.state = state
         self.builders = []
 
-    def propertyKey(self, name):
+    def property_key(self, name):
         builder = RecordingPropertyBuilder(name, self.state)
         self.builders.append(builder)
         return builder
@@ -1155,6 +1155,19 @@ def test_dry_run_rejects_non_string_name(monkeypatch):
         assert result["data"]["errors"][0]["reason"].startswith("name must be a non-empty string")
 
 
+@pytest.mark.parametrize("name", [["age"], {"name": "age"}])
+def test_dry_run_rejects_unhashable_name_without_raising(monkeypatch, name):
+    monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
+
+    result = manage_schema(
+        mode="dry_run",
+        operations=[{"type": "create_property_key", "name": name, "data_type": "TEXT"}],
+    )
+
+    _assert_dry_run_invalid(result)
+    assert result["data"]["errors"][0]["reason"].startswith("name must be a non-empty string")
+
+
 def test_dry_run_rejects_blank_name(monkeypatch):
     monkeypatch.setattr(manage_schema_module.schema_tools, "get_live_schema", _empty_schema)
 
@@ -1705,15 +1718,15 @@ def test_manage_schema_apply_fails_when_post_read_fields_do_not_match(monkeypatc
             self.data_type = None
             self.cardinality = None
 
-        def asInt(self):
+        def as_int(self):
             self.data_type = "INT"
             return self
 
-        def valueSingle(self):
+        def value_single(self):
             self.cardinality = "SINGLE"
             return self
 
-        def calcSum(self):
+        def calc_sum(self):
             return self
 
         def create(self):
@@ -1728,7 +1741,7 @@ def test_manage_schema_apply_fails_when_post_read_fields_do_not_match(monkeypatc
             return "ok"
 
     class FakeManager:
-        def propertyKey(self, name):
+        def property_key(self, name):
             return PropertyBuilder(name)
 
     operation = {
@@ -1938,7 +1951,7 @@ def test_schema_field_table_forwards_and_matches_label_options():
 
     manage_schema_module._apply_vertex_label_options(builder, operation)
 
-    builder.enableLabelIndex.assert_called_once_with(False)
+    builder.enable_label_index.assert_called_once_with(False)
     builder.add_parameter.assert_any_call("index_labels", ["person_by_name"])
     builder.add_parameter.assert_any_call("user_data", {"owner": "mcp"})
 
@@ -1975,8 +1988,8 @@ def test_schema_field_table_forwards_and_matches_edge_label_options():
     manage_schema_module._apply_edge_label_options(builder, operation)
 
     builder.link.assert_called_once_with("person", "person")
-    builder.multiTimes.assert_called_once_with()
-    builder.enableLabelIndex.assert_called_once_with(True)
+    builder.multi_times.assert_called_once_with()
+    builder.enable_label_index.assert_called_once_with(True)
     builder.add_parameter.assert_called_once_with("user_data", {"owner": "mcp"})
 
     observed = _schema(
@@ -2305,7 +2318,7 @@ def test_apply_schema_operations_transport_failure_is_unknown(monkeypatch):
             raise TimeoutError("response lost")
 
     class FailingManager:
-        def propertyKey(self, name):
+        def property_key(self, name):
             return FailingBuilder(name)
 
     monkeypatch.setattr(manage_schema_module, "_schema_manager", FailingManager)

@@ -154,13 +154,13 @@ class Commit2Graph:
 
             if vertex_label.get("id_strategy") == "CUSTOMIZE_STRING" and explicit_id:
                 result = self._handle_graph_creation(
-                    self.client.graph().addVertex,
+                    self.client.graph().add_vertex,
                     input_label,
                     input_properties,
                     id=explicit_id,
                 )
             else:
-                result = self._handle_graph_creation(self.client.graph().addVertex, input_label, input_properties)
+                result = self._handle_graph_creation(self.client.graph().add_vertex, input_label, input_properties)
             if result is None:
                 raise ValueError(f"Failed to create vertex '{input_label}' with properties {input_properties}")
             vid = result.id
@@ -182,7 +182,7 @@ class Commit2Graph:
                 continue
 
             # TODO: we could try batch add edges first, setback to single-mode if failed
-            self._handle_graph_creation(self.client.graph().addEdge, label, start, end, properties)
+            self._handle_graph_creation(self.client.graph().add_edge, label, start, end, properties)
 
     def init_schema_if_need(self, schema: dict):
         properties = schema["propertykeys"]
@@ -197,34 +197,34 @@ class Commit2Graph:
             properties = vertex["properties"]
             nullable_keys = vertex["nullable_keys"]
             primary_keys = vertex["primary_keys"]
-            self.schema.vertexLabel(vertex_label).properties(*properties).nullableKeys(
+            self.schema.vertex_label(vertex_label).properties(*properties).nullable_keys(
                 *nullable_keys
-            ).usePrimaryKeyId().primaryKeys(*primary_keys).ifNotExist().create()
+            ).use_primary_key_id().primary_keys(*primary_keys).if_not_exist().create()
 
         for edge in edges:
             edge_label = edge["name"]
             source_vertex_label = edge["source_label"]
             target_vertex_label = edge["target_label"]
             properties = edge["properties"]
-            self.schema.edgeLabel(edge_label).sourceLabel(source_vertex_label).targetLabel(
+            self.schema.edge_label(edge_label).source_label(source_vertex_label).target_label(
                 target_vertex_label
-            ).properties(*properties).nullableKeys(*properties).ifNotExist().create()
+            ).properties(*properties).nullable_keys(*properties).if_not_exist().create()
 
     def schema_free_mode(self, data):
-        self.schema.propertyKey("name").asText().ifNotExist().create()
-        self.schema.vertexLabel("vertex").useCustomizeStringId().properties("name").ifNotExist().create()
-        self.schema.edgeLabel("edge").sourceLabel("vertex").targetLabel("vertex").properties(
+        self.schema.property_key("name").as_text().if_not_exist().create()
+        self.schema.vertex_label("vertex").use_customize_string_id().properties("name").if_not_exist().create()
+        self.schema.edge_label("edge").source_label("vertex").target_label("vertex").properties(
             "name"
-        ).ifNotExist().create()
+        ).if_not_exist().create()
 
-        self.schema.indexLabel("vertexByName").onV("vertex").by("name").secondary().ifNotExist().create()
-        self.schema.indexLabel("edgeByName").onE("edge").by("name").secondary().ifNotExist().create()
+        self.schema.index_label("vertexByName").on_v("vertex").by("name").secondary().if_not_exist().create()
+        self.schema.index_label("edgeByName").on_e("edge").by("name").secondary().if_not_exist().create()
 
         for item in data:
             s, p, o = (element.strip() for element in item)
-            s_id = self.client.graph().addVertex("vertex", {"name": s}, id=s).id
-            t_id = self.client.graph().addVertex("vertex", {"name": o}, id=o).id
-            self.client.graph().addEdge("edge", s_id, t_id, {"name": p})
+            s_id = self.client.graph().add_vertex("vertex", {"name": s}, id=s).id
+            t_id = self.client.graph().add_vertex("vertex", {"name": o}, id=o).id
+            self.client.graph().add_edge("edge", s_id, t_id, {"name": p})
 
     def _create_property(self, prop: dict):
         name = prop["name"]
@@ -240,46 +240,46 @@ class Commit2Graph:
             )
             return
 
-        property_key = self.schema.propertyKey(name)
+        property_key = self.schema.property_key(name)
         self._set_property_data_type(property_key, data_type)
         self._set_property_cardinality(property_key, cardinality)
-        property_key.ifNotExist().create()
+        property_key.if_not_exist().create()
 
     def _set_property_data_type(self, property_key, data_type):
         if data_type == PropertyDataType.BOOLEAN:
             log.error("Boolean type is not supported")
         elif data_type == PropertyDataType.BYTE:
             log.warning("Byte type is not supported, use int instead")
-            property_key.asInt()
+            property_key.as_int()
         elif data_type == PropertyDataType.INT:
-            property_key.asInt()
+            property_key.as_int()
         elif data_type == PropertyDataType.LONG:
-            property_key.asLong()
+            property_key.as_long()
         elif data_type == PropertyDataType.FLOAT:
             log.warning("Float type is not supported, use double instead")
-            property_key.asDouble()
+            property_key.as_double()
         elif data_type == PropertyDataType.DOUBLE:
-            property_key.asDouble()
+            property_key.as_double()
         elif data_type == PropertyDataType.TEXT:
-            property_key.asText()
+            property_key.as_text()
         elif data_type == PropertyDataType.BLOB:
             log.warning("Blob type is not supported, use text instead")
-            property_key.asText()
+            property_key.as_text()
         elif data_type == PropertyDataType.DATE:
-            property_key.asDate()
+            property_key.as_date()
         elif data_type == PropertyDataType.UUID:
             log.warning("UUID type is not supported, use text instead")
-            property_key.asText()
+            property_key.as_text()
         else:
             log.error("Unknown data type %s for property_key %s", data_type, property_key)
 
     def _set_property_cardinality(self, property_key, cardinality):
         if cardinality == PropertyCardinality.SINGLE:
-            property_key.valueSingle()
+            property_key.value_single()
         elif cardinality == PropertyCardinality.LIST:
-            property_key.valueList()
+            property_key.value_list()
         elif cardinality == PropertyCardinality.SET:
-            property_key.valueSet()
+            property_key.value_set()
         else:
             log.error("Unknown cardinality %s for property_key %s", cardinality, property_key)
 

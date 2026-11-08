@@ -496,6 +496,19 @@ def test_dry_run_delete_vertex_cascade_preview_unwraps_nested_values(monkeypatch
     assert result["errors"][0]["error_type"] == "CASCADE_NOT_ENABLED"
 
 
+def test_manage_delete_rejects_non_object_operation_without_raising(monkeypatch):
+    _mock_schema(monkeypatch)
+
+    result = manage_graph_data_module.manage_graph_data(
+        mode="delete",
+        change_plan={"operations": ["not-an-operation"]},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "INVALID_GRAPH_DATA"
+    assert "operation must be an object" in str(result["error"])
+
+
 def test_manage_delete_vertex_returns_blocked_by_relationships(monkeypatch):
     _mock_schema(monkeypatch)
     counts = iter([1, 2])

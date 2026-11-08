@@ -39,6 +39,7 @@ def format_vertex_id(vertex_id, allow_none: bool = False) -> str | None:
         vertex_id = str(vertex_id)
 
     if isinstance(vertex_id, Integral):
+        vertex_id = int(vertex_id)
         if vertex_id < JAVA_LONG_MIN or vertex_id > JAVA_LONG_MAX:
             raise ValueError("The vertex id integer must fit in Java signed long range")
     elif not isinstance(vertex_id, str):

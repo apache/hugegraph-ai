@@ -44,11 +44,7 @@ DOCS = (
     "hugegraph-llm-sdk/README.md",
     "graphrag/eval/README.md",
 )
-DEPLOYMENT = (
-    "docker/charts/hg-llm/Chart.yaml",
-    "docker/charts/hg-llm/values.yaml",
-    "docker/docker-compose-network.yml",
-)
+DEPLOYMENT = ("docker/docker-compose-network.yml",)
 VERSION_PATTERN = r"\d+\.\d+\.\d+"
 
 
@@ -84,7 +80,7 @@ def updates(root: Path) -> dict[Path, tuple[str, str]]:
     config = release_config(root)
     version = config["version"]
     result = {}
-    compose = (root / DEPLOYMENT[2]).read_text(encoding="utf-8")
+    compose = (root / DEPLOYMENT[0]).read_text(encoding="utf-8")
     previous_server = re.search(r"hugegraph-server:\n    image: (.+)", compose)
     previous_llm = re.search(r"hugegraph-rag:\n    image: (.+)", compose)
     if previous_server is None or previous_llm is None:
@@ -109,7 +105,8 @@ def updates(root: Path) -> dict[Path, tuple[str, str]]:
         original = (root / path).read_text(encoding="utf-8")
         # Restrict the replacement to [project], rather than a tool's version field.
         updated = replace_one(original, r'(\[project\]\n(?:(?!\[).|\n)*?^version = ")[^"]+("[^\n]*)', version, path)
-        if module == "hugegraph-mcp":
+        dependencies = tomllib.loads(original)["project"].get("dependencies", [])
+        if any(dependency.startswith("hugegraph-python>=") for dependency in dependencies):
             updated = replace_one(updated, r'("hugegraph-python>=)[^"<]+(<2")', version + ",", path)
         if module == "hugegraph-llm":
             updated = replace_one(updated, r'("hugegraph-llm-sdk==)[^"]+(")', version, path)
@@ -118,14 +115,6 @@ def updates(root: Path) -> dict[Path, tuple[str, str]]:
 
     replacements = {
         DEPLOYMENT[0]: (
-            (r"(^version: )[^\n]+($)", version),
-            (r'(^appVersion: ")[^"]+("$)', version),
-        ),
-        DEPLOYMENT[1]: (
-            (r"(^  repository: )[^\n]+($)", config["llm-image"]),
-            (r'(^  tag: ")[^"]*("$)', ""),
-        ),
-        DEPLOYMENT[2]: (
             (
                 r"(  hugegraph-server:\n    image: )[^\n]+($)",
                 "${HUGEGRAPH_SERVER_IMAGE:-" + config["server-image"] + "}",

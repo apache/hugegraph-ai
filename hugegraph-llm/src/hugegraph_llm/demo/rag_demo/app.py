@@ -169,9 +169,7 @@ def init_rag_ui() -> gr.Interface:
 
 def create_app():
     app = FastAPI(lifespan=lifespan, version=distribution_version("hugegraph-llm"))
-    # we don't need to manually check the env now
-    # settings.check_env()
-    prompt.update_yaml_file()
+    # Mounted prompts are read at startup; only explicit UI saves write them.
     api_auth, auth_enabled = create_api_router()
 
     hugegraph_llm = init_rag_ui()

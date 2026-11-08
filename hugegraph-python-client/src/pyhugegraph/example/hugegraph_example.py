@@ -22,34 +22,34 @@ if __name__ == "__main__":
 
     """schema"""
     schema = client.schema()
-    schema.propertyKey("name").asText().ifNotExist().create()
-    schema.propertyKey("birthDate").asText().ifNotExist().create()
-    schema.vertexLabel("Person").properties("name", "birthDate").usePrimaryKeyId().primaryKeys(
+    schema.property_key("name").as_text().if_not_exist().create()
+    schema.property_key("birthDate").as_text().if_not_exist().create()
+    schema.vertex_label("Person").properties("name", "birthDate").use_primary_key_id().primary_keys(
         "name"
-    ).ifNotExist().create()
-    schema.vertexLabel("Movie").properties("name").usePrimaryKeyId().primaryKeys("name").ifNotExist().create()
-    schema.edgeLabel("ActedIn").sourceLabel("Person").targetLabel("Movie").ifNotExist().create()
+    ).if_not_exist().create()
+    schema.vertex_label("Movie").properties("name").use_primary_key_id().primary_keys("name").if_not_exist().create()
+    schema.edge_label("ActedIn").source_label("Person").target_label("Movie").if_not_exist().create()
 
     """graph"""
     g = client.graph()
     # add Vertex
-    p1 = g.addVertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"})
-    p2 = g.addVertex("Person", {"name": "Robert De Niro", "birthDate": "1943-08-17"})
-    m1 = g.addVertex("Movie", {"name": "The Godfather"})
-    m2 = g.addVertex("Movie", {"name": "The Godfather Part II"})
-    m3 = g.addVertex("Movie", {"name": "The Godfather Coda The Death of Michael Corleone"})
+    p1 = g.add_vertex("Person", {"name": "Al Pacino", "birthDate": "1940-04-25"})
+    p2 = g.add_vertex("Person", {"name": "Robert De Niro", "birthDate": "1943-08-17"})
+    m1 = g.add_vertex("Movie", {"name": "The Godfather"})
+    m2 = g.add_vertex("Movie", {"name": "The Godfather Part II"})
+    m3 = g.add_vertex("Movie", {"name": "The Godfather Coda The Death of Michael Corleone"})
 
     # add Edge
-    g.addEdge("ActedIn", p1.id, m1.id, {})
-    g.addEdge("ActedIn", p1.id, m2.id, {})
-    g.addEdge("ActedIn", p1.id, m3.id, {})
-    g.addEdge("ActedIn", p2.id, m2.id, {})
+    g.add_edge("ActedIn", p1.id, m1.id, {})
+    g.add_edge("ActedIn", p1.id, m2.id, {})
+    g.add_edge("ActedIn", p1.id, m3.id, {})
+    g.add_edge("ActedIn", p2.id, m2.id, {})
 
     # update property
-    # g.eliminateVertex("vertex_id", {"property_key": "property_value"})
+    # g.eliminate_vertex("vertex_id", {"property_key": "property_value"})
 
-    # g.removeVertexById("12:Al Pacino")
-    g.close()
+    # g.remove_vertex_by_id("12:Al Pacino")
+    client.close()
 
     """gremlin"""
     g = client.gremlin()

@@ -29,7 +29,7 @@ Following the full instructions above, try to extract the following text from th
 def primary_key_id(vertex_label, properties):
     """Return HugeGraph's escaped primary-key ID when the schema supplies one."""
     id_strategy = vertex_label.get("id_strategy")
-    if id_strategy and str(id_strategy).upper() != "PRIMARY_KEY":
+    if id_strategy and str(id_strategy).upper() not in ("DEFAULT", "PRIMARY_KEY"):
         return None
     primary_keys = vertex_label.get("primary_keys", [])
     if not primary_keys or "id" not in vertex_label:

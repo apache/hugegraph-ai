@@ -27,13 +27,13 @@ from pyhugegraph.utils.util import ResponseValidation
 
 class IndexLabel(HugeParamsBase):
     @decorator_params
-    def onV(self, vertex_label) -> "IndexLabel":
+    def on_v(self, vertex_label) -> "IndexLabel":
         self._parameter_holder.set("base_value", vertex_label)
         self._parameter_holder.set("base_type", "VERTEX_LABEL")
         return self
 
     @decorator_params
-    def onE(self, edge_label) -> "IndexLabel":
+    def on_e(self, edge_label) -> "IndexLabel":
         self._parameter_holder.set("base_value", edge_label)
         self._parameter_holder.set("base_type", "EDGE_LABEL")
         return self
@@ -74,7 +74,7 @@ class IndexLabel(HugeParamsBase):
         return self
 
     @decorator_params
-    def ifNotExist(self) -> "IndexLabel":
+    def if_not_exist(self) -> "IndexLabel":
         path = f"schema/indexlabels/{self._parameter_holder.get_value('name')}"
         if _ := self._sess.request(path, validator=ResponseValidation(strict=False)):
             self._parameter_holder.set("not_exist", False)
@@ -106,3 +106,8 @@ class IndexLabel(HugeParamsBase):
             return f'remove IndexLabel success, Detail: "{response!s}"'
         log.error(f'remove IndexLabel failed, Detail: "{response!s}"')
         return None
+
+    # Legacy public names share the canonical implementations.
+    ifNotExist = if_not_exist  # noqa: N815
+    onE = on_e  # noqa: N815
+    onV = on_v  # noqa: N815

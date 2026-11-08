@@ -18,6 +18,7 @@
 
 class EdgeData:
     def __init__(self, dic):
+        self._data = dict(dic)
         self.__id = dic["id"]
         self.__label = dic.get("label", None)
         self.__type = dic.get("type", None)
@@ -40,25 +41,35 @@ class EdgeData:
         return self.__type
 
     @property
-    def outV(self):
+    def out_v(self):
         return self.__outV
 
     @property
-    def outVLabel(self):
+    def out_v_label(self):
         return self.__outVLabel
 
     @property
-    def inV(self):
+    def in_v(self):
         return self.__inV
 
     @property
-    def inVLabel(self):
+    def in_v_label(self):
         return self.__inVLabel
 
     @property
     def properties(self):
         return self.__properties
 
+    def to_dict(self) -> dict:
+        """Return the native server payload, preserving wire names and extra fields."""
+        return dict(self._data)
+
     def __repr__(self):
         res = f"{self.__outV}--{self.__label}-->{self.__inV}"
         return res
+
+    # Legacy public names share the canonical implementations.
+    inV = in_v  # noqa: N815
+    inVLabel = in_v_label  # noqa: N815
+    outV = out_v  # noqa: N815
+    outVLabel = out_v_label  # noqa: N815

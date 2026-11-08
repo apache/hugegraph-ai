@@ -63,7 +63,8 @@ class FaissVectorIndex(VectorStoreBase):
                 indices.append(i)
                 remove_num += 1
         self.index.remove_ids(np.array(indices))
-        self.properties = [p for i, p in enumerate(self.properties) if i not in indices]
+        removed = set(indices)
+        self.properties = [p for i, p in enumerate(self.properties) if i not in removed]
         return remove_num
 
     def search(self, query_vector: List[float], top_k: int, dis_threshold: float = 0.9) -> List[Any]:

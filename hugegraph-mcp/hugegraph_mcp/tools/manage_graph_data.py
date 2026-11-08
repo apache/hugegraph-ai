@@ -145,7 +145,8 @@ def manage_graph_data(
         return limit_error
 
     isolated_vertex_delete_unavailable = mode == "delete" and any(
-        str(operation.get("op") or operation.get("type")) == "delete_vertex"
+        isinstance(operation, dict)
+        and str(operation.get("op") or operation.get("type")) == "delete_vertex"
         and operation.get("cascade", False) is False
         for operation in _operations(plan)
     )

@@ -173,6 +173,7 @@ OpenAI 类型也可连接提供兼容接口的模型服务；服务商必须支�
 | `MAX_GRAPH_PATH`       | Optional[Integer] | 10             | 最大图路径长度            |
 | `MAX_GRAPH_ITEMS`      | Optional[Integer] | 30             | 最大图项目数             |
 | `EDGE_LIMIT_PRE_LABEL` | Optional[Integer] | 8              | 每个标签的边数限制          |
+| `MAX_ELEMENT_ID_LENGTH` | Optional[Integer] | 256            | 信息抽取元素 ID 的最大长度（按 UTF-8 字节比较，超限元素被过滤，默认 256 与历史行为一致） |
 | `VECTOR_DIS_THRESHOLD` | Optional[Float]   | 0.9            | 向量距离阈值             |
 | `TOPK_PER_KEYWORD`     | Optional[Integer] | 1              | 每个关键词返回的 TopK 数量   |
 | `TOPK_RETURN_RESULTS`  | Optional[Integer] | 20             | 返回结果数量             |

@@ -144,6 +144,15 @@ def test_env_export_round_trip_preserves_typed_fields(tmp_path, monkeypatch):
     settings.hybrid_llm_weights = 0.0
     settings.generate_env()
 
+    # Assert the exported lines themselves: reloaded falsy values alone do not prove
+    # they were written, because LLMConfig derives extract_use_chat from the other
+    # extract fields when the variable is absent.
+    exported_lines = (tmp_path / ".env").read_text(encoding="utf-8").splitlines()
+    assert "OLLAMA_CHAT_PORT='12345'" in exported_lines
+    assert "OPENAI_CHAT_TOKENS='4096'" in exported_lines
+    assert "EXTRACT_USE_CHAT='False'" in exported_lines
+    assert "HYBRID_LLM_WEIGHTS='0.0'" in exported_lines
+
     reloaded = LLMConfig()
     assert reloaded.ollama_chat_port == 12345
     assert isinstance(reloaded.ollama_chat_port, int)

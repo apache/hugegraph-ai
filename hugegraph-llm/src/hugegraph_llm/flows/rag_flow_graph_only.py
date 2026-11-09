@@ -90,7 +90,9 @@ class RAGGraphOnlyFlow(BaseFlow):
         prepared_input.keywords_extract_prompt = keywords_extract_prompt or prompt.keywords_extract_prompt
         prepared_input.answer_prompt = answer_prompt or prompt.answer_prompt
         prepared_input.custom_related_information = custom_related_information
-        prepared_input.vector_dis_threshold = vector_dis_threshold or huge_settings.vector_dis_threshold
+        # Keep 0.0 meaning "exact matches only"; each consumer resolves its own
+        # configured default (VECTOR_DIS_THRESHOLD / CHUNK_DIS_THRESHOLD).
+        prepared_input.vector_dis_threshold = vector_dis_threshold
         prepared_input.schema = huge_settings.graph_name
 
         prepared_input.is_graph_rag_recall = is_graph_rag_recall

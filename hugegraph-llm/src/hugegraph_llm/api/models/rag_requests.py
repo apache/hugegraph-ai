@@ -21,8 +21,6 @@ from typing import List, Literal, Optional
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from hugegraph_llm.config import prompt
-
 LLMProviderType = Literal["openai", "ollama/local"]
 RerankerProviderType = Literal["cohere", "siliconflow"]
 
@@ -61,19 +59,20 @@ class RAGRequest(BaseModel):
     client_config: Optional[GraphConfigRequest] = Query(None, description="hugegraph server config.")
 
     # Keep prompt params in the end
-    answer_prompt: Optional[str] = Query(prompt.answer_prompt, description="Prompt to guide the answer generation.")
+    answer_prompt: Optional[str] = Query(
+        None, description="Prompt to guide the answer generation (defaults to the current configured prompt)."
+    )
     keywords_extract_prompt: Optional[str] = Query(
-        prompt.keywords_extract_prompt,
-        description="Prompt for extracting keywords from query.",
+        None,
+        description="Prompt for extracting keywords from query (defaults to the current configured prompt).",
     )
     gremlin_tmpl_num: int = Query(1, description="Number of Gremlin templates to use.")
     gremlin_prompt: Optional[str] = Query(
-        prompt.gremlin_generate_prompt,
-        description="Prompt for the Text2Gremlin query.",
+        None,
+        description="Prompt for the Text2Gremlin query (defaults to the current configured prompt).",
     )
 
 
-# TODO: import the default value of prompt.* dynamically
 class GraphRAGRequest(BaseModel):
     query: str = Query(..., description="Query you want to ask")
     # Graph Configs
@@ -101,8 +100,8 @@ class GraphRAGRequest(BaseModel):
     near_neighbor_first: bool = Query(False, description="Prioritize near neighbors in the search results.")
     custom_priority_info: str = Query("", description="Custom information to prioritize certain results.")
     gremlin_prompt: Optional[str] = Query(
-        prompt.gremlin_generate_prompt,
-        description="Prompt for the Text2Gremlin query.",
+        None,
+        description="Prompt for the Text2Gremlin query (defaults to the current configured prompt).",
     )
 
 
@@ -147,8 +146,8 @@ class GremlinGenerateRequest(BaseModel):
     query: str
     example_num: Optional[int] = Query(0, description="Number of Gremlin templates to use.(0 means no templates)")
     gremlin_prompt: Optional[str] = Query(
-        prompt.gremlin_generate_prompt,
-        description="Prompt for the Text2Gremlin query.",
+        None,
+        description="Prompt for the Text2Gremlin query (defaults to the current configured prompt).",
     )
     client_config: Optional[GraphConfigRequest] = Query(None, description="hugegraph server config.")
     output_types: Optional[List[GremlinOutputType]] = Query(

@@ -27,8 +27,6 @@ from hugegraph_llm.operators.document_op.textrank_word_extract import (
 )
 from hugegraph_llm.utils.log import log
 
-KEYWORDS_EXTRACT_TPL = prompt.keywords_extract_prompt
-
 
 class KeywordExtract:
     def __init__(
@@ -42,7 +40,7 @@ class KeywordExtract:
         self._query = text
         self._language = llm_settings.language.lower()
         self._max_keywords = max_keywords
-        self._extract_template = extract_template or KEYWORDS_EXTRACT_TPL
+        self._extract_template = extract_template or prompt.keywords_extract_prompt
         self._extract_method = llm_settings.keyword_extract_type.lower()
         self._textrank_model = MultiLingualTextRank(keyword_num=max_keywords, window_size=llm_settings.window_size)
 

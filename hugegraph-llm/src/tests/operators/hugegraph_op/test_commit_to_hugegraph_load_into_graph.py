@@ -503,3 +503,73 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
             self.commit2graph.client.graph().add_vertex, "event", {"code": 0, "seq": 3}
         )
         mock_log.warning.assert_not_called()
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_drops_empty_string_single_primary_key(self, mock_handle_graph_creation):
+        """An empty-string single primary key is absent, not an identity value."""
+        vertices = [{"label": "person", "properties": {"name": "", "age": 67}}]
+
+        self.commit2graph.load_into_graph(vertices, [], self.schema)
+
+        mock_handle_graph_creation.assert_not_called()
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.log")
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_marks_empty_string_composite_primary_key(self, mock_handle_graph_creation, mock_log):
+        """An empty-string part of a composite key is marked empty like a missing one."""
+        mock_handle_graph_creation.return_value = MagicMock(id="vid-event")
+        schema = {
+            "propertykeys": [
+                {"name": "code", "data_type": "INT", "cardinality": "SINGLE"},
+                {"name": "seq", "data_type": "INT", "cardinality": "SINGLE"},
+            ],
+            "vertexlabels": [
+                {
+                    "name": "event",
+                    "properties": ["code", "seq"],
+                    "primary_keys": ["code", "seq"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                }
+            ],
+            "edgelabels": [],
+        }
+        vertices = [{"label": "event", "properties": {"code": "", "seq": 3}}]
+
+        self.commit2graph.load_into_graph(vertices, [], schema)
+
+        mock_handle_graph_creation.assert_called_once_with(
+            self.commit2graph.client.graph().add_vertex, "event", {"code": 0, "seq": 3}
+        )
+        mock_log.warning.assert_called()
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_maps_empty_declared_ids_to_composite_keys(self, mock_handle_graph_creation):
+        """Empty declared ids carry no identity, so edges resolve via composite mapping keys."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="1:Tom Hanks"),
+            MagicMock(id="2:Forrest Gump"),
+            MagicMock(id="edge_id"),
+        ]
+        vertices = [
+            {"id": "", "label": "person", "properties": {"name": "Tom Hanks", "age": 67}},
+            {"id": "", "label": "movie", "properties": {"title": "Forrest Gump", "year": 1994}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_edge,
+            "acted_in",
+            "1:Tom Hanks",
+            "2:Forrest Gump",
+            {"role": "Forrest Gump"},
+        )

@@ -16,6 +16,8 @@
 # under the License.
 
 
+import subprocess
+import sys
 import unittest
 from os import environ
 from pathlib import Path
@@ -26,9 +28,6 @@ from unittest.mock import patch
 import pytest
 
 pytestmark = pytest.mark.unit
-
-# FIXME: add config tests proving .env sync preserves typed numeric/boolean
-# fields and that imports do not create or mutate files implicitly.
 
 
 class TestConfig(unittest.TestCase):
@@ -87,3 +86,94 @@ class TestConfig(unittest.TestCase):
         custom_env = Path("/tmp/hugegraph-llm-test.env")
         with patch.dict(environ, {base_config.ENV_PATH_ENV_VAR: str(custom_env)}):
             self.assertEqual(Path(base_config.resolve_env_path()), custom_env)
+
+
+_ENV_SCRUB_PREFIXES = (
+    "OPENAI_",
+    "OLLAMA_",
+    "CHAT_",
+    "EXTRACT_",
+    "TEXT2GQL_",
+    "EMBEDDING_",
+    "RERANKER_",
+    "COHERE_",
+    "CO_API_",
+    "HUGEGRAPH_LLM_",
+)
+
+
+def _scrub_config_env(monkeypatch):
+    for name in list(environ):
+        if name.upper().startswith(_ENV_SCRUB_PREFIXES):
+            monkeypatch.delenv(name)
+
+
+def _config_import_env(home: Path) -> dict:
+    env = dict(environ)
+    for name in list(env):
+        if name.upper().startswith(_ENV_SCRUB_PREFIXES):
+            env.pop(name)
+    env["HUGEGRAPH_LLM_ENV_PATH"] = str(home / ".env")
+    env["HUGEGRAPH_LLM_SETTINGS_PATH"] = str(home / "settings.yaml")
+    env["HUGEGRAPH_LLM_PROMPT_CONFIG_PATH"] = str(home / "config_prompt.yaml")
+    return env
+
+
+def _run_config_import(tmp_path: Path, home: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", "import hugegraph_llm.config"],
+        env=_config_import_env(home),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_env_export_round_trip_preserves_typed_fields(tmp_path, monkeypatch):
+    from hugegraph_llm.config.llm_config import LLMConfig
+    from hugegraph_llm.config.models import base_config
+
+    _scrub_config_env(monkeypatch)
+    monkeypatch.setattr(base_config, "env_path", str(tmp_path / ".env"))
+
+    settings = LLMConfig()
+    settings.ollama_chat_port = 12345
+    settings.openai_chat_tokens = 4096
+    settings.extract_use_chat = False
+    settings.hybrid_llm_weights = 0.0
+    settings.generate_env()
+
+    reloaded = LLMConfig()
+    assert reloaded.ollama_chat_port == 12345
+    assert isinstance(reloaded.ollama_chat_port, int)
+    assert reloaded.openai_chat_tokens == 4096
+    assert isinstance(reloaded.openai_chat_tokens, int)
+    assert reloaded.extract_use_chat is False
+    assert reloaded.hybrid_llm_weights == 0.0
+    assert isinstance(reloaded.hybrid_llm_weights, float)
+
+
+def test_config_import_creates_no_config_files(tmp_path):
+    home = tmp_path / "config-home"
+    home.mkdir()
+
+    result = _run_config_import(tmp_path, home)
+
+    assert result.returncode == 0, result.stderr
+    assert list(home.iterdir()) == []
+
+
+def test_config_import_does_not_mutate_existing_config_files(tmp_path):
+    home = tmp_path / "config-home"
+    home.mkdir()
+    (home / ".env").write_text("OPENAI_CHAT_LANGUAGE_MODEL='custom-model'\n", encoding="utf-8")
+    (home / "settings.yaml").write_text("llm:\n  options:\n    window_size: 7\n", encoding="utf-8")
+    (home / "config_prompt.yaml").write_text("_language_generated: en\n", encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in home.iterdir()}
+
+    result = _run_config_import(tmp_path, home)
+
+    assert result.returncode == 0, result.stderr
+    after = {path.name: path.read_bytes() for path in home.iterdir()}
+    assert after == before

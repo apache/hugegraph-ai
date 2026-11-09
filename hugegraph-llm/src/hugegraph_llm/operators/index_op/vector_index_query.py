@@ -28,10 +28,10 @@ class VectorIndexQuery:
     """Retrieve matching chunks from the chunk vector index.
 
     ``vector_dis_threshold`` is forwarded to ``VectorStoreBase.search`` and
-    defaults to the ``VECTOR_DIS_THRESHOLD`` setting, the same contract as
-    :class:`SemanticIdQuery`. Stores rank by plain vector distance (FAISS
-    scores squared L2), so the threshold only prunes clearly-off matches;
-    ranking stays top-k and relevance is refined by the downstream
+    defaults to the ``CHUNK_DIS_THRESHOLD`` setting (2.0, the historical
+    hard-coded value), which only prunes clearly-off chunk candidates;
+    keyword-to-vertex matching keeps its own ``VECTOR_DIS_THRESHOLD`` knob.
+    Ranking stays top-k and relevance is refined by the downstream
     merge/rerank step.
     """
 
@@ -45,7 +45,7 @@ class VectorIndexQuery:
         self.embedding = embedding
         self.topk = topk
         self.vector_dis_threshold = (
-            huge_settings.vector_dis_threshold if vector_dis_threshold is None else vector_dis_threshold
+            huge_settings.chunk_dis_threshold if vector_dis_threshold is None else vector_dis_threshold
         )
         self.vector_index = vector_index.from_name(embedding.get_embedding_dim(), huge_settings.graph_name, "chunks")
 

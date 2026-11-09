@@ -47,7 +47,7 @@ def rag_answer(
     gremlin_prompt: Optional[str] = None,
     max_graph_items=30,
     topk_return_results=20,
-    vector_dis_threshold=0.9,
+    vector_dis_threshold=None,
     topk_per_keyword=1,
 ) -> Tuple:
     """

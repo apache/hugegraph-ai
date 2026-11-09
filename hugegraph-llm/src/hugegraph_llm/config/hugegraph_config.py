@@ -55,6 +55,9 @@ class HugeGraphConfig(BaseConfig):
     max_graph_items: int = 30
     edge_limit_pre_label: int = 8
 
+    # graph element config
+    max_element_id_length: int = 256
+
     # vector config
     vector_dis_threshold: float = 0.9
     topk_per_keyword: int = 1

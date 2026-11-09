@@ -428,3 +428,78 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         self.commit2graph.load_into_graph(vertices, edges, self.schema)
 
         self.assertEqual(mock_handle_graph_creation.call_count, 1)
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_preserves_zero_primary_key_value(self, mock_handle_graph_creation):
+        """A numeric-zero primary key is a value, not a missing key (cf. #397)."""
+        mock_handle_graph_creation.return_value = MagicMock(id="vid-sensor")
+        schema = {
+            "propertykeys": [{"name": "code", "data_type": "INT", "cardinality": "SINGLE"}],
+            "vertexlabels": [
+                {
+                    "name": "sensor",
+                    "properties": ["code"],
+                    "primary_keys": ["code"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                }
+            ],
+            "edgelabels": [],
+        }
+        vertices = [{"label": "sensor", "properties": {"code": 0}}]
+
+        self.commit2graph.load_into_graph(vertices, [], schema)
+
+        mock_handle_graph_creation.assert_called_once_with(
+            self.commit2graph.client.graph().add_vertex, "sensor", {"code": 0}
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_maps_zero_vertex_id_for_edges(self, mock_handle_graph_creation):
+        """Edges with integer-zero endpoints must resolve to server-created ids."""
+        mock_handle_graph_creation.side_effect = [
+            MagicMock(id="vid-0"),
+            MagicMock(id="vid-1"),
+            MagicMock(id="edge-id"),
+        ]
+        vertices = [
+            {"id": 0, "label": "person", "properties": {"name": "Tom Hanks", "age": 67}},
+            {"id": 1, "label": "movie", "properties": {"title": "Forrest Gump", "year": 1994}},
+        ]
+        edges = [{"label": "acted_in", "properties": {"role": "Forrest Gump"}, "outV": 0, "inV": 1}]
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_edge, "acted_in", "vid-0", "vid-1", {"role": "Forrest Gump"}
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.log")
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_keeps_zero_value_in_composite_id_mapping(self, mock_handle_graph_creation, mock_log):
+        """Zero-valued primary keys stay intact in multi-key vertices (no 'mark empty' fallback)."""
+        mock_handle_graph_creation.return_value = MagicMock(id="vid-event")
+        schema = {
+            "propertykeys": [
+                {"name": "code", "data_type": "INT", "cardinality": "SINGLE"},
+                {"name": "seq", "data_type": "INT", "cardinality": "SINGLE"},
+            ],
+            "vertexlabels": [
+                {
+                    "name": "event",
+                    "properties": ["code", "seq"],
+                    "primary_keys": ["code", "seq"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                }
+            ],
+            "edgelabels": [],
+        }
+        vertices = [{"label": "event", "properties": {"code": 0, "seq": 3}}]
+
+        self.commit2graph.load_into_graph(vertices, [], schema)
+
+        mock_handle_graph_creation.assert_called_once_with(
+            self.commit2graph.client.graph().add_vertex, "event", {"code": 0, "seq": 3}
+        )
+        mock_log.warning.assert_not_called()

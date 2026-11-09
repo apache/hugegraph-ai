@@ -102,7 +102,7 @@ class Commit2Graph:
             has_problem = False
             # 2. Handle primary-keys mode vertex
             for pk in primary_keys:
-                if not input_properties.get(pk):
+                if input_properties.get(pk) is None:
                     if len(primary_keys) == 1:
                         log.error(
                             "Primary-key '%s' missing in vertex %s, skip it & need check it again",
@@ -149,7 +149,7 @@ class Commit2Graph:
             # TODO: we could try batch add vertices first, setback to single-mode if failed
             explicit_id = vertex.get("id")
             mapping_id = explicit_id
-            if not mapping_id and primary_keys:
+            if mapping_id is None and primary_keys:
                 mapping_id = f"{input_label}:{'!'.join(str(input_properties[pk]) for pk in primary_keys)}"
 
             if vertex_label.get("id_strategy") == "CUSTOMIZE_STRING" and explicit_id:
@@ -165,7 +165,7 @@ class Commit2Graph:
                 raise ValueError(f"Failed to create vertex '{input_label}' with properties {input_properties}")
             vid = result.id
             vertex["id"] = vid
-            if mapping_id:
+            if mapping_id is not None:
                 vid_mapping[mapping_id] = vid
 
         for edge in edges:

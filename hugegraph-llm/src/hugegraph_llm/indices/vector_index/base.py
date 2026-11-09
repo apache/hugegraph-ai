@@ -38,9 +38,12 @@ class VectorStoreBase(ABC):
         """
 
     @abstractmethod
-    def get_all_properties(self) -> list[str]:
+    def get_all_properties(self) -> list[Any]:
         """
-        #TODO: finish comment
+        Return all properties currently stored in the index.
+
+        Returns:
+            List[Any]: The values previously passed to add().
         """
 
     @abstractmethod
@@ -72,7 +75,12 @@ class VectorStoreBase(ABC):
     @abstractmethod
     def save_index_by_name(self, *name: str):
         """
-        #TODO: finish comment
+        Persist the index under the given name.
+
+        Server-backed stores persist on write and may do nothing here.
+
+        Args:
+            *name (str): Path segments identifying the index.
         """
 
     @abstractmethod
@@ -80,26 +88,47 @@ class VectorStoreBase(ABC):
         self,
     ) -> Dict:
         """
-        #TODO: finish comment
+        Return backend-specific statistics about the index.
+
+        Returns:
+            Dict: Informational stats (e.g. dimensions and entry counts) for display and diagnostics.
         """
 
     @staticmethod
     @abstractmethod
     def from_name(embed_dim: int, *name: str) -> "VectorStoreBase":
         """
-        #TODO: finish comment
+        Return the index registered under the given name.
+
+        Loads persisted data when it exists; otherwise returns an empty index sized to embed_dim.
+
+        Args:
+            embed_dim (int): Vector dimension used when the index has to be created.
+            *name (str): Path segments identifying the index.
+
+        Returns:
+            VectorStoreBase: The loaded or newly created index.
         """
 
     @staticmethod
     @abstractmethod
     def exist(*name: str) -> bool:
         """
-        #TODO: finish comment
+        Check whether an index exists under the given name.
+
+        Args:
+            *name (str): Path segments identifying the index.
+
+        Returns:
+            bool: True when the index exists.
         """
 
     @staticmethod
     @abstractmethod
-    def clean(*name: str) -> bool:
+    def clean(*name: str) -> None:
         """
-        #TODO: finish comment
+        Delete the index stored under the given name, if it exists.
+
+        Args:
+            *name (str): Path segments identifying the index.
         """

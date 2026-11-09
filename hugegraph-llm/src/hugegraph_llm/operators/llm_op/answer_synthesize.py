@@ -260,6 +260,5 @@ class AnswerSynthesize:
             yield context
 
     async def __llm_generate_with_meta_info(self, task_id: int, target_key: str, prompt: str):
-        # FIXME: Expected type 'AsyncIterable', got 'Coroutine[Any, Any, AsyncGenerator[str, None]]' instead
         async for token in self._llm.agenerate_streaming(prompt=prompt):
             yield task_id, target_key, token

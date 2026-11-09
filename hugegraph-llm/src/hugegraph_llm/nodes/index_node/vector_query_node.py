@@ -43,7 +43,12 @@ class VectorQueryNode(BaseNode):
             embedding = Embeddings().get_embedding()
             max_items = self.wk_input.max_items if self.wk_input.max_items is not None else 3
 
-            self.operator = VectorIndexQuery(vector_index=vector_index, embedding=embedding, topk=max_items)
+            self.operator = VectorIndexQuery(
+                vector_index=vector_index,
+                embedding=embedding,
+                topk=max_items,
+                vector_dis_threshold=self.wk_input.vector_dis_threshold,
+            )
             return super().node_init()
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.error("Failed to initialize VectorQueryNode: %s", e)

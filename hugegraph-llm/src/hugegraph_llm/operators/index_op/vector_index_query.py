@@ -16,7 +16,7 @@
 # under the License.
 
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from hugegraph_llm.config import huge_settings
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
@@ -25,17 +25,45 @@ from hugegraph_llm.utils.log import log
 
 
 class VectorIndexQuery:
-    def __init__(self, vector_index: type[VectorStoreBase], embedding: BaseEmbedding, topk: int = 3):
+    """Retrieve matching chunks from the chunk vector index.
+
+    ``vector_dis_threshold`` is forwarded to ``VectorStoreBase.search`` and
+    defaults to the ``VECTOR_DIS_THRESHOLD`` setting, the same contract as
+    :class:`SemanticIdQuery`. Stores rank by plain vector distance (FAISS
+    scores squared L2), so the threshold only prunes clearly-off matches;
+    ranking stays top-k and relevance is refined by the downstream
+    merge/rerank step.
+    """
+
+    def __init__(
+        self,
+        vector_index: type[VectorStoreBase],
+        embedding: BaseEmbedding,
+        topk: int = 3,
+        vector_dis_threshold: Optional[float] = None,
+    ):
         self.embedding = embedding
         self.topk = topk
+        self.vector_dis_threshold = (
+            huge_settings.vector_dis_threshold if vector_dis_threshold is None else vector_dis_threshold
+        )
         self.vector_index = vector_index.from_name(embedding.get_embedding_dim(), huge_settings.graph_name, "chunks")
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         query = context.get("query")
         query_embedding = self.embedding.get_texts_embeddings([query])[0]
-        # TODO: why set dis_threshold=2?
-        results = self.vector_index.search(query_embedding, self.topk, dis_threshold=2)
-        # TODO: check format results
-        context["vector_result"] = results
-        log.debug("KNOWLEDGE FROM VECTOR:\n%s", "\n".join(rel for rel in context["vector_result"]))
+        results = self.vector_index.search(query_embedding, self.topk, dis_threshold=self.vector_dis_threshold)
+        context["vector_result"] = self._check_results_format(results)
+        log.debug("KNOWLEDGE FROM VECTOR:\n%s", "\n".join(context["vector_result"]))
         return context
+
+    @staticmethod
+    def _check_results_format(results: List[Any]) -> List[str]:
+        """Drop non-string entries so downstream joins and reranks can rely on the type."""
+        checked = []
+        for result in results:
+            if isinstance(result, str):
+                checked.append(result)
+            else:
+                log.warning("Filter out vector result with unexpected format: %s", type(result).__name__)
+        return checked

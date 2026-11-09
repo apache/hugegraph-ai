@@ -107,6 +107,9 @@ def rag_answer(
             topk_return_results=topk_return_results,
             vector_dis_threshold=vector_dis_threshold,
             topk_per_keyword=topk_per_keyword,
+            # Graph-only and graph+vector flows return their full state when this
+            # is set, which is where the trace fields live.
+            is_graph_rag_recall=include_trace,
         )
         if res.get("switch_to_bleu"):
             gr.Warning("Online reranker fails, automatically switches to local bleu rerank.")

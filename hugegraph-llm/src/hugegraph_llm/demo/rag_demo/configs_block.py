@@ -390,6 +390,37 @@ def test_model_form(role):
     return 200
 
 
+def refresh_settings_snapshot() -> None:
+    """Re-read the model and vector-index settings from their persisted sources.
+
+    UI apply handlers persist on success, so a reload can only pick up
+    out-of-band edits of the config files; it never discards unsaved input.
+    Form renders and the UI load handler refresh here so a reloaded page
+    shows the saved configuration instead of the startup snapshot.
+    """
+    with runtime_config_lock:
+        llm_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
+        index_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
+
+
+def ui_control_values() -> tuple:
+    """Display values for the static controls collected by `create_configs_block`.
+
+    Read only after `refresh_settings_snapshot()`; the order must match the
+    component order that `create_configs_block` returns.
+    """
+    return (
+        llm_settings.chat_llm_type,
+        llm_settings.extract_use_chat,
+        llm_settings.extract_llm_type,
+        llm_settings.text2gql_use_chat,
+        llm_settings.text2gql_llm_type,
+        llm_settings.embedding_type,
+        llm_settings.reranker_type or "None",
+        index_settings.cur_vector_index,
+    )
+
+
 def _model_form(role, provider, inherit=None):
     """Rendering/editing a form never changes the active connection."""
     prefix = "ollama" if provider == "ollama/local" else provider
@@ -431,6 +462,7 @@ def _model_form(role, provider, inherit=None):
 
 def _register_model_form(role, dropdown, inherit=None):
     def render(provider):
+        refresh_settings_snapshot()
         _model_form(role, provider, inherit)
 
     render.__name__ = f"{role}_llm_settings"
@@ -439,7 +471,7 @@ def _register_model_form(role, dropdown, inherit=None):
 
 # TODO: refactor the function to reduce the number of statements & separate the logic
 # pylint: disable=C0301,E1101
-def create_configs_block() -> list:
+def create_configs_block() -> tuple[list, list]:
     # pylint: disable=R0915 (too-many-statements)
     managed = [
         f"{field} ({settings.environment_source(field)})"
@@ -493,6 +525,8 @@ def create_configs_block() -> list:
         graph_config_button = gr.Button("Apply Configuration")
     graph_config_button.click(apply_graph_config, inputs=graph_config_input)  # pylint: disable=no-member
 
+    # Static controls in ui_control_values() order, returned for the load refresh.
+    ui_controls = []
     with gr.Accordion("2. Set up the LLM.", open=False):
         gr.Markdown(
             "Save configuration without contacting the model service. Test the saved connection separately. "
@@ -503,6 +537,7 @@ def create_configs_block() -> list:
                 inherit = None
                 if role != "chat":
                     inherit = gr.Checkbox(label="Use Chat connection", value=getattr(llm_settings, f"{role}_use_chat"))
+                    ui_controls.append(inherit)
                     inherit.input(partial(use_chat_connection, role), inputs=inherit)
                     gr.Markdown("Saving a connection below switches this role to its own configuration.")
                 dropdown = gr.Dropdown(
@@ -510,15 +545,18 @@ def create_configs_block() -> list:
                     value=getattr(llm_settings, f"{role}_llm_type"),
                     label="Provider",
                 )
+                ui_controls.append(dropdown)
                 _register_model_form(role, dropdown, inherit)
 
     with gr.Accordion("3. Set up the Embedding.", open=False):
         embedding_dropdown = gr.Dropdown(
             choices=["openai", "ollama/local"], value=llm_settings.embedding_type, label="Provider"
         )
+        ui_controls.append(embedding_dropdown)
 
         @gr.render(inputs=[embedding_dropdown])
         def embedding_settings(provider):
+            refresh_settings_snapshot()
             prefix = "ollama" if provider == "ollama/local" else provider
             if provider == "ollama/local":
                 inputs = [
@@ -550,9 +588,11 @@ def create_configs_block() -> list:
             value=llm_settings.reranker_type or "None",
             label="Provider",
         )
+        ui_controls.append(reranker_dropdown)
 
         @gr.render(inputs=[reranker_dropdown])
         def reranker_settings(provider):
+            refresh_settings_snapshot()
             inputs = [
                 gr.Textbox(interactive=True, value="", label="API key", type="password"),
                 gr.Textbox(
@@ -580,6 +620,7 @@ def create_configs_block() -> list:
             value=index_settings.cur_vector_index,
             label="Select vector engine.",
         )
+        ui_controls.append(engine_selector)
         engine_selector.select(
             fn=apply_vector_engine,
             inputs=[engine_selector],
@@ -587,6 +628,7 @@ def create_configs_block() -> list:
 
         @gr.render(inputs=[engine_selector])
         def vector_engine_settings(engine):
+            refresh_settings_snapshot()
             if engine == "Milvus":
                 with gr.Row():
                     milvus_inputs = [
@@ -644,8 +686,9 @@ def create_configs_block() -> list:
                 apply_faiss_button = gr.Button("Apply Configuration")
                 apply_faiss_button.click(lambda: apply_vector_engine(engine))
 
-    # The reason for returning this partial value is the functional need to refresh the ui
-    return graph_config_input
+    # Returned for the UI load refresh: the graph textboxes and the static
+    # model/index controls (the latter in ui_control_values() order).
+    return graph_config_input, ui_controls
 
 
 def get_header_with_language_indicator(language: str) -> str:

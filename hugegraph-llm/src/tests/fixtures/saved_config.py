@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from hugegraph_llm import config
 from hugegraph_llm.api import rag_api
+from hugegraph_llm.config.index_config import IndexConfig
 from hugegraph_llm.config.llm_config import LLMConfig
 from hugegraph_llm.config.models import base_config
 from hugegraph_llm.demo.rag_demo import configs_block
@@ -55,6 +56,9 @@ def saved_config(tmp_path, monkeypatch):
     settings = LLMConfig()
     monkeypatch.setattr(config, "llm_settings", settings)
     monkeypatch.setattr(configs_block, "llm_settings", settings)
+    index = IndexConfig()
+    monkeypatch.setattr(config, "index_settings", index)
+    monkeypatch.setattr(configs_block, "index_settings", index)
     monkeypatch.setattr(configs_block.gr, "Info", lambda *_: None)
     router = APIRouter()
     rag_api.rag_http_api(

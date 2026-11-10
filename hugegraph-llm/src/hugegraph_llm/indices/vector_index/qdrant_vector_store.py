@@ -127,7 +127,7 @@ class QdrantVectorIndex(VectorStoreBase):
 
         for hit in search_result:
             distance = 1.0 - hit.score
-            if distance < dis_threshold:
+            if distance <= dis_threshold:
                 if hit.payload is not None:
                     result_properties.append(hit.payload.get("property"))
                     log.debug("[✓] Add valid distance %s to results.", distance)
@@ -135,7 +135,7 @@ class QdrantVectorIndex(VectorStoreBase):
                     log.debug("[x] Hit payload is None, skipping.")
             else:
                 log.debug(
-                    "[x] Distance %s >= threshold %s, ignore this result.",
+                    "[x] Distance %s > threshold %s, ignore this result.",
                     distance,
                     dis_threshold,
                 )

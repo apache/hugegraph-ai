@@ -198,6 +198,9 @@ def test_scrub_config_env_clears_field_aliases(monkeypatch):
     assert environ.get("UNRELATED_TEST_VAR") == "keep"
 
 
+# FIXME: importing hugegraph_llm.config still writes logs/llm-server.log into the working
+# directory through hugegraph_llm.utils.log. The import tests below guard config-home only,
+# so this import-time side effect stays tracked here.
 def test_config_import_creates_no_config_files(tmp_path):
     home = tmp_path / "config-home"
     home.mkdir()

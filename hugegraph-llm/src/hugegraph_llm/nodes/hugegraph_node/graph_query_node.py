@@ -189,7 +189,7 @@ class GraphQueryNode(BaseNode):
             return flat_rel, prior_edge_str_len, depth
 
         node_cache.add(matched_str)
-        props_str = ", ".join(f"{k}: {self._limit_property_query(v, 'v')}" for k, v in item["props"].items() if v)
+        props_str = self._format_props_str(item["props"], "v")
 
         # TODO: we may remove label id or replace with label name
         if matched_str in v_cache:
@@ -212,7 +212,7 @@ class GraphQueryNode(BaseNode):
         use_id_to_match: bool,
         e_cache: Set[Tuple[str, str, str]],
     ) -> Tuple[str, int]:
-        props_str = ", ".join(f"{k}: {self._limit_property_query(v, 'e')}" for k, v in item["props"].items() if v)
+        props_str = self._format_props_str(item["props"], "e")
         props_str = f"{{{props_str}}}" if props_str else ""
         prev_matched_str = (
             raw_flat_rel[i - 1]["id"] if use_id_to_match else (raw_flat_rel)[i - 1]["props"][self._prop_to_match]
@@ -326,13 +326,36 @@ class GraphQueryNode(BaseNode):
         edge_labels = self._extract_label_names(edge_props_str)
         return vertex_labels, edge_labels
 
+    def _format_props_str(self, props: Any, item_type: str) -> str:
+        """Canonical property rendering so the same element always formats to the same string."""
+        return ", ".join(f"{k}: {self._limit_property_query(v, item_type)}" for k, v in props.items() if v)
+
     def _format_graph_from_vertex(self, query_result: List[Any]) -> Set[str]:
         knowledge = set()
         for item in query_result:
-            props_str = ", ".join(f"{k}: {v}" for k, v in item["properties"].items())
+            props_str = self._format_props_str(item["properties"], "v")
             node_str = f"{item['id']}{{{props_str}}}"
             knowledge.add(node_str)
         return knowledge
+
+    def _merge_vertex_knowledge(
+        self,
+        vertex_knowledge: Set[str],
+        graph_chain_knowledge: Set[str],
+        vertex_degree_list: List[Set[str]],
+    ) -> None:
+        """Fold matched-vertex knowledge into the path results without losing single vertices.
+
+        Node strings are canonical, so set membership dedups globally: a matched vertex that
+        no path reached stays as standalone knowledge, while one already represented in the
+        paths keeps only its path representation.
+        """
+        covered = {node for bucket in vertex_degree_list for node in bucket}
+        graph_chain_knowledge.update(vertex_knowledge - covered)
+        if vertex_degree_list:
+            vertex_degree_list[0].update(vertex_knowledge)
+        else:
+            vertex_degree_list.append(set(vertex_knowledge))
 
     def _subgraph_query(self, context: Dict[str, Any]) -> Dict[str, Any]:
         # 1. Extract params from context
@@ -379,13 +402,7 @@ class GraphQueryNode(BaseNode):
                 knowledge_with_degree,
             ) = self._format_graph_query_result(query_paths=paths)
 
-            # TODO: we may need to optimize the logic here with global deduplication (may lack some single vertex)
-            if not graph_chain_knowledge:
-                graph_chain_knowledge.update(vertex_knowledge)
-            if vertex_degree_list:
-                vertex_degree_list[0].update(vertex_knowledge)
-            else:
-                vertex_degree_list.append(vertex_knowledge)
+            self._merge_vertex_knowledge(vertex_knowledge, graph_chain_knowledge, vertex_degree_list)
         else:
             # WARN: When will the query enter here?
             keywords = context.get("keywords")

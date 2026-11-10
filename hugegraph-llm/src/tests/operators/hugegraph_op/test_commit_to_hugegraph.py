@@ -351,6 +351,27 @@ class TestCommit2Graph(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.commit2graph._check_property_data_type("UNSUPPORTED", "SINGLE", "value")
 
+    def test_coerce_property_value_lossless_conversions(self):
+        """Values convertible without losing information pass as their declared type."""
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", "67"), (67, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", 67.0), (67, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", 30), (30.0, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", "3.5"), (3.5, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("TEXT", "SINGLE", 30), ("30", True))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "LIST", 5), ([5], True))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SET", ["1", 2]), ([1, 2], True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DATE", "SINGLE", "2024-01-01"), ("2024-01-01", True))
+
+    def test_coerce_property_value_reports_uncoercible_values(self):
+        """Values that cannot be converted losslessly are reported instead of silently dropped."""
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", "abc"), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", True), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", 67.5), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("BOOLEAN", "SINGLE", "true"), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("DATE", "SINGLE", "2024/01/01"), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "LIST", [1, "abc"]), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("UNSUPPORTED", "SINGLE", "value"), (None, False))
+
     def test_schema_free_mode(self):
         """Test schema_free_mode method."""
         # Use helper method to set up schema mocks

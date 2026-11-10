@@ -26,9 +26,6 @@ from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphE
 
 pytestmark = [pytest.mark.unit]
 
-# FIXME: cover failure branches where vertex type errors stop edge writes and
-# surface an explicit import failure.
-
 
 class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
     def setUp(self):
@@ -408,8 +405,8 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         mock_handle_graph_creation.assert_called_once()
 
     @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
-    def test_load_into_graph_with_data_type_validation_failure(self, mock_handle_graph_creation):
-        """Test load_into_graph method with data type validation failure."""
+    def test_load_into_graph_coerces_lossless_property_types(self, mock_handle_graph_creation):
+        """Numeric strings for INT properties are coerced instead of dropping the vertices."""
         mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
 
         vertices = [
@@ -427,4 +424,118 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
 
         self.commit2graph.load_into_graph(vertices, edges, self.schema)
 
-        self.assertEqual(mock_handle_graph_creation.call_count, 1)
+        self.assertEqual(mock_handle_graph_creation.call_count, 3)
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_vertex, "person", {"name": "Tom Hanks", "age": 67}
+        )
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_vertex, "movie", {"title": "Forrest Gump", "year": 1994}
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_drops_only_uncoercible_nullable_property(self, mock_handle_graph_creation):
+        """An un-coercible nullable property is dropped on its own and the vertex is kept."""
+        mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
+
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": "unknown"}},
+            {"label": "movie", "properties": {"title": "Forrest Gump", "year": 1994}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+
+        self.commit2graph.load_into_graph(vertices, edges, self.schema)
+
+        self.assertEqual(mock_handle_graph_creation.call_count, 3)
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_vertex, "person", {"name": "Tom Hanks"}
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_skips_vertex_and_its_edges_on_non_nullable_failure(self, mock_handle_graph_creation):
+        """An un-coercible non-nullable property skips the vertex and the edges referencing it."""
+        mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
+
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": "unknown"}},
+            {"label": "movie", "properties": {"title": "Forrest Gump", "year": 1994}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+        schema = {
+            **self.schema,
+            "vertexlabels": [
+                {
+                    "id": 1,
+                    "name": "person",
+                    "properties": ["name", "age"],
+                    "primary_keys": ["name"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                },
+                self.schema["vertexlabels"][1],
+            ],
+        }
+
+        self.commit2graph.load_into_graph(vertices, edges, schema)
+
+        mock_handle_graph_creation.assert_called_once()
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_vertex, "movie", {"title": "Forrest Gump", "year": 1994}
+        )
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_raises_when_no_vertex_can_be_imported(self, mock_handle_graph_creation):
+        """An import where every vertex is rejected fails explicitly before any edge write."""
+        mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")
+
+        vertices = [
+            {"label": "person", "properties": {"name": "Tom Hanks", "age": "unknown"}},
+            {"label": "movie", "properties": {"title": "Forrest Gump", "year": "unknown"}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "person:Tom Hanks",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+        schema = {
+            **self.schema,
+            "vertexlabels": [
+                {
+                    "id": 1,
+                    "name": "person",
+                    "properties": ["name", "age"],
+                    "primary_keys": ["name"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                },
+                {
+                    "id": 2,
+                    "name": "movie",
+                    "properties": ["title", "year"],
+                    "primary_keys": ["title"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                },
+            ],
+        }
+
+        with self.assertRaisesRegex(ValueError, "Failed to create vertex"):
+            self.commit2graph.load_into_graph(vertices, edges, schema)
+
+        mock_handle_graph_creation.assert_not_called()

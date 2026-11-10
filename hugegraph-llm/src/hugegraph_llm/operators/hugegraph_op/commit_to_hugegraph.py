@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 from pyhugegraph.client import PyHugeClient
 from pyhugegraph.utils.exceptions import CreateError, NotFoundError
@@ -82,6 +82,10 @@ class Commit2Graph:
         edge_label_map = {e_label["name"]: e_label for e_label in schema["edgelabels"]}
         property_label_map = {p_label["name"]: p_label for p_label in schema["propertykeys"]}
         vid_mapping = {}  # mapping from LLM-generated vertex ID to actual server vertex ID
+        skipped_ids = set()  # local IDs of input vertices that were not imported
+        skip_reports: List[str] = []  # human-readable reasons, named in the import summary
+        imported_vertices = skipped_vertices = 0
+        imported_edges = skipped_edges = 0
 
         for vertex in vertices:
             input_label = vertex["label"]
@@ -91,6 +95,10 @@ class Commit2Graph:
                     "(Input) VertexLabel %s not found in schema, skip & need check it!",
                     input_label,
                 )
+                skipped_vertices += 1
+                skip_reports.append(f"{vertex.get('id') or input_label}: unknown VertexLabel")
+                if vertex.get("id"):
+                    skipped_ids.add(vertex["id"])
                 continue
 
             input_properties = vertex["properties"]
@@ -124,6 +132,10 @@ class Commit2Graph:
                         vertex,
                     )
             if has_problem:
+                skipped_vertices += 1
+                skip_reports.append(f"{vertex.get('id') or input_label}: primary-key '{pk}' missing")
+                if vertex.get("id"):
+                    skipped_ids.add(vertex["id"])
                 continue
 
             # 3. Ensure all non-nullable props are set
@@ -131,27 +143,51 @@ class Commit2Graph:
                 if key not in input_properties:
                     self._set_default_property(key, input_properties, property_label_map)
 
-            # 4. Check all data type value is right
-            for key, value in input_properties.items():
-                # TODO: transform to Enum first (better in earlier step)
-                data_type = property_label_map[key]["data_type"]
-                cardinality = property_label_map[key]["cardinality"]
-                if not self._check_property_data_type(data_type, cardinality, value):
-                    log.error(
-                        "Property type/format '%s' is not correct, skip it & need check it again",
-                        key,
-                    )
-                    has_problem = True
-                    break
-            if has_problem:
-                continue
-
-            # TODO: we could try batch add vertices first, setback to single-mode if failed
             explicit_id = vertex.get("id")
             mapping_id = explicit_id
             if not mapping_id and primary_keys:
                 mapping_id = f"{input_label}:{'!'.join(str(input_properties[pk]) for pk in primary_keys)}"
 
+            # 4. Coerce property values onto their declared types. A nullable property
+            # whose value cannot be converted is dropped on its own; a non-nullable one
+            # skips only this vertex (the old code dropped the whole vertex for any
+            # single mismatch while logging as if just the property was skipped).
+            coerced_properties = {}
+            for key, value in input_properties.items():
+                prop_def = property_label_map.get(key)
+                if prop_def is None:
+                    log.warning("Property '%s' not found in schema, drop it & need check it again", key)
+                    continue
+                coerced, ok = self._coerce_property_value(prop_def["data_type"], prop_def["cardinality"], value)
+                if ok:
+                    coerced_properties[key] = coerced
+                elif key in nullable_keys:
+                    log.warning(
+                        "Property '%s' value %r does not fit %s, drop the property & keep the vertex",
+                        key,
+                        value,
+                        prop_def["data_type"],
+                    )
+                else:
+                    log.error(
+                        "Property '%s' value %r does not fit %s (non-nullable), skip vertex %s",
+                        key,
+                        value,
+                        prop_def["data_type"],
+                        vertex,
+                    )
+                    has_problem = True
+                    break
+            if has_problem:
+                skipped_vertices += 1
+                skip_reports.append(f"{mapping_id or input_label}: property '{key}' value {value!r} does not fit")
+                if mapping_id:
+                    skipped_ids.add(mapping_id)
+                continue
+            input_properties = coerced_properties
+            vertex["properties"] = coerced_properties
+
+            # TODO: we could try batch add vertices first, setback to single-mode if failed
             if vertex_label.get("id_strategy") == "CUSTOMIZE_STRING" and explicit_id:
                 result = self._handle_graph_creation(
                     self.client.graph().add_vertex,
@@ -162,15 +198,35 @@ class Commit2Graph:
             else:
                 result = self._handle_graph_creation(self.client.graph().add_vertex, input_label, input_properties)
             if result is None:
-                raise ValueError(f"Failed to create vertex '{input_label}' with properties {input_properties}")
+                log.error(
+                    "Failed to create vertex '%s' with properties %s, skip it & need check it again",
+                    input_label,
+                    input_properties,
+                )
+                skipped_vertices += 1
+                skip_reports.append(f"{mapping_id or input_label}: server rejected the vertex")
+                if mapping_id:
+                    skipped_ids.add(mapping_id)
+                continue
             vid = result.id
             vertex["id"] = vid
             if mapping_id:
                 vid_mapping[mapping_id] = vid
+            imported_vertices += 1
+
+        log.info(
+            "(Loading) import summary: %d vertices created, %d vertices skipped (%s)",
+            imported_vertices,
+            skipped_vertices,
+            "; ".join(skip_reports) or "none",
+        )
+        if vertices and not imported_vertices:
+            raise ValueError(
+                f"Failed to create vertex: no vertex could be imported (skipped {skipped_vertices}: "
+                f"{'; '.join(skip_reports)})"
+            )
 
         for edge in edges:
-            start = vid_mapping.get(edge.get("outV"), edge.get("outV"))
-            end = vid_mapping.get(edge.get("inV"), edge.get("inV"))
             label = edge["label"]
             properties = edge["properties"]
 
@@ -179,10 +235,41 @@ class Commit2Graph:
                     "(Input) EdgeLabel %s not found in schema, skip & need check it!",
                     label,
                 )
+                skipped_edges += 1
                 continue
 
+            out_v, in_v = edge.get("outV"), edge.get("inV")
+            failed_endpoints = [endpoint for endpoint in (out_v, in_v) if endpoint in skipped_ids]
+            if failed_endpoints:
+                log.error(
+                    "Edge %s references skipped vertex id(s) %s, skip it & need check it again",
+                    edge,
+                    failed_endpoints,
+                )
+                skipped_edges += 1
+                continue
+
+            start = vid_mapping.get(out_v, out_v)
+            end = vid_mapping.get(in_v, in_v)
+            for endpoint in (out_v, in_v):
+                if endpoint not in vid_mapping:
+                    log.warning(
+                        "Edge endpoint '%s' was not created in this import, passing it to the server unchanged.",
+                        endpoint,
+                    )
+
             # TODO: we could try batch add edges first, setback to single-mode if failed
-            self._handle_graph_creation(self.client.graph().add_edge, label, start, end, properties)
+            if self._handle_graph_creation(self.client.graph().add_edge, label, start, end, properties) is None:
+                log.error("Failed to create edge '%s' (%s -> %s), skip it & need check it again", label, start, end)
+                skipped_edges += 1
+            else:
+                imported_edges += 1
+
+        log.info(
+            "(Loading) import summary: %d edges created, %d edges skipped",
+            imported_edges,
+            skipped_edges,
+        )
 
     def init_schema_if_need(self, schema: dict):
         properties = schema["propertykeys"]
@@ -307,14 +394,80 @@ class Commit2Graph:
             PropertyDataType.INT.value,
             PropertyDataType.LONG.value,
         ):
-            return isinstance(value, int)
+            # bool is an int subclass in Python, but True is not a valid number here
+            return isinstance(value, int) and not isinstance(value, bool)
         if data_type in (PropertyDataType.FLOAT.value, PropertyDataType.DOUBLE.value):
             return isinstance(value, float)
-        if data_type in (PropertyDataType.TEXT.value, PropertyDataType.UUID.value):
+        if data_type in (
+            PropertyDataType.TEXT.value,
+            PropertyDataType.UUID.value,
+            PropertyDataType.BLOB.value,
+        ):
+            # BLOB is created as TEXT (see _set_property_data_type), so it validates as text
             return isinstance(value, str)
         # TODO: check ok below
         if data_type == PropertyDataType.DATE.value:  # the format should be "yyyy-MM-dd"
             import re
 
-            return isinstance(value, str) and re.match(r"^\d{4}-\d{2}-\d{2}$", value)
+            return isinstance(value, str) and bool(re.match(r"^\d{4}-\d{2}-\d{2}$", value))
         raise ValueError(f"Unknown/Unsupported data type: {data_type}")
+
+    def _coerce_property_value(self, data_type: str, cardinality: str, value) -> Tuple[Any, bool]:
+        """Losslessly coerce a property value to its declared type and cardinality.
+
+        Returns ``(coerced_value, True)`` when the value is already valid or convertible
+        without losing information (numeric strings to numbers, numbers to text, scalars
+        to single-element collections), otherwise ``(None, False)`` so the caller can
+        report the value instead of silently dropping it.
+        """
+        if cardinality in (PropertyCardinality.LIST.value, PropertyCardinality.SET.value):
+            items = value if isinstance(value, list) else [value]
+            coerced_items = []
+            for item in items:
+                coerced, ok = self._coerce_single_value(data_type, item)
+                if not ok:
+                    return None, False
+                coerced_items.append(coerced)
+            return coerced_items, True
+        return self._coerce_single_value(data_type, value)
+
+    def _coerce_single_value(self, data_type: str, value) -> Tuple[Any, bool]:
+        try:
+            if self._check_property_data_type(data_type, PropertyCardinality.SINGLE.value, value):
+                return value, True
+            candidates = self._lossless_candidates(data_type, value)
+            for candidate in candidates:
+                if self._check_property_data_type(data_type, PropertyCardinality.SINGLE.value, candidate):
+                    return candidate, True
+        except ValueError:
+            return None, False  # unknown data type: the caller reports the value
+        return None, False
+
+    @staticmethod
+    def _lossless_candidates(data_type: str, value) -> List[Any]:
+        """Values that carry the same information as ``value`` in the declared type."""
+        if isinstance(value, bool):
+            return []
+        if data_type in (PropertyDataType.TEXT.value, PropertyDataType.UUID.value, PropertyDataType.BLOB.value):
+            return [str(value)] if isinstance(value, (int, float)) else []
+        if data_type in (
+            PropertyDataType.BYTE.value,
+            PropertyDataType.INT.value,
+            PropertyDataType.LONG.value,
+        ):
+            if isinstance(value, float):
+                return [int(value)] if value.is_integer() else []
+            if isinstance(value, str):
+                try:
+                    return [int(value)]
+                except ValueError:
+                    return []
+            return []
+        if data_type in (PropertyDataType.FLOAT.value, PropertyDataType.DOUBLE.value):
+            if isinstance(value, (int, float, str)):
+                try:
+                    return [float(value)]
+                except ValueError:
+                    return []
+            return []
+        return []

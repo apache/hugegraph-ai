@@ -15,10 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
-"""The /rag trace is only reachable if the flows hand their state back."""
+"""The /rag trace must travel from the request through the flow state."""
 
 from hugegraph_llm.flows.rag_flow_graph_only import RAGGraphOnlyFlow
 from hugegraph_llm.flows.rag_flow_graph_vector import RAGGraphVectorFlow
+from hugegraph_llm.state.ai_state import WkFlowInput, WkFlowState
 
 ANSWERS = {
     "raw_answer": "raw",
@@ -53,29 +54,52 @@ class _Pipeline:
         return _State(self._payload)
 
 
+def _prepare(flow, **kwargs):
+    prepared_input = WkFlowInput()
+    flow.prepare(prepared_input, query="q", **kwargs)
+    return prepared_input
+
+
+def test_prepare_puts_include_trace_in_the_state_json():
+    # The data_json keys are copied into WkFlowState; missing this key was why
+    # the trace stayed empty even though post_deal looked correct.
+    for flow in (RAGGraphOnlyFlow(), RAGGraphVectorFlow()):
+        prepared_input = _prepare(flow, include_trace=True)
+        assert prepared_input.include_trace is True
+        assert prepared_input.data_json["include_trace"] is True
+
+        state = WkFlowState()
+        state.assign_from_json(prepared_input.data_json)
+        assert state.to_json()["include_trace"] is True
+
+
+def test_prepare_defaults_to_no_trace():
+    for flow in (RAGGraphOnlyFlow(), RAGGraphVectorFlow()):
+        prepared_input = _prepare(flow)
+        assert prepared_input.data_json["include_trace"] is False
+
+
 def test_graph_vector_post_deal_keeps_answer_contract_by_default():
     flow = RAGGraphVectorFlow()
-    result = flow.post_deal(_Pipeline(dict(ANSWERS, **TRACE)))
-    assert result == ANSWERS
+    assert flow.post_deal(_Pipeline(dict(ANSWERS, **TRACE))) == ANSWERS
 
 
 def test_graph_vector_post_deal_returns_trace_when_requested():
-    payload = dict(ANSWERS, **TRACE, is_graph_rag_recall=True)
-    flow = RAGGraphVectorFlow()
-    result = flow.post_deal(_Pipeline(payload))
-    assert result == payload
-    assert result["gremlin"] == TRACE["gremlin"]
+    payload = dict(ANSWERS, **TRACE, include_trace=True)
+    assert RAGGraphVectorFlow().post_deal(_Pipeline(payload)) == payload
 
 
 def test_graph_only_post_deal_returns_trace_when_requested():
-    payload = dict(ANSWERS, **TRACE, is_graph_rag_recall=True)
-    flow = RAGGraphOnlyFlow()
-    result = flow.post_deal(_Pipeline(payload))
-    assert result == payload
-    assert result["match_vids"] == TRACE["match_vids"]
+    payload = dict(ANSWERS, **TRACE, include_trace=True)
+    assert RAGGraphOnlyFlow().post_deal(_Pipeline(payload)) == payload
 
 
 def test_graph_only_post_deal_keeps_answer_contract_by_default():
     flow = RAGGraphOnlyFlow()
-    result = flow.post_deal(_Pipeline(dict(ANSWERS, **TRACE)))
-    assert result == ANSWERS
+    assert flow.post_deal(_Pipeline(dict(ANSWERS, **TRACE))) == ANSWERS
+
+
+def test_graph_only_recall_only_mode_still_returns_the_state():
+    # Existing behaviour used by the text2gremlin recall path must survive.
+    payload = dict(ANSWERS, **TRACE, is_graph_rag_recall=True)
+    assert RAGGraphOnlyFlow().post_deal(_Pipeline(payload)) == payload

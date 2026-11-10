@@ -166,14 +166,14 @@ class MilvusVectorIndex(VectorStoreBase):
             ret = []
             for hits in results:
                 for hit in hits:
-                    if hit.distance < dis_threshold:
+                    if hit.distance <= dis_threshold:
                         prop_str = hit.entity.get("property")
                         prop = self._serialize_property(prop_str)
                         ret.append(prop)
                         log.debug("[✓] Add valid distance %s to results.", hit.distance)
                     else:
                         log.debug(
-                            "[x] Distance %s >= threshold %s, ignore this result.",
+                            "[x] Distance %s > threshold %s, ignore this result.",
                             hit.distance,
                             dis_threshold,
                         )

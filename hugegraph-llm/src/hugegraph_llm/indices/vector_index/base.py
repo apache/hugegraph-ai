@@ -63,7 +63,9 @@ class VectorStoreBase(ABC):
         Args:
             query_vector (List[float]): The vector to query against the index.
             top_k (int): Number of top results to return.
-            dis_threshold (float): Distance threshold below which results are considered relevant.
+            dis_threshold (float): Maximum distance for a result to count as relevant.
+                A hit is kept when its distance is at or below this value, so ``0``
+                keeps exact matches only.
 
         Returns:
             List[Any]: List of properties of the matched vectors.

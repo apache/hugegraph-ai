@@ -25,9 +25,6 @@ from pprint import pprint
 from hugegraph_llm.indices.vector_index.faiss_vector_store import FaissVectorIndex
 from hugegraph_llm.models.embeddings.ollama import OllamaEmbedding
 
-# FIXME: add cross-backend vector-store contract tests for Qdrant/Milvus/Faiss
-# threshold semantics instead of covering only the Faiss implementation.
-
 
 class TestVectorIndex(unittest.TestCase):
     def setUp(self):
@@ -212,3 +209,27 @@ class TestVectorIndex(unittest.TestCase):
         query_vector = embedder.get_text_embedding(query)
         results = index.search(query_vector, 2)
         pprint(results)
+
+
+class TestThresholdSemantics(unittest.TestCase):
+    """Store contract: keep a hit iff its distance is at or below the threshold.
+
+    Cross-backend cases live in ``test_optional_vector_clients.py``.
+    """
+
+    def setUp(self):
+        self.index = FaissVectorIndex(2)
+        self.index.add([[1.0, 0.0], [0.0, 1.0]], ["doc1", "doc2"])
+
+    def test_zero_threshold_keeps_exact_matches(self):
+        results = self.index.search([1.0, 0.0], top_k=2, dis_threshold=0)
+        self.assertEqual(results, ["doc1"])
+
+    def test_hit_at_exact_threshold_distance_is_kept(self):
+        # squared-L2 distance from the origin to either unit vector is exactly 1.0
+        results = self.index.search([0.0, 0.0], top_k=2, dis_threshold=1.0)
+        self.assertEqual(sorted(results), ["doc1", "doc2"])
+
+    def test_hit_above_threshold_distance_is_dropped(self):
+        results = self.index.search([0.0, 0.0], top_k=2, dis_threshold=0.999)
+        self.assertEqual(results, [])

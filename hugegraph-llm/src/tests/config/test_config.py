@@ -102,16 +102,40 @@ _ENV_SCRUB_PREFIXES = (
 )
 
 
+def _owned_env_names() -> set[str]:
+    """Every environment name a config field can source from (field names and aliases).
+
+    Hand-maintained prefixes drift when new fields land (e.g. ``HYBRID_LLM_WEIGHTS``);
+    deriving the names from the config models keeps the scrub hermetic.
+    """
+    import hugegraph_llm.config  # noqa: F401  ensure all BaseConfig subclasses are loaded
+    from hugegraph_llm.config.models.base_config import BaseConfig
+
+    names: set[str] = set()
+    stack: list[type[BaseConfig]] = [BaseConfig]
+    while stack:
+        cls = stack.pop()
+        stack.extend(cls.__subclasses__())
+        for field in cls.model_fields:
+            names.update(name.upper() for name in cls._source_names(field))
+    return names
+
+
+def _is_scrubbed_env_name(name: str) -> bool:
+    upper = name.upper()
+    return upper.startswith(_ENV_SCRUB_PREFIXES) or upper in _owned_env_names()
+
+
 def _scrub_config_env(monkeypatch):
     for name in list(environ):
-        if name.upper().startswith(_ENV_SCRUB_PREFIXES):
+        if _is_scrubbed_env_name(name):
             monkeypatch.delenv(name)
 
 
 def _config_import_env(home: Path) -> dict:
     env = dict(environ)
     for name in list(env):
-        if name.upper().startswith(_ENV_SCRUB_PREFIXES):
+        if _is_scrubbed_env_name(name):
             env.pop(name)
     env["HUGEGRAPH_LLM_ENV_PATH"] = str(home / ".env")
     env["HUGEGRAPH_LLM_SETTINGS_PATH"] = str(home / "settings.yaml")
@@ -161,6 +185,17 @@ def test_env_export_round_trip_preserves_typed_fields(tmp_path, monkeypatch):
     assert reloaded.extract_use_chat is False
     assert reloaded.hybrid_llm_weights == 0.0
     assert isinstance(reloaded.hybrid_llm_weights, float)
+
+
+def test_scrub_config_env_clears_field_aliases(monkeypatch):
+    """Ambient variables named after config fields must not leak into the settings."""
+    monkeypatch.setenv("HYBRID_LLM_WEIGHTS", "0.5")
+    monkeypatch.setenv("UNRELATED_TEST_VAR", "keep")
+
+    _scrub_config_env(monkeypatch)
+
+    assert "HYBRID_LLM_WEIGHTS" not in environ
+    assert environ.get("UNRELATED_TEST_VAR") == "keep"
 
 
 def test_config_import_creates_no_config_files(tmp_path):

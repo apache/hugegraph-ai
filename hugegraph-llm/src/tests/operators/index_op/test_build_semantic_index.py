@@ -97,38 +97,6 @@ class TestBuildSemanticIndex(unittest.TestCase):
         # Check if the names are extracted correctly
         self.assertEqual(result, ["name1", "name2", "name3"])
 
-    def test_get_embeddings_parallel(self):
-        # Create a builder
-        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
-
-        # Test data
-        vids = ["vid1", "vid2", "vid3"]
-
-        # Run the async method
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(builder._get_embeddings_parallel(vids))
-            # The result should be flattened from batches
-            self.assertIsInstance(result, list)
-            # Should call get_texts_embeddings at least once
-            self.mock_embedding.get_texts_embeddings.assert_called()
-        finally:
-            loop.close()
-
-    def test_get_embeddings_parallel_empty(self):
-        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
-
-        self.assertEqual(asyncio.run(builder._get_embeddings_parallel([])), [])
-        self.mock_embedding.get_texts_embeddings.assert_not_called()
-
-    def test_get_embeddings_parallel_propagates_errors(self):
-        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
-        self.mock_embedding.get_texts_embeddings.side_effect = RuntimeError("embedding failed")
-
-        with self.assertRaisesRegex(RuntimeError, "embedding failed"):
-            asyncio.run(builder._get_embeddings_parallel(["vid1"]))
-
     def test_run_preserves_embedding_alignment_across_batches(self):
         vertices = [f"person:vid{i}" for i in range(1001)]
         self.mock_embedding.get_embedding_dim.return_value = 1
@@ -140,22 +108,28 @@ class TestBuildSemanticIndex(unittest.TestCase):
                 second_batch_completed = threading.Event()
 
                 def embed_batch(batch):
-                    if len(batch) == 1000:
+                    # get_embeddings_parallel batches by 500, so the two full batches
+                    # block until the trailing partial batch reports completion.
+                    if len(batch) == 500:
                         if not second_batch_completed.wait(timeout=5):
-                            raise RuntimeError("The second batch did not complete")
+                            raise RuntimeError("The concurrent batch did not complete")
                     return [[float(vid.rsplit("vid", 1)[1])] for vid in batch]
 
-                self.mock_embedding.get_texts_embeddings.side_effect = embed_batch
+                async def async_embed_batch(batch):
+                    loop = asyncio.get_running_loop()
+                    return await loop.run_in_executor(None, embed_batch, batch)
+
+                self.mock_embedding.async_get_texts_embeddings.side_effect = async_embed_batch
                 builder = BuildSemanticIndex(self.mock_embedding, FaissVectorIndex)
 
-                with patch("hugegraph_llm.operators.index_op.build_semantic_index.tqdm") as mock_tqdm:
+                with patch("hugegraph_llm.utils.embedding_utils.tqdm") as mock_tqdm:
                     progress = mock_tqdm.return_value.__enter__.return_value
-                    # Release the first batch only after the second batch reports completion.
+                    # Release the full batches only after the trailing batch reports completion.
                     progress.update.side_effect = lambda _: second_batch_completed.set()
                     result = builder.run({"vertices": vertices})
 
                 self.assertEqual(result["added_vid_vector_num"], len(vertices))
-                self.assertEqual(progress.update.call_count, 2)
+                self.assertEqual(progress.update.call_count, 3)
                 loaded_index = FaissVectorIndex.from_name(1, self.mock_settings.graph_name, "graph_vids")
                 for i in (0, 500, 1000):
                     self.assertEqual(loaded_index.search([float(i)], top_k=1), [f"person:vid{i}"])
@@ -164,16 +138,18 @@ class TestBuildSemanticIndex(unittest.TestCase):
         # Create a builder
         builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
 
-        # Mock _get_embeddings_parallel to avoid async complexity in test
-        with patch.object(builder, '_get_embeddings_parallel') as mock_get_embeddings:
-            mock_get_embeddings.return_value = [[0.1, 0.2], [0.3, 0.4]]
+        async def fake_embeddings(embedding, vids):
+            return [[0.1, 0.2], [0.3, 0.4]]
 
+        with patch(
+            "hugegraph_llm.operators.index_op.build_semantic_index.get_embeddings_parallel",
+            side_effect=fake_embeddings,
+        ):
             # Create a context with new vertices
             context = {"vertices": ["label1:vertex3", "label2:vertex4"]}
 
             # Run the builder
-            with patch('asyncio.run', return_value=[[0.1, 0.2], [0.3, 0.4]]):
-                result = builder.run(context)
+            result = builder.run(context)
 
             # Check if the context is updated correctly
             expected_context = {
@@ -196,16 +172,18 @@ class TestBuildSemanticIndex(unittest.TestCase):
         # Create a builder
         builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
 
-        # Mock _get_embeddings_parallel
-        with patch.object(builder, '_get_embeddings_parallel') as mock_get_embeddings:
-            mock_get_embeddings.return_value = [[0.1, 0.2], [0.3, 0.4]]
+        async def fake_embeddings(embedding, vids):
+            return [[0.1, 0.2], [0.3, 0.4]]
 
+        with patch(
+            "hugegraph_llm.operators.index_op.build_semantic_index.get_embeddings_parallel",
+            side_effect=fake_embeddings,
+        ):
             # Create a context with new vertices
             context = {"vertices": ["vertex3", "vertex4"]}
 
             # Run the builder
-            with patch('asyncio.run', return_value=[[0.1, 0.2], [0.3, 0.4]]):
-                result = builder.run(context)
+            result = builder.run(context)
 
             # Check if the context is updated correctly
             expected_context = {

@@ -18,12 +18,11 @@
 import asyncio
 from typing import Any, Dict
 
-from tqdm import tqdm
-
 from hugegraph_llm.config import huge_settings
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
 from hugegraph_llm.operators.hugegraph_op.schema_manager import SchemaManager
+from hugegraph_llm.utils.embedding_utils import get_embeddings_parallel
 from hugegraph_llm.utils.log import log
 
 
@@ -35,25 +34,6 @@ class BuildSemanticIndex:
 
     def _extract_names(self, vertices: list[str]) -> list[str]:
         return [v.split(":")[1] for v in vertices]
-
-    async def _get_embeddings_parallel(self, vids: list[str]) -> list[Any]:
-        sem = asyncio.Semaphore(10)
-        batch_size = 1000
-
-        async def get_embeddings_with_semaphore(vid_list: list[str], pbar: tqdm) -> Any:
-            async with sem:
-                loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(None, self.embedding.get_texts_embeddings, vid_list)
-                pbar.update(1)
-                return result
-
-        vid_batches = [vids[i : i + batch_size] for i in range(0, len(vids), batch_size)]
-        embeddings = []
-        with tqdm(total=len(vid_batches)) as pbar:
-            tasks = [get_embeddings_with_semaphore(batch, pbar) for batch in vid_batches]
-            for batch_embeddings in await asyncio.gather(*tasks):
-                embeddings.extend(batch_embeddings)
-        return embeddings
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         vertexlabels = self.sm.schema.get_schema()["vertexlabels"]
@@ -68,7 +48,7 @@ class BuildSemanticIndex:
 
         if added_vids:
             vids_to_process = self._extract_names(added_vids) if all_pk_flag else added_vids
-            added_embeddings = asyncio.run(self._get_embeddings_parallel(vids_to_process))
+            added_embeddings = asyncio.run(get_embeddings_parallel(self.embedding, vids_to_process))
             log.info("Building vector index for %s vertices...", len(added_vids))
             self.vid_index.add(added_embeddings, added_vids)
             self.vid_index.save_index_by_name(huge_settings.graph_name, "graph_vids")

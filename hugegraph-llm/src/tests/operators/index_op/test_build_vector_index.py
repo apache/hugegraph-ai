@@ -43,8 +43,13 @@ class TestBuildVectorIndex(unittest.TestCase):
         self.mock_settings = self.patcher_settings.start()
         self.mock_settings.graph_name = "test_graph"
 
-        # Patch get_embeddings_parallel
-        self.patcher_embeddings = patch("hugegraph_llm.operators.index_op.build_vector_index.get_embeddings_parallel")
+        # Patch get_embeddings_parallel with MagicMock (as test_build_gremlin_example_index does).
+        # patch() defaults to AsyncMock for this async helper, and since the tests mock asyncio.run
+        # too, every call would leave an un-awaited mock coroutine behind ("was never awaited").
+        self.patcher_embeddings = patch(
+            "hugegraph_llm.operators.index_op.build_vector_index.get_embeddings_parallel",
+            new_callable=MagicMock,
+        )
         self.mock_get_embeddings = self.patcher_embeddings.start()
 
     def tearDown(self):

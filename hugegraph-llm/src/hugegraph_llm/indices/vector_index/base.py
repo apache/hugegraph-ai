@@ -101,13 +101,21 @@ class VectorStoreBase(ABC):
         Return the index registered under the given name.
 
         Loads persisted data when it exists; otherwise returns an empty index sized to embed_dim.
+        Reusing persisted vectors requires passing their existing dimension as embed_dim: vectors
+        built with a different dimension cannot be reused, so the call returns a fresh empty index
+        sized to embed_dim instead of failing the load. Disposal of the stale data is
+        backend-specific: the file-backed store keeps its saved files untouched, while
+        server-backed stores delete and recreate the underlying collection, so a caller that
+        changes embed_dim must expect to re-index.
 
         Args:
-            embed_dim (int): Vector dimension used when the index has to be created.
+            embed_dim (int): Vector dimension used when a new index is needed, including when
+                the persisted dimension cannot be reused.
             *name (str): Path segments identifying the index.
 
         Returns:
-            VectorStoreBase: The loaded or newly created index.
+            VectorStoreBase: The loaded index, or an empty index sized to embed_dim when no
+                reusable data is persisted.
         """
 
     @staticmethod

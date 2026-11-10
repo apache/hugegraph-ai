@@ -135,6 +135,15 @@ class TestGraphManager(unittest.TestCase):
         else:
             self.fail("Expected NotFoundError after removing numeric-id vertex")
 
+    def test_vertex_by_id_with_non_ascii_id(self):
+        vertex = self.graph.add_vertex("person", {"name": "张三", "age": 20})
+        self.assertEqual(self.graph.get_vertex_by_id(vertex.id).id, vertex.id)
+        appended_vertex = self.graph.append_vertex(vertex.id, {"city": "北京"})
+        self.assertEqual(appended_vertex.properties["city"], "北京")
+        self.graph.remove_vertex_by_id(vertex.id)
+        with self.assertRaises(NotFoundError):
+            self.graph.get_vertex_by_id(vertex.id)
+
     def test_add_edge(self):
         vertex1 = self.graph.add_vertex("person", {"name": "Alice", "age": 20})
         vertex2 = self.graph.add_vertex("person", {"name": "Bob", "age": 23})

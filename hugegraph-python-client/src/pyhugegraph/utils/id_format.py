@@ -45,7 +45,8 @@ def format_vertex_id(vertex_id, allow_none: bool = False) -> str | None:
     elif not isinstance(vertex_id, str):
         raise TypeError("The vertex id must be either str or integer")
 
-    return uuid_prefix + json.dumps(vertex_id, allow_nan=False)
+    # Keep non-ASCII text: a "\uXXXX" escape puts an encoded backslash in the URL path, which the server rejects.
+    return uuid_prefix + json.dumps(vertex_id, ensure_ascii=False, allow_nan=False)
 
 
 def format_vertex_id_path(vertex_id, allow_none: bool = False) -> str | None:

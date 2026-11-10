@@ -24,7 +24,6 @@ from hugegraph_llm.models.embeddings.base import BaseEmbedding
 from hugegraph_llm.utils.embedding_utils import get_embeddings_parallel
 
 
-# FIXME: we need keep the logic same with build_semantic_index.py
 class BuildGremlinExampleIndex:
     def __init__(
         self,

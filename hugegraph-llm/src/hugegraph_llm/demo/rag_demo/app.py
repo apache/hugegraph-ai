@@ -38,6 +38,8 @@ from hugegraph_llm.demo.rag_demo.configs_block import (
     apply_reranker_config,
     create_configs_block,
     get_header_with_language_indicator,
+    refresh_settings_snapshot,
+    ui_control_values,
 )
 from hugegraph_llm.demo.rag_demo.other_block import create_other_block, lifespan
 from hugegraph_llm.demo.rag_demo.rag_block import create_rag_block, rag_answer
@@ -81,28 +83,7 @@ def init_rag_ui() -> gr.Interface:
     ) as hugegraph_llm_ui:
         gr.HTML(value=get_header_with_language_indicator(prompt.llm_settings.language), padding=True)
 
-        """
-        TODO: leave a general idea of the unresolved part
-        graph_config_input = textbox_array_graph_config
-         = [settings.graph_url, settings.graph_name, graph_user, settings.graph_pwd, settings.graph_space]
-
-        llm_config_input = textbox_array_llm_config
-         = if settings.llm_type == openai [settings.openai_api_key, settings.openai_api_base, settings.openai_language_model, settings.openai_max_tokens]
-         = else if settings.llm_type == ollama [settings.ollama_host, settings.ollama_port, settings.ollama_language_model, ""]
-         = else ["","","", ""]
-
-        embedding_config_input = textbox_array_embedding_config
-         = if settings.embedding_type == openai [settings.openai_api_key, settings.openai_api_base, settings.openai_embedding_model]
-         = else if settings.embedding_type == ollama [settings.ollama_host, settings.ollama_port, settings.ollama_embedding_model]
-         = else ["","",""]
-
-        reranker_config_input = textbox_array_reranker_config
-         = if settings.reranker_type == cohere [settings.reranker_api_key, settings.reranker_model, settings.cohere_base_url]
-         = else if settings.reranker_type == siliconflow [settings.reranker_api_key, "BAAI/bge-reranker-v2-m3", ""]
-         = else ["","",""]
-        """
-
-        textbox_array_graph_config = create_configs_block()
+        textbox_array_graph_config, ui_controls = create_configs_block()
 
         with gr.Tab(label="1. Build RAG Index 💡"):
             textbox_input_text, textbox_input_schema, textbox_info_extract_template = create_vector_graph_block()
@@ -125,7 +106,7 @@ def init_rag_ui() -> gr.Interface:
             with runtime_config_lock:
                 huge_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
                 prompt.ensure_yaml_file_exists()
-                return (
+                graph_and_prompt = (
                     huge_settings.graph_url,
                     huge_settings.graph_name,
                     huge_settings.graph_user,
@@ -142,6 +123,8 @@ def init_rag_ui() -> gr.Interface:
                     huge_settings.graph_name,
                     prompt.gremlin_generate_prompt,
                 )
+                refresh_settings_snapshot()
+                return (*graph_and_prompt, *ui_control_values())
 
         hugegraph_llm_ui.load(  # pylint: disable=E1101
             fn=refresh_ui_config_prompt,
@@ -161,6 +144,7 @@ def init_rag_ui() -> gr.Interface:
                 textbox_gremlin_inp,
                 textbox_gremlin_schema,
                 textbox_gremlin_prompt,
+                *ui_controls,
             ],
         )
 

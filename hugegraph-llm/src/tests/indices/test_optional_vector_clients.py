@@ -108,6 +108,31 @@ def test_qdrant_threshold_semantics_include_exact_matches(monkeypatch):
         client.close()
 
 
+def test_qdrant_threshold_tolerates_float32_score_noise(monkeypatch):
+    """A float32 cosine score just under 1.0 must not drop an exact match at threshold 0."""
+    qdrant = pytest.importorskip("qdrant_client", reason="Install the vectordb extra")
+    from hugegraph_llm.indices.vector_index import qdrant_vector_store
+
+    client = qdrant.QdrantClient(":memory:")
+    monkeypatch.setattr(qdrant_vector_store, "QdrantClient", lambda **kwargs: client)
+    try:
+        index = qdrant_vector_store.QdrantVectorIndex("contract", "localhost", 6333, embed_dim=3)
+        hits = SimpleNamespace(
+            points=[
+                # exact match rounded below 1.0 by float32 storage -> distance 5.96e-8
+                SimpleNamespace(score=0.99999994, payload={"property": "Alice"}),
+                # 1e-5 away: outside the tolerance and outside threshold 0
+                SimpleNamespace(score=0.99999, payload={"property": "Eve"}),
+                SimpleNamespace(score=0.5, payload={"property": "Acme"}),
+            ]
+        )
+        monkeypatch.setattr(index.client, "query_points", lambda **kwargs: hits)
+
+        assert index.search([1.0, 0.0, 0.0], top_k=3, dis_threshold=0) == ["Alice"]
+    finally:
+        client.close()
+
+
 def test_milvus_threshold_semantics_include_exact_matches(monkeypatch):
     pytest.importorskip("pymilvus", reason="Install the vectordb extra")
     from hugegraph_llm.indices.vector_index import milvus_vector_store as store

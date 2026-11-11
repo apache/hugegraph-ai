@@ -18,7 +18,7 @@
 import unittest
 
 import pytest
-from pyhugegraph.utils.exceptions import NotFoundError
+from pyhugegraph.utils.exceptions import NotFoundError, ServerError
 
 from ..client_utils import ClientUtils
 
@@ -81,3 +81,9 @@ class TestVariable(unittest.TestCase):
 
     def test_remove_key_not_exist(self):
         self.variable.remove("id")
+
+    def test_set_unsupported_value_raises_server_message(self):
+        # The server answers HTTP 500 for map values; the client retries it and
+        # must then raise the server's message rather than a transport error.
+        with pytest.raises(ServerError, match="is not supported"):
+            self.variable.set("config", {"lang": "java"})

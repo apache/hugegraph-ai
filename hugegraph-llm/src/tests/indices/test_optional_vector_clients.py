@@ -89,3 +89,74 @@ def test_installed_qdrant_client_searches_real_local_storage(monkeypatch):
         assert index.search([1.0, 0.0, 0.0], top_k=2, dis_threshold=0.2) == []
     finally:
         client.close()
+
+
+def test_qdrant_threshold_semantics_include_exact_matches(monkeypatch):
+    qdrant = pytest.importorskip("qdrant_client", reason="Install the vectordb extra")
+    from hugegraph_llm.indices.vector_index import qdrant_vector_store
+
+    client = qdrant.QdrantClient(":memory:")
+    monkeypatch.setattr(qdrant_vector_store, "QdrantClient", lambda **kwargs: client)
+    try:
+        index = qdrant_vector_store.QdrantVectorIndex("contract", "localhost", 6333, embed_dim=3)
+        index.add([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], ["Alice", "Acme"])
+        # identical vector -> cosine distance 0.0; the orthogonal candidate sits at distance 1.0
+        assert index.search([1.0, 0.0, 0.0], top_k=2, dis_threshold=0) == ["Alice"]
+        assert sorted(index.search([0.0, 1.0, 0.0], top_k=2, dis_threshold=1.0)) == ["Acme", "Alice"]
+        assert index.search([0.0, 1.0, 0.0], top_k=2, dis_threshold=0.5) == ["Acme"]
+    finally:
+        client.close()
+
+
+def test_qdrant_threshold_tolerates_float32_score_noise(monkeypatch):
+    """A float32 cosine score just under 1.0 must not drop an exact match at threshold 0."""
+    qdrant = pytest.importorskip("qdrant_client", reason="Install the vectordb extra")
+    from hugegraph_llm.indices.vector_index import qdrant_vector_store
+
+    client = qdrant.QdrantClient(":memory:")
+    monkeypatch.setattr(qdrant_vector_store, "QdrantClient", lambda **kwargs: client)
+    try:
+        index = qdrant_vector_store.QdrantVectorIndex("contract", "localhost", 6333, embed_dim=3)
+        hits = SimpleNamespace(
+            points=[
+                # exact match rounded below 1.0 by float32 storage -> distance 5.96e-8
+                SimpleNamespace(score=0.99999994, payload={"property": "Alice"}),
+                # 1e-5 away: outside the tolerance and outside threshold 0
+                SimpleNamespace(score=0.99999, payload={"property": "Eve"}),
+                SimpleNamespace(score=0.5, payload={"property": "Acme"}),
+            ]
+        )
+        monkeypatch.setattr(index.client, "query_points", lambda **kwargs: hits)
+
+        assert index.search([1.0, 0.0, 0.0], top_k=3, dis_threshold=0) == ["Alice"]
+    finally:
+        client.close()
+
+
+def test_milvus_threshold_semantics_include_exact_matches(monkeypatch):
+    pytest.importorskip("pymilvus", reason="Install the vectordb extra")
+    from hugegraph_llm.indices.vector_index import milvus_vector_store as store
+
+    collections = {"hugegraph_llm_contract": 2}
+    created = []
+    _fake_milvus(monkeypatch, store, collections, created)
+    index = store.MilvusVectorIndex("contract", "localhost", 19530, embed_dim=2)
+
+    class FakeHit:
+        def __init__(self, distance, prop):
+            self.distance = distance
+            self.entity = SimpleNamespace(get=lambda key, _p=prop: _p)
+
+    monkeypatch.setattr(index.collection, "num_entities", 2, raising=False)
+    monkeypatch.setattr(index.collection, "load", lambda: None, raising=False)
+    monkeypatch.setattr(index.collection, "release", lambda: None, raising=False)
+    monkeypatch.setattr(
+        index.collection,
+        "search",
+        lambda **kwargs: [[FakeHit(0.0, "doc1"), FakeHit(1.0, "doc2")]],
+        raising=False,
+    )
+
+    assert index.search([1.0, 0.0], top_k=2, dis_threshold=0) == ["doc1"]
+    assert index.search([1.0, 0.0], top_k=2, dis_threshold=1.0) == ["doc1", "doc2"]
+    assert index.search([1.0, 0.0], top_k=2, dis_threshold=0.5) == ["doc1"]

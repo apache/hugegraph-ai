@@ -22,9 +22,6 @@ from unittest.mock import MagicMock, patch
 
 from hugegraph_llm.operators.index_op.vector_index_query import VectorIndexQuery
 
-# FIXME: add a flow-to-operator contract test proving topk and
-# vector_dis_threshold are passed through instead of hard-coded.
-
 
 class TestVectorIndexQuery(unittest.TestCase):
     def setUp(self):
@@ -44,6 +41,7 @@ class TestVectorIndexQuery(unittest.TestCase):
         """Test VectorIndexQuery initialization"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Create VectorIndexQuery instance
         query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=3)
@@ -57,10 +55,48 @@ class TestVectorIndexQuery(unittest.TestCase):
         self.mock_vector_store_class.from_name.assert_called_once_with(4, "test_graph", "chunks")
 
     @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
+    def test_init_defaults_threshold_to_settings(self, mock_settings):
+        """Test that the distance threshold defaults to the CHUNK_DIS_THRESHOLD setting"""
+        mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
+
+        query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=3)
+
+        self.assertEqual(query.vector_dis_threshold, 1.3)
+
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
+    def test_init_with_custom_parameters(self, mock_settings):
+        """Test initialization with custom parameters"""
+        # Configure mock settings
+        mock_settings.graph_name = "custom_graph"
+        mock_settings.chunk_dis_threshold = 1.3
+
+        # Create mock embedding with different dimensions
+        custom_embedding = MagicMock()
+        custom_embedding.get_embedding_dim.return_value = 256
+
+        # Create VectorIndexQuery instance with custom parameters
+        query = VectorIndexQuery(
+            vector_index=self.mock_vector_store_class,
+            embedding=custom_embedding,
+            topk=10,
+            vector_dis_threshold=1.5,
+        )
+
+        # Verify initialization with custom parameters
+        self.assertEqual(query.topk, 10)
+        self.assertEqual(query.embedding, custom_embedding)
+        self.assertEqual(query.vector_dis_threshold, 1.5)
+
+        # Verify vector store was initialized with custom parameters
+        self.mock_vector_store_class.from_name.assert_called_once_with(256, "custom_graph", "chunks")
+
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
     def test_run_with_query(self, mock_settings):
         """Test run method with valid query"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Create VectorIndexQuery instance
         query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=2)
@@ -78,14 +114,49 @@ class TestVectorIndexQuery(unittest.TestCase):
         # Verify embedding was called correctly
         self.mock_embedding.get_texts_embeddings.assert_called_once_with(["test query"])
 
-        # Verify vector search was called correctly
-        self.mock_vector_index.search.assert_called_once_with([1.0, 0.0, 0.0, 0.0], 2, dis_threshold=2)
+        # Verify vector search was called with the configured chunk threshold
+        self.mock_vector_index.search.assert_called_once_with([1.0, 0.0, 0.0, 0.0], 2, dis_threshold=1.3)
+
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
+    def test_run_forwards_custom_threshold(self, mock_settings):
+        """Test that an explicit vector_dis_threshold is passed through to the store"""
+        mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
+
+        query = VectorIndexQuery(
+            vector_index=self.mock_vector_store_class,
+            embedding=self.mock_embedding,
+            topk=2,
+            vector_dis_threshold=1.5,
+        )
+
+        query.run({"query": "test query"})
+
+        self.mock_vector_index.search.assert_called_once_with([1.0, 0.0, 0.0, 0.0], 2, dis_threshold=1.5)
+
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
+    def test_run_keeps_explicit_zero_threshold(self, mock_settings):
+        """Test that an explicit 0 threshold means "exact matches only" instead of falling back to settings"""
+        mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
+
+        query = VectorIndexQuery(
+            vector_index=self.mock_vector_store_class,
+            embedding=self.mock_embedding,
+            topk=2,
+            vector_dis_threshold=0,
+        )
+
+        query.run({"query": "test query"})
+
+        self.mock_vector_index.search.assert_called_once_with([1.0, 0.0, 0.0, 0.0], 2, dis_threshold=0)
 
     @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
     def test_run_with_none_query(self, mock_settings):
         """Test run method when query is None"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Create VectorIndexQuery instance
         query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=2)
@@ -108,6 +179,7 @@ class TestVectorIndexQuery(unittest.TestCase):
         """Test run method with empty context"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Create VectorIndexQuery instance
         query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=2)
@@ -130,6 +202,7 @@ class TestVectorIndexQuery(unittest.TestCase):
         """Test run method with different topk value"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Configure different search results
         self.mock_vector_index.search.return_value = ["doc1", "doc2", "doc3", "doc4", "doc5"]
@@ -147,13 +220,14 @@ class TestVectorIndexQuery(unittest.TestCase):
         self.assertEqual(result_context["vector_result"], ["doc1", "doc2", "doc3", "doc4", "doc5"])
 
         # Verify vector search was called with correct topk
-        self.mock_vector_index.search.assert_called_once_with([1.0, 0.0, 0.0, 0.0], 5, dis_threshold=2)
+        self.mock_vector_index.search.assert_called_once_with([1.0, 0.0, 0.0, 0.0], 5, dis_threshold=1.3)
 
     @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
     def test_run_with_different_embedding_result(self, mock_settings):
         """Test run method with different embedding result"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Configure different embedding result
         self.mock_embedding.get_texts_embeddings.return_value = [[0.0, 1.0, 0.0, 0.0]]
@@ -168,13 +242,48 @@ class TestVectorIndexQuery(unittest.TestCase):
         _ = query.run(context)
 
         # Verify vector search was called with correct embedding
-        self.mock_vector_index.search.assert_called_once_with([0.0, 1.0, 0.0, 0.0], 2, dis_threshold=2)
+        self.mock_vector_index.search.assert_called_once_with([0.0, 1.0, 0.0, 0.0], 2, dis_threshold=1.3)
+
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.log")
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
+    def test_run_filters_non_string_results(self, mock_settings, mock_log):
+        """Test that non-string results are dropped with a warning instead of breaking joins"""
+        mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
+
+        self.mock_vector_index.search.return_value = ["doc1", 42, {"k": "v"}, "doc2"]
+
+        query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=4)
+
+        result_context = query.run({"query": "test query"})
+
+        self.assertEqual(result_context["vector_result"], ["doc1", "doc2"])
+        self.assertEqual(mock_log.warning.call_count, 2)
+        for call_args in mock_log.warning.call_args_list:
+            self.assertIn("Filter out", call_args.args[0])
+
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.log")
+    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
+    def test_run_with_empty_results(self, mock_settings, mock_log):
+        """Test run method when the store returns no results"""
+        mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
+
+        self.mock_vector_index.search.return_value = []
+
+        query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=2)
+
+        result_context = query.run({"query": "test query"})
+
+        self.assertEqual(result_context["vector_result"], [])
+        mock_log.warning.assert_not_called()
 
     @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
     def test_context_preservation(self, mock_settings):
         """Test that existing context data is preserved"""
         # Configure mock settings
         mock_settings.graph_name = "test_graph"
+        mock_settings.chunk_dis_threshold = 1.3
 
         # Create VectorIndexQuery instance
         query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=2)
@@ -190,26 +299,6 @@ class TestVectorIndexQuery(unittest.TestCase):
         self.assertEqual(result_context["another_key"], 123)
         self.assertEqual(result_context["query"], "test query")
         self.assertIn("vector_result", result_context)
-
-    @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
-    def test_init_with_custom_parameters(self, mock_settings):
-        """Test initialization with custom parameters"""
-        # Configure mock settings
-        mock_settings.graph_name = "custom_graph"
-
-        # Create mock embedding with different dimensions
-        custom_embedding = MagicMock()
-        custom_embedding.get_embedding_dim.return_value = 256
-
-        # Create VectorIndexQuery instance with custom parameters
-        query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=custom_embedding, topk=10)
-
-        # Verify initialization with custom parameters
-        self.assertEqual(query.topk, 10)
-        self.assertEqual(query.embedding, custom_embedding)
-
-        # Verify vector store was initialized with custom parameters
-        self.mock_vector_store_class.from_name.assert_called_once_with(256, "custom_graph", "chunks")
 
 
 if __name__ == "__main__":

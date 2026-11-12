@@ -27,6 +27,11 @@ from hugegraph_llm.utils.log import log
 
 COLLECTION_NAME_PREFIX = "hugegraph_llm_"
 
+# Cosine scores are float32, so an exact match can round to a score slightly
+# below 1.0 (e.g. 0.99999994), yielding a tiny positive distance instead of 0.0.
+# The tolerance keeps such matches inside the threshold without loosening it.
+_DISTANCE_TOLERANCE = 1e-6
+
 
 class QdrantVectorIndex(VectorStoreBase):
     def __init__(self, name: str, host: str, port: int, api_key=None, embed_dim: int = 1024):
@@ -127,7 +132,7 @@ class QdrantVectorIndex(VectorStoreBase):
 
         for hit in search_result:
             distance = 1.0 - hit.score
-            if distance < dis_threshold:
+            if distance <= dis_threshold + _DISTANCE_TOLERANCE:
                 if hit.payload is not None:
                     result_properties.append(hit.payload.get("property"))
                     log.debug("[✓] Add valid distance %s to results.", distance)
@@ -135,7 +140,7 @@ class QdrantVectorIndex(VectorStoreBase):
                     log.debug("[x] Hit payload is None, skipping.")
             else:
                 log.debug(
-                    "[x] Distance %s >= threshold %s, ignore this result.",
+                    "[x] Distance %s > threshold %s, ignore this result.",
                     distance,
                     dis_threshold,
                 )

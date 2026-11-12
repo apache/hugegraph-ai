@@ -77,12 +77,12 @@ class FaissVectorIndex(VectorStoreBase):
         distances, indices = self.index.search(np.array([query_vector]), top_k)
         results = []
         for dist, i in zip(distances[0], indices[0]):
-            if dist < dis_threshold:
+            if dist <= dis_threshold:
                 results.append(deepcopy(self.properties[i]))
                 log.debug("[✓] Add valid distance %s to results.", dist)
             else:
                 log.debug(
-                    "[x] Distance %s >= threshold %s, ignore this result.",
+                    "[x] Distance %s > threshold %s, ignore this result.",
                     dist,
                     dis_threshold,
                 )

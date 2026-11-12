@@ -13,12 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 from hugegraph_llm.config import index_settings
 from hugegraph_llm.models.embeddings.init_embedding import Embeddings
 from hugegraph_llm.nodes.base_node import BaseNode
 from hugegraph_llm.operators.index_op.vector_index_query import VectorIndexQuery
+from hugegraph_llm.state.ai_state import WkFlowInput
 from hugegraph_llm.utils.log import log
 
 
@@ -39,11 +40,17 @@ class VectorQueryNode(BaseNode):
             from hugegraph_llm.utils.vector_index_utils import get_vector_index_class
 
             # Read user configuration parameters from wk_input.
+            wk_input = cast(WkFlowInput, self.wk_input)
             vector_index = get_vector_index_class(index_settings.cur_vector_index)
             embedding = Embeddings().get_embedding()
-            max_items = self.wk_input.max_items if self.wk_input.max_items is not None else 3
+            max_items = wk_input.max_items if wk_input.max_items is not None else 3
 
-            self.operator = VectorIndexQuery(vector_index=vector_index, embedding=embedding, topk=max_items)
+            self.operator = VectorIndexQuery(
+                vector_index=vector_index,
+                embedding=embedding,
+                topk=max_items,
+                vector_dis_threshold=wk_input.vector_dis_threshold,
+            )
             return super().node_init()
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.error("Failed to initialize VectorQueryNode: %s", e)

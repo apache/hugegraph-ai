@@ -173,7 +173,8 @@ OpenAI 类型也可连接提供兼容接口的模型服务；服务商必须支�
 | `MAX_GRAPH_PATH`       | Optional[Integer] | 10             | 最大图路径长度            |
 | `MAX_GRAPH_ITEMS`      | Optional[Integer] | 30             | 最大图项目数             |
 | `EDGE_LIMIT_PRE_LABEL` | Optional[Integer] | 8              | 每个标签的边数限制          |
-| `VECTOR_DIS_THRESHOLD` | Optional[Float]   | 0.9            | 向量距离阈值             |
+| `VECTOR_DIS_THRESHOLD` | Optional[Float]   | 0.9            | 关键词→顶点匹配的向量距离阈值（SemanticIdQuery） |
+| `CHUNK_DIS_THRESHOLD`  | Optional[Float]   | 2.0            | 文本块检索的距离过滤阈值（默认 2.0 与历史行为一致，仅剔除明显不匹配的候选） |
 | `TOPK_PER_KEYWORD`     | Optional[Integer] | 1              | 每个关键词返回的 TopK 数量   |
 | `TOPK_RETURN_RESULTS`  | Optional[Integer] | 20             | 返回结果数量             |
 

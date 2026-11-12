@@ -104,6 +104,40 @@ async def test_task_is_staged_until_confirm_and_edits_apply(doc_context):
     assert (await sc.documents.tasks.confirm(task_id, "tester"))["already"] is True
 
 
+async def test_confirm_reads_each_object_once(doc_context, monkeypatch):
+    sc, _, _ = doc_context
+    await sc.sync("supplier")
+    created = await sc.documents.tasks.create_tasks(
+        "supplier-docs",
+        _file("confirm-read-once.md", NOTE),
+        scope=None,
+        skill=None,
+        principal="tester",
+    )
+    task_id = created["tasks"][0]["id"]
+    await sc.documents.tasks.run(task_id, "tester")
+    # the uploaded corpus file also lands through the normal ingest path, so the
+    # note already exists when the task is confirmed
+    await sc.sync("supplier-note")
+    reads: list[tuple[str, str]] = []
+    original = sc.repo.get
+
+    async def counting_get(session, object_type, obj_id, **kwargs):
+        reads.append((object_type, str(obj_id)))
+        return await original(session, object_type, obj_id, **kwargs)
+
+    monkeypatch.setattr(sc.repo, "get", counting_get)
+    confirmed = await sc.documents.tasks.confirm(task_id, "tester")
+    # the existing note writes back as "noop" yet still counts as applied, so its
+    # edge is asserted instead of parked for review; and the row is loaded once
+    # (`_write_object`) instead of twice (pre-check + write)
+    assert confirmed["summary"]["noop"] == 1
+    assert confirmed["summary"]["inserted"] == 0
+    assert confirmed["summary"]["links"] == 1
+    assert reads
+    assert len(reads) == len(set(reads))
+
+
 async def test_unresolved_reference_blocks_confirm(doc_context):
     sc, _, _ = doc_context
     await sc.sync("supplier")

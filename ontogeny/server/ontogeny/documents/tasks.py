@@ -758,10 +758,13 @@ class TaskService:
             outcome = await binder.bind([(packet, graph)])
             applied: set[tuple[str, str]] = set()
             summary = {"inserted": 0, "updated": 0, "noop": 0, "links": 0, "candidates": 0}
+            # `_write_object` already loads the current row, so a pre-check read
+            # here is a pure duplicate round-trip; `applied` is derived from the
+            # write outcomes instead: a "candidate" is the only outcome that
+            # never commits, so every other one marks its object applied —
+            # including "noop" for an existing object, which keeps the link
+            # idempotent re-assert on reruns that the old pre-check got for free.
             for bound in outcome.objects.values():
-                current = await self.docs.sc.repo.get(session, bound.object_type, bound.object_id)
-                if current is not None:
-                    applied.add((bound.object_type, bound.object_id))
                 result = await self.docs._write_object(
                     session,
                     bound,
@@ -770,14 +773,14 @@ class TaskService:
                     created_by=bound.created_by,
                     action="ingest.confirm",
                 )
-                if result == "inserted":
+                if result != "candidate":
                     applied.add((bound.object_type, bound.object_id))
-                    summary["inserted"] += 1
-                elif result == "updated":
-                    applied.add((bound.object_type, bound.object_id))
-                    summary["updated"] += 1
-                elif result == "noop":
-                    summary["noop"] += 1
+                    if result == "inserted":
+                        summary["inserted"] += 1
+                    elif result == "updated":
+                        summary["updated"] += 1
+                    elif result == "noop":
+                        summary["noop"] += 1
             applied |= outcome.references
             summary["links"] = await self.docs._apply_links(
                 session,

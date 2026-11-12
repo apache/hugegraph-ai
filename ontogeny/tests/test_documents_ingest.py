@@ -107,6 +107,24 @@ async def test_rerun_is_idempotent_and_uses_packet_cache(doc_context):
     assert sum(len(d["chunks"]) for d in detail["documents"]) == 3
 
 
+async def test_ingest_reads_each_object_once(doc_context, monkeypatch):
+    sc, _, _ = doc_context
+    reads: list[tuple[str, str]] = []
+    original = sc.repo.get
+
+    async def counting_get(session, object_type, obj_id, **kwargs):
+        reads.append((object_type, str(obj_id)))
+        return await original(session, object_type, obj_id, **kwargs)
+
+    monkeypatch.setattr(sc.repo, "get", counting_get)
+    summary = await sc.sync("supplier-note")
+    assert summary["inserted"] == 2
+    # `_write_object` is the only reader on the ingest path; a pre-check read
+    # would surface as a second load of the same object within one run
+    assert reads
+    assert len(reads) == len(set(reads))
+
+
 async def test_changed_document_replaces_the_same_note(doc_context):
     sc, pkg, _ = doc_context
     await sc.sync("supplier-note")

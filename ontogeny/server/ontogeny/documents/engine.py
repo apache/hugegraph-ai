@@ -1055,22 +1055,26 @@ spec:
                         object_id=cand.object_id,
                     )
 
+                # Apply each bound object. `_write_object` already loads the
+                # current row, so a pre-check read here would be a pure duplicate
+                # round-trip. `applied_ids` is derived from the write outcomes
+                # instead: a "candidate" is the only outcome that never commits,
+                # so every other one marks its object applied — including "noop"
+                # for an existing object, which keeps the link idempotent
+                # re-assert on reruns that the old pre-check got for free.
                 applied_ids: set[tuple[str, str]] = set()
                 for bound in outcome.objects.values():
-                    current = await self.sc.repo.get(session, bound.object_type, bound.object_id)
-                    if current is not None:
-                        applied_ids.add((bound.object_type, bound.object_id))
                     outcome_kind = await self._write_object(
                         session, bound, run_id=run_id, principal=f"extractor:{run_id}", created_by=bound.created_by
                     )
-                    if outcome_kind == "inserted":
+                    if outcome_kind != "candidate":
                         applied_ids.add((bound.object_type, bound.object_id))
-                        summary["inserted"] += 1
-                    elif outcome_kind == "updated":
-                        applied_ids.add((bound.object_type, bound.object_id))
-                        summary["updated"] += 1
-                    elif outcome_kind == "noop":
-                        summary["noop"] += 1
+                        if outcome_kind == "inserted":
+                            summary["inserted"] += 1
+                        elif outcome_kind == "updated":
+                            summary["updated"] += 1
+                        elif outcome_kind == "noop":
+                            summary["noop"] += 1
 
                 applied_ids |= outcome.references
                 summary["links"] = await self._apply_links(

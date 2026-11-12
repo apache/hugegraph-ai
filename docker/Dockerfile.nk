@@ -1,25 +1,57 @@
+# syntax=docker/dockerfile:1
+
 # Stage 1: Build stage (Isolating the build env)
 ARG PYTHON_VERSION=3.12
 FROM python:${PYTHON_VERSION}-bookworm AS builder
 
+ARG UV_VERSION=0.13.6
+ENV UV_LINK_MODE=copy
 WORKDIR /build/
 
-# Use uv instead of poetry for a more efficient, elegant, and unified py env management
-RUN pip install --no-cache-dir uv
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential patchelf && \
+    rm -rf /var/lib/apt/lists/*
 
-# 1.1 Copy source code (merged for efficiency)
+# Keep the build tool aligned with the repository CI configuration.
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export PIP_CERT=/run/secrets/proxy_ca; fi; \
+    pip install --no-cache-dir "uv==${UV_VERSION}"
+
+# Install the committed dependency graph before application source invalidates
+# the layer. Registry cache reuses the completed environment when metadata or the
+# lockfile is unchanged; the uv cache mount mainly helps persistent local builders.
+COPY pyproject.toml uv.lock README.md ./
+COPY hugegraph-llm/pyproject.toml hugegraph-llm/README.md ./hugegraph-llm/
+COPY hugegraph-llm-sdk/pyproject.toml hugegraph-llm-sdk/README.md ./hugegraph-llm-sdk/
+COPY hugegraph-python-client/pyproject.toml hugegraph-python-client/README.md ./hugegraph-python-client/
+COPY vermeer-python-client/pyproject.toml vermeer-python-client/README.md ./vermeer-python-client/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then \
+        export SSL_CERT_FILE=/run/secrets/proxy_ca GIT_SSL_CAINFO=/run/secrets/proxy_ca; \
+    fi; \
+    uv sync --locked --no-install-workspace --extra nk-llm
+
 COPY . .
 
-# 1.2 Install dependency
-RUN apt update && \
-    apt install -y --no-install-recommends build-essential patchelf && \
-    uv venv && \
-    . .venv/bin/activate && \
-    uv sync --extra nk-llm && \
+# Install workspace packages from the same committed graph, then compile the
+# standalone application using the same Nuitka scope as the current main branch.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then \
+        export SSL_CERT_FILE=/run/secrets/proxy_ca GIT_SSL_CAINFO=/run/secrets/proxy_ca; \
+    fi; \
+    uv sync --locked --extra nk-llm && \
     cd hugegraph-llm/src && \
-    export PYTHONPATH=/build/hugegraph-llm/src && \
-    python -m nuitka --follow-imports --standalone --include-package-data=safehttpx,groovy,gradio,jieba --include-module=hugegraph_llm.demo.rag_demo.app --include-data-dir=./hugegraph_llm/resources=hugegraph_llm/resources ./hugegraph_llm/demo/rag_demo/app.py && \
-    mv app.* ..
+    PYTHONPATH=/build/hugegraph-llm/src /build/.venv/bin/python -m nuitka \
+      --follow-imports \
+      --standalone \
+      --include-package-data=safehttpx,groovy,gradio,jieba \
+      --include-module=hugegraph_llm.demo.rag_demo.app \
+      --include-data-dir=./hugegraph_llm/resources=hugegraph_llm/resources \
+      ./hugegraph_llm/demo/rag_demo/app.py && \
+    mv app.dist .. && \
+    rm -rf app.build app.onefile-build
 
 # Stage 2: Runtime stage
 FROM python:${PYTHON_VERSION}-slim-bookworm
@@ -34,17 +66,14 @@ RUN useradd -m -s /bin/bash work && \
 
 WORKDIR /home/work/
 
+# app.dist is the standalone runtime. Keep the source tree only for the existing
+# writable resources volume; compilation intermediates and build metadata stay out.
 COPY --from=builder --chown=work:work /build/hugegraph-llm/src /home/work/hugegraph-llm/src
 COPY --from=builder --chown=work:work /build/hugegraph-llm/app.dist /home/work/hugegraph-llm/app.dist
-COPY --from=builder --chown=work:work /build/hugegraph-llm/app.build /home/work/hugegraph-llm/app.build
-COPY --from=builder --chown=work:work /build/hugegraph-llm/pyproject.toml /home/work/hugegraph-llm/pyproject.toml
 
 USER work
-
 WORKDIR /home/work/hugegraph-llm
 VOLUME ["/home/work/hugegraph-llm/src/hugegraph_llm/resources"]
 EXPOSE 8001
-
 HEALTHCHECK --interval=60s --timeout=10s --start-period=5s --retries=3 CMD curl -f http://localhost:8001/ || exit 1
-
 CMD ["./app.dist/app.bin", "--host", "0.0.0.0", "--port", "8001"]

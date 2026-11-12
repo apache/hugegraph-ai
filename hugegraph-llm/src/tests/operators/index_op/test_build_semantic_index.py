@@ -164,8 +164,10 @@ class TestBuildSemanticIndex(unittest.TestCase):
         # Create a builder
         builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
 
-        # Mock _get_embeddings_parallel to avoid async complexity in test
-        with patch.object(builder, '_get_embeddings_parallel') as mock_get_embeddings:
+        # Mock _get_embeddings_parallel to avoid async complexity in test.
+        # MagicMock (not the auto-AsyncMock): the mocked asyncio.run discards the call's
+        # result, so a mock coroutine would be left un-awaited behind.
+        with patch.object(builder, '_get_embeddings_parallel', new_callable=MagicMock) as mock_get_embeddings:
             mock_get_embeddings.return_value = [[0.1, 0.2], [0.3, 0.4]]
 
             # Create a context with new vertices
@@ -196,8 +198,8 @@ class TestBuildSemanticIndex(unittest.TestCase):
         # Create a builder
         builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
 
-        # Mock _get_embeddings_parallel
-        with patch.object(builder, '_get_embeddings_parallel') as mock_get_embeddings:
+        # Mock _get_embeddings_parallel (MagicMock, same reason as above)
+        with patch.object(builder, '_get_embeddings_parallel', new_callable=MagicMock) as mock_get_embeddings:
             mock_get_embeddings.return_value = [[0.1, 0.2], [0.3, 0.4]]
 
             # Create a context with new vertices

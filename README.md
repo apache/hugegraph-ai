@@ -13,6 +13,7 @@ HugeGraph AI is the Python toolkit for building AI and data applications on [Apa
 |---|---|
 | Build a GraphRAG or knowledge-graph application | [`hugegraph-llm`](hugegraph-llm/) |
 | Embed schema design and reviewed graph extraction in another Python project | [`hugegraph-llm-sdk`](hugegraph-llm-sdk/) |
+| Evaluate retrieval, answers and property-graph quality | [`hugegraph-llm-eval`](graphrag/eval/) |
 | Connect an MCP client to HugeGraph tools | [`hugegraph-mcp`](hugegraph-mcp/) |
 | Access HugeGraph from Python | [`hugegraph-python-client`](hugegraph-python-client/) |
 | Run graph-learning models and examples | [`hugegraph-ml`](hugegraph-ml/) |
@@ -70,6 +71,7 @@ docker compose -f docker-compose-network.yml up -d
 ### Use a library instead of the application
 
 - Install and integrate [`hugegraph-llm-sdk`](hugegraph-llm-sdk/) when another project needs schema design, validation or reviewed extraction without the demo application.
+- Use [`hugegraph-llm-eval`](graphrag/eval/) to evaluate retrieval, answers and property-graph quality in an independent Python pipeline.
 - Install `hugegraph-python` and import `pyhugegraph` when an application only needs the HugeGraph Python client.
 - Run [`hugegraph-mcp`](hugegraph-mcp/) when an MCP host needs typed graph tools, read-only defaults and controlled write confirmation.
 
@@ -80,6 +82,10 @@ Each module README owns its package name, optional extras, API examples and comp
 ### `hugegraph-llm-sdk`
 
 Reusable synchronous and asynchronous APIs for schema design, validation and property-graph extraction. Provider adapters are optional so the base package can remain independent of application and account-specific dependencies. See the [SDK architecture](docs/sdk/architecture.md).
+
+### `hugegraph-llm-eval`
+
+An independent SDK for evaluating retrieval, answer and property-graph quality. It accepts an injected judge model and returns structured findings for pipelines; persistence, reporting and the CLI stay in the application. See its [guide](graphrag/eval/README.md) and [architecture](docs/sdk/eval-architecture.md).
 
 ### `hugegraph-llm`
 
@@ -119,6 +125,7 @@ uv run --extra dev ruff format --check .
 uv run --extra dev ruff check .
 uv run --extra dev ty check hugegraph-llm/src/hugegraph_llm hugegraph-python-client/src/pyhugegraph
 uv run --extra dev ty check hugegraph-llm-sdk/src/hugegraph_llm_sdk
+uv run --extra dev ty check graphrag/eval/src/hugegraph_llm_eval
 ```
 
 Run tests from the affected module. Shared SDK or Python-client changes also require the relevant `hugegraph-llm` tests. See [CI policy](docs/quality/ci.md) and [`AGENTS.md`](AGENTS.md) for test selection; do not default to an expensive full-repository sweep when a precise affected-module set is available.

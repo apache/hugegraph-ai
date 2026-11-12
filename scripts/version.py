@@ -26,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = (
     "hugegraph-llm-sdk",
+    "graphrag/eval",
     "hugegraph-llm",
     "hugegraph-python-client",
     "hugegraph-mcp",
@@ -41,6 +42,7 @@ DOCS = (
     "docs/quality/hugegraph-integration.md",
     "docs/quality/test-taxonomy.md",
     "hugegraph-llm-sdk/README.md",
+    "graphrag/eval/README.md",
 )
 DEPLOYMENT = ("docker/docker-compose-network.yml",)
 VERSION_PATTERN = r"\d+\.\d+\.\d+"
@@ -135,6 +137,7 @@ def updates(root: Path) -> dict[Path, tuple[str, str]]:
         updated = re.sub(rf"(?<=hugegraph-mcp@){VERSION_PATTERN}", version, original)
         updated = re.sub(rf"(?<=hugegraph_mcp-){VERSION_PATTERN}(?=-py3)", version, updated)
         updated = re.sub(rf"(?<=hugegraph_llm_sdk-){VERSION_PATTERN}(?=-py3)", version, updated)
+        updated = re.sub(rf"(?<=hugegraph_llm_eval-){VERSION_PATTERN}(?=-py3)", version, updated)
         updated = re.sub(server_pattern, lambda _: config["server-image"], updated)
         updated = re.sub(llm_pattern, lambda _: f"{config['llm-image']}:{version}", updated)
         if updated != original:

@@ -97,54 +97,57 @@ def extract_triples_by_regex_with_schema(schema, text, graph):
     matches = re.findall(pattern, text)
 
     vertices_dict = {v["id"]: v for v in graph["vertices"]}
+    # Index the schema once per call so each triple matches in constant time instead
+    # of scanning every vertex/edge. A triple's LABEL is its subject's vertex_label
+    # or its predicate's edge_label, so both lookups stay independent (either can match).
+    vertex_prop_keys = {(v["vertex_label"], p.lower()) for v in schema["vertices"] for p in v["properties"]}
+    edges_by_label = {}
+    for edge in schema["edges"]:
+        edges_by_label.setdefault(edge["edge_label"], edge)
+
     for match in matches:
         s, p, o, label = [item.strip() for item in match]
         if None in [label, s, p, o]:
             continue
-        # TODO: use a more efficient way to compare the extract & input property
-        p_lower = p.lower()
-        for vertex in schema["vertices"]:
-            if vertex["vertex_label"] == label and any(pp.lower() == p_lower for pp in vertex["properties"]):
-                id = f"{label}-{s}"
-                if id not in vertices_dict:
-                    vertices_dict[id] = {
-                        "id": id,
-                        "name": s,
-                        "label": label,
-                        "properties": {p: o},
-                    }
-                else:
-                    vertices_dict[id]["properties"].update({p: o})
-                break
-        for edge in schema["edges"]:
-            if edge["edge_label"] == label:
-                source_label = edge["source_vertex_label"]
-                source_id = f"{source_label}-{s}"
-                if source_id not in vertices_dict:
-                    vertices_dict[source_id] = {
-                        "id": source_id,
-                        "name": s,
-                        "label": source_label,
-                        "properties": {},
-                    }
-                target_label = edge["target_vertex_label"]
-                target_id = f"{target_label}-{o}"
-                if target_id not in vertices_dict:
-                    vertices_dict[target_id] = {
-                        "id": target_id,
-                        "name": o,
-                        "label": target_label,
-                        "properties": {},
-                    }
-                graph["edges"].append(
-                    {
-                        "start": source_id,
-                        "end": target_id,
-                        "type": label,
-                        "properties": {},
-                    }
-                )
-                break
+        if (label, p.lower()) in vertex_prop_keys:
+            id = f"{label}-{s}"
+            if id not in vertices_dict:
+                vertices_dict[id] = {
+                    "id": id,
+                    "name": s,
+                    "label": label,
+                    "properties": {p: o},
+                }
+            else:
+                vertices_dict[id]["properties"].update({p: o})
+        edge = edges_by_label.get(label)
+        if edge is not None:
+            source_label = edge["source_vertex_label"]
+            source_id = f"{source_label}-{s}"
+            if source_id not in vertices_dict:
+                vertices_dict[source_id] = {
+                    "id": source_id,
+                    "name": s,
+                    "label": source_label,
+                    "properties": {},
+                }
+            target_label = edge["target_vertex_label"]
+            target_id = f"{target_label}-{o}"
+            if target_id not in vertices_dict:
+                vertices_dict[target_id] = {
+                    "id": target_id,
+                    "name": o,
+                    "label": target_label,
+                    "properties": {},
+                }
+            graph["edges"].append(
+                {
+                    "start": source_id,
+                    "end": target_id,
+                    "type": label,
+                    "properties": {},
+                }
+            )
     graph["vertices"] = list(vertices_dict.values())
 
 

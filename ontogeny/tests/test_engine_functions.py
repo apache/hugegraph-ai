@@ -234,6 +234,86 @@ class TestQuery:
         assert [s_["type"] for s_ in out["steps"]] == ["material", "bom", "product"]
         assert out["final_ids"] == ["P-200"]
 
+    async def test_traverse_batches_fk_reads_per_hop(self, env, monkeypatch):
+        q, repo = env["query"], env["repo"]
+        batched: list[bool] = []
+        single: list[str] = []
+        orig_batch = repo.link_members_by_ids
+        orig_single = q._linked_ids
+
+        async def counting_batch(session, link_name, ids, *, from_source, **kw):
+            batched.append(from_source)
+            return await orig_batch(session, link_name, ids, from_source=from_source, **kw)
+
+        async def counting_single(session, link_name, obj_id, *, from_source):
+            single.append(obj_id)
+            return await orig_single(session, link_name, obj_id, from_source=from_source)
+
+        monkeypatch.setattr(repo, "link_members_by_ids", counting_batch)
+        monkeypatch.setattr(q, "_linked_ids", counting_single)
+
+        async with env["maker"]() as s:
+            out = await q.traverse(
+                s,
+                "equipment",
+                ["EQ-02", "EQ-07"],
+                SUPER,
+                [
+                    {"link": "step-equipment", "direction": "out"},
+                    {"link": "step-equipment", "direction": "in"},
+                ],
+            )
+        # one batched read per hop (source side, then target side), never per id
+        assert single == []
+        assert batched == [True, False]
+        assert sorted(out["steps"][1]["ids"]) == ["PS-7111", "PS-7112", "PS-7121", "PS-7131", "PS-7132"]
+        assert sorted(out["final_ids"]) == ["EQ-02", "EQ-07"]
+        pairs = {(e["source"]["id"], e["target"]["id"]) for e in out["edges"]}
+        assert ("EQ-02", "PS-7111") in pairs
+        assert ("EQ-07", "PS-7132") in pairs
+        assert ("EQ-02", "PS-7112") not in pairs
+
+    async def test_traverse_batches_join_table_reads_per_hop(self, join_env, monkeypatch):
+        import datetime as dt
+
+        q, repo = join_env["query"], join_env["repo"]
+        calls: list[tuple[str, list[str], bool]] = []
+        orig_batch = repo.link_members_by_ids
+
+        async def counting_batch(session, link_name, ids, *, from_source, **kw):
+            calls.append((link_name, list(ids), from_source))
+            return await orig_batch(session, link_name, ids, from_source=from_source, **kw)
+
+        monkeypatch.setattr(repo, "link_members_by_ids", counting_batch)
+
+        now = dt.datetime.now(dt.UTC)
+        async with join_env["maker"]() as s:
+            await repo.link_add(s, "container-items", "C-1", "I-1", now)
+            await repo.link_add(s, "container-items", "C-1", "I-2", now)
+            await s.commit()
+        async with join_env["maker"]() as s:
+            out = await q.traverse(s, "container", ["C-1"], SUPER, [{"link": "container-items", "direction": "out"}])
+        assert calls == [("container-items", ["C-1"], True)]
+        assert sorted(out["final_ids"]) == ["I-1", "I-2"]
+        assert {e["target"]["id"] for e in out["edges"]} == {"I-1", "I-2"}
+
+    async def test_link_members_by_ids_matches_single_reads(self, env):
+        """The batched primitive must return exactly what the per-id reads do,
+        for every link and both directions."""
+        q, repo, compiled = env["query"], env["repo"], env["compiled"]
+        async with env["maker"]() as s:
+            for link_name, lnk in compiled.links.items():
+                for obj_type in (lnk.spec.source, lnk.spec.target):
+                    pk = compiled.objects[obj_type].spec.primaryKey[0]
+                    rows, _ = await repo.query(s, obj_type, limit=3)
+                    ids = [str(r[pk]) for r in rows]
+                    from_source = lnk.spec.source == obj_type
+                    grouped = await repo.link_members_by_ids(s, link_name, ids, from_source=from_source)
+                    assert set(grouped) == set(ids)
+                    for oid in ids:
+                        single = await q._linked_ids(s, link_name, oid, from_source=from_source)
+                        assert sorted(grouped[oid]) == sorted(single)
+
 
 class TestSandbox:
     async def test_query_within_capability(self, env, tmp_path):

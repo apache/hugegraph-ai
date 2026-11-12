@@ -431,6 +431,62 @@ class ObjectRepository:
         rows = (await session.execute(select(t.c.src_id, t.c.dst_id).where(where))).all()
         return [(r[0], r[1]) for r in rows]
 
+    async def link_members_by_ids(
+        self,
+        session,
+        link_name: str,
+        ids: Iterable[str],
+        *,
+        from_source: bool,
+        at: _dt.datetime | None = None,
+    ) -> dict[str, list[str]]:
+        """Batch form of ``link_members`` / ``fk_linked_ids`` for multi-hop reads.
+
+        One query for the whole id set instead of one per id: join-table links
+        filter the anchor column with ``IN``; FK links filter the foreign-key
+        column (from the source side) or the target-side primary key (from the
+        target side) with ``IN``. Returns the other endpoint ids grouped by
+        anchor id; every requested id is a key, with an empty list when it has
+        no members.
+        """
+        anchors = list(dict.fromkeys(str(i) for i in ids))
+        grouped: dict[str, list[str]] = {i: [] for i in anchors}
+        if not anchors:
+            return grouped
+
+        from ..core.models import ForeignKeyJoin
+
+        lnk = self.compiled.links[link_name]
+        join = lnk.spec.join
+        if isinstance(join, ForeignKeyJoin):
+            # keys format: {"<target-side obj>.<prop>": "<source-side obj>.<prop>"}
+            ((tgt_side, _src_side),) = join.keys.items()
+            tgt_obj, tgt_prop = tgt_side.split(".", 1)
+            t = self._table(tgt_obj)
+            fk_col = getattr(t.c, self.compiled.col(tgt_prop))
+            pk_col = getattr(t.c, self._pk_cols(tgt_obj)[0])
+            anchor_col, other_col = (fk_col, pk_col) if from_source else (pk_col, fk_col)
+            where = _and(self._current_where(tgt_obj, at), anchor_col.in_(anchors))
+            rows = (await session.execute(select(anchor_col, other_col).where(where))).all()
+            for anchor, other in rows:
+                if anchor is not None and other is not None:
+                    grouped.setdefault(str(anchor), []).append(str(other))
+            return grouped
+
+        from .ddl import link_table
+
+        t = link_table(self.compiled, link_name)
+        valid = (
+            t.c._valid_to.is_(None)
+            if at is None
+            else and_(t.c._valid_from <= at, (t.c._valid_to.is_(None)) | (t.c._valid_to > at))
+        )
+        anchor_col, other_col = (t.c.src_id, t.c.dst_id) if from_source else (t.c.dst_id, t.c.src_id)
+        rows = (await session.execute(select(anchor_col, other_col).where(_and(valid, anchor_col.in_(anchors))))).all()
+        for anchor, other in rows:
+            grouped.setdefault(str(anchor), []).append(str(other))
+        return grouped
+
     # -------------------------------------------------- derived materialization
     async def set_derived_value(
         self, session, object_type: str, obj_id: str, prop: str, value: Any, ts: _dt.datetime

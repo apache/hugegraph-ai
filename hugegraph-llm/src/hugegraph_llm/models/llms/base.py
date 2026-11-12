@@ -50,19 +50,23 @@ class BaseLLM(ABC):
         """Comment"""
 
     @abstractmethod
-    async def agenerate_streaming(
+    def agenerate_streaming(
         self,
         messages: Optional[List[Dict[str, Any]]] = None,
         prompt: Optional[str] = None,
         on_token_callback: Optional[Callable] = None,
     ) -> AsyncGenerator[str, None]:
-        """Comment"""
+        """Stream generated tokens asynchronously.
+
+        Implement as an async generator function: the call result is directly
+        async-iterable and must not be awaited.
+        """
 
     @abstractmethod
     def num_tokens_from_string(
         self,
         string: str,
-    ) -> str:
+    ) -> int:
         """Given a string returns the number of tokens the given string consists of"""
 
     @abstractmethod

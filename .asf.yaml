@@ -24,6 +24,12 @@ github:
   description: The integration of HugeGraph with AI/LLM & GraphRAG
   homepage: https://hugegraph.apache.org/docs/quickstart/hugegraph-ai/
   del_branch_on_merge: true
+  pull_requests:
+    creation_cap:
+      enabled: true
+      max_open_pull_requests: 5
+      bypass_users:
+        - bitflicker64
   labels:
     - graphrag
     - graph-machine-learning

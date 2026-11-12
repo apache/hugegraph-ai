@@ -80,6 +80,8 @@ class WkFlowInput(GParam):
     # used for rag_recall api
     is_graph_rag_recall: bool = False
     is_vector_only: bool = False
+    # opt-in: return the graph-recall trace from the RAG flows
+    include_trace: bool = False
 
     # used for build text2gremin index
     examples: Optional[List[Dict[str, str]]] = None
@@ -138,6 +140,7 @@ class WkFlowInput(GParam):
         self.examples = None
         self.is_graph_rag_recall = False
         self.is_vector_only = False
+        self.include_trace = None
 
 
 class WkFlowState(GParam):
@@ -199,6 +202,7 @@ class WkFlowState(GParam):
 
     embed_dim: Optional[int] = None
     is_graph_rag_recall: Optional[bool] = None
+    include_trace: Optional[bool] = None
 
     def setup(self) -> CStatus:
         self.schema = None
@@ -259,6 +263,7 @@ class WkFlowState(GParam):
 
         self.embed_dim = None
         self.is_graph_rag_recall = None
+        self.include_trace = None
         return CStatus()
 
     def to_json(self):

@@ -31,6 +31,16 @@ from hugegraph_llm.utils.decorators import with_task_id
 from hugegraph_llm.utils.log import log
 
 
+TRACE_FIELDS = (
+    "keywords",
+    "match_vids",
+    "graph_result_flag",
+    "gremlin",
+    "graph_result",
+    "vertex_degree_list",
+)
+
+
 def rag_answer(
     text: str,
     raw_answer: bool,
@@ -49,6 +59,7 @@ def rag_answer(
     topk_return_results=20,
     vector_dis_threshold=0.9,
     topk_per_keyword=1,
+    include_trace: bool = False,
 ) -> Tuple:
     """
     Generate an answer using the RAG (Retrieval-Augmented Generation) pipeline.
@@ -96,15 +107,25 @@ def rag_answer(
             topk_return_results=topk_return_results,
             vector_dis_threshold=vector_dis_threshold,
             topk_per_keyword=topk_per_keyword,
+            # The graph flows return their full state when this is set, which is
+            # where the trace fields live. It must stay separate from
+            # is_graph_rag_recall, which switches the flow into recall-only mode
+            # (no answer synthesis).
+            include_trace=include_trace,
         )
         if res.get("switch_to_bleu"):
             gr.Warning("Online reranker fails, automatically switches to local bleu rerank.")
-        return (
+        answers = (
             res.get("raw_answer", ""),
             res.get("vector_only_answer", ""),
             res.get("graph_only_answer", ""),
             res.get("graph_vector_answer", ""),
         )
+        if not include_trace:
+            return answers
+        # Same field names as the `/rag/graph` response so callers can compare.
+        trace = {key: res[key] for key in TRACE_FIELDS if key in res}
+        return (*answers, trace)
     except ValueError as e:
         log.critical(e)
         raise gr.Error(str(e))

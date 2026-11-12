@@ -420,3 +420,34 @@ def test_batch_upload_creates_output_directory_on_fresh_volume(tmp_path, monkeyp
     assert count == 1
     assert frame.iloc[0, 0] == "question"
     assert pd.read_excel(root / "demo/questions.xlsx").iloc[0, 0] == "question"
+
+
+def test_rag_default_response_has_no_trace_field():
+    client, _ = _make_test_client()
+    response = client.post("/rag", json={"query": "q"})
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert "trace" not in body
+    assert body["graph_only"] == "graph"
+
+
+def test_rag_include_trace_returns_graph_recall_fields():
+    trace = {
+        "keywords": ["alice"],
+        "match_vids": ["1:alice"],
+        "graph_result_flag": 1,
+        "gremlin": "g.V().limit(1)",
+        "graph_result": [{"id": "1:alice"}],
+        "vertex_degree_list": [],
+    }
+    client, callbacks = _make_test_client(
+        rag_answer_func=Mock(return_value=("raw", "vector", "graph", "graph_vector", trace))
+    )
+    response = client.post("/rag", json={"query": "q", "include_trace": True})
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["trace"] == trace
+    # the answer fields keep their previous shape and output-flag filtering
+    assert body["graph_only"] == "graph"
+    assert "raw_answer" not in body
+    assert callbacks["rag_answer_func"].call_args.kwargs["include_trace"] is True

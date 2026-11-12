@@ -14,5 +14,8 @@ hugegraph-ml/ export-ignore
 .idea/ export-ignore
 style/ export-ignore
 scripts/ export-ignore
+# Keep the DeepWiki skill MCP client in release/source archives.
+tools/ai/hugegraph-ai-deepwiki-skill/plugins/hugegraph-ai-deepwiki-skill/skills/hugegraph-ai-deepwiki-skill/scripts/ -export-ignore
+tools/ai/hugegraph-ai-deepwiki-skill/plugins/hugegraph-ai-deepwiki-skill/skills/hugegraph-ai-deepwiki-skill/scripts/** -export-ignore
 hugegraph-llm/src/hugegraph_llm/resources/backup-graph-data-4020/ export-ignore
 docker/ export-ignore

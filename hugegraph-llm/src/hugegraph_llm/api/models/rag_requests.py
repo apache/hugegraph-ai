@@ -22,6 +22,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hugegraph_llm.config import prompt
+from hugegraph_llm.utils.query_validation import validate_rag_query_length
 
 LLMProviderType = Literal["openai", "ollama/local"]
 RerankerProviderType = Literal["cohere", "siliconflow"]
@@ -35,8 +36,16 @@ class GraphConfigRequest(BaseModel):
     gs: Optional[str] = None
 
 
-class RAGRequest(BaseModel):
+class RAGQueryRequest(BaseModel):
     query: str = Query(..., description="Query you want to ask")
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, value: str) -> str:
+        return validate_rag_query_length(value)
+
+
+class RAGRequest(RAGQueryRequest):
     raw_answer: bool = Query(False, description="Use LLM to generate answer directly")
     vector_only: bool = Query(False, description="Use LLM to generate answer with vector")
     graph_only: bool = Query(True, description="Use LLM to generate answer with graph RAG only")
@@ -74,8 +83,7 @@ class RAGRequest(BaseModel):
 
 
 # TODO: import the default value of prompt.* dynamically
-class GraphRAGRequest(BaseModel):
-    query: str = Query(..., description="Query you want to ask")
+class GraphRAGRequest(RAGQueryRequest):
     # Graph Configs
     max_graph_items: int = Query(30, description="Maximum number of items for GQL queries in graph.")
     topk_return_results: int = Query(20, description="Number of sorted results to return finally.")

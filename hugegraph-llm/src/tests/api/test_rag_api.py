@@ -104,6 +104,22 @@ def test_rag_api_invalid_request_body_returns_validation_shape():
     assert response.json()["detail"][0]["loc"][-1] == "query"
 
 
+@pytest.mark.parametrize("path,callback", [("/rag", "rag_answer_func"), ("/rag/graph", "graph_rag_recall_func")])
+def test_rag_queries_enforce_configured_character_limit(monkeypatch, path, callback):
+    monkeypatch.setattr(llm_settings, "rag_query_max_length", 5)
+    client, callbacks = _make_test_client()
+
+    response = client.post(path, json={"query": "图" * 6})
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert "maximum allowed length of 5" in response.text
+    callbacks[callback].assert_not_called()
+
+    response = client.post(path, json={"query": "图" * 5})
+    assert response.status_code == status.HTTP_200_OK
+    callbacks[callback].assert_called_once()
+
+
 def test_rag_accepts_client_config_without_mutating_globals(monkeypatch):
     monkeypatch.setattr(huge_settings, "graph_url", "http://original:8080")
     monkeypatch.setattr(huge_settings, "graph_name", "original_graph")

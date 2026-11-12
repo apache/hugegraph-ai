@@ -30,7 +30,7 @@ from hugegraph_llm.operators.document_op.chunk_split import (
 )
 
 from ..config import huge_settings
-from .hugegraph_utils import clean_hg_data
+from .hugegraph_utils import clean_hg_data, gremlin_literal
 from .log import log
 from .vector_index_utils import read_documents
 
@@ -69,7 +69,7 @@ def get_vertex_details(vertex_ids: List[str], context: Dict[str, Any]) -> List[D
     if not vertex_ids:
         return []
 
-    formatted_ids = ", ".join(f"'{vid}'" for vid in vertex_ids)
+    formatted_ids = ", ".join(gremlin_literal(vid) for vid in vertex_ids)
     gremlin_query = f"g.V({formatted_ids}).limit(20)"
     result = client.gremlin().exec(gremlin=gremlin_query)["data"]
     return result

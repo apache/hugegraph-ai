@@ -100,9 +100,12 @@ class Commit2Graph:
             non_null_keys = [key for key in vertex_label["properties"] if key not in nullable_keys]
 
             has_problem = False
-            # 2. Handle primary-keys mode vertex
+            # 2. Handle primary-keys mode vertex (an empty-string value carries no
+            # identity: distinct vertices would collide in vid_mapping, so treat it
+            # as absent like the extraction layer does; 0 and False are values)
             for pk in primary_keys:
-                if not input_properties.get(pk):
+                pk_value = input_properties.get(pk)
+                if pk_value is None or pk_value == "":
                     if len(primary_keys) == 1:
                         log.error(
                             "Primary-key '%s' missing in vertex %s, skip it & need check it again",
@@ -148,8 +151,10 @@ class Commit2Graph:
 
             # TODO: we could try batch add vertices first, setback to single-mode if failed
             explicit_id = vertex.get("id")
+            if explicit_id == "":
+                explicit_id = None
             mapping_id = explicit_id
-            if not mapping_id and primary_keys:
+            if mapping_id is None and primary_keys:
                 mapping_id = f"{input_label}:{'!'.join(str(input_properties[pk]) for pk in primary_keys)}"
 
             if vertex_label.get("id_strategy") == "CUSTOMIZE_STRING" and explicit_id:
@@ -165,7 +170,7 @@ class Commit2Graph:
                 raise ValueError(f"Failed to create vertex '{input_label}' with properties {input_properties}")
             vid = result.id
             vertex["id"] = vid
-            if mapping_id:
+            if mapping_id is not None:
                 vid_mapping[mapping_id] = vid
 
         for edge in edges:

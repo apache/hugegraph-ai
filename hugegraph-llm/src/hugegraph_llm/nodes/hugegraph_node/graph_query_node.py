@@ -21,6 +21,7 @@ from pyhugegraph.client import PyHugeClient
 from hugegraph_llm.config import huge_settings, prompt
 from hugegraph_llm.nodes.base_node import BaseNode
 from hugegraph_llm.operators.operator_list import OperatorList
+from hugegraph_llm.utils.hugegraph_utils import gremlin_literal
 from hugegraph_llm.utils.log import log
 
 # TODO: remove 'as('subj)' step
@@ -193,7 +194,7 @@ class GraphQueryNode(BaseNode):
 
         # TODO: we may remove label id or replace with label name
         if matched_str in v_cache:
-            node_str = matched_str
+            node_str = str(matched_str)  # numeric vertex ids are ints
         else:
             v_cache.add(matched_str)
             node_str = f"{item['id']}{{{props_str}}}"
@@ -355,7 +356,7 @@ class GraphQueryNode(BaseNode):
             if not matched_vids:
                 return context
 
-            gremlin_query = VERTEX_QUERY_TPL.format(keywords=matched_vids)
+            gremlin_query = VERTEX_QUERY_TPL.format(keywords=",".join(gremlin_literal(vid) for vid in matched_vids))
             vertexes = self._client.gremlin().exec(gremlin=gremlin_query)["data"]
             log.debug("Vids gremlin query: %s", gremlin_query)
 
@@ -364,7 +365,7 @@ class GraphQueryNode(BaseNode):
             # TODO: use generator or asyncio to speed up the query logic
             for matched_vid in matched_vids:
                 gremlin_query = VID_QUERY_NEIGHBOR_TPL.format(
-                    keywords=f"'{matched_vid}'",
+                    keywords=gremlin_literal(matched_vid),
                     max_deep=self._max_deep,
                     edge_labels=edge_labels_str,
                     edge_limit=edge_limit_amount,
@@ -390,7 +391,7 @@ class GraphQueryNode(BaseNode):
             # WARN: When will the query enter here?
             keywords = context.get("keywords")
             assert keywords, "No related property(keywords) for graph query."
-            keywords_str = ",".join("'" + kw + "'" for kw in keywords)
+            keywords_str = ",".join(gremlin_literal(kw) for kw in keywords)
             gremlin_query = PROPERTY_QUERY_NEIGHBOR_TPL.format(
                 prop=self._prop_to_match,
                 keywords=keywords_str,

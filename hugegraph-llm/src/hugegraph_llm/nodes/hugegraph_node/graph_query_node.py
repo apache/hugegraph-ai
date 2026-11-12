@@ -50,6 +50,11 @@ g.V({keywords})
 .toList()
 """
 
+# Number of matched vids grouped per single gremlin ``exec`` for the neighbour
+# traversal. One round-trip per group instead of one per matched vid; the batch
+# stays small to keep each query's work bounded.
+NEIGHBOR_QUERY_BATCH_SIZE = 10
+
 PROPERTY_QUERY_NEIGHBOR_TPL = """\
 g.V().has('{prop}', within({keywords}))
 .repeat(
@@ -361,17 +366,24 @@ class GraphQueryNode(BaseNode):
 
             vertex_knowledge = self._format_graph_from_vertex(query_result=vertexes)
             paths: List[Any] = []
-            # TODO: use generator or asyncio to speed up the query logic
-            for matched_vid in matched_vids:
+            # Batch the per-vid neighbour traversals: one gremlin exec per
+            # group instead of one per matched vid, so a large id set no longer
+            # triggers one server round-trip per id. Batch data is concatenated
+            # in matched_vids order, so the path list keeps the per-vid order.
+            batch_size = min(NEIGHBOR_QUERY_BATCH_SIZE, len(matched_vids))
+            for start in range(0, len(matched_vids), batch_size):
+                batch = matched_vids[start : start + batch_size]
                 gremlin_query = VID_QUERY_NEIGHBOR_TPL.format(
-                    keywords=f"'{matched_vid}'",
+                    keywords=", ".join(f"'{vid}'" for vid in batch),
                     max_deep=self._max_deep,
                     edge_labels=edge_labels_str,
                     edge_limit=edge_limit_amount,
                     max_items=self._max_items,
                 )
                 log.debug("Kneighbor gremlin query: %s", gremlin_query)
-                paths.extend(self._client.gremlin().exec(gremlin=gremlin_query)["data"])
+                batch_paths = self._client.gremlin().exec(gremlin=gremlin_query)["data"]
+                if batch_paths:
+                    paths.extend(batch_paths)
 
             (
                 graph_chain_knowledge,

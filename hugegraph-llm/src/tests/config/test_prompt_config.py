@@ -29,11 +29,6 @@ from hugegraph_llm.operators.llm_op.property_graph_extract import PropertyGraphE
 
 pytestmark = pytest.mark.contract
 
-# FIXME: add contract coverage for runtime-loaded config_prompt.yaml, not only
-# PromptConfig class constants and prompt_examples.json fixtures.
-# FIXME: verify omitted API prompt fields resolve the current PromptConfig
-# object instead of import-time default prompt strings.
-
 
 def _json_objects_after_marker(prompt, marker):
     start = prompt.index(marker) + len(marker)
@@ -101,12 +96,85 @@ def _assert_output_matches_schema_contract(schema, output):
     assert len(parsed_items) == len(output["vertices"]) + len(output["edges"])
 
 
+def _prompt_api_client():
+    from unittest.mock import Mock
+
+    from fastapi import APIRouter, FastAPI
+    from fastapi.testclient import TestClient
+
+    from hugegraph_llm.api.rag_api import rag_http_api
+
+    callbacks = {
+        "rag_answer_func": Mock(return_value=("raw", "vector", "graph", "graph_vector")),
+        "graph_rag_recall_func": Mock(return_value={"query": "q", "keywords": []}),
+        "apply_graph_conf": Mock(return_value=200),
+        "apply_llm_conf": Mock(return_value=200),
+        "apply_embedding_conf": Mock(return_value=200),
+        "apply_reranker_conf": Mock(return_value=200),
+        "gremlin_generate_selective_func": Mock(return_value={"gremlin": "g.V()"}),
+    }
+    router = APIRouter()
+    rag_http_api(router, **callbacks)
+    app = FastAPI()
+    app.include_router(router)
+    return TestClient(app), callbacks
+
+
 def test_extract_graph_prompt_en_example_matches_parser_contract():
     _assert_prompt_example_contract(PromptConfig.extract_graph_prompt_EN, "## Example")
 
 
 def test_extract_graph_prompt_cn_example_matches_parser_contract():
     _assert_prompt_example_contract(PromptConfig.extract_graph_prompt_CN, "## 示例")
+
+
+def test_omitted_api_prompt_fields_resolve_current_prompt_config(monkeypatch):
+    from hugegraph_llm.config import prompt
+
+    monkeypatch.setattr(prompt, "answer_prompt", "live-answer-prompt")
+    monkeypatch.setattr(prompt, "keywords_extract_prompt", "live-keywords-prompt")
+    monkeypatch.setattr(prompt, "gremlin_generate_prompt", "live-gremlin-prompt")
+
+    client, callbacks = _prompt_api_client()
+    response = client.post("/rag", json={"query": "q"})
+    assert response.status_code == 200
+    kwargs = callbacks["rag_answer_func"].call_args.kwargs
+    assert kwargs["answer_prompt"] == "live-answer-prompt"
+    assert kwargs["keywords_extract_prompt"] == "live-keywords-prompt"
+    assert kwargs["gremlin_prompt"] == "live-gremlin-prompt"
+
+
+def test_omitted_graph_rag_prompt_resolves_current_prompt_config(monkeypatch):
+    from hugegraph_llm.config import prompt
+
+    monkeypatch.setattr(prompt, "gremlin_generate_prompt", "live-gremlin-prompt")
+
+    client, callbacks = _prompt_api_client()
+    response = client.post("/rag/graph", json={"query": "q"})
+    assert response.status_code == 200
+    assert callbacks["graph_rag_recall_func"].call_args.kwargs["gremlin_prompt"] == "live-gremlin-prompt"
+
+
+def test_omitted_text2gremlin_prompt_resolves_current_prompt_config(monkeypatch):
+    from hugegraph_llm.config import prompt
+
+    monkeypatch.setattr(prompt, "gremlin_generate_prompt", "live-gremlin-prompt")
+
+    client, callbacks = _prompt_api_client()
+    response = client.post("/text2gremlin", json={"query": "q"})
+    assert response.status_code == 200
+    kwargs = callbacks["gremlin_generate_selective_func"].call_args.kwargs
+    assert kwargs["gremlin_prompt_input"] == "live-gremlin-prompt"
+
+
+def test_keyword_extract_template_resolves_current_prompt_config(monkeypatch):
+    from hugegraph_llm.config import prompt
+    from hugegraph_llm.operators.llm_op.keyword_extract import KeywordExtract
+
+    monkeypatch.setattr(prompt, "keywords_extract_prompt", "live-keywords-prompt")
+
+    extractor = KeywordExtract(text="q")
+    assert extractor._extract_template == "live-keywords-prompt"
 
 
 @pytest.mark.parametrize("language", ["en", "cn"])
@@ -164,6 +232,24 @@ def test_existing_yaml_uses_default_review_and_repair_prompts(tmp_path, monkeypa
     assert config.extract_graph_prompt == "custom"
     assert config.review_graph_prompt == PromptConfig.review_graph_prompt
     assert config.repair_graph_prompt == PromptConfig.repair_graph_prompt
+
+
+@pytest.mark.parametrize(("language", "example_marker"), [("en", "## Example"), ("cn", "## 示例")])
+def test_runtime_loaded_yaml_extract_prompt_matches_parser_contract(language, example_marker, tmp_path, monkeypatch):
+    from hugegraph_llm.config.models import base_prompt_config
+
+    path = tmp_path / "config_prompt.yaml"
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(path))
+    writer = PromptConfig(SimpleNamespace(language=language))
+    writer._set_language_defaults()
+    writer.save_to_yaml()
+
+    loaded = PromptConfig(SimpleNamespace(language=language))
+    loaded.ensure_yaml_file_exists()
+
+    class_constant = getattr(PromptConfig, f"extract_graph_prompt_{language.upper()}")
+    assert loaded.extract_graph_prompt == class_constant
+    _assert_prompt_example_contract(loaded.extract_graph_prompt, example_marker)
 
 
 def test_extract_graph_prompt_example_contract_rejects_label_name_vertex_id():

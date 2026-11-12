@@ -16,6 +16,8 @@
 # under the License.
 
 
+import subprocess
+import sys
 import unittest
 from os import environ
 from pathlib import Path
@@ -26,9 +28,6 @@ from unittest.mock import patch
 import pytest
 
 pytestmark = pytest.mark.unit
-
-# FIXME: add config tests proving .env sync preserves typed numeric/boolean
-# fields and that imports do not create or mutate files implicitly.
 
 
 class TestConfig(unittest.TestCase):
@@ -87,3 +86,141 @@ class TestConfig(unittest.TestCase):
         custom_env = Path("/tmp/hugegraph-llm-test.env")
         with patch.dict(environ, {base_config.ENV_PATH_ENV_VAR: str(custom_env)}):
             self.assertEqual(Path(base_config.resolve_env_path()), custom_env)
+
+
+_ENV_SCRUB_PREFIXES = (
+    "OPENAI_",
+    "OLLAMA_",
+    "CHAT_",
+    "EXTRACT_",
+    "TEXT2GQL_",
+    "EMBEDDING_",
+    "RERANKER_",
+    "COHERE_",
+    "CO_API_",
+    "HUGEGRAPH_LLM_",
+)
+
+
+def _owned_env_names() -> set[str]:
+    """Every environment name a config field can source from (field names and aliases).
+
+    Hand-maintained prefixes drift when new fields land (e.g. ``HYBRID_LLM_WEIGHTS``);
+    deriving the names from the config models keeps the scrub hermetic.
+    """
+    import hugegraph_llm.config  # noqa: F401  ensure all BaseConfig subclasses are loaded
+    from hugegraph_llm.config.models.base_config import BaseConfig
+
+    names: set[str] = set()
+    stack: list[type[BaseConfig]] = [BaseConfig]
+    while stack:
+        cls = stack.pop()
+        stack.extend(cls.__subclasses__())
+        for field in cls.model_fields:
+            names.update(name.upper() for name in cls._source_names(field))
+    return names
+
+
+def _is_scrubbed_env_name(name: str) -> bool:
+    upper = name.upper()
+    return upper.startswith(_ENV_SCRUB_PREFIXES) or upper in _owned_env_names()
+
+
+def _scrub_config_env(monkeypatch):
+    for name in list(environ):
+        if _is_scrubbed_env_name(name):
+            monkeypatch.delenv(name)
+
+
+def _config_import_env(home: Path) -> dict:
+    env = dict(environ)
+    for name in list(env):
+        if _is_scrubbed_env_name(name):
+            env.pop(name)
+    env["HUGEGRAPH_LLM_ENV_PATH"] = str(home / ".env")
+    env["HUGEGRAPH_LLM_SETTINGS_PATH"] = str(home / "settings.yaml")
+    env["HUGEGRAPH_LLM_PROMPT_CONFIG_PATH"] = str(home / "config_prompt.yaml")
+    return env
+
+
+def _run_config_import(tmp_path: Path, home: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", "import hugegraph_llm.config"],
+        env=_config_import_env(home),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def test_env_export_round_trip_preserves_typed_fields(tmp_path, monkeypatch):
+    from hugegraph_llm.config.llm_config import LLMConfig
+    from hugegraph_llm.config.models import base_config
+
+    _scrub_config_env(monkeypatch)
+    monkeypatch.setattr(base_config, "env_path", str(tmp_path / ".env"))
+
+    settings = LLMConfig()
+    settings.ollama_chat_port = 12345
+    settings.openai_chat_tokens = 4096
+    settings.extract_use_chat = False
+    settings.hybrid_llm_weights = 0.0
+    settings.generate_env()
+
+    # Assert the exported lines themselves: reloaded falsy values alone do not prove
+    # they were written, because LLMConfig derives extract_use_chat from the other
+    # extract fields when the variable is absent.
+    exported_lines = (tmp_path / ".env").read_text(encoding="utf-8").splitlines()
+    assert "OLLAMA_CHAT_PORT='12345'" in exported_lines
+    assert "OPENAI_CHAT_TOKENS='4096'" in exported_lines
+    assert "EXTRACT_USE_CHAT='False'" in exported_lines
+    assert "HYBRID_LLM_WEIGHTS='0.0'" in exported_lines
+
+    reloaded = LLMConfig()
+    assert reloaded.ollama_chat_port == 12345
+    assert isinstance(reloaded.ollama_chat_port, int)
+    assert reloaded.openai_chat_tokens == 4096
+    assert isinstance(reloaded.openai_chat_tokens, int)
+    assert reloaded.extract_use_chat is False
+    assert reloaded.hybrid_llm_weights == 0.0
+    assert isinstance(reloaded.hybrid_llm_weights, float)
+
+
+def test_scrub_config_env_clears_field_aliases(monkeypatch):
+    """Ambient variables named after config fields must not leak into the settings."""
+    monkeypatch.setenv("HYBRID_LLM_WEIGHTS", "0.5")
+    monkeypatch.setenv("UNRELATED_TEST_VAR", "keep")
+
+    _scrub_config_env(monkeypatch)
+
+    assert "HYBRID_LLM_WEIGHTS" not in environ
+    assert environ.get("UNRELATED_TEST_VAR") == "keep"
+
+
+# FIXME: importing hugegraph_llm.config still writes logs/llm-server.log into the working
+# directory through hugegraph_llm.utils.log. The import tests below guard config-home only,
+# so this import-time side effect stays tracked here.
+def test_config_import_creates_no_config_files(tmp_path):
+    home = tmp_path / "config-home"
+    home.mkdir()
+
+    result = _run_config_import(tmp_path, home)
+
+    assert result.returncode == 0, result.stderr
+    assert list(home.iterdir()) == []
+
+
+def test_config_import_does_not_mutate_existing_config_files(tmp_path):
+    home = tmp_path / "config-home"
+    home.mkdir()
+    (home / ".env").write_text("OPENAI_CHAT_LANGUAGE_MODEL='custom-model'\n", encoding="utf-8")
+    (home / "settings.yaml").write_text("llm:\n  options:\n    window_size: 7\n", encoding="utf-8")
+    (home / "config_prompt.yaml").write_text("_language_generated: en\n", encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in home.iterdir()}
+
+    result = _run_config_import(tmp_path, home)
+
+    assert result.returncode == 0, result.stderr
+    after = {path.name: path.read_bytes() for path in home.iterdir()}
+    assert after == before

@@ -18,6 +18,7 @@
 import re
 from typing import Any, Dict, List, Optional
 
+from hugegraph_llm.config import huge_settings
 from hugegraph_llm.document.chunk_split import ChunkSplitter
 from hugegraph_llm.models.llms.base import BaseLLM
 from hugegraph_llm.utils.log import log
@@ -149,9 +150,15 @@ def extract_triples_by_regex_with_schema(schema, text, graph):
 
 
 class InfoExtract:
-    def __init__(self, llm: BaseLLM, example_prompt: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        llm: BaseLLM,
+        example_prompt: Optional[str] = None,
+        max_length: Optional[int] = None,
+    ) -> None:
         self.llm = llm
         self.example_prompt = example_prompt
+        self.max_length = huge_settings.max_element_id_length if max_length is None else max_length
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
         chunks = context["chunks"]
@@ -185,9 +192,10 @@ class InfoExtract:
             prompt = self.example_prompt + prompt
         return self.llm.generate(prompt=prompt)
 
-    # TODO: make 'max_length' be a configurable param in settings.py/settings.cfg
-    def valid(self, element_id: str, max_length: int = 256) -> bool:
-        if len(element_id.encode("utf-8")) >= max_length:
+    def valid(self, element_id: str, max_length: Optional[int] = None) -> bool:
+        """Check an element id against the length limit in UTF-8 bytes (settings by default)."""
+        limit = self.max_length if max_length is None else max_length
+        if len(element_id.encode("utf-8")) >= limit:
             log.warning("Filter out GraphElementID too long: %s", element_id)
             return False
         return True

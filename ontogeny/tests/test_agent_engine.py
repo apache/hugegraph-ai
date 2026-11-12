@@ -58,15 +58,15 @@ def _plugin(engine_kind: str = "builtin-llm") -> str:
 apiVersion: ontogeny/v1
 kind: AgentPlugin
 metadata:
-  name: planning-copilot
+  name: product-copilot
 spec:
   engine: {{ kind: {engine_kind} }}
   principal:
-    id: "agent:planning-copilot"
-    Role: [planner]
-    site: plant-north
+    id: "agent:product-copilot"
+    Role: [product]
+    site: hq
   tools:
-    allow: [describe_ontology, search_work_center, act_release_production_order]
+    allow: [describe_ontology, search_equipment, act_tapeout]
   approval: {{ writes: confirm }}
   budget: {{ steps: 6, wall_ms: 60000, writes_per_session: 3 }}
 """
@@ -76,7 +76,7 @@ def _sc_settings(tmp_path, src) -> Settings:
     return Settings(
         dev_auth=True,
         db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}",
-        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "WMS_WEBHOOK": "https://wms.example.test/hook"},
+        env={"ERP_DSN": f"sqlite+aiosqlite:///{src}", "FAB_WEBHOOK": "https://fab-portal.example.test/hook"},
     )
 
 
@@ -98,7 +98,10 @@ async def sc(golden_pkg_path, tmp_path):
     await ctx.initialize()
     for t in ctx.compiled.objects:
         await ctx.sync(t)
-    return ctx
+    try:
+        yield ctx
+    finally:
+        await ctx.engine.dispose()
 
 
 def _wire(sc, llm) -> BuiltinLlmEngine:
@@ -109,7 +112,7 @@ def _wire(sc, llm) -> BuiltinLlmEngine:
 
 
 async def _session(sc, task: str) -> int:
-    s = await sc.agents.open_session("planning-copilot", task)
+    s = await sc.agents.open_session("product-copilot", task)
     return s["id"]
 
 
@@ -119,36 +122,36 @@ class TestBuiltinLlmEngine:
             [
                 json.dumps(
                     {
-                        "thought": "Check which work centres are ACTIVE before planning.",
-                        "tool": "search_work_center",
+                        "thought": "Check which fab tools are ACTIVE before planning the next lot.",
+                        "tool": "search_equipment",
                         "args": {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 5},
                     }
                 ),
                 json.dumps(
                     {
-                        "thought": "WC-01 is ACTIVE with the largest capacity; I can conclude.",
-                        "final": "Two ACTIVE work centres; WC-01 (CNC Machining Cell) is the release target.",
+                        "thought": "EQ-02 is ACTIVE with lithography capacity; I can conclude.",
+                        "final": "Five ACTIVE fab tools; EQ-02 (Scanner A, 193i) can take the next lot.",
                     }
                 ),
             ]
         )
         engine = _wire(sc, llm)
-        sid = await _session(sc, "Find an ACTIVE work centre")
+        sid = await _session(sc, "Find an ACTIVE fab tool")
 
         result = await engine.drive(sid)
 
         assert result.status == "finished"
-        assert "WC-01" in result.result["final"]
+        assert "EQ-02" in result.result["final"]
         sess = await sc.agents.get_session(sid)
         # a final answer ends the RUN, not the session: the session stays open
         # (with the round's conclusion recorded) until budget or human finish
         assert sess["status"] == "open"
-        assert [s["tool"] for s in sess["steps"]] == ["search_work_center"]
+        assert [s["tool"] for s in sess["steps"]] == ["search_equipment"]
         # I4: the step carries the tool result (transcript is replayable)
-        assert sess["steps"][0]["detail"]["total"] == 2
+        assert sess["steps"][0]["detail"]["total"] == 5
         # the decision process is observable, not just the tool calls
-        assert sess["steps"][0]["thought"] == "Check which work centres are ACTIVE before planning."
-        assert sess["result"]["thought"] == "WC-01 is ACTIVE with the largest capacity; I can conclude."
+        assert sess["steps"][0]["thought"] == "Check which fab tools are ACTIVE before planning the next lot."
+        assert sess["result"]["thought"] == "EQ-02 is ACTIVE with lithography capacity; I can conclude."
 
     async def test_session_survives_final_and_redrives(self, sc):
         """The headline lifecycle: one final answer must NOT end the session.
@@ -211,16 +214,14 @@ class TestBuiltinLlmEngine:
     async def test_write_blocks_then_resumes_after_approval(self, sc):
         llm = StubLLM(
             [
-                json.dumps(
-                    {"tool": "act_release_production_order", "args": {"parameters": {}, "target_id": "PO-1002"}}
-                ),
+                json.dumps({"tool": "act_tapeout", "args": {"parameters": {}, "target_id": "TO-A1"}}),
                 # after resume: confirm and finish
-                json.dumps({"final": "The release was approved and executed."}),
+                json.dumps({"final": "The tapeout was approved and executed."}),
             ]
         )
         engine = _wire(sc, llm)
-        sid = await _session(sc, "release PO-1002")
-        planner = {"id": "u-planner", "Role": ["planner"], "site": "plant-north"}
+        sid = await _session(sc, "tapeout TO-A1")
+        product = {"id": "u-product", "Role": ["product"], "site": "hq"}
 
         first = await engine.drive(sid)
         assert first.status == "blocked_on_approval"
@@ -228,11 +229,11 @@ class TestBuiltinLlmEngine:
         assert sess["status"] == "blocked_on_approval"
         # nothing executed yet
         async with sc.sessionmaker() as s:
-            po = await sc.query.get(s, "production-order", "PO-1002", {"id": "auditor", "Role": ["auditor"]})
-        assert po["status"] == "PLANNED"
+            ver = await sc.query.get(s, "tapeout-version", "TO-A1", {"id": "auditor", "Role": ["auditor"]})
+        assert ver["status"] == "PLANNED"
 
         approval_id = first.result["approval_id"]
-        out = await sc.agents.decide(approval_id, "approved", planner)
+        out = await sc.agents.decide(approval_id, "approved", product)
         assert out["status"] == "executed"
 
         second = await engine.drive(sid, resume=True)
@@ -240,7 +241,7 @@ class TestBuiltinLlmEngine:
         sess = await sc.agents.get_session(sid)
         # resumed run reached a final: the session is open again, drivable
         assert sess["status"] == "open"
-        assert [s["tool"] for s in sess["steps"]] == ["act_release_production_order"]
+        assert [s["tool"] for s in sess["steps"]] == ["act_tapeout"]
 
     async def test_budget_exhaustion_stops_the_loop(self, sc):
         # keep calling tools forever; budget.steps=6 must stop it
@@ -334,14 +335,21 @@ async def client(golden_pkg_path, tmp_path):
     await sc.initialize()
     app = build_app(sc)
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c, sc
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"X-Ontogeny-Principal": json.dumps({"id": "dev-driver"})},
+    ) as c:
+        try:
+            yield c, sc
+        finally:
+            await sc.engine.dispose()
 
 
 class TestRunEndpoint:
     async def test_run_without_llm_returns_structured_config_error(self, client):
         c, _ = client
-        await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
+        await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "x"})
         r = await c.post("/api/v1/agent/sessions/1/run")
         assert r.status_code == 500  # OOError surfaces as 500 with stable code
         assert r.json()["details"]["code"] == "LLM_NOT_CONFIGURED"
@@ -352,13 +360,13 @@ class TestRunEndpoint:
         from dataclasses import replace as dc_replace
 
         c, sc = client
-        plug = sc.compiled.agent_plugins["planning-copilot"]
+        plug = sc.compiled.agent_plugins["product-copilot"]
         pulled = plug.model_copy(deep=True)
         pulled.spec.engine.kind = "external-pull"
         original = sc.compiled
-        sc.compiled = dc_replace(original, agent_plugins={"planning-copilot": pulled})
+        sc.compiled = dc_replace(original, agent_plugins={"product-copilot": pulled})
         try:
-            r = await c.post("/api/v1/agent/sessions", json={"plugin": "planning-copilot", "task": "x"})
+            r = await c.post("/api/v1/agent/sessions", json={"plugin": "product-copilot", "task": "x"})
             sid = r.json()["id"]
             r = await c.post(f"/api/v1/agent/sessions/{sid}/run")
             assert r.status_code == 500
@@ -371,7 +379,7 @@ class TestRunEndpoint:
 
 class TestUnlimitedBudget:
     async def test_steps_zero_never_exhausts(self, sc):
-        """A session opened with steps=0 is UNLIMITED: the engine must keep
+        """A plugin with steps=0 is UNLIMITED: the engine must keep
         driving past the number of steps that would exhaust a capped session
         (the gate used to fire at steps_used >= 0 -- instantly)."""
         llm = StubLLM(
@@ -379,7 +387,7 @@ class TestUnlimitedBudget:
                 json.dumps(
                     {
                         "thought": f"step {i}",
-                        "tool": "search_work_center",
+                        "tool": "search_equipment",
                         "args": {"filter": {"field": "status", "op": "eq", "value": "ACTIVE"}, "limit": 1},
                     }
                 )
@@ -388,8 +396,10 @@ class TestUnlimitedBudget:
             + [json.dumps({"thought": "done", "final": "ok"})]
         )
         engine = _wire(sc, llm)
+        plugin_budget = sc.compiled.agent_plugins["product-copilot"].spec.budget
+        plugin_budget.steps = plugin_budget.wall_ms = plugin_budget.writes_per_session = 0
         s = await sc.agents.open_session(
-            "planning-copilot", "unlimited drive", budget={"steps": 0, "wall_ms": 0, "writes_per_session": 0}
+            "product-copilot", "unlimited drive", budget={"steps": 0, "wall_ms": 0, "writes_per_session": 0}
         )
         result = await engine.drive(s["id"])
         assert result.status == "finished", result.result
@@ -397,5 +407,5 @@ class TestUnlimitedBudget:
         # the loop ended on the model's own final: session stays open
         assert sess["status"] == "open"
         assert len(sess["steps"]) == 8  # all 8 tool calls went through
-        # and the bounded plugin default (6) would have exhausted exactly here
+        # The original bounded plugin default (6) would have exhausted here.
         assert sess["budget"]["steps"] == 0

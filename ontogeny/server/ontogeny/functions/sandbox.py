@@ -35,8 +35,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ..core.function_entry import resolve_function_entry
 from ..errors import SandboxError
 from ..stores.repo import ObjectRepository
+from .declarative import _MAX_RESPONSE_BYTES as _MAX_FRAME_BYTES
 
 
 def _limits() -> None:  # pragma: no cover -- preexec in the child process
@@ -71,10 +73,10 @@ def function_source_path(compiled, function_resource) -> Path:
     "what code runs here?") need the path even when it is missing, which is
     exactly the case a canvas-created function starts in.
     """
-    file, _, func = function_resource.spec.entry.partition(":")
-    if not func:
-        raise SandboxError(f"entry must be 'file.py:function', got {function_resource.spec.entry!r}")
-    return Path(compiled.package_root) / "functions" / file
+    try:
+        return resolve_function_entry(compiled.package_root, function_resource.spec.entry)
+    except ValueError as exc:
+        raise SandboxError(f"invalid function entry {function_resource.spec.entry!r}: {exc}") from exc
 
 
 def _llm_budget(cfg: dict | None) -> int:
@@ -251,6 +253,10 @@ class FunctionSandbox:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            # Bound child stdout frames, using the existing response cap.
+            # Parent inputs/RPC replies keep the original stdin contract: a
+            # child may aggregate a large input into a small bounded result.
+            limit=_MAX_FRAME_BYTES,
             env=env,
             preexec_fn=_limits if os.name == "posix" else None,
         )
@@ -265,7 +271,12 @@ class FunctionSandbox:
             await proc.stdin.drain()
             nonlocal llm_used
             while True:
-                line = await proc.stdout.readline()
+                try:
+                    line = await proc.stdout.readline()
+                except ValueError as exc:
+                    raise SandboxError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit") from exc
+                if len(line) > _MAX_FRAME_BYTES:
+                    raise SandboxError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit")
                 if not line:
                     raise SandboxError("sandbox exited before returning a result")
                 try:
@@ -293,7 +304,7 @@ class FunctionSandbox:
         budget = self._budget(function_resource)
         try:
             return await asyncio.wait_for(child_main(), timeout=budget)
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise SandboxError(f"function {entry!r} exceeded {budget:g}s wall clock") from exc
         finally:
             with contextlib.suppress(ProcessLookupError):
@@ -344,6 +355,7 @@ class FunctionSandbox:
             session,
             object_type,
             filt=params.get("filter"),
+            sort=params.get("sort"),
             limit=int(params.get("limit") or 100),
         )
         # hand functions the same object shape the API returns: derived

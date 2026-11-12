@@ -213,7 +213,7 @@ export function ProposalModal({ id, onClose }: { id: number | null; onClose: () 
                       <div className="mt-2.5">
                         <ErrorBanner
                           error={promote.error}
-                          hint={(promote.error as { code?: string }).code === 'CONSTITUTION_VIOLATION' ? t('proposal.constitution') : undefined}
+                          hint={(promote.error as { code?: string }).code === 'BASELINE_VIOLATION' ? t('proposal.baseline') : undefined}
                         />
                       </div>
                     ) : null}

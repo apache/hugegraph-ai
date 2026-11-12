@@ -75,6 +75,35 @@ describe('FlowGraph (G6 engine)', () => {
     expect(g.cfg.plugins.some((p: any) => p.type === 'minimap')).toBe(true)
   })
 
+  it('renders tooltip values as text even when they contain HTML', () => {
+    renderGraph()
+    const tooltip = g6().cfg.plugins.find((p: any) => p.type === 'tooltip')
+    const payload = `<img src=x onerror="alert(1)"><script>alert('x')</script> & text`
+    const cases = [
+      { label: payload },
+      { type: 'object', label: 'label', display: payload, description: payload },
+      { type: 'object', label: payload, display: payload, badge: payload },
+      { type: 'object', label: payload, sublabel: payload },
+    ]
+    for (const data of cases) {
+      const container = document.createElement('div')
+      container.innerHTML = tooltip.getContent(null, [{ data }])
+      expect(container.querySelector('img, script')).toBeNull()
+      expect(container.textContent).toContain(payload)
+    }
+  })
+
+  it('passes mutual direction to G6 and draws both arrowheads', () => {
+    renderWithProviders(
+      <FlowGraph data={{ ...DATA, edges: [{ source: 'a', target: 'b', arrow: 'both' }] }} />,
+      { path: '/' },
+    )
+    const graph = g6()
+    const edge = graph.cfg.data.edges[0]
+    expect(edge.data.arrow).toBe('both')
+    expect(graph.cfg.edge.style(edge)).toMatchObject({ startArrow: true, endArrow: true })
+  })
+
   it('never fades a node through a state (G6 does not restore opacity)', async () => {
     // Regression: `inactive: { opacity: 0.16 }` was a one-way ratchet — G6 v5
     // clears the state list but leaves the shape at the faded opacity, so every
@@ -95,6 +124,11 @@ describe('FlowGraph (G6 engine)', () => {
     const a = renderWithProviders(<FlowGraph data={DATA} height={300} />, { path: '/' })
     await Promise.resolve()
     expect(g6().cfg.layout.type).toBe('d3-force')
+    // a label can be 132px wide: the force collisions reserve the label box and
+    // the link length leaves a readable gap, instead of packing 40px dots
+    expect(g6().cfg.layout).toMatchObject({
+      preventOverlap: true, nodeSize: 150, linkDistance: 190, iterations: 500,
+    })
     a.unmount()
 
     renderWithProviders(
@@ -104,6 +138,22 @@ describe('FlowGraph (G6 engine)', () => {
     await Promise.resolve()
     expect(g6().cfg.layout.type).toBe('antv-dagre')
     a.unmount?.()
+  })
+
+  it('keeps node dragging on and lifts the hovered node', async () => {
+    renderGraph()
+    await Promise.resolve()
+    // dragging is still available — the layout only decides the resting places
+    expect(g6().cfg.behaviors).toContain('drag-element')
+    const hover = g6().cfg.behaviors.find(
+      (b: any) => typeof b === 'object' && b.type === 'hover-activate',
+    )
+    expect(hover).toMatchObject({ degree: 0, state: 'hover' })
+    // ...and the hover state is a lift: accent ring, halo and deeper shadow
+    const hoverStyle = g6().cfg.node.state.hover
+    expect(hoverStyle.lineWidth).toBeGreaterThan(2.8)
+    expect(hoverStyle.shadowBlur).toBeGreaterThan(8)
+    expect(hoverStyle.halo).toBe(true)
   })
 
   it('node click raises onNodeClick with the node payload', async () => {

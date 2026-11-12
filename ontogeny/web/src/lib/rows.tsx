@@ -70,10 +70,14 @@ export function pkOf(row: Record<string, unknown>, primaryKeys?: readonly string
 
 /** Per-type colours (stable across modules; unknown types get a palette slot). */
 const TYPE_COLORS: Record<string, string> = {
-  'sales-order': '#2e5bff', customer: '#0891b2', product: '#7c3aed',
+  requirement: '#2e5bff', customer: '#0891b2', 'design-module': '#7c3aed',
+  'tapeout-version': '#4f46e5', 'wafer-lot': '#059669', 'process-step': '#2563eb',
+  'wafer-test': '#dc2626', 'field-failure': '#ea580c', equipment: '#b45309',
+  'fmea-note': '#9333ea',
+  'sales-order': '#2e5bff', product: '#7c3aed',
   material: '#059669', bom: '#0d9488', 'production-order': '#4f46e5',
   operation: '#2563eb', 'work-report': '#0284c7', 'quality-inspection': '#dc2626',
-  'maintenance-order': '#ea580c', equipment: '#b45309', 'work-center': '#a16207',
+  'maintenance-order': '#ea580c', 'work-center': '#a16207',
   inventory: '#16a34a', 'purchase-order': '#9333ea', supplier: '#be185d',
   part: '#65a30d',
 }

@@ -34,7 +34,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
     def _require_driver(principal: dict, sc: ServiceContext) -> dict:
         """WHO drives the session is now authenticated (A2).
 
-        With ``dev_auth`` on (the default, CI/demo) any caller may drive --
+        With ``dev_auth`` explicitly enabled (CI/demo) any caller may drive --
         the identity is recorded, not ignored. With it off, the agent surfaces
         require a real signed-in principal (cookie or bearer); anonymous is
         refused: the plugin principal is the EXECUTION identity, and somebody
@@ -80,14 +80,14 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         principal: dict = Depends(get_principal),
     ):
         _require_driver(principal, sc)
-        return {"sessions": await sc.agents.list_sessions(plugin=plugin, limit=min(limit, 200))}
+        return {"sessions": await sc.agents.list_sessions(plugin=plugin, limit=min(limit, 200), principal=principal)}
 
     @r.get("/agent/sessions/{session_id}")
     async def agent_session_get(
         session_id: int, sc: ServiceContext = Depends(get_sc), principal: dict = Depends(get_principal)
     ):
         _require_driver(principal, sc)
-        return await sc.agents.get_session(session_id)
+        return await sc.agents.get_session(session_id, principal=principal)
 
     @r.delete("/agent/sessions/{session_id}")
     async def agent_session_delete(
@@ -114,18 +114,13 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         # tool-call already had it; this one was missed).
         _require_driver(principal, sc)
 
-        sess = await sc.agents.get_session(session_id)  # 404 when unknown
+        sess = await sc.agents.get_session(session_id, principal=principal)  # 404 when unknown
         plug = sc.compiled.agent_plugins.get(sess["plugin"]) if sc.compiled else None
         if plug is None:
             raise NotFoundError(f"plugin {sess['plugin']!r} not found")
         kind = plug.spec.engine.kind
         if sess["status"] == "running":
             return {"id": session_id, "status": "running"}
-        # direction 3: a session may be driven many times -- every run bumps
-        # the counter and its steps are tagged, so each pass leaves its own
-        # trace. A finished/exhausted session is re-opened for the new drive.
-        await sc.agents.start_run(session_id, task=(body.task if body else None))
-
         if kind == "external-pull":
             raise OOError(
                 "this plugin is driven by an external engine",
@@ -158,13 +153,23 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
                 details={"code": "LLM_NOT_CONFIGURED"},
             )
 
+        # Claim before handing work to a background task. The database CAS is
+        # shared across processes; only the winner starts an engine.
+        claim = await sc.agents.start_run(
+            session_id, task=(body.task if body else None), principal=principal, claim=True
+        )
+        if not claim["started"]:
+            return {"id": session_id, "status": "running"}
+
         async def _drive():
             try:
                 await engine.drive(session_id)
             except Exception as exc:
                 # still release the session (back to `open`, error recorded --
                 # a crashed run must not strand the session in `running`)
-                await sc.agents.set_status(session_id, "open", {"error": f"engine crashed: {exc}"})
+                await sc.agents.set_status(
+                    session_id, "open", {"error": f"engine crashed: {exc}"}, expected_run=claim["run_count"]
+                )
 
         # async background task: Starlette awaits it on the event loop AFTER the
         # response is sent. (Wrapping in asyncio.create_task ran it via a worker
@@ -180,7 +185,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         principal: dict = Depends(get_principal),
     ):
         _require_driver(principal, sc)
-        return await sc.agents.finish_session(session_id, body.result)
+        return await sc.agents.finish_session(session_id, body.result, principal=principal)
 
     @r.post("/agent/sessions/{session_id}/tools/{tool}")
     async def agent_tool_call(
@@ -217,8 +222,10 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
     ):
         _require_driver(principal, sc)
 
-        from ..agent.models import AgentApprovalRow
+        from ..agent.models import AgentApprovalRow, AgentSessionRow
 
+        if not principal.get("is_admin") and principal.get("id") in (None, "", "?", "anonymous"):
+            return {"approvals": []}
         async with sc.sessionmaker() as s:
             # "decided" = everything past its gate (approved/executed/rejected/
             # failed): the console shows the audit trail next to the queue
@@ -226,11 +233,12 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
                 where = AgentApprovalRow.status.in_(("approved", "rejected", "executed", "failed"))
             else:
                 where = AgentApprovalRow.status == status
-            rows = (
-                (await s.execute(select(AgentApprovalRow).where(where).order_by(AgentApprovalRow.id.desc()).limit(100)))
-                .scalars()
-                .all()
-            )
+            stmt = select(AgentApprovalRow).where(where)
+            if not principal.get("is_admin"):
+                stmt = stmt.join(AgentSessionRow, AgentApprovalRow.session_id == AgentSessionRow.id).where(
+                    AgentSessionRow.driver["id"].as_string() == str(principal["id"])
+                )
+            rows = (await s.execute(stmt.order_by(AgentApprovalRow.id.desc()).limit(100))).scalars().all()
         return {
             "approvals": [
                 {
@@ -243,6 +251,7 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
                     "target_id": a.target_id,
                     "rationale": a.rationale,
                     "status": a.status,
+                    "failure_reason": a.failure_reason,
                     "decided_by": a.decided_by,
                     "decided_at": a.decided_at.isoformat() if a.decided_at else None,
                     "requested_at": a.requested_at.isoformat() if a.requested_at else None,

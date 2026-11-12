@@ -8,28 +8,28 @@
 
 Ontogeny models an enterprise's **nouns** (objects · properties · links) and **verbs** (actions · functions · permissions) as declarative YAML in Git, compiled into strongly-typed object tables and one unified API shared by apps, analytics and AI agents. The write path runs a five-stage pipeline — rules → Cedar policy → transaction → immutable audit — with side effects riding a transactional outbox; and a **RSI self-evolution loop** recursively improves the model itself inside the governance track (LLM proposes mutations · deterministic evals select · T0–T3 tiered promotion).
 
-The docs come in two parts: **Part I · Architecture** explains the real construction of the system from the current code — the four-band overview, the 11 DSL resources, data & derivation, the function ecosystem, agent governance and the self-evolution loop. **Part II · Usage** walks you through startup, modeling, the function editor and governance inspection with screenshots from a real running demo instance (the reference manual covers core API endpoints, CLI and environment variables; the full contract is `/openapi.json`).
+The docs come in two parts: **Part I · Architecture** explains the real construction of the system from the current code — the kind taxonomy, the four-band overview, the 9+2 DSL resources, data & derivation, the function ecosystem, agent governance and the self-evolution loop. **Part II · Usage** walks you through startup, modeling, the function editor and governance inspection with screenshots from a real running demo instance (the reference manual covers core API endpoints, CLI and environment variables; the full contract is `/openapi.json`).
 
 | Metric | Value |
 |---|---|
-| DSL resources | 11 kinds |
-| API operations | 79 |
-| Frontend routes | 15 pages + 9 compatibility redirects |
+| DSL resources | 11 (9 platform resources + 2 manifest) |
+| API operations | Live contract: `/openapi.json` || Frontend routes | 15 pages + 9 compatibility redirects |
 | Action effects | 7 kinds |
 | Outbox consumers | 4 |
 | Policy | Cedar subset |
 | Graph engine | Apache HugeGraph |
-| Source of truth | Declarative YAML in Git |
+| Model source of truth | Declarative YAML in Git |
 | LLM | Ollama (swappable) |
-| Tests | 456 backend · 241 frontend · 8 E2E |
+| Tests | Backend, frontend and E2E results: [CI](../../../.github/workflows/ontogeny.yml) |
 
 ## Part I · Architecture
 
-Six chapters explain how the system is really built: from the four-band overview to the ontology DSL, the data path, the kinetic layer, agent governance and the RSI loop — closed out by "Boundaries & quality": what we deliberately do not do, and how the tests map to the promises.
+Eight chapters explain how the system is really built: from the kind taxonomy and the four-band overview to the ontology DSL, the data path, the kinetic layer, agent governance and the RSI loop — closed out by "Boundaries & quality": what we deliberately do not do, and how the tests map to the promises.
 
 | # | Doc | Content |
 |---|---|---|
-| 01 | [Overall architecture](architecture/01-overall-architecture.md) | The four-band overview: first-class citizens · offline loop · online pipeline · supporting layer · cross-cutting mechanisms; third-party components and degradation |
+| 00 | [Kind taxonomy](architecture/00-kind-taxonomy.md) | 9 platform resources + 2 manifest = 11 resources; groups, tests and admission rules |
+| 01 | [Overall architecture](architecture/01-overall-architecture.md) | The four-band overview: platform resources · offline loop · online pipeline · supporting layer · cross-cutting mechanisms; third-party components and degradation |
 | 02 | [Ontology model & DSL](architecture/02-ontology-model-and-dsl.md) | The 11 resources, two kinds of derivation, the mini-expr language, validators and lint |
 | 03 | [Data & derivation](architecture/03-data-and-derivation.md) | Property-level ownership, three sync strategies + four iron laws, the outbox's four consumers, the derivation worker, graph projection |
 | 04 | [Kinetic layer: actions & functions](architecture/04-actions-and-functions.md) | The four function-ecosystem capabilities, functional actions and effect plans |
@@ -39,7 +39,7 @@ Six chapters explain how the system is really built: from the four-band overview
 
 ## Part II · Usage
 
-These chapters are hands-on: start with one command, tour the console page by page, write and verify your first sandboxed function. All screenshots come from a real running demo instance (`ontogeny serve --demo`, the product-manufacturing sample domain) — what you see is what you get.
+These chapters are hands-on: start with one command, tour the console page by page, write and verify your first sandboxed function. All screenshots come from a real running demo instance (`ontogeny serve --demo`, the chip-lifecycle sample domain) — what you see is what you get.
 
 | # | Doc | Content |
 |---|---|---|
@@ -51,4 +51,4 @@ These chapters are hands-on: start with one command, tour the console page by pa
 
 ---
 
-Source-file index: DSL `server/ontogeny/core/{models,loader,validator,linter,expr,types}.py` · registry `server/ontogeny/registry/{compiled,store}.py` · data `server/ontogeny/stores/{ddl,repo,sync,sources}.py` · kinetics `server/ontogeny/action/{runtime,outbox,models}.py` · policy `server/ontogeny/policy/engine.py` · read path `server/ontogeny/engine/service.py` · functions `server/ontogeny/functions/{sandbox,child,derivation}.py` · agents `server/ontogeny/agent/{broker,catalog,models}.py` · `mcp_server.py` · evolution `server/ontogeny/evolve/{diagnoser,proposer,evalrunner,promoter}.py` · telemetry `server/ontogeny/telemetry/service.py` · projection `server/ontogeny/projection/{compiler,hugegraph}.py` · LLM `server/ontogeny/llm/ollama.py` · service composition `server/ontogeny/service.py` · `api/app.py` · `cli.py`.
+Source-file index: DSL `server/ontogeny/core/{models,loader,validator,linter,expr,types}.py` · registry `server/ontogeny/registry/{compiled,store}.py` · data `server/ontogeny/stores/{ddl,repo,sync,sources}.py` · kinetics `server/ontogeny/action/{runtime,outbox,models}.py` · policy `server/ontogeny/policy/engine.py` · read path `server/ontogeny/engine/service.py` · functions `server/ontogeny/functions/{sandbox,child,derivation}.py` · agents `server/ontogeny/agent/{broker,catalog,models}.py` · `mcp_server.py` · evolution `server/ontogeny/evolve/{diagnoser,proposer,evalrunner,promoter}.py` · telemetry `server/ontogeny/telemetry/service.py` · projection `server/ontogeny/projection/{compiler,worker}.py` + `extensions/graph-hugegraph/` · LLM `extensions/llm-ollama/` · service composition `server/ontogeny/service.py` · `api/app.py` · `cli.py`.

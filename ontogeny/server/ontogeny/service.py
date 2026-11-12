@@ -23,6 +23,7 @@ object -- governance (transactions, policy, audit) has exactly one path.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -40,6 +41,7 @@ from .auth import AuthService
 from .config import Settings
 from .core.loader import load_package
 from .db import init_schema, make_engine, make_sessionmaker
+from .documents import models as _document_models  # noqa: F401  (registers tables before create_all)
 from .engine import QueryService
 from .errors import DSLValidationError, NotFoundError, OOError, StoreError
 from .evolve import Promoter
@@ -188,6 +190,9 @@ class ServiceContext:
     ) -> None:
         self.settings = settings
         self.package_root = package_root
+        self._publish_lock = asyncio.Lock()
+        self._outbox_lock = asyncio.Lock()
+        self._outbox_instances = []
         # The package this process booted from (ONTOGENY_PACKAGE_ROOT). Domain
         # activation moves `package_root`, but the boot package stays listed
         # and switchable -- it is the deployment's default domain.
@@ -212,6 +217,9 @@ class ServiceContext:
         # sc.agent_engines (engine factories). The core only defines contracts.
         self.llm = None
         self.graph_store_factory = None
+        # populated by a document-extractor extension (capability:document-extractor)
+        self.document_extractor = None
+        self.document_extractor_factory = None
         self.agent_engines: dict[str, Any] = {}
         self.ext: ExtensionHost | None = None
 
@@ -239,9 +247,8 @@ class ServiceContext:
                 raise StoreError("registry is empty and no ONTOGENY_PACKAGE_ROOT configured to publish from")
             compiled = await self.publish(self.package_root)
         else:
-            self._rebuild_services(compiled)
             async with self.sessionmaker() as session:
-                await self.repo.ensure(session)
+                await self._install_snapshot(session, compiled)
         return self
 
     async def _load_runtime_settings(self) -> None:
@@ -514,27 +521,75 @@ class ServiceContext:
         return compiled
 
     async def publish(self, package_root: str, *, created_by: str | None = None) -> CompiledOntology:
-        self.package_root = package_root
-        pkg = load_package(package_root)
-        async with self.sessionmaker() as session:
-            compiled = await self.registry.publish(session, pkg, created_by=created_by or "ontogeny")
+        async with self._publish_lock:
+            return await self._publish(package_root, created_by=created_by)
+
+    async def _publish(self, package_root: str, *, created_by: str | None = None) -> CompiledOntology:
+        cache = self.registry._cache.copy()
+        try:
+            pkg = load_package(package_root)
+            async with self.sessionmaker() as session:
+                compiled = await self.registry.publish(session, pkg, created_by=created_by or "ontogeny")
+                return await self._install_snapshot(session, compiled, package_root=package_root)
+        except BaseException:
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            raise
+
+    async def _install_snapshot(
+        self, session, compiled: CompiledOntology, *, package_root: str | None = None
+    ) -> CompiledOntology:
+        """Commit schema/registry changes before exposing a candidate runtime."""
+        previous = self.__dict__.copy()
+        cache = self.registry._cache.copy()
+        surface = getattr(self, "mcp_surface", None)
+        try:
+            await ObjectRepository(compiled).ensure(session)
+            if package_root is not None:
+                self.package_root = package_root
+                # the canvas layout travels with the package: without
+                # rebinding, a switch keeps writing/reading the previous
+                # domain's layout.yaml
+                from .layout import LayoutStore
+
+                self._layout = LayoutStore(self.package_root)
+            # Build on the original context so callbacks keep the right self.
+            # No reader can observe the candidate across an await before commit.
+            self._rebuild_services(compiled, refresh_mcp=False)
+            tools = surface.prepare_refresh() if surface is not None else None
+            candidate = self.__dict__.copy()
+            candidate_cache = self.registry._cache.copy()
+            self.__dict__.clear()
+            self.__dict__.update(previous)
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
             await session.commit()
-        self._rebuild_services(compiled)
-        async with self.sessionmaker() as session:
-            await self.repo.ensure(session)
-        return compiled
+            self.__dict__.clear()
+            self.__dict__.update(candidate)
+            self.registry._cache.clear()
+            self.registry._cache.update(candidate_cache)
+            if surface is not None:
+                surface.apply_refresh(tools)
+            return self.compiled
+        except BaseException:
+            self.__dict__.clear()
+            self.__dict__.update(previous)
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            raise
 
     async def reload(self) -> CompiledOntology:
         """Refresh services from the registry (e.g. after an evolve promotion)."""
-        async with self.sessionmaker() as session:
-            compiled = await self.registry.load_latest(session)
-        if compiled is not None and (self.compiled is None or compiled.content_hash != self.compiled.content_hash):
-            self._rebuild_services(compiled)
+        async with self._publish_lock:
             async with self.sessionmaker() as session:
-                await self.repo.ensure(session)
-        return self.compiled  # type: ignore[return-value]
+                compiled = await self.registry.load_latest(session)
+                if compiled is not None and (
+                    self.compiled is None or compiled.content_hash != self.compiled.content_hash
+                ):
+                    await self._install_snapshot(session, compiled)
+            return self.compiled  # type: ignore[return-value]
 
-    def _rebuild_services(self, compiled: CompiledOntology) -> None:
+    def _rebuild_services(self, compiled: CompiledOntology, *, refresh_mcp: bool = True) -> None:
         compiled = self._apply_package_root_override(compiled)
         if not Path(compiled.package_root).is_dir() and compiled.functions:
             log.warning(
@@ -546,7 +601,7 @@ class ServiceContext:
         # the MCP tool list is a compiled artifact: a promote that changes the
         # ontology must be reflected at the next list_tools, not after a restart
         surface = getattr(self, "mcp_surface", None)
-        if surface is not None:
+        if surface is not None and refresh_mcp:
             surface.refresh()
         self.repo = ObjectRepository(compiled)
         self.sync_engine = SyncEngine(
@@ -554,6 +609,14 @@ class ServiceContext:
             self.settings,
             self.repo,
             lambda store: make_source(store, self.settings.resolve_env_ref(store.spec.connection)),
+        )
+        from .documents.engine import DocumentService
+
+        self.documents = DocumentService(self)
+        # the factory is registered by the extension host at boot; building the
+        # adapter is cheap; the external agent is called only on extraction
+        self.document_extractor = (
+            self.document_extractor_factory(self) if self.document_extractor_factory is not None else None
         )
         self.policy = PolicyEngine(compiled)
         # sc.llm comes from an llm-provider extension (llm-ollama ships with the
@@ -657,8 +720,8 @@ class ServiceContext:
             async with self.sessionmaker() as session:
                 return await self.projection_worker.handle_event(self.repo, session, event)
 
-        async def _derivation_hook(event) -> bool:
-            return await self.derivation.handle_event(event)
+        async def _derivation_hook(event, session) -> bool:
+            return await self.derivation.handle_event(event, session)
 
         async def _derivation_drain() -> dict[str, int]:
             return await self.derivation.drain()
@@ -670,7 +733,9 @@ class ServiceContext:
             projection_hook=_projection_hook,
             derivation_hook=_derivation_hook,
             derivation_drain=_derivation_drain,
+            dispatch_lock=self._outbox_lock,
         )
+        self._outbox_instances.append(self.outbox)
         self.agents = AgentBroker(self)
         self.eval_runner.agent_broker = self.agents  # agent eval cases use the same gates
         # accounts & sessions: identity only -- authorization stays in the policy
@@ -1032,6 +1097,12 @@ class ServiceContext:
         )
 
     async def activate_domain(self, package_root: str | Path) -> CompiledOntology:
+        # Activation and ordinary publish must not concurrently claim the same
+        # materialized table for two domains in this process.
+        async with self._publish_lock:
+            return await self._activate_domain(package_root)
+
+    async def _activate_domain(self, package_root: str | Path) -> CompiledOntology:
         """Switch the active domain with a hard preflight on both sides.
 
         The requirement is asymmetric on purpose: a broken *target* must never
@@ -1050,14 +1121,15 @@ class ServiceContext:
                 raise DSLValidationError(f"current domain cannot be validated: {exc}") from exc
         self._validate_package_for_switch(target, "target domain")
         pkg = load_package(str(target))
-        async with self.sessionmaker() as session:
-            compiled = await self.registry.activate(session, pkg, created_by="console")
-            await session.commit()
-        self.package_root = str(target.resolve())
-        self._rebuild_services(compiled)
-        async with self.sessionmaker() as session:
-            await self.repo.ensure(session)
-        return compiled
+        cache = self.registry._cache.copy()
+        try:
+            async with self.sessionmaker() as session:
+                compiled = await self.registry.activate(session, pkg, created_by="console")
+                return await self._install_snapshot(session, compiled, package_root=str(target.resolve()))
+        except BaseException:
+            self.registry._cache.clear()
+            self.registry._cache.update(cache)
+            raise
 
     # ------------------------------------------------------------ operations
 
@@ -1323,13 +1395,37 @@ class ServiceContext:
             elif kind.kind in ("date", "timestamp"):
                 import datetime as _dt
 
-                params[name] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+                params[name] = _dt.datetime.now(_dt.UTC).isoformat()
                 sources[name] = "now"
             else:
                 params[name], sources[name] = "sample", "sample text"
         return params, sources
 
     async def sync(self, object_type: str) -> dict[str, Any]:
+        # document-backed types do not pull rows: the corpus is extracted,
+        # bound and committed by the document plane. Everything downstream
+        # (outbox, projection, query) is identical.
+        obj = self.compiled.objects.get(object_type) if self.compiled is not None else None
+        backing = obj.spec.backing if obj is not None else None
+        if backing is not None and backing.sync is not None and backing.sync.strategy == "extract":
+            from .documents.engine import DocumentError
+
+            try:
+                return await self.documents.ingest(backing.store, objects=[object_type])
+            except DocumentError as exc:
+                # A bulk "sync every type" must not fail just because no
+                # extractor is installed; document ingestion stays an explicit
+                # document-plane action and is reported as skipped here.
+                if "no document extractor" not in str(exc):
+                    raise
+                return {
+                    "inserted": 0,
+                    "updated": 0,
+                    "noop": 0,
+                    "archived": 0,
+                    "quarantined": 0,
+                    "skipped": "no-document-extractor",
+                }
         try:
             async with self.sessionmaker() as session:
                 summary = await self.sync_engine.sync(session, object_type)
@@ -1354,7 +1450,7 @@ class ServiceContext:
                         strategy=strategy,
                         status="error",
                         error=f"{type(exc).__name__}: {exc}",
-                        finished_at=_dt.datetime.now(_dt.timezone.utc),
+                        finished_at=_dt.datetime.now(_dt.UTC),
                     )
                 )
                 await s2.commit()
@@ -1390,14 +1486,21 @@ class ServiceContext:
                         red = red or not rep["passed"]
                 if red:
                     async with self.sessionmaker() as s3:
-                        rb = await self.promoter.rollback(s3, self.package_root, result["rollback_dir"])
+                        p = await s3.get(ProposalRow, proposal_id)
+                        if p is not None:
+                            p.status = "rolled_back"
+                            p.rejected_reason = "post-merge eval went red -- auto-reverted"
+                        rb = await self.promoter.rollback(s3, self.package_root, result["rollback_dir"], commit=True)
                     await self.reload()
+                    self.promoter.cleanup_backup(result["rollback_dir"])
                     result = {
                         "status": "promoted_then_rolled_back",
                         "reason": "post-merge eval went red -- auto-reverted",
                         "rollback": rb,
                         "original": result,
                     }
+                else:
+                    self.promoter.cleanup_backup(result["rollback_dir"])
         return result
 
     async def projection_rebuild(self) -> dict[str, int]:

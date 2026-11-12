@@ -285,3 +285,74 @@ class ExploreBody(BaseModel):
     n: int = 12
     max_depth: int = 3
     seed: int | None = None
+
+
+# --------------------------------------------------------------- documents
+
+
+class DocumentFile(BaseModel):
+    name: str
+    #: uploaded bytes (base64); `content` is the plain-text convenience form
+    content_b64: str | None = None
+    content: str | None = None
+
+
+class DocumentUploadBody(BaseModel):
+    store: str
+    files: list[DocumentFile] = Field(min_length=1, max_length=50)
+
+
+class DocumentIngestBody(BaseModel):
+    store: str
+    objects: list[str] | None = None
+    dry_run: bool = False
+
+
+class CandidateAcceptBody(BaseModel):
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    note: str | None = None
+
+
+class CandidateRejectBody(BaseModel):
+    reason: str = ""
+
+
+# --------------------------------------------------------------- document tasks
+
+
+class DocumentTaskScope(BaseModel):
+    objects: dict[str, list[str]]
+    links: list[str] | None = None
+
+
+class DocumentSkillBody(BaseModel):
+    id: str = "graph-extract"
+    addendum: str = ""
+    examples: list[Any] = Field(default_factory=list)
+    language: str | None = None
+
+
+class DocumentTaskCreateBody(BaseModel):
+    store: str
+    files: list[DocumentFile] = Field(default_factory=list, max_length=50)
+    #: existing corpus documents may be tasked without uploading them again
+    doc_ids: list[str] = Field(default_factory=list)
+    scope: DocumentTaskScope | None = None
+    skill: DocumentSkillBody | None = None
+
+
+class DocumentGraphBody(BaseModel):
+    graph: dict[str, Any]
+
+
+class DocumentTaskConfigBody(BaseModel):
+    scope: DocumentTaskScope
+    skill: DocumentSkillBody
+
+
+class DocumentSkillCreateBody(BaseModel):
+    name: str
+    display: str | None = None
+    description: str | None = None
+    body: str = ""
+    examples: list[Any] = Field(default_factory=list)

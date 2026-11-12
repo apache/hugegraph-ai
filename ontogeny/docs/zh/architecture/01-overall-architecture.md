@@ -12,18 +12,19 @@
 
 ### 怎么读这张图
 
-**第 ① 层 · 顶部横条：一等公民 · 声明式 DSL 资源（紫色）。**
-八枚芯片——`ObjectType`、`LinkType`、`Action`、`Function`、`PolicySet`、`AgentPlugin`、`Projection`、`EvalSuite`——是平台真正的构成主体。每一枚都是 Git 里的声明式 YAML 资源（`apiVersion: ontogeny/v1`），图上的一切随时可以删掉、从仓库重建。其中两枚带紫色 **CORE** 标签，两个标签正好是治理故事的两半：
+**第 ① 层 · 顶部横条：平台资源 · 声明式 DSL 资源（紫色）。**
+九枚芯片——`ObjectType`、`LinkType`、`Action`、`Function`、`PolicySet`、`AgentPlugin`、`Projection`、`EvalSuite`、`EvolutionPolicy`——是平台真正的构成主体，按 **Core 4 · Extension 3 · Adapter 1 · Baseline 1** 分成四组。每一枚都是 Git 里的声明式 YAML 资源（`apiVersion: ontogeny/v1`），图上的一切随时可以删掉、从仓库重建。分类口径见 [00 · 种类分类学](00-kind-taxonomy.md)：**9 种平台资源 + 2 种清单资源（`Store` / `Ontology`）= 11 种资源**。其中 `Action`、`EvalSuite`、`EvolutionPolicy` 三枚承担治理主线：
 
 - **Action——唯一写入口。** 对世界的所有写入都走同一个五段式运行时（参数 → 规则 → 策略 → 效果 → 审计），没有第二扇门。
 - **EvalSuite——选择框。** 自进化循环里的晋升决策只由确定性的、可复现的评测套件做出，LLM 永远不判分。
+- **EvolutionPolicy——治理基线。** 循环不可触碰的面（引擎 / 评分线 / marking / 所有权 / 审计），仅人可改；它单独成组，正是为了让 T3 保护有物理落点。
 
 其余外部组件（HugeGraph、Ollama、Debezium，在图中以可选/虚线标注）都只是**可替换的加速器**：拔掉它们平台优雅降级，而不是停摆。
 
 **第 ② 层 · 中部：两个引擎并排，由 Agent 中枢串联。**
 
 - **左侧卡片（紫→蓝）：在线主链路 · 建模 → 执行 → 审计**——一次请求的五段旅程：`01 本体构建`（声明式建模 · 数据挂载 · 一键发布；YAML · Git）→ `02 知识探索`（查询 · 邻域探索 · 多跳追溯；SQL ⇄ 图）→ `03 动作执行`（参数→规则→策略→效果→审计；写入口）→ `04 权限与角色`（角色 · 密级标记 · 行级条件 · 默认拒绝；Cedar）→ `05 全周期追踪 & 审计`（版本时间线 · 不可变审计 · 事件订阅；outbox · SSE）。配色是刻意的：紫色代表建模/读侧，蓝色代表受治理的写侧与策略侧。
-- **右侧卡片（绿色）：RSI 自进化闭环 · 离线**——请求路径之外的批量进化循环：`1 观察`（遥测把查询 · 动作 · Agent 轨迹聚为信号）→ `2 提案`（LLM 在封闭变异目录内起草，越界即拒）→ `3 评测`（确定性评测做选择：查询回归 + 动作回放）→ `4 晋升`（T0 自动 · T1 人审 · T2 灰度 · T3 仅人工）→ `5 热加载`（编译快照热切换 · 新增列自动补齐）。卡片底部一行字就是宪法：**变异外包给模型，选择权从不外包**——`治理基线 · 仅人可改`。
+- **右侧卡片（绿色）：RSI 自进化闭环 · 离线**——请求路径之外的批量进化循环：`1 观察`（遥测把查询 · 动作 · Agent 轨迹聚为信号）→ `2 提案`（LLM 在封闭变异目录内起草，越界即拒）→ `3 评测`（确定性评测做选择：查询回归 + 动作回放）→ `4 晋升`（T0 自动 · T1 人审 · T2 灰度 · T3 仅人工）→ `5 热加载`（编译快照热切换 · 新增列自动补齐）。卡片底部一行字就是治理基线：**变异外包给模型，选择权从不外包**——`治理基线 · 仅人可改`。
 - **两者之间的虚线脊柱：Agent 智能体（外部）。** `AgentPlugin` 节点刻意画成虚线白底盒子——虚线框标记它来自平台之外。三行小字是它的全部契约：*可扩展插件 · 冻结身份*；*读写经主链路 · 同一闸门*（仍要走 02/03/04 的关卡）；*轨迹 · 审批 回流为信号*。脊柱上的两枚虚线胶囊 `运行痕迹 →`（运行流水向上进入观察）与 `← 机器提案`（晋升后的模型回流主链路），正是两个引擎之间的全部数据流。
 
 **第 ③ 层 · 底部：支撑层与贯穿不变量。**
@@ -36,43 +37,51 @@
 
 ## 导读
 
-① **一等公民**——对象 · 链接 · 动作 · 函数 · 策略 · 智能体 · 投影 · 自进化，全部是 Git 里的声明式 DSL 资源，是平台的构成主体 → ② **离线闭环**——RSI 自进化（信号→变异→评测→晋升），带间**数据流胶囊**（↓注入 / ↑回流）标注流向 → ③ **在线主链路 01→04**：接入与身份 → 读路径（查询·探索·追溯）→ **03 写路径 Action（核心）** → 副作用与订阅（outbox）→ ④ **支撑层**被主链路调用 → ⑤ **贯穿机制**覆盖全链路。**虚线 = 可选/渐进组件**（图投影 · LLM 网关），缺省时平台照常运行。
+① **平台资源**——对象 · 链接 · 动作 · 函数 · 策略 · 智能体 · 投影 · 自进化 · 治理基线，共 **9 种平台资源 + 2 种清单资源**，全部是 Git 里的声明式 DSL 资源，是平台的构成主体 → ② **离线闭环**——RSI 自进化（信号→变异→评测→晋升），带间**数据流胶囊**（↓注入 / ↑回流）标注流向 → ③ **在线主链路 01→04**：接入与身份 → 读路径（查询·探索·追溯）→ **03 写路径 Action（核心）** → 副作用与订阅（outbox）→ ④ **支撑层**被主链路调用 → ⑤ **贯穿机制**覆盖全链路。**虚线 = 可选/渐进组件**（图投影 · LLM 网关），缺省时平台照常运行。
 
 ```
-FIRST-CLASS CITIZENS · 一等公民（11 种 DSL 资源 · Git 声明式 · 一切可重建）
+PLATFORM RESOURCES · 平台资源（9 种平台资源 + 2 种清单资源 · Git 声明式 · 一切可重建）
         ▲ 机器提案 · 与人类同 Git 通道          │ 运行痕迹 · 遥测回流（01 观察）▼
 OFFLINE · 模型演进（主链路之外的批量闭环）：RSI 自进化闭环 · 治理内递归
 ────────────────────────────────────────────────────────────────────────
 ONLINE PIPELINE · 在线主链路（一次请求的旅程）
-  01 接入与身份 → 02 读路径（SQL⇄GRAPH）→ 03 写路径 Action（CORE 唯一写入口）→ 04 副作用与订阅
+  01 接入与身份 → 02 读路径（SQL⇄GRAPH）→ 03 写路径 Action（唯一写入口）→ 04 副作用与订阅
 ────────────────────────────────────────────────────────────────────────
 SUPPORTING · 支撑层（被主链路调用）：06 存储与注册 · 07 计算与治理
 CROSS-CUTTING · 贯穿机制：属性级所有权 · 单治理通道 · 真源不变量
 ```
 
-## 一等公民（11 种 DSL 资源 · Git 声明式 · 一切可重建）
+## 平台资源（9 种）+ 清单资源（2 种） · Git 声明式 · 一切可重建
 
-| 资源 | 层 | 职责与关键字段 |
+| 组 | 资源 | 层 | 职责与关键字段 |
+|---|---|---|---|
+| Core | `ObjectType` 对象 | 语义 | `primaryKey` · properties（类型 / required / **owner** / marking / derived）· backing（store + mapping + sync） |
+| Core | `LinkType` 链接 | 语义 | `cardinality` 1:1 / 1:N / M:N · foreign-key 或 join-table · 可导航、可多跳追溯 |
+| Core | `Action` 动作 | 动力学 | **唯一写入口**。五段式：参数 → 规则 → **Cedar 策略** → 效果 → 不可变审计；声明式或函数型，写世界只此一门 |
+| Extension | `Function` 函数 | 动力学 | 子进程沙箱：跨对象计算 · `ontogeny.llm` · 函数派生底层 · 可发布为带版本锚定的 API |
+| Core | `PolicySet` 策略 | 治理 | Cedar 子集：主体 × 动作 × 资源，行级条件 · **默认拒绝** · 拒绝同样留痕 |
+| Extension | `AgentPlugin` 智能体 | Agent | Agent 即资源：**冻结身份 = 权限面** · 工具白名单 · 审批模式 · 预算（steps / wall_ms / writes） |
+| Adapter | `Projection` 投影 | 派生 | 图投影非权威：白名单进图 · marking 禁入 · 最终一致 · 未启用零依赖（自动降级 SQL 递归） |
+| Extension | `EvalSuite` 评测 | 自进化 | **选择框**：选择函数全部确定性可求值（查询回归 + 动作回放 + Agent 用例 + 隔离区覆盖率） |
+| Baseline | `EvolutionPolicy` 治理基线 | 自进化 | **仅人可改**（引擎 / 评分线 / marking / 所有权 / 审计）；T0–T3 白名单与预算在这里 |
+
+**随包资源（清单，不是平台资源）**
+
+| 资源 | 层 | 职责 |
 |---|---|---|
-| `ObjectType` 对象 | 语义 | `primaryKey` · properties（类型 / required / **owner** / marking / derived）· backing（store + mapping + sync） |
-| `LinkType` 链接 | 语义 | `cardinality` 1:1 / 1:N / M:N · foreign-key 或 join-table · 可导航、可多跳追溯 |
-| `Action` 动作 | 动力学 | **CORE · 唯一写入口**。五段式：参数 → 规则 → **Cedar 策略** → 效果 → 不可变审计；声明式或函数型，写世界只此一门 |
-| `Function` 函数 | 动力学 | 子进程沙箱：跨对象计算 · `ontogeny.llm` · 函数派生底层 · 可发布为带版本锚定的 API |
-| `PolicySet` 策略 | 治理 | Cedar 子集：主体 × 动作 × 资源，行级条件 · **默认拒绝** · 拒绝同样留痕 |
-| `AgentPlugin` 智能体 | Agent | Agent 即资源：**冻结身份 = 权限面** · 工具白名单 · 审批模式 · 预算（steps / wall_ms / writes） |
-| `Projection` 投影 | 派生 | 图投影非权威：白名单进图 · marking 禁入 · 最终一致 · 未启用零依赖（自动降级 SQL 递归） |
-| `EvalSuite` · `EvolutionPolicy` | 自进化 | 选择函数全部确定性可求值；**宪法仅人可改**（引擎 / 评分线 / marking / 所有权 / 审计） |
+| `Store` | 数据面 | 存储绑定：`type` · `connection: ${DSN}` · `access`（`read-write` 是动作写回的前提） |
+| `Ontology` | 清单 | 包清单：name / display / version / imports（包依赖，模板市场的基础） |
 
-一等公民 = **Git 里的声明式 YAML**（`apiVersion: ontogeny/v1`）——平台的构成主体，编译产物可随时重建。另 `Store` / `Ontology` 为绑定与清单资源，随包同行。外部组件（HugeGraph · Ollama · Debezium）**不是公民**，是可替换的加速器与适配器——不接入即降级。
+平台资源 = **Git 里的声明式 YAML**（`apiVersion: ontogeny/v1`）——平台的构成主体，编译产物可随时重建；`Store` / `Ontology` 是随包同行的绑定与清单资源，**不是平台资源**。完整的 9+2 分类、三条判断标准与准入门槛见 [00 · 种类分类学](00-kind-taxonomy.md)。外部组件（HugeGraph · Ollama · Debezium）也不是平台资源，是可替换的加速器与适配器——不接入即降级。
 
 ## OFFLINE · 模型演进（主链路之外的批量闭环）
 
-**RSI 自进化闭环 · 治理内递归**（宪法不可自改）：
+**RSI 自进化闭环 · 治理内递归**（治理基线不可自改）：
 
 1. **① 观察**：telemetry 检测器 8 种——查询空结果率 · 未建模过滤字段 · 热点查询 · 慢查询 P95 · 动作规则拒绝率 · Agent 工具错误 · 审批拒绝率 · 同步隔离区坏行 → `ontogeny_evolve_signal`
 2. **② 诊断提案**：确定性诊断器产出缺口（附证据）→ `HeuristicProposer` / `LLMProposer`（Ollama 结构化输出，**无 rationale 即丢弃**）→ `ontogeny_evolve_proposal`
 3. **③ 确定性评测**：L1 validate/lint → **L2 EvalSuite**（查询回归 + 动作时间旅行回放：系统版本化表 = 带标签历史集）→ L3 影子双跑 → L4 LLM **只解释不判分**
-4. **④ 分层晋升**：T0 自动合并（预算 8/周 · 新增可选属性/枚举扩域/索引）· T1 人审 PR（默认）· T2 灰度（影子 diff + 审批）· **T3 宪法面仅人工**（策略放宽/标记/所有权/评分线/迁移）
+4. **④ 分层晋升**：T0 自动合并（预算 8/周 · 新增可选属性/枚举扩域/索引）· T1 人审 PR（默认）· T2 灰度（影子 diff + 审批）· **T3 治理基线面仅人工**（策略放宽/标记/所有权/评分线/迁移）
 5. **⑤ 热加载**：write_package → publish → `sc.reload()`；新增可选属性由 DDL 层自动 `ALTER TABLE ADD COLUMN` 补齐，即刻可查
 
 带间数据流：↓ **机器提案 · 与人类同 Git 通道**；↑ **运行痕迹 · 遥测回流（01 观察）**。
@@ -99,7 +108,7 @@ CROSS-CUTTING · 贯穿机制：属性级所有权 · 单治理通道 · 真源�
 | 服务身份 | client_credentials 供 Agent / 后台 |
 | ★AgentPlugin | 插件**自带冻结身份**（Role/site 即权限面），工具目录与预算叠加其上 |
 
-统一错误模型：`{code, message, details, trace_id}`；稳定码：`RULE_REJECTED` · `POLICY_DENIED` · `REVISION_CONFLICT` · `CONSTITUTION_VIOLATION`，前端按码给本地化解释。
+统一错误模型：`{code, message, details, trace_id}`；稳定码：`RULE_REJECTED` · `POLICY_DENIED` · `REVISION_CONFLICT` · `BASELINE_VIOLATION`，前端按码给本地化解释。
 
 ### 02 读路径 · 查询 / 探索 / 追溯（engine/service.py）— SQL ⇄ GRAPH
 
@@ -119,7 +128,7 @@ CROSS-CUTTING · 贯穿机制：属性级所有权 · 单治理通道 · 真源�
 
 读侧不变量：派生表达式只读计算不落库 · 掩码在装配层非前端 · **动作决策路径永不读投影**（最终一致）。
 
-### 03 写路径 · Action 运行时（action/runtime.py）— CORE · 唯一写入口
+### 03 写路径 · Action 运行时（action/runtime.py）— 唯一写入口
 
 **五段式 · execute(action, principal, params, target)**：
 

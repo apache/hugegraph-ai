@@ -65,8 +65,9 @@ describe('buildFilter', () => {
     })
   })
 
-  it('numeric strings coerce to numbers, in splits lists', () => {
-    expect(buildFilter([{ id: 1, field: 'stock', op: 'ge', value: '5' }])).toEqual({
+  it('converts values according to field types and preserves string identifiers', () => {
+    const fields = { stock: { type: 'integer' }, id: { type: 'string' }, active: { type: 'boolean' } }
+    expect(buildFilter([{ id: 1, field: 'stock', op: 'ge', value: '5' }], fields)).toEqual({
       field: 'stock',
       op: 'ge',
       value: 5,
@@ -76,6 +77,9 @@ describe('buildFilter', () => {
       op: 'in',
       value: ['OPEN', 'CLOSED'],
     })
+    expect(buildFilter([{ id: 1, field: 'id', op: 'eq', value: '0012' }], fields)).toMatchObject({ value: '0012' })
+    expect(buildFilter([{ id: 1, field: 'stock', op: 'in', value: '5, 10' }], fields)).toMatchObject({ value: [5, 10] })
+    expect(buildFilter([{ id: 1, field: 'active', op: 'eq', value: 'false' }], fields)).toMatchObject({ value: false })
   })
 
   it('isnull maps to eq null regardless of value', () => {

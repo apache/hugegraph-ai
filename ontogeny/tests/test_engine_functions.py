@@ -12,8 +12,8 @@
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
-# specific language governing permissions and
-# limitations under the License.
+# specific language governing permissions and limitations
+# under the License.
 
 """Query service (assembly/derived/masking/traverse) + function sandbox."""
 
@@ -35,7 +35,7 @@ from ontogeny.registry import RegistryService
 from ontogeny.stores import ObjectRepository, SyncEngine
 from ontogeny.stores.sources import make_source
 
-SUPER = {"id": "u", "Role": {"planner"}, "site": "plant-north"}
+SUPER = {"id": "u", "Role": {"product"}, "site": "hq"}
 OUTSIDER = {"id": "v", "Role": {"visitor"}}
 
 
@@ -73,7 +73,7 @@ async def env(golden_pkg_path, tmp_path):
 
 @pytest_asyncio.fixture()
 async def join_env(tmp_path):
-    """A minimal package for the one link shape product-manufacturing does not
+    """A minimal package for the one link shape chip-lifecycle does not
     exercise: a MANY_TO_MANY join table whose membership is ontology-owned."""
     from pathlib import Path
 
@@ -164,34 +164,32 @@ class TestQuery:
     async def test_filter_and_masking(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            out = await q.query(s, "material", SUPER, filt={"field": "material_id", "op": "eq", "value": "M-101"})
+            out = await q.query(s, "tapeout-version", SUPER, filt={"field": "version_id", "op": "eq", "value": "TO-A0"})
             assert out["total"] == 1
-            assert out["objects"][0]["unit_cost"] == "__masked__"  # marking hidden for SUPER
+            assert out["objects"][0]["mask_cost"] == "__masked__"  # marking hidden for SUPER
 
             out2 = await q.query(
-                s, "material", {"id": "claim", "markings": ["internal"]}, filt={"material_id": "M-102"}
+                s, "tapeout-version", {"id": "claim", "markings": ["internal"]}, filt={"version_id": "TO-A1"}
             )
             assert out2["total"] == 1
-            assert out2["objects"][0]["unit_cost"] == 8.5
+            assert out2["objects"][0]["mask_cost"] == 420000.0
 
     async def test_derived_property_computed(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            obj = await q.get(s, "production-order", "PO-1004", SUPER)
-        assert obj["status"] == "COMPLETED"
-        assert obj["release_lag_h"] == pytest.approx(24.0)  # (released_at-created_at)/3600000
+            obj = await q.get(s, "tapeout-version", "TO-A0", SUPER)
+        assert obj["status"] == "FAB"
+        assert obj["fab_lag_h"] == pytest.approx(936.0)  # (taped_out_at-created_at)/3600000
 
     async def test_link_expansion_fk(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            out = await q.query(
-                s, "work-center", SUPER, filt={"work_center_id": "WC-01"}, links=["operation-work-center"]
-            )
-            linked = out["links"]["operation-work-center"]["WC-01"]
-            assert {o["operation_id"] for o in linked} == {"OP-2001", "OP-2002", "OP-2301"}
+            out = await q.query(s, "equipment", SUPER, filt={"equipment_id": "EQ-02"}, links=["step-equipment"])
+            linked = out["links"]["step-equipment"]["EQ-02"]
+            assert {o["step_id"] for o in linked} == {"PS-7111", "PS-7121", "PS-7131"}
 
-            inspections = await q.links(s, "production-order", "PO-1003", "production-order-inspections", SUPER)
-            assert [i["inspection_id"] for i in inspections] == ["QI-3001"]
+            tests = await q.links(s, "wafer-lot", "LOT-2417", "lot-tests", SUPER)
+            assert [i["test_id"] for i in tests] == ["WT-501"]
 
     async def test_link_expansion_over_a_join_table(self, join_env):
         """The join-table link shape: membership lives in a relation table and is
@@ -201,7 +199,7 @@ class TestQuery:
         q, repo = join_env["query"], join_env["repo"]
         async with join_env["maker"]() as s:
             # ontology-owned link membership (join table is engine-managed)
-            await repo.link_add(s, "container-items", "C-1", "I-2", dt.datetime.now(dt.timezone.utc))
+            await repo.link_add(s, "container-items", "C-1", "I-2", dt.datetime.now(dt.UTC))
             await s.commit()
             members = await repo.link_members(s, "container-items", src_id="C-1")
         assert members == [("C-1", "I-2")]
@@ -213,50 +211,62 @@ class TestQuery:
     async def test_aggregate(self, env):
         q = env["query"]
         async with env["maker"]() as s:
-            n = await q.aggregate(s, "production-order", SUPER, "count", None)
+            n = await q.aggregate(s, "wafer-lot", SUPER, "count", None)
             assert n == 4.0
-            n_planned = await q.aggregate(s, "production-order", SUPER, "count", None, filt={"status": "PLANNED"})
-            assert n_planned == 1.0  # PO-1002; the rest are RELEASED/COMPLETED
+            n_running = await q.aggregate(s, "wafer-lot", SUPER, "count", None, filt={"status": "RUNNING"})
+            assert n_running == 2.0  # LOT-2419 and LOT-2501; the rest are COMPLETE
+            assert await q.aggregate(s, "wafer-lot", SUPER, "count", None, filt={"lot_id": "NONEXISTENT-LOT"}) == 0
+            for fn in ("sum", "avg", "min", "max"):
+                assert (
+                    await q.aggregate(s, "wafer-lot", SUPER, fn, "qty_wafers", filt={"lot_id": "NONEXISTENT-LOT"})
+                    is None
+                )
 
     async def test_traverse_three_hops(self, env):
         q = env["query"]
         async with env["maker"]() as s:
             out = await q.traverse(
                 s,
-                "material",
-                ["M-103"],
+                "requirement",
+                ["REQ-101"],
                 SUPER,
                 [
-                    {"link": "bom-material", "direction": "out"},
-                    {"link": "bom-product", "direction": "in"},
+                    {"link": "requirement-modules", "direction": "out"},
+                    {"link": "version-includes", "direction": "in"},
+                    {"link": "version-lots", "direction": "out"},
                 ],
             )
-        assert [s_["type"] for s_ in out["steps"]] == ["material", "bom", "product"]
-        assert out["final_ids"] == ["P-200"]
+        assert [s_["type"] for s_ in out["steps"]] == ["requirement", "design-module", "tapeout-version", "wafer-lot"]
+        assert sorted(out["final_ids"]) == ["LOT-2417", "LOT-2418", "LOT-2419"]
 
 
 class TestSandbox:
     async def test_query_within_capability(self, env, tmp_path):
-        fn = env["pkg"].find("Function", "capacity-check")
+        fn = env["pkg"].find("Function", "analyze-yield-loss")
         async with env["maker"]() as s:
-            value = await env["sandbox"].run(s, fn, {"work_center_id": "WC-01", "qty": 10})
-        assert value["work_center_id"] == "WC-01"
-        assert value["daily_capacity"] == 800  # 400 per shift x 2 shifts
-        assert value["open_orders"] == 3  # PO-1001..PO-1003 still open
-        assert value["ok"] is True
+            value = await env["sandbox"].run(s, fn, {"test_id": "WT-501"})
+        assert value["test_id"] == "WT-501"
+        assert value["lot_id"] == "LOT-2417"
+        assert value["lot_status"] == "COMPLETE"
+        assert value["yield"] == 0.82  # 36 defects on 200 tested units
+        assert value["loss"] == 0.18
+        assert value["recommended_action"] == "HOLD"
 
     async def test_capability_denied(self, env, tmp_path):
-        fn = env["pkg"].find("Function", "capacity-check")
+        fn = env["pkg"].find("Function", "analyze-yield-loss")
         # strip the read-objects capability -> query must be denied
         fn.spec.capabilities = []
         async with env["maker"]() as s:
             with pytest.raises(SandboxError, match="capability denied"):
-                await env["sandbox"].run(s, fn, {"work_center_id": "WC-01", "qty": 10})
+                await env["sandbox"].run(s, fn, {"test_id": "WT-501"})
 
     async def test_timeout_kills_runaway(self, env, tmp_path):
+        from dataclasses import replace
+
         from ontogeny.core.models import Capability, FunctionResource, FunctionSpec, ParamDef, ResourceMeta
 
-        bad = tmp_path / "bad.py"
+        (tmp_path / "functions").mkdir()
+        bad = tmp_path / "functions" / "bad.py"
         bad.write_text("import time\ndef spin(x):\n    time.sleep(60)\n    return 1\n", encoding="utf-8")
         fr = FunctionResource(
             apiVersion="ontogeny/v1",
@@ -264,12 +274,12 @@ class TestSandbox:
             metadata=ResourceMeta(name="spin"),
             spec=FunctionSpec(
                 runtime="python",
-                entry=f"{bad}:spin",
+                entry="bad.py:spin",
                 parameters={"x": ParamDef(type="integer")},
-                capabilities=[Capability(**{"read-objects": ["production-order"]})],
+                capabilities=[Capability(**{"read-objects": ["wafer-lot"]})],
             ),
         )
-        sandbox = FunctionSandbox(env["compiled"], env["repo"], timeout_s=1.5)
+        sandbox = FunctionSandbox(replace(env["compiled"], package_root=str(tmp_path)), env["repo"], timeout_s=1.5)
         async with env["maker"]() as s:
             with pytest.raises(SandboxError, match="wall clock"):
                 await sandbox.run(s, fr, {"x": 1})
@@ -299,7 +309,7 @@ class TestSandbox:
         assert sandbox._budget(fn([Capability(**{"llm": True})])) == 10.0 + 10 * 60.0
         assert sandbox._budget(fn([Capability(**{"llm": {"max-calls": 2}})])) == 10.0 + 2 * 60.0
         # read-objects alone does not buy anything
-        assert sandbox._budget(fn([Capability(**{"read-objects": ["work-center"]})])) == 10.0
+        assert sandbox._budget(fn([Capability(**{"read-objects": ["equipment"]})])) == 10.0
 
 
 class TestFunctionSourceEndpoint:
@@ -314,14 +324,54 @@ class TestFunctionSourceEndpoint:
     async def test_reports_the_file_and_its_text(self, client):
         c, sc = client
         # a real file for a real function in the domain package
-        entry = sc.compiled.functions["capacity-check"].spec.entry
-        assert entry.endswith(".py:capacity_check")
-        r = await c.get("/api/v1/functions/capacity-check/source")
+        entry = sc.compiled.functions["analyze-yield-loss"].spec.entry
+        assert entry.endswith(".py:analyze_yield_loss")
+        r = await c.get("/api/v1/functions/analyze-yield-loss/source")
         assert r.status_code == 200
         body = r.json()
         assert body["exists"] is True
-        assert body["path"].endswith("functions/capacity.py")
-        assert "def capacity_check" in body["source"]
+        assert body["path"].endswith("functions/analyze_yield_loss.py")
+        assert "def analyze_yield_loss" in body["source"]
+
+    async def test_source_requires_admin(self, client):
+        c, _ = client
+        for identity in ("", '{"id": "ordinary", "is_admin": false}'):
+            response = await c.get(
+                "/api/v1/functions/analyze-yield-loss/source", headers={"X-Ontogeny-Principal": identity}
+            )
+            assert response.status_code == 403
+
+    async def test_source_rejects_escape_even_for_admin(self, client, tmp_path):
+        c, sc = client
+        fn = sc.compiled.functions["analyze-yield-loss"]
+        outside = tmp_path / "secret.py"
+        secret = "ontogeny_unique_source_escape_marker_93f5"
+        outside.write_text(secret, encoding="utf-8")
+        for entry in (f"{outside}:main", "../../secret.py:main"):
+            fn.spec.entry = entry
+            response = await c.get("/api/v1/functions/analyze-yield-loss/source")
+            assert response.status_code != 200
+            assert secret not in response.text
+
+    async def test_symlink_escape_rejected_by_validator_and_source(self, client, tmp_path):
+        from pathlib import Path
+
+        from ontogeny.core import load_package
+        from ontogeny.core.validator import validate
+
+        c, sc = client
+        outside = tmp_path / "secret.py"
+        secret = "ontogeny_unique_source_escape_marker_93f5"
+        outside.write_text(secret, encoding="utf-8")
+        (Path(sc.package_root) / "functions" / "outside.py").symlink_to(outside)
+        pkg = load_package(sc.package_root)
+        fn = next(fn for fn in pkg.functions() if fn.metadata.name == "analyze-yield-loss")
+        fn.spec.entry = "outside.py:main"
+        assert any(issue.code == "FN-ENTRY" for issue in validate(pkg).issues)
+        sc.compiled.functions["analyze-yield-loss"].spec.entry = "outside.py:main"
+        response = await c.get("/api/v1/functions/analyze-yield-loss/source")
+        assert response.status_code != 200
+        assert secret not in response.text
 
     async def test_missing_file_is_reported_not_hidden(self, client, tmp_path):
         from ontogeny.core.models import FunctionResource, FunctionSpec, ResourceMeta

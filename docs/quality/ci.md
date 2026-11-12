@@ -13,7 +13,8 @@ in the job summary. A failed diff or preflight fails CI rather than skipping tes
 | Standalone LLM SDK | SDK plus downstream LLM compatibility tests |
 | LLM | LLM |
 | MCP | MCP |
-| Root dependency/release configuration or shared CI setup | Client, SDK, LLM and MCP |
+| Ontogeny | Ontogeny (backend matrix, frontend suite, integration; stage-1 zero-coupling gate) |
+| Root dependency/release configuration or shared CI setup | Client, SDK, LLM, MCP and Ontogeny |
 | Module CI workflow | That module and its downstream consumers |
 | Docker configuration or LLM image build script | LLM |
 | Archive exclusions (`.gitattributes`) | Client archive installation guard and downstream LLM/MCP |
@@ -81,7 +82,7 @@ in the existing quality runner, using their Python 3.12+ target.
 ## Full and optional checks
 
 - Weekly on ASF main (Monday 06:00 Asia/Taipei), release-branch pushes, and manual
-  **full** runs validate the client, LLM, MCP and SDK on Python 3.12–3.14,
+  **full** runs validate the client, LLM, MCP, SDK and Ontogeny on Python 3.12–3.14,
   plus CodeQL. Python 3.11 and older are no longer supported by these modules. Docker integration runs
   once per module on the primary Python runtime.
 - Use **Run workflow → mainline** for the primary-runtime checks on the selected

@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, Index, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Index, Integer, String, Text, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base
@@ -39,7 +39,16 @@ def _bigid() -> BigInteger:
 
 
 def _utcnow() -> _dt.datetime:
-    return _dt.datetime.now(_dt.timezone.utc)
+    return _dt.datetime.now(_dt.UTC)
+
+
+class IdSequenceRow(Base):
+    """Last allocated ID for a prefix, updated in the action transaction."""
+
+    __tablename__ = "ontogeny_id_sequence"
+
+    prefix: Mapped[str] = mapped_column(String(500), primary_key=True)
+    value: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class RevisionRow(Base):
@@ -64,12 +73,13 @@ class RevisionRow(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(200), index=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    # The partial unique index must exist on BOTH dialects: sqlite_where alone
-    # is a SQLite-only argument, so Postgres silently got no constraint at all
-    # and a concurrent same-key replay produced two executed revisions.
+    # Match the runtime's replay lookup: keys are scoped to an action and
+    # principal. The partial predicate applies on both supported databases.
     __table_args__ = (
         Index(
-            "uq_revision_idem",
+            "uq_revision_idem_scope",
+            "action",
+            "principal",
             "idempotency_key",
             unique=True,
             sqlite_where=idempotency_key.is_not(None),
@@ -91,14 +101,32 @@ class OutboxRow(Base):
     revision_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     published_at: Mapped[_dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Per-consumer pending flags make idle scans independent of delivered history.
+    # Defaults are database-side too, so events inserted by existing producers
+    # are pending even if their transaction commits after newer IDs.
+    pending_webhook: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    pending_projection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    pending_derivation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    pending_sse: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
 
 
 class OutboxConsumerRow(Base):
-    """Per-consumer cursor for independent replay (webhook/projection/sse)."""
+    """Legacy cursor and receipt-migration state for each consumer."""
 
     __tablename__ = "ontogeny_outbox_cursor"
 
     consumer: Mapped[str] = mapped_column(String(100), primary_key=True)
     last_id: Mapped[int] = mapped_column(BigInteger, default=0)
+    receipts_initialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pending_initialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     failures: Mapped[int] = mapped_column(default=0)
     updated_at: Mapped[_dt.datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class OutboxReceiptRow(Base):
+    """Committed delivery acknowledgement independent of ID/commit order."""
+
+    __tablename__ = "ontogeny_outbox_receipt"
+
+    consumer: Mapped[str] = mapped_column(String(100), primary_key=True)
+    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

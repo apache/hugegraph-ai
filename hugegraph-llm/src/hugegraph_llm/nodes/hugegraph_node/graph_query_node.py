@@ -30,23 +30,25 @@ VERTEX_QUERY_TPL = "g.V({keywords}).limit(8).as('subj').toList()"
 # TODO: test with profile()/explain() to speed up the query
 VID_QUERY_NEIGHBOR_TPL = """\
 g.V({keywords})
-.repeat(
-   bothE({edge_labels}).limit({edge_limit}).otherV().dedup()
-).times({max_deep}).emit()
-.simplePath()
-.path()
-.by(project('label', 'id', 'props')
-   .by(label())
-   .by(id())
-   .by(valueMap().by(unfold()))
+.local(
+   __.repeat(
+      bothE({edge_labels}).limit({edge_limit}).otherV().dedup()
+   ).times({max_deep}).emit()
+   .simplePath()
+   .path()
+   .by(project('label', 'id', 'props')
+      .by(label())
+      .by(id())
+      .by(valueMap().by(unfold()))
+   )
+   .by(project('label', 'inV', 'outV', 'props')
+      .by(label())
+      .by(inV().id())
+      .by(outV().id())
+      .by(valueMap().by(unfold()))
+   )
+   .limit({max_items})
 )
-.by(project('label', 'inV', 'outV', 'props')
-   .by(label())
-   .by(inV().id())
-   .by(outV().id())
-   .by(valueMap().by(unfold()))
-)
-.limit({max_items})
 .toList()
 """
 
@@ -368,8 +370,10 @@ class GraphQueryNode(BaseNode):
             paths: List[Any] = []
             # Batch the per-vid neighbour traversals: one gremlin exec per
             # group instead of one per matched vid, so a large id set no longer
-            # triggers one server round-trip per id. Batch data is concatenated
-            # in matched_vids order, so the path list keeps the per-vid order.
+            # triggers one server round-trip per id. The traversal is wrapped in
+            # local(...) so each vid keeps its own edge_limit, dedup and
+            # max_items budget; batch data is concatenated in matched_vids
+            # order, so the path list keeps the per-vid order.
             batch_size = min(NEIGHBOR_QUERY_BATCH_SIZE, len(matched_vids))
             for start in range(0, len(matched_vids), batch_size):
                 batch = matched_vids[start : start + batch_size]

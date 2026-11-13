@@ -233,9 +233,12 @@ def serve(
         ".ontogeny-demo", "--data-dir", help="demo state directory (metadata + source db + package copy)"
     ),
     package: str = typer.Option(
-        None, "--package", help="ontology package to install into the demo (default: domains/product-manufacturing)"
+        None, "--package", help="ontology package to install into the demo (default: domains/chip-lifecycle)"
     ),
     reseed: bool = typer.Option(False, "--reseed", help="rebuild the demo source db and package copy from scratch"),
+    in_place: bool = typer.Option(
+        True, "--in-place/--copy-package", help="edit domains/ packages in place, or copy into --data-dir (containers)"
+    ),
     build_ui: bool = typer.Option(True, "--build-ui/--no-build-ui", help="build web/dist when missing"),
     ui_dir: str = typer.Option(None, "--ui-dir", help="serve an already-built SPA from this directory"),
     open_browser: bool = typer.Option(False, "--open", help="open the UI in a browser once ready"),
@@ -246,7 +249,7 @@ def serve(
     if demo:
         from .demo import DEFAULT_PACKAGE, prepare_demo
 
-        # A first-class domain (a package directly inside a domains/ root) is
+        # An in-tree domain (a package directly inside a domains/ root) is
         # served IN PLACE: console saves — model edits and the canvas
         # layout.yaml — land in domains/<name>/ instead of a throwaway copy
         # that the demo's runtime reset would later wipe. Anything else (an
@@ -254,9 +257,10 @@ def serve(
         pkg_arg = Path(package or DEFAULT_PACKAGE)
         if not pkg_arg.is_absolute():
             pkg_arg = Path.cwd() / pkg_arg
-        direct = pkg_arg.resolve().parent.name == "domains"
+        direct = in_place and pkg_arg.resolve().parent.name == "domains"
 
         paths = prepare_demo(data_dir, package=package or DEFAULT_PACKAGE, reseed=reseed, direct=direct)
+        os.environ.setdefault("ONTOGENY_DATA_DIR", str(paths.root.resolve()))
         # operator-provided env wins: --demo used to clobber ONTOGENY_DB_DSN
         # (and friends), so edits/promotions landed outside the /data volume
         # and vanished on container recreation

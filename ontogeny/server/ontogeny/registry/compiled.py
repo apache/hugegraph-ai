@@ -30,6 +30,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..core.kinds import as_payload as kinds_payload
 from ..core.loader import OntologyPackage
 from ..core.models import (
     ActionResource,
@@ -130,6 +131,9 @@ class CompiledOntology:
         return {
             "package": self.package_name,
             "content_hash": self.content_hash,
+            # The kind taxonomy, published so the console and docs read the
+            # same table the kernel validates against -- no hand-copied counts.
+            "kinds": kinds_payload(),
             "objects": {
                 name: {
                     "display": r.metadata.display,

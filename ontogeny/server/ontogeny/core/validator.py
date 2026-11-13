@@ -30,16 +30,20 @@ from dataclasses import dataclass, field
 
 from ..errors import ExpressionError
 from . import expr as _expr
+from .function_entry import function_entry_file, resolve_function_entry
 from .loader import OntologyPackage
 from .models import (
     ActionResource,
     ArchiveObjectEffect,
     CreateObjectEffect,
+    ExtractCfg,
+    ExtractedJoin,
     FunctionResource,
     LinkTypeResource,
     ModifyLinkedEffect,
     ModifyTargetEffect,
     ObjectTypeResource,
+    PolicySetResource,
     SetLinkEffect,
     WebhookEffect,
 )
@@ -101,6 +105,10 @@ def effective_owner(obj: ObjectTypeResource, prop: str) -> str:
     backing = obj.spec.backing
     if backing is None:
         return "ontology"
+    # a document corpus is a third authority: it never overwrites what a
+    # system of record or an action already owns (see the merge policy)
+    if backing.sync is not None and backing.sync.strategy == "extract":
+        return "document"
     if not backing.mapping:
         return "source"
     return "source" if prop in backing.mapping else "ontology"
@@ -144,7 +152,6 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
     actions = {a.metadata.name: a for a in pkg.actions()}
     policies = {p.metadata.name: p for p in pkg.policies()}
     stores = {s.metadata.name: s for s in pkg.stores()}
-    functions = {f.metadata.name: f for f in pkg.functions()}
 
     # ---- duplicates -------------------------------------------------------
     seen: set[tuple[str, str]] = set()
@@ -164,6 +171,10 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 f"Store/{s.metadata.name}",
                 f"read-write requires a transactional store, got {s.spec.type}",
             )
+        # documents are read-only snapshots; write-back is an outbox adapter,
+        # never a corpus reader
+        if s.spec.type == "document" and s.spec.access != "read-only":
+            rep.error("STORE-DOC-RO", f"Store/{s.metadata.name}", "document stores are read-only")
 
     # ---- objects ----------------------------------------------------------
     for obj in pkg.objects():
@@ -172,8 +183,16 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
             p = obj.spec.properties.get(pk)
             if p is None:
                 rep.error("PK-UNKNOWN", res_id, f"primaryKey {pk!r} is not a property")
-            elif not p.required:
-                rep.error("PK-REQUIRED", res_id, f"primaryKey {pk!r} must be required")
+            else:
+                if not p.required:
+                    rep.error("PK-REQUIRED", res_id, f"primaryKey {pk!r} must be required")
+                if p.marking:
+                    rep.error(
+                        "PK-MARKING",
+                        res_id,
+                        f"primary key {pk!r} cannot carry marking {p.marking!r}: object IDs are exposed; "
+                        "use an unmarked surrogate key and move the sensitive value to a marked non-key property",
+                    )
         b = obj.spec.backing
         if b is not None:
             if b.store not in stores:
@@ -189,6 +208,33 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                     rep.error("SYNC-WATERMARK", res_id, "watermark strategy requires watermark.column")
                 if b.sync.strategy == "changelog":
                     rep.warn("SYNC-CHANGELOG", res_id, "changelog strategy requires a runtime Kafka source")
+                if b.sync.strategy == "extract":
+                    store = stores.get(b.store)
+                    if store is not None and store.spec.type != "document":
+                        rep.error(
+                            "SYNC-EXTRACT-STORE",
+                            res_id,
+                            f"extract strategy requires a document store, {b.store!r} is {store.spec.type}",
+                        )
+                    if len(obj.spec.primaryKey) != 1:
+                        # link rows and outbox events key on one id; composite
+                        # identity is a platform-wide gap, not a document one
+                        rep.error(
+                            "SYNC-EXTRACT-PK",
+                            res_id,
+                            "document-backed object types require exactly one primaryKey property",
+                        )
+                    cfg = b.extract or ExtractCfg()
+                    for name in [*cfg.key, *cfg.match]:
+                        if name not in obj.spec.properties:
+                            rep.error(
+                                "SYNC-EXTRACT-KEY",
+                                res_id,
+                                f"extract key/match {name!r} is not a property",
+                            )
+                    for label in cfg.labels:
+                        if label not in objects:
+                            rep.error("SYNC-EXTRACT-LABEL", res_id, f"extract label {label!r} is not an ObjectType")
         for pname, pdef in obj.spec.properties.items():
             if pdef.derived_kind() == "expr":
                 try:
@@ -251,6 +297,33 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                             res_id,
                             f"join key types differ: {a_prop}:{pa.type} vs {b_prop}:{pb.type}",
                         )
+        elif isinstance(j, ExtractedJoin):
+            # asserted by document extraction: the endpoints must be
+            # object types (checked above); at least one side should be
+            # document-backed or the link has no producer
+            def _document_backed(name: str) -> bool:
+                o = objects.get(name)
+                b = o.spec.backing if o is not None else None
+                return bool(b and b.sync and b.sync.strategy == "extract")
+
+            if not _document_backed(lnk.spec.source) and not _document_backed(lnk.spec.target):
+                rep.warn(
+                    "LINK-EXTRACT-SOURCE",
+                    res_id,
+                    "extracted link has no document-backed endpoint; nothing will assert it",
+                )
+            for side in (lnk.spec.source, lnk.spec.target):
+                if _document_backed(side):
+                    continue
+                endpoint_obj = objects.get(side)
+                b = endpoint_obj.spec.backing if endpoint_obj is not None else None
+                if b is None or b.extract is None or not (b.extract.match or b.extract.key):
+                    rep.warn(
+                        "LINK-EXTRACT-REF",
+                        res_id,
+                        f"{side!r} is not document-backed and declares no extract.match/key; "
+                        "the corpus cannot resolve it",
+                    )
         else:
             if j.store not in stores:
                 rep.error("LINK-STORE", res_id, f"join-table references unknown store {j.store!r}")
@@ -292,12 +365,19 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
 
     _check_col_collisions(pkg, rep)
 
+    from ..policy.engine import _policy_text, _statement_matches, parse_forbids
+
     # ---- policies: resource-scoped statements are unsupported, fail closed -
     for pol in pkg.policies():
         text = pkg.sidecar_text("PolicySet", pol.metadata.name, pol.spec.source)
         import re as _re2
 
-        for m2 in _re2.finditer(r"(?:permit|forbid)\s*\([^)]*,\s*([^,)]+)\s*\)", text, _re2.S):
+        try:
+            clean, quoted = _policy_text(text)
+        except ValueError:
+            continue  # reported by the fail-closed policy check below
+        pattern = _re2.compile(r"(?:permit|forbid)\s*\([^)]*,\s*([^,)]+)\s*\)", _re2.S)
+        for m2 in _statement_matches(clean, quoted, pattern):
             res = m2.group(1).strip()
             if res not in ("resource", "*"):
                 rep.error(
@@ -310,18 +390,33 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
     # ---- policies: unparseable forbid must not ride silently --------------
     import re as _re
 
-    from ..policy.engine import parse_forbids
-
     for pol in pkg.policies():
         text = pkg.sidecar_text("PolicySet", pol.metadata.name, pol.spec.source)
-        authored = len(_re.findall(r"\bforbid\s*\(", text))
-        if authored and authored != len(parse_forbids(text)):
+        try:
+            clean, quoted = _policy_text(text)
+            authored = sum(1 for match in _re.finditer(r"\bforbid\s*\(", clean) if match.start() not in quoted)
+            forbids = parse_forbids(text)
+            parsed = len(forbids)
+        except ValueError as exc:
+            rep.error("POLICY-FORBID", f"PolicySet/{pol.metadata.name}", f"invalid policy comments: {exc}")
+            continue
+        if authored != parsed:
             rep.error(
                 "POLICY-FORBID",
                 f"PolicySet/{pol.metadata.name}",
                 "contains a forbid() statement this engine cannot parse; refusing to "
                 "publish (an unparsed forbid would silently grant instead of deny)",
             )
+        for rule in forbids:
+            if rule.when is not None:
+                try:
+                    _expr.parse(rule.when)
+                except ExpressionError as exc:
+                    rep.error(
+                        "POLICY-FORBID",
+                        f"PolicySet/{pol.metadata.name}",
+                        f"unsupported forbid condition: {exc}",
+                    )
 
     # ---- actions ----------------------------------------------------------
     for act in pkg.actions():
@@ -330,7 +425,7 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
         if target is None:
             rep.error("ACTION-TARGET", res_id, f"target {act.spec.target!r} is not an ObjectType")
             continue
-        _validate_action_against(pkg, rep, act, target, objects, links, policies, functions)
+        _validate_action_against(rep, act, target, objects, links, policies)
 
     # ---- functions --------------------------------------------------------
     for fn in pkg.functions():
@@ -342,6 +437,12 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 rep.error("FN-CAP", res_id, f"unknown capability keys {sorted(bad)}")
         for issue in _validate_function_body(fn):
             rep.error(issue[0], res_id, issue[1])
+        if fn.spec.runtime == "python":
+            try:
+                resolve_function_entry(pkg.root, fn.spec.entry)
+            except ValueError as exc:
+                if not any(i.code == "FN-ENTRY" and i.resource == res_id for i in rep.issues):
+                    rep.error("FN-ENTRY", res_id, str(exc))
 
     # ---- projections ------------------------------------------------------
     #
@@ -489,8 +590,10 @@ def _validate_function_body(fn: FunctionResource) -> list[tuple[str, str]]:
     spec = fn.spec
 
     if spec.runtime == "python":
-        if not spec.entry or ":" not in spec.entry:
-            out.append(("FN-ENTRY", "runtime=python needs entry 'file.py:function'"))
+        try:
+            function_entry_file(spec.entry)
+        except ValueError as exc:
+            out.append(("FN-ENTRY", str(exc)))
         if spec.steps:
             out.append(("FN-BODY", "steps are only meaningful for runtime=declarative"))
         return out
@@ -614,14 +717,12 @@ def _strings(value) -> list[str]:
 
 
 def _validate_action_against(
-    pkg: OntologyPackage,
     rep: ValidationReport,
     act: ActionResource,
     target: ObjectTypeResource,
     objects: dict[str, ObjectTypeResource],
     links: dict[str, LinkTypeResource],
-    policies: dict[str, str],
-    functions: dict[str, FunctionResource],
+    policies: dict[str, PolicySetResource],
 ) -> None:
     res_id = f"Action/{act.metadata.name}"
     spec = act.spec
@@ -646,11 +747,11 @@ def _validate_action_against(
                 continue
             if pdef.derived:
                 rep.error("ACTION-DERIVED", res_id, f"{label} cannot set derived property {prop!r}")
-            if check_owner and effective_owner(obj_res, prop) != "ontology":
+            if check_owner and effective_owner(obj_res, prop) == "source":
                 rep.error(
                     "ACTION-OWNER",
                     res_id,
-                    f"{label} sets source-owned property {prop!r} (owner must be ontology)",
+                    f"{label} sets source-owned property {prop!r} (owner must be ontology or document)",
                 )
             _static_expr(rep, res_id, value_expr, spec, target, objects, allow_enum_literal=True)
 
@@ -668,6 +769,8 @@ def _validate_action_against(
             lnk = links.get(eff.link)
             if lnk is None:
                 rep.error("ACTION-LINK", res_id, f"modify-linked references unknown link {eff.link!r}")
+            elif spec.target not in (lnk.spec.source, lnk.spec.target):
+                rep.error("ACTION-LINK-TARGET", res_id, f"modify-linked link {eff.link!r} is not attached to target")
             else:
                 other = lnk.spec.target if lnk.spec.source == spec.target else lnk.spec.source
                 other_obj = objects.get(other)

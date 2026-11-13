@@ -143,7 +143,7 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
 
     @evolve_r.post("/proposals/{proposal_id}/reject")
     async def reject_proposal(proposal_id: int, body: RejectBody, sc: ServiceContext = Depends(get_sc)):
-        """The human 'no' is a first-class outcome AND the loop's memory: the
+        """The human 'no' is a valid outcome AND the loop's memory: the
         reason is fed back into the proposer's prompt on later rounds, so the
         same rejected mutation is not re-filed verbatim (direction E)."""
         async with sc.sessionmaker() as s:
@@ -187,7 +187,7 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
     @evolve_r.post("/graduation/request")
     async def graduation_request(body: GraduationBody, sc: ServiceContext = Depends(get_sc)):
         """File the T3 ticket: promote a mutation class toward T0. The request
-        is created for human execution only -- EvolutionPolicy is a constitution
+        is created for human execution only -- EvolutionPolicy is a governance baseline
         file the loop never edits itself."""
         from ..evolve.promoter import GRADUATION_STREAK, graduation_streak
         from ..evolve.proposer import MUTATION_CATALOG
@@ -237,8 +237,9 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
                 except Exception as exc:
                     candidate_error = f"{type(exc).__name__}: {exc}"
             reports = {}
-            passed = len(sc.compiled.eval_suites) > 0  # vacuous green: no suites = no evidence
-            for suite in sc.compiled.eval_suites.values():
+            suites = candidate.eval_suites() if candidate is not None else list(sc.compiled.eval_suites.values())
+            passed = len(suites) > 0  # vacuous green: no suites = no evidence
+            for suite in suites:
                 report = await sc.eval_runner.run(s, suite, candidate_pkg=candidate)
                 if candidate is not None:
                     report["candidate"] = True

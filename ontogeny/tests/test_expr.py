@@ -34,7 +34,7 @@ def ctx(**kw) -> ExprContext:
             "priority": "HIGH",
             "site": "north",
             "n": 10,
-            "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
+            "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
             "closed_at": None,
         },
         "parameters": {"resolution": "fixed", "downtime_minutes": 42},
@@ -89,8 +89,8 @@ class TestDatetime:
             "target.closed_at - target.created_at",
             ctx(
                 target={
-                    "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
-                    "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.timezone.utc),
+                    "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+                    "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.UTC),
                 }
             ),
         )
@@ -101,15 +101,15 @@ class TestDatetime:
             "(closed_at - created_at) / 60000",
             ExprContext(
                 target={
-                    "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc),
-                    "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.timezone.utc),
+                    "created_at": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+                    "closed_at": dt.datetime(2026, 1, 1, 0, 30, tzinfo=dt.UTC),
                 }
             ),
         )
         assert v == 30
 
     def test_now_injected_deterministic(self):
-        t0 = dt.datetime(2026, 9, 18, 12, 0, tzinfo=dt.timezone.utc)
+        t0 = dt.datetime(2026, 9, 18, 12, 0, tzinfo=dt.UTC)
         assert evaluate("now()", ExprContext(now=t0)) == t0
 
 

@@ -1,0 +1,74 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: ontogeny/v1
+kind: EvalSuite
+metadata:
+  name: lifecycle-flow-suite
+  display: Lifecycle flow regression suite
+  description: Regression assertions over wafer lots, process steps, CP tests and
+    field failures, evaluated before an evolution proposal is promoted
+spec:
+  queries:
+  - name: running-lots-exist
+    query:
+      object: wafer-lot
+      filter:
+        status: RUNNING
+      limit: 50
+    expect:
+      min-rows: 1
+  - name: completed-steps
+    query:
+      object: process-step
+      filter:
+        status: COMPLETED
+      limit: 100
+    expect:
+      columns:
+      - step_id
+      - lot_id
+      - status
+  - name: pending-tests
+    query:
+      object: wafer-test
+      filter:
+        result: PENDING
+      limit: 50
+    expect:
+      columns:
+      - test_id
+      - lot_id
+      - result
+  - name: open-field-failures
+    query:
+      object: field-failure
+      filter:
+        status: OPEN
+      limit: 50
+    expect:
+      min-rows: 1
+      # wall-clock budget: a loaded CI runner can hold a ~20ms query past
+      # 200ms; the case still catches gross regressions without CI flake.
+      max-latency-ms: 1000
+  replays:
+  - action: complete-process-step
+    cases: from-revisions
+    since: 90d
+    expect:
+      effects-idempotent: true
+      # the tighten gate: a candidate whose rules would have REJECTED a
+      # decision a human actually made fails the suite
+      outcomes-match: 1.0

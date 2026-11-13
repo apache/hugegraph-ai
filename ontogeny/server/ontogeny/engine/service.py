@@ -177,6 +177,14 @@ class QueryService:
         )
         return [dst if from_source else src for src, dst in members]
 
+    async def _linked_ids_many(
+        self, session, link_name: str, ids: list[str], *, from_source: bool
+    ) -> dict[str, list[str]]:
+        """Batch form of ``_linked_ids``: one read for the whole id set."""
+        if not ids:
+            return {}
+        return await self.repo.link_members_by_ids(session, link_name, ids, from_source=from_source)
+
     async def links(
         self,
         session,
@@ -384,8 +392,10 @@ class QueryService:
                     f"link {link_name!r}: direction {direction!r} contradicts the endpoint side of {current_type!r}"
                 )
             nxt: list[str] = []
+            # One read per hop for the whole frontier, instead of one per id.
+            grouped = await self._linked_ids_many(session, str(link_name), current_ids, from_source=from_source)
             for oid in current_ids:
-                targets = await self._linked_ids(session, str(link_name), oid, from_source=from_source)
+                targets = grouped.get(oid, [])
                 for tid in targets:
                     edges.append(
                         {

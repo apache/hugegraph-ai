@@ -255,23 +255,32 @@ class TestQuery:
         async with env["maker"]() as s:
             out = await q.traverse(
                 s,
-                "equipment",
-                ["EQ-02", "EQ-07"],
+                "work-center",
+                ["WC-01", "WC-02"],
                 SUPER,
                 [
-                    {"link": "step-equipment", "direction": "out"},
-                    {"link": "step-equipment", "direction": "in"},
+                    {"link": "operation-work-center", "direction": "out"},
+                    {"link": "operation-work-center", "direction": "in"},
                 ],
             )
         # one batched read per hop (source side, then target side), never per id
         assert single == []
         assert batched == [True, False]
-        assert sorted(out["steps"][1]["ids"]) == ["PS-7111", "PS-7112", "PS-7121", "PS-7131", "PS-7132"]
-        assert sorted(out["final_ids"]) == ["EQ-02", "EQ-07"]
+        assert sorted(out["steps"][1]["ids"]) == [
+            "OP-2001",
+            "OP-2002",
+            "OP-2003",
+            "OP-2101",
+            "OP-2102",
+            "OP-2201",
+            "OP-2301",
+            "OP-2302",
+        ]
+        assert sorted(out["final_ids"]) == ["WC-01", "WC-02"]
         pairs = {(e["source"]["id"], e["target"]["id"]) for e in out["edges"]}
-        assert ("EQ-02", "PS-7111") in pairs
-        assert ("EQ-07", "PS-7132") in pairs
-        assert ("EQ-02", "PS-7112") not in pairs
+        assert ("WC-01", "OP-2001") in pairs
+        assert ("WC-02", "OP-2302") in pairs
+        assert ("WC-01", "OP-2003") not in pairs
 
     async def test_traverse_batches_join_table_reads_per_hop(self, join_env, monkeypatch):
         import datetime as dt
@@ -286,7 +295,7 @@ class TestQuery:
 
         monkeypatch.setattr(repo, "link_members_by_ids", counting_batch)
 
-        now = dt.datetime.now(dt.UTC)
+        now = dt.datetime.now(dt.timezone.utc)
         async with join_env["maker"]() as s:
             await repo.link_add(s, "container-items", "C-1", "I-1", now)
             await repo.link_add(s, "container-items", "C-1", "I-2", now)

@@ -101,3 +101,65 @@ def test_batches_concatenate_paths_in_vid_order(monkeypatch):
     _node(vids, exec_side_effect=lambda gremlin: next(batches))
     # batch results are appended in matched_vids order, so ordering is preserved
     assert captured_paths == [["p1", "p2", "p3"]]
+
+
+def test_neighbor_query_wraps_per_vid_traversal_in_local_scope():
+    """The batched neighbour query must keep edge_limit / dedup / max_items per vid.
+
+    Without local(...) the bothE().limit(), dedup() and .limit(max_items) steps
+    are global across the whole batch, so a batch of N vids shares one edge
+    budget and returns neighbours almost only from the first vid. Wrapping the
+    traversal after g.V(...) in local(__. ...) runs the inner traversal
+    independently per vid, restoring the per-vid limits.
+    """
+    vids = [f"v{i}" for i in range(1, 6)]
+    exec_calls: list[str] = []
+
+    def exec_side_effect(gremlin):
+        exec_calls.append(gremlin)
+        return {"data": []}
+
+    _node(vids, exec_side_effect=exec_side_effect)
+    # exec_calls[0] is the full-vertex query; exec_calls[1] is the neighbour batch
+    neighbor_query = exec_calls[1]
+
+    # the per-vid traversal (repeat ... path ... limit) is wrapped in local(...)
+    assert ".local(" in neighbor_query
+    # the anonymous traversal starts right after local(, so limits are per-vid
+    local_idx = neighbor_query.index(".local(")
+    inner = neighbor_query[local_idx:]
+    assert "bothE(" in inner
+    assert ".limit(" in inner  # edge_limit is inside local scope
+    assert "dedup()" in inner
+    assert ".limit(" in inner  # max_items is inside local scope
+    # the global .toList() sits outside local(...): local's closing ')'
+    # precedes the final .toList() step
+    stripped = neighbor_query.rstrip()
+    assert stripped.endswith(".toList()")
+    to_list_idx = stripped.rindex(".toList()")
+    local_close_idx = stripped[:to_list_idx].rindex(")")
+    assert local_close_idx < to_list_idx
+
+
+def test_neighbor_query_keeps_limits_inside_local_not_global():
+    """edge_limit / dedup / max_items must appear after local(, not before it."""
+    vids = ["v1", "v2", "v3"]
+    exec_calls: list[str] = []
+
+    def exec_side_effect(gremlin):
+        exec_calls.append(gremlin)
+        return {"data": []}
+
+    _node(vids, exec_side_effect=exec_side_effect)
+    neighbor_query = exec_calls[1]
+    local_idx = neighbor_query.index(".local(")
+    before_local = neighbor_query[:local_idx]
+    after_local = neighbor_query[local_idx:]
+
+    # g.V(...) precedes local(); no limit/dedup step leaks ahead of it
+    assert "limit(" not in before_local
+    assert "dedup()" not in before_local
+    # the per-vid edge budget and result cap are scoped inside local(...)
+    assert "bothE(" in after_local
+    assert "dedup()" in after_local
+    assert after_local.count(".limit(") >= 2

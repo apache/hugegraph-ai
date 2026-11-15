@@ -32,6 +32,17 @@ class VectorStoreBase(ABC):
         """
         Add a list of vectors and their corresponding properties to the store.
 
+        String properties round-trip verbatim through search() and
+        get_all_properties() on every backend, including JSON-shaped text
+        ("123", '{"a": 1}') and empty strings. Non-string values are stored in
+        a backend-defined form and read back in that form: the file-backed
+        store keeps the original Python values (pickle), server-backed
+        JSON-payload stores keep JSON-representable values, and text-column
+        backends store JSON text and return that text. Input APIs (add, remove)
+        take the original values; read APIs (search, get_all_properties) return
+        the stored form. Pass string properties when the read-back value must
+        be identical to the input.
+
         Args:
             vectors (List[List[float]]): List of embedding vectors.
             props (List[Any]): List of associated metadata or properties for each vector.
@@ -43,7 +54,9 @@ class VectorStoreBase(ABC):
         Return all properties currently stored in the index.
 
         Returns:
-            List[Any]: The values previously passed to add().
+            List[Any]: The stored form of the values passed to add() — strings
+            unchanged (including JSON-shaped text and empty strings),
+            non-string values as described on add().
         """
 
     @abstractmethod
@@ -69,7 +82,8 @@ class VectorStoreBase(ABC):
             dis_threshold (float): Distance threshold below which results are considered relevant.
 
         Returns:
-            List[Any]: List of properties of the matched vectors.
+            List[Any]: Properties of the matched vectors in the stored form
+            described on add(): strings unchanged, non-string values as stored.
         """
 
     @abstractmethod

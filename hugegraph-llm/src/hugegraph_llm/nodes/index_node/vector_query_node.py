@@ -45,11 +45,12 @@ class VectorQueryNode(BaseNode):
             embedding = Embeddings().get_embedding()
             max_items = wk_input.max_items if wk_input.max_items is not None else 3
 
+            # The request's vector_dis_threshold is scoped to keyword matching
+            # (SemanticIdQueryNode); chunk retrieval prunes at CHUNK_DIS_THRESHOLD.
             self.operator = VectorIndexQuery(
                 vector_index=vector_index,
                 embedding=embedding,
                 topk=max_items,
-                vector_dis_threshold=wk_input.vector_dis_threshold,
             )
             return super().node_init()
         except Exception as e:  # pylint: disable=broad-exception-caught

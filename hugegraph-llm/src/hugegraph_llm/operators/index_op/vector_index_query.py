@@ -27,12 +27,12 @@ from hugegraph_llm.utils.log import log
 class VectorIndexQuery:
     """Retrieve matching chunks from the chunk vector index.
 
-    ``vector_dis_threshold`` is forwarded to ``VectorStoreBase.search`` and
+    ``chunk_dis_threshold`` is forwarded to ``VectorStoreBase.search`` and
     defaults to the ``CHUNK_DIS_THRESHOLD`` setting (2.0, the historical
-    hard-coded value), which only prunes clearly-off chunk candidates;
-    keyword-to-vertex matching keeps its own ``VECTOR_DIS_THRESHOLD`` knob.
+    hard-coded value), which only prunes clearly-off chunk candidates.
     Ranking stays top-k and relevance is refined by the downstream
-    merge/rerank step.
+    merge/rerank step. The API's ``vector_dis_threshold`` request field is
+    scoped to keyword-to-vertex matching and never reaches this operator.
     """
 
     def __init__(
@@ -40,19 +40,19 @@ class VectorIndexQuery:
         vector_index: type[VectorStoreBase],
         embedding: BaseEmbedding,
         topk: int = 3,
-        vector_dis_threshold: Optional[float] = None,
+        chunk_dis_threshold: Optional[float] = None,
     ):
         self.embedding = embedding
         self.topk = topk
-        self.vector_dis_threshold = (
-            huge_settings.chunk_dis_threshold if vector_dis_threshold is None else vector_dis_threshold
+        self.chunk_dis_threshold = (
+            huge_settings.chunk_dis_threshold if chunk_dis_threshold is None else chunk_dis_threshold
         )
         self.vector_index = vector_index.from_name(embedding.get_embedding_dim(), huge_settings.graph_name, "chunks")
 
     def run(self, context: Dict[str, Any]) -> Dict[str, Any]:
         query = context.get("query")
         query_embedding = self.embedding.get_texts_embeddings([query])[0]
-        results = self.vector_index.search(query_embedding, self.topk, dis_threshold=self.vector_dis_threshold)
+        results = self.vector_index.search(query_embedding, self.topk, dis_threshold=self.chunk_dis_threshold)
         context["vector_result"] = self._check_results_format(results)
         log.debug("KNOWLEDGE FROM VECTOR:\n%s", "\n".join(context["vector_result"]))
         return context

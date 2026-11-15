@@ -62,7 +62,7 @@ class TestVectorIndexQuery(unittest.TestCase):
 
         query = VectorIndexQuery(vector_index=self.mock_vector_store_class, embedding=self.mock_embedding, topk=3)
 
-        self.assertEqual(query.vector_dis_threshold, 1.3)
+        self.assertEqual(query.chunk_dis_threshold, 1.3)
 
     @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
     def test_init_with_custom_parameters(self, mock_settings):
@@ -80,13 +80,13 @@ class TestVectorIndexQuery(unittest.TestCase):
             vector_index=self.mock_vector_store_class,
             embedding=custom_embedding,
             topk=10,
-            vector_dis_threshold=1.5,
+            chunk_dis_threshold=1.5,
         )
 
         # Verify initialization with custom parameters
         self.assertEqual(query.topk, 10)
         self.assertEqual(query.embedding, custom_embedding)
-        self.assertEqual(query.vector_dis_threshold, 1.5)
+        self.assertEqual(query.chunk_dis_threshold, 1.5)
 
         # Verify vector store was initialized with custom parameters
         self.mock_vector_store_class.from_name.assert_called_once_with(256, "custom_graph", "chunks")
@@ -119,7 +119,7 @@ class TestVectorIndexQuery(unittest.TestCase):
 
     @patch("hugegraph_llm.operators.index_op.vector_index_query.huge_settings")
     def test_run_forwards_custom_threshold(self, mock_settings):
-        """Test that an explicit vector_dis_threshold is passed through to the store"""
+        """Test that an explicit chunk_dis_threshold is passed through to the store"""
         mock_settings.graph_name = "test_graph"
         mock_settings.chunk_dis_threshold = 1.3
 
@@ -127,7 +127,7 @@ class TestVectorIndexQuery(unittest.TestCase):
             vector_index=self.mock_vector_store_class,
             embedding=self.mock_embedding,
             topk=2,
-            vector_dis_threshold=1.5,
+            chunk_dis_threshold=1.5,
         )
 
         query.run({"query": "test query"})
@@ -144,7 +144,7 @@ class TestVectorIndexQuery(unittest.TestCase):
             vector_index=self.mock_vector_store_class,
             embedding=self.mock_embedding,
             topk=2,
-            vector_dis_threshold=0,
+            chunk_dis_threshold=0,
         )
 
         query.run({"query": "test query"})

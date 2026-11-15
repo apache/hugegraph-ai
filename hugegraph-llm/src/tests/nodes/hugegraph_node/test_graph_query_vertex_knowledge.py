@@ -85,3 +85,23 @@ def test_without_paths_all_matched_vertices_become_knowledge():
 
     assert subgraph == vertex_knowledge
     assert vertex_degree_list == [{"A{name: alice}"}]
+
+
+def test_falsy_property_values_render_in_both_knowledge_forms():
+    """0 and False are values: the standalone vertex renderer and the path renderer both keep them."""
+    node = GraphQueryNode()
+    vertex_knowledge = node._format_graph_from_vertex(
+        [{"id": "P", "properties": {"name": "widget", "stock": 0, "active": False}}]
+    )
+    assert vertex_knowledge == {"P{name: widget, stock: 0, active: False}"}
+
+    subgraph, _, _ = node._format_graph_query_result(
+        [
+            _path(
+                _vertex("A", name="alice", stock=0, active=False),
+                _edge("A", "B", since=0),
+                _vertex("B", name="bob"),
+            )
+        ]
+    )
+    assert subgraph == {"A{name: alice, stock: 0, active: False}--[knows{since: 0}]-->B{name: bob}"}

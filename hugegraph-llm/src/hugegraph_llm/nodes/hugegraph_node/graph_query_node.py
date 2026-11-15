@@ -328,7 +328,10 @@ class GraphQueryNode(BaseNode):
 
     def _format_props_str(self, props: Any, item_type: str) -> str:
         """Canonical property rendering so the same element always formats to the same string."""
-        return ", ".join(f"{k}: {self._limit_property_query(v, item_type)}" for k, v in props.items() if v)
+        # skip only absent values: 0 and False are data, not padding
+        return ", ".join(
+            f"{k}: {self._limit_property_query(v, item_type)}" for k, v in props.items() if v is not None and v != ""
+        )
 
     def _format_graph_from_vertex(self, query_result: List[Any]) -> Set[str]:
         knowledge = set()

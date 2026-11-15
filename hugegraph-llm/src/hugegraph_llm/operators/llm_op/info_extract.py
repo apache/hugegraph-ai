@@ -159,6 +159,8 @@ class InfoExtract:
         self.llm = llm
         self.example_prompt = example_prompt
         self.max_length = huge_settings.max_element_id_length if max_length is None else max_length
+        if self.max_length < 1:
+            raise ValueError(f"max_length must be a positive integer, got {self.max_length}")
 
     def run(self, context: Dict[str, Any]) -> Dict[str, List[Any]]:
         chunks = context["chunks"]

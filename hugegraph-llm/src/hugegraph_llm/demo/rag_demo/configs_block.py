@@ -22,7 +22,7 @@ import gradio as gr
 import requests
 from requests.auth import HTTPBasicAuth
 
-from hugegraph_llm.config import huge_settings, index_settings, llm_settings, runtime_config_lock
+from hugegraph_llm.config import huge_settings, index_settings, llm_settings, prompt, runtime_config_lock
 from hugegraph_llm.utils.log import log
 
 
@@ -397,10 +397,15 @@ def refresh_settings_snapshot() -> None:
     out-of-band edits of the config files; it never discards unsaved input.
     Form renders and the UI load handler refresh here so a reloaded page
     shows the saved configuration instead of the startup snapshot.
+    Prompts are language-derived, so a reload that changes the language
+    re-resolves them in the same step instead of leaving them behind.
     """
     with runtime_config_lock:
+        previous_language = llm_settings.language
         llm_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
         index_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
+        if llm_settings.language != previous_language:
+            prompt.ensure_yaml_file_exists()
 
 
 def ui_control_values() -> tuple:

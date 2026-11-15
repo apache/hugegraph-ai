@@ -56,6 +56,9 @@ def saved_config(tmp_path, monkeypatch):
     settings = LLMConfig()
     monkeypatch.setattr(config, "llm_settings", settings)
     monkeypatch.setattr(configs_block, "llm_settings", settings)
+    # The prompt object holds a reference, not a module global: keep it on the
+    # isolated instance so prompt resolution reads the same settings as the UI.
+    monkeypatch.setattr(config.prompt, "llm_settings", settings)
     index = IndexConfig()
     monkeypatch.setattr(config, "index_settings", index)
     monkeypatch.setattr(configs_block, "index_settings", index)

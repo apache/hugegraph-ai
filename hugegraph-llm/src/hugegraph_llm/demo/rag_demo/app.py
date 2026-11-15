@@ -105,6 +105,10 @@ def init_rag_ui() -> gr.Interface:
             # Reload and read the UI snapshot under the same lock as graph writes.
             with runtime_config_lock:
                 huge_settings.__init__()  # type: ignore[misc] # pylint: disable=C2801
+                # Refresh settings before resolving prompts: the prompt language
+                # follows llm_settings.language, so resolving first would read the
+                # pre-reload language and hand the page stale prompt values.
+                refresh_settings_snapshot()
                 prompt.ensure_yaml_file_exists()
                 graph_and_prompt = (
                     huge_settings.graph_url,
@@ -123,7 +127,6 @@ def init_rag_ui() -> gr.Interface:
                     huge_settings.graph_name,
                     prompt.gremlin_generate_prompt,
                 )
-                refresh_settings_snapshot()
                 return (*graph_and_prompt, *ui_control_values())
 
         hugegraph_llm_ui.load(  # pylint: disable=E1101

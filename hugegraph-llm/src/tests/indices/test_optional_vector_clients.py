@@ -16,6 +16,7 @@
 # under the License.
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -131,6 +132,89 @@ def test_qdrant_threshold_tolerates_float32_score_noise(monkeypatch):
         assert index.search([1.0, 0.0, 0.0], top_k=3, dis_threshold=0) == ["Alice"]
     finally:
         client.close()
+
+
+class _StoringPropertyCollection:
+    """Minimal Milvus collection double: stores property text and emulates the query filter."""
+
+    def __init__(self, rows=()):
+        self.rows = list(rows)
+
+    @property
+    def num_entities(self):
+        return len(self.rows)
+
+    def load(self):
+        pass
+
+    def release(self):
+        pass
+
+    def flush(self):
+        pass
+
+    def insert(self, entities):
+        self.rows.extend(entity["property"] for entity in entities)
+
+    def search(self, **kwargs):
+        hits = [
+            SimpleNamespace(distance=0.0, entity=SimpleNamespace(get=lambda key, _p=prop: _p))
+            for prop in self.rows[: kwargs.get("limit", len(self.rows))]
+        ]
+        return [hits]
+
+    def query(self, expr, output_fields):
+        # Server-side expression evaluation; fail loudly on any unmodeled expr.
+        if expr == 'property != ""':
+            kept = [prop for prop in self.rows if prop != ""]
+        elif expr == "original_id >= 0":
+            kept = list(self.rows)
+        else:
+            raise ValueError(f"fake cannot evaluate expr: {expr}")
+        return [{"property": prop} for prop in kept]
+
+
+def _milvus_with_rows(monkeypatch, rows):
+    pytest.importorskip("pymilvus", reason="Install the vectordb extra")
+    from hugegraph_llm.indices.vector_index import milvus_vector_store as store
+
+    collections = {"hugegraph_llm_contract": 2}
+    created = []
+    _fake_milvus(monkeypatch, store, collections, created)
+    index = store.MilvusVectorIndex("contract", "localhost", 19530, embed_dim=2)
+    monkeypatch.setattr(index, "collection", _StoringPropertyCollection(rows), raising=True)
+    return store, index
+
+
+def test_milvus_search_returns_json_shaped_chunk_text_unchanged(monkeypatch):
+    """Chunk text that parses as JSON must come back as its exact text, not as a decoded value."""
+    _, index = _milvus_with_rows(monkeypatch, ["123", "true", '{"answer": 42}', "plain chunk"])
+
+    assert index.search([1.0, 0.0], top_k=4, dis_threshold=1.0) == ["123", "true", '{"answer": 42}', "plain chunk"]
+
+
+def test_milvus_get_all_properties_round_trips_stored_text_including_empty(monkeypatch):
+    """add() then get_all_properties() returns the exact strings, including empty ones."""
+    _, index = _milvus_with_rows(monkeypatch, [])
+    index.add([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]], ["123", "", '{"a": 1}'])
+
+    assert index.get_all_properties() == ["123", "", '{"a": 1}']
+
+
+def test_milvus_retrieval_keeps_json_shaped_chunks_for_chunk_query(monkeypatch):
+    """JSON-shaped chunk text survives Milvus retrieval into chunk results instead of vanishing."""
+    from hugegraph_llm.operators.index_op.vector_index_query import VectorIndexQuery
+
+    store, index = _milvus_with_rows(monkeypatch, ["123", "true", '{"answer": 42}', "plain chunk"])
+    monkeypatch.setattr(store.MilvusVectorIndex, "from_name", staticmethod(lambda *args, **kwargs: index))
+    embedding = MagicMock()
+    embedding.get_embedding_dim.return_value = 2
+    embedding.get_texts_embeddings.return_value = [[1.0, 0.0]]
+
+    query = VectorIndexQuery(vector_index=store.MilvusVectorIndex, embedding=embedding, topk=4)
+    context = query.run({"query": "anything"})
+
+    assert context["vector_result"] == ["123", "true", '{"answer": 42}', "plain chunk"]
 
 
 def test_milvus_threshold_semantics_include_exact_matches(monkeypatch):

@@ -96,19 +96,11 @@ class MilvusVectorIndex(VectorStoreBase):
     def save_index_by_name(self, *name: str):
         self.collection.flush()
 
-    def _deserialize_property(self, prop) -> str:
-        """If input is a string, return as-is. If dict or list, convert to JSON string."""
+    def _to_stored_text(self, prop) -> str:
+        """Return the text stored in the property column: strings as-is, other values as JSON text."""
         if isinstance(prop, str):
             return prop
         return json.dumps(prop)
-
-    def _serialize_property(self, prop: str):
-        """If input is a JSON string, parse it. Otherwise, return as-is."""
-        try:
-            return json.loads(prop)
-        except (json.JSONDecodeError, TypeError):
-            # a simple string
-            return prop
 
     def add(self, vectors: List[List[float]], props: List[Any]):
         if len(vectors) == 0:
@@ -123,7 +115,7 @@ class MilvusVectorIndex(VectorStoreBase):
             entities.append(
                 {
                     "embedding": vector,
-                    "property": self._deserialize_property(prop),
+                    "property": self._to_stored_text(prop),
                     "original_id": idx,
                 }
             )
@@ -138,7 +130,7 @@ class MilvusVectorIndex(VectorStoreBase):
             self.collection.load()
             remove_num = 0
             for prop in props:
-                expr = f'property == "{self._deserialize_property(prop)}"'
+                expr = f'property == "{self._to_stored_text(prop)}"'
                 res = self.collection.delete(expr)
                 if hasattr(res, "delete_count"):
                     remove_num += res.delete_count
@@ -167,9 +159,10 @@ class MilvusVectorIndex(VectorStoreBase):
             for hits in results:
                 for hit in hits:
                     if hit.distance <= dis_threshold:
-                        prop_str = hit.entity.get("property")
-                        prop = self._serialize_property(prop_str)
-                        ret.append(prop)
+                        # Property strings round-trip verbatim: decoding JSON-shaped
+                        # chunk text ("123", '{"a": 1}') would change its type and
+                        # make downstream consumers drop it as malformed.
+                        ret.append(hit.entity.get("property"))
                         log.debug("[✓] Add valid distance %s to results.", hit.distance)
                     else:
                         log.debug(
@@ -190,11 +183,12 @@ class MilvusVectorIndex(VectorStoreBase):
         self.collection.load()
         try:
             results = self.collection.query(
-                expr='property != ""',
+                # Match every stored row: an empty string is a valid property value.
+                expr="original_id >= 0",
                 output_fields=["property"],
             )
 
-            return [self._deserialize_property(item["property"]) for item in results]
+            return [item["property"] for item in results]
 
         finally:
             self.collection.release()

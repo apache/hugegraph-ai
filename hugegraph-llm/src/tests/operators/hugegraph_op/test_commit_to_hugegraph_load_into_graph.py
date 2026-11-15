@@ -497,6 +497,48 @@ class TestCommit2GraphLoadIntoGraph(unittest.TestCase):
         )
 
     @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
+    def test_load_into_graph_keeps_edges_when_a_duplicated_vertex_was_created(self, mock_handle_graph_creation):
+        """A duplicated vertex id created by one copy keeps its edges even if another copy was skipped."""
+        mock_handle_graph_creation.side_effect = [MagicMock(id=":v1"), MagicMock(id=":e1")]
+
+        vertices = [
+            # first copy: un-coercible non-nullable property -> skipped
+            {"label": "person", "id": "1:Sarah", "properties": {"name": "Sarah", "age": "unknown"}},
+            # second copy: valid -> created under the same id
+            {"label": "person", "id": "1:Sarah", "properties": {"name": "Sarah", "age": 30}},
+        ]
+        edges = [
+            {
+                "label": "acted_in",
+                "properties": {"role": "Forrest Gump"},
+                "outV": "1:Sarah",
+                "inV": "movie:Forrest Gump",
+            }
+        ]
+        schema = {
+            **self.schema,
+            "vertexlabels": [
+                {
+                    "id": 1,
+                    "name": "person",
+                    "properties": ["name", "age"],
+                    "primary_keys": ["name"],
+                    "nullable_keys": [],
+                    "id_strategy": "PRIMARY_KEY",
+                },
+                self.schema["vertexlabels"][1],
+            ],
+        }
+
+        self.commit2graph.load_into_graph(vertices, edges, schema)
+
+        # the edge must run against the created copy's server id instead of being dropped
+        mock_handle_graph_creation.assert_any_call(
+            self.commit2graph.client.graph().add_edge, "acted_in", ":v1", "movie:Forrest Gump", {"role": "Forrest Gump"}
+        )
+        self.assertEqual(mock_handle_graph_creation.call_count, 2)
+
+    @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph._handle_graph_creation")
     def test_load_into_graph_raises_when_no_vertex_can_be_imported(self, mock_handle_graph_creation):
         """An import where every vertex is rejected fails explicitly before any edge write."""
         mock_handle_graph_creation.return_value = MagicMock(id="vertex_id")

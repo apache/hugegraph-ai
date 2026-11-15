@@ -15,6 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Tuple
 
 from pyhugegraph.client import PyHugeClient
@@ -51,7 +52,7 @@ class Commit2Graph:
             log.warning("Using schema_free mode, could try schema_define mode for better effect!")
         else:
             self.init_schema_if_need(schema)
-            self.load_into_graph(vertices, edges, schema)
+            data["import_summary"] = self.load_into_graph(vertices, edges, schema)
         return data
 
     def _set_default_property(self, key, input_properties, property_label_map):
@@ -76,16 +77,17 @@ class Commit2Graph:
             log.error("Error on creating: %s, %s", args, e)
             return None
 
-    def load_into_graph(self, vertices, edges, schema):  # pylint: disable=too-many-statements
+    def load_into_graph(self, vertices, edges, schema) -> Dict[str, Any]:  # pylint: disable=too-many-statements
         # pylint: disable=R0912 (too-many-branches)
         vertex_label_map = {v_label["name"]: v_label for v_label in schema["vertexlabels"]}
         edge_label_map = {e_label["name"]: e_label for e_label in schema["edgelabels"]}
         property_label_map = {p_label["name"]: p_label for p_label in schema["propertykeys"]}
         vid_mapping = {}  # mapping from LLM-generated vertex ID to actual server vertex ID
         skipped_ids = set()  # local IDs of input vertices that were not imported
-        skip_reports: List[str] = []  # human-readable reasons, named in the import summary
-        imported_vertices = skipped_vertices = 0
-        imported_edges = skipped_edges = 0
+        skipped_vertices: List[Dict[str, Any]] = []  # skipped ids and reasons, named in the import summary
+        skipped_edges: List[Dict[str, Any]] = []
+        imported_vertices = 0
+        imported_edges = 0
 
         for vertex in vertices:
             input_label = vertex["label"]
@@ -95,8 +97,7 @@ class Commit2Graph:
                     "(Input) VertexLabel %s not found in schema, skip & need check it!",
                     input_label,
                 )
-                skipped_vertices += 1
-                skip_reports.append(f"{vertex.get('id') or input_label}: unknown VertexLabel")
+                skipped_vertices.append({"id": vertex.get("id"), "reason": f"unknown VertexLabel '{input_label}'"})
                 if vertex.get("id"):
                     skipped_ids.add(vertex["id"])
                 continue
@@ -132,8 +133,9 @@ class Commit2Graph:
                         vertex,
                     )
             if has_problem:
-                skipped_vertices += 1
-                skip_reports.append(f"{vertex.get('id') or input_label}: primary-key '{pk}' missing")
+                skipped_vertices.append(
+                    {"id": vertex.get("id"), "reason": f"primary-key '{pk}' missing on VertexLabel '{input_label}'"}
+                )
                 if vertex.get("id"):
                     skipped_ids.add(vertex["id"])
                 continue
@@ -153,6 +155,7 @@ class Commit2Graph:
             # skips only this vertex (the old code dropped the whole vertex for any
             # single mismatch while logging as if just the property was skipped).
             coerced_properties = {}
+            skip_reason = ""
             for key, value in input_properties.items():
                 prop_def = property_label_map.get(key)
                 if prop_def is None:
@@ -176,11 +179,13 @@ class Commit2Graph:
                         prop_def["data_type"],
                         vertex,
                     )
+                    skip_reason = (
+                        f"property '{key}' value {value!r} does not fit {prop_def['data_type']} (non-nullable)"
+                    )
                     has_problem = True
                     break
             if has_problem:
-                skipped_vertices += 1
-                skip_reports.append(f"{mapping_id or input_label}: property '{key}' value {value!r} does not fit")
+                skipped_vertices.append({"id": mapping_id, "reason": skip_reason})
                 if mapping_id:
                     skipped_ids.add(mapping_id)
                 continue
@@ -203,8 +208,7 @@ class Commit2Graph:
                     input_label,
                     input_properties,
                 )
-                skipped_vertices += 1
-                skip_reports.append(f"{mapping_id or input_label}: server rejected the vertex")
+                skipped_vertices.append({"id": mapping_id, "reason": "server rejected the vertex"})
                 if mapping_id:
                     skipped_ids.add(mapping_id)
                 continue
@@ -214,39 +218,51 @@ class Commit2Graph:
                 vid_mapping[mapping_id] = vid
             imported_vertices += 1
 
+        skip_details = "; ".join(f"{entry['id']}: {entry['reason']}" for entry in skipped_vertices)
         log.info(
             "(Loading) import summary: %d vertices created, %d vertices skipped (%s)",
             imported_vertices,
-            skipped_vertices,
-            "; ".join(skip_reports) or "none",
+            len(skipped_vertices),
+            skip_details or "none",
         )
         if vertices and not imported_vertices:
             raise ValueError(
-                f"Failed to create vertex: no vertex could be imported (skipped {skipped_vertices}: "
-                f"{'; '.join(skip_reports)})"
+                f"Failed to create vertex: no vertex could be imported (skipped {len(skipped_vertices)}: "
+                f"{skip_details})"
             )
 
         for edge in edges:
             label = edge["label"]
             properties = edge["properties"]
+            out_v, in_v = edge.get("outV"), edge.get("inV")
 
             if label not in edge_label_map:
                 log.critical(
                     "(Input) EdgeLabel %s not found in schema, skip & need check it!",
                     label,
                 )
-                skipped_edges += 1
+                skipped_edges.append({"label": label, "outV": out_v, "inV": in_v, "reason": "unknown EdgeLabel"})
                 continue
 
-            out_v, in_v = edge.get("outV"), edge.get("inV")
-            failed_endpoints = [endpoint for endpoint in (out_v, in_v) if endpoint in skipped_ids]
+            # A duplicated input id whose later copy was created stays usable for edges;
+            # only ids that no created vertex claimed really drop the endpoints.
+            failed_endpoints = [
+                endpoint for endpoint in (out_v, in_v) if endpoint in skipped_ids and endpoint not in vid_mapping
+            ]
             if failed_endpoints:
                 log.error(
                     "Edge %s references skipped vertex id(s) %s, skip it & need check it again",
                     edge,
                     failed_endpoints,
                 )
-                skipped_edges += 1
+                skipped_edges.append(
+                    {
+                        "label": label,
+                        "outV": out_v,
+                        "inV": in_v,
+                        "reason": f"references skipped vertex id(s) {failed_endpoints}",
+                    }
+                )
                 continue
 
             start = vid_mapping.get(out_v, out_v)
@@ -261,15 +277,21 @@ class Commit2Graph:
             # TODO: we could try batch add edges first, setback to single-mode if failed
             if self._handle_graph_creation(self.client.graph().add_edge, label, start, end, properties) is None:
                 log.error("Failed to create edge '%s' (%s -> %s), skip it & need check it again", label, start, end)
-                skipped_edges += 1
+                skipped_edges.append({"label": label, "outV": out_v, "inV": in_v, "reason": "server rejected the edge"})
             else:
                 imported_edges += 1
 
         log.info(
             "(Loading) import summary: %d edges created, %d edges skipped",
             imported_edges,
-            skipped_edges,
+            len(skipped_edges),
         )
+        return {
+            "imported_vertices": imported_vertices,
+            "imported_edges": imported_edges,
+            "skipped_vertices": skipped_vertices,
+            "skipped_edges": skipped_edges,
+        }
 
     def init_schema_if_need(self, schema: dict):
         properties = schema["propertykeys"]
@@ -466,8 +488,13 @@ class Commit2Graph:
         if data_type in (PropertyDataType.FLOAT.value, PropertyDataType.DOUBLE.value):
             if isinstance(value, (int, float, str)):
                 try:
-                    return [float(value)]
-                except ValueError:
+                    converted = float(value)
+                    # float() rounds silently (9007199254740993 -> 9007199254740992.0,
+                    # 1e400 -> inf); only conversions that keep the written value are lossless
+                    if Decimal(str(value)) != Decimal(repr(converted)):
+                        return []
+                    return [converted]
+                except (ValueError, OverflowError, InvalidOperation):
                     return []
             return []
         return []

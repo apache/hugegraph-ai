@@ -119,6 +119,7 @@ class TestBuildSemanticIndex(unittest.TestCase):
                     loop = asyncio.get_running_loop()
                     return await loop.run_in_executor(None, embed_batch, batch)
 
+                self.mock_embedding.get_texts_embeddings.side_effect = embed_batch
                 self.mock_embedding.async_get_texts_embeddings.side_effect = async_embed_batch
                 builder = BuildSemanticIndex(self.mock_embedding, FaissVectorIndex)
 
@@ -133,6 +134,49 @@ class TestBuildSemanticIndex(unittest.TestCase):
                 loaded_index = FaissVectorIndex.from_name(1, self.mock_settings.graph_name, "graph_vids")
                 for i in (0, 500, 1000):
                     self.assertEqual(loaded_index.search([float(i)], top_k=1), [f"person:vid{i}"])
+
+    def test_two_updates_on_one_instance_keep_indexing(self):
+        class _KeepAliveClientEmbedding(BaseEmbedding):
+            """Embedding whose async client keeps one pooled connection bound to the
+            event loop that first used it, like the OpenAI/Ollama async clients.
+            Reusing that connection from a later loop raises RuntimeError: Event loop
+            is closed — the failure reported for asyncio.run() per index update."""
+
+            def __init__(self):
+                self.conn_loop = None
+                self.sync_calls = []
+
+            def get_text_embedding(self, text):
+                return [float(text)]
+
+            def get_embedding_dim(self):
+                return 1
+
+            def get_texts_embeddings(self, texts, batch_size=32):
+                self.sync_calls.append(list(texts))
+                return [[float(text)] for text in texts]
+
+            async def async_get_texts_embeddings(self, texts, batch_size=32):
+                loop = asyncio.get_running_loop()
+                if self.conn_loop is None:
+                    self.conn_loop = loop  # keep-alive connection created on this loop
+                else:
+                    self.conn_loop.call_soon(lambda: None)  # transport write via the closed loop
+                return [[float(text)] for text in texts]
+
+        self.mock_schema_manager.schema.get_schema.return_value = {"vertexlabels": []}
+        self.mock_vector_store.get_all_properties.side_effect = [[], ["1"]]
+        embedding = _KeepAliveClientEmbedding()
+        builder = BuildSemanticIndex(embedding, self.mock_vector_store_class)
+
+        first = builder.run({"vertices": ["1"]})
+        second = builder.run({"vertices": ["2"]})
+
+        self.assertEqual(first["added_vid_vector_num"], 1)
+        self.assertEqual(second["added_vid_vector_num"], 1)
+        self.assertEqual(embedding.sync_calls, [["1"], ["2"]])
+        self.mock_vector_store.add.assert_any_call([[1.0]], ["1"])
+        self.mock_vector_store.add.assert_any_call([[2.0]], ["2"])
 
     def test_run_with_primary_key_strategy(self):
         # Create a builder

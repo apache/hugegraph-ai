@@ -41,6 +41,9 @@ async def get_embeddings_parallel(embedding: BaseEmbedding, vids: list[str]) -> 
 
     Note:
         - Processes texts in batches of 500 with at most 10 batches in flight
+        - Fetches through get_texts_embeddings on the loop's executor: callers run this
+          helper on short-lived loops (asyncio.run per index update), and an async
+          client's pooled connections outlive those loops
         - Displays progress using a progress bar that updates as each batch completes
         - Uses asyncio.gather() to preserve order correspondence between input and output
     """
@@ -50,7 +53,11 @@ async def get_embeddings_parallel(embedding: BaseEmbedding, vids: list[str]) -> 
 
     async def get_batch_with_progress(batch: list[str], pbar: tqdm) -> list[Any]:
         async with sem:
-            result = await embedding.async_get_texts_embeddings(batch)
+            loop = asyncio.get_running_loop()
+            # Callers run this helper on a fresh loop per update, while the embedding
+            # instance (and its clients) outlives those loops. The synchronous client
+            # holds no loop-bound state, so repeated runs on one instance stay safe.
+            result = await loop.run_in_executor(None, embedding.get_texts_embeddings, batch)
             pbar.update(1)
             return result
 

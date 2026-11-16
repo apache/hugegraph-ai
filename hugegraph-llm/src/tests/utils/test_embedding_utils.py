@@ -16,6 +16,8 @@
 # under the License.
 
 import asyncio
+import threading
+import time
 import unittest
 from typing import List
 
@@ -32,9 +34,11 @@ class _TrackingEmbedding(BaseEmbedding):
 
     def __init__(self, batch_delay: float = 0.0) -> None:
         self.batch_sizes: List[int] = []
+        self.async_batch_sizes: List[int] = []
         self.batch_delay = batch_delay
         self.in_flight = 0
         self.max_in_flight = 0
+        self._lock = threading.Lock()
 
     def get_text_embedding(self, text: str) -> List[float]:
         return [float(text)]
@@ -42,18 +46,25 @@ class _TrackingEmbedding(BaseEmbedding):
     def get_embedding_dim(self) -> int:
         return 1
 
-    def get_texts_embeddings(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
-        return [[float(text)] for text in texts]
-
-    async def async_get_texts_embeddings(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
-        self.in_flight += 1
-        self.max_in_flight = max(self.max_in_flight, self.in_flight)
-        self.batch_sizes.append(len(texts))
+    def _record(self, texts: List[str]) -> List[List[float]]:
+        with self._lock:
+            self.in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self.in_flight)
+            self.batch_sizes.append(len(texts))
         try:
-            await asyncio.sleep(self.batch_delay)
+            time.sleep(self.batch_delay)
             return [[float(text)] for text in texts]
         finally:
-            self.in_flight -= 1
+            with self._lock:
+                self.in_flight -= 1
+
+    def get_texts_embeddings(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
+        return self._record(texts)
+
+    async def async_get_texts_embeddings(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
+        self.async_batch_sizes.append(len(texts))
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._record, texts)
 
 
 class TestGetEmbeddingsParallel(unittest.TestCase):
@@ -84,11 +95,24 @@ class TestGetEmbeddingsParallel(unittest.TestCase):
 
     def test_propagates_batch_errors(self):
         class _FailingEmbedding(_TrackingEmbedding):
+            def get_texts_embeddings(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
+                raise RuntimeError("embedding failed")
+
             async def async_get_texts_embeddings(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
                 raise RuntimeError("embedding failed")
 
         with self.assertRaisesRegex(RuntimeError, "embedding failed"):
             asyncio.run(get_embeddings_parallel(_FailingEmbedding(), ["1"]))
+
+    def test_fetch_avoids_loop_bound_async_clients(self):
+        # Callers run this helper on a fresh event loop per index update (asyncio.run),
+        # while an instance-owned async client keeps its pooled connections bound to the
+        # loop that first used them. The fetch must drive the loop-agnostic sync client.
+        embedding = _TrackingEmbedding()
+
+        self.assertEqual(asyncio.run(get_embeddings_parallel(embedding, ["1", "2"])), [[1.0], [2.0]])
+        self.assertEqual(embedding.batch_sizes, [2])
+        self.assertEqual(embedding.async_batch_sizes, [])
 
 
 if __name__ == "__main__":

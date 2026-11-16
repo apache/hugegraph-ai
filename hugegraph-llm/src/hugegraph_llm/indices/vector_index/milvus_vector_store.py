@@ -141,6 +141,11 @@ class MilvusVectorIndex(VectorStoreBase):
             self.collection.release()
 
     def search(self, query_vector: List[float], top_k: int, dis_threshold: float = 0.9) -> List[Any]:
+        """Return the stored property text of matched rows verbatim.
+
+        String properties round-trip unchanged through this store, including
+        JSON-shaped text ("123", '{"a": 1}') and empty strings.
+        """
         try:
             if self.collection.num_entities == 0:
                 return []
@@ -177,6 +182,7 @@ class MilvusVectorIndex(VectorStoreBase):
             self.collection.release()
 
     def get_all_properties(self) -> list[str]:
+        """Return every stored property as its exact stored text, including empty strings."""
         if self.collection.num_entities == 0:
             return []
 

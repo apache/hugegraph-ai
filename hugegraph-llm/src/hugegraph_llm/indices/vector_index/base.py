@@ -32,16 +32,13 @@ class VectorStoreBase(ABC):
         """
         Add a list of vectors and their corresponding properties to the store.
 
-        String properties round-trip verbatim through search() and
-        get_all_properties() on every backend, including JSON-shaped text
-        ("123", '{"a": 1}') and empty strings. Non-string values are stored in
-        a backend-defined form and read back in that form: the file-backed
-        store keeps the original Python values (pickle), server-backed
-        JSON-payload stores keep JSON-representable values, and text-column
-        backends store JSON text and return that text. Input APIs (add, remove)
-        take the original values; read APIs (search, get_all_properties) return
-        the stored form. Pass string properties when the read-back value must
-        be identical to the input.
+        Non-string values are stored in a backend-defined form and read back
+        in that form: the file-backed store keeps the original Python values
+        (pickle), server-backed JSON-payload stores keep JSON-representable
+        values, and text-column backends store JSON text and return that text.
+        Input APIs (add, remove) take the original values; read APIs (search,
+        get_all_properties) return the stored form. Pass string properties to
+        avoid these per-backend differences.
 
         Args:
             vectors (List[List[float]]): List of embedding vectors.
@@ -54,9 +51,8 @@ class VectorStoreBase(ABC):
         Return all properties currently stored in the index.
 
         Returns:
-            List[Any]: The stored form of the values passed to add() — strings
-            unchanged (including JSON-shaped text and empty strings),
-            non-string values as described on add().
+            List[Any]: The values passed to add() in their stored form; see
+            add() for the per-backend differences.
         """
 
     @abstractmethod
@@ -83,7 +79,7 @@ class VectorStoreBase(ABC):
 
         Returns:
             List[Any]: Properties of the matched vectors in the stored form
-            described on add(): strings unchanged, non-string values as stored.
+            described on add().
         """
 
     @abstractmethod

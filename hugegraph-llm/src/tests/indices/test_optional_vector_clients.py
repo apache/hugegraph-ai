@@ -217,6 +217,24 @@ def test_milvus_retrieval_keeps_json_shaped_chunks_for_chunk_query(monkeypatch):
     assert context["vector_result"] == ["123", "true", '{"answer": 42}', "plain chunk"]
 
 
+def test_milvus_dict_properties_round_trip_into_gremlin_example_results(monkeypatch):
+    """A stored example dict survives the Milvus round trip into the gremlin-example consumer as a dict."""
+    from hugegraph_llm.operators.index_op.gremlin_example_index_query import GremlinExampleIndexQuery
+
+    _, index = _milvus_with_rows(monkeypatch, [])
+    example = {"query": "g.V()", "gremlin": "g.V()"}
+    index.add([[1.0, 0.0]], [example])
+
+    query = GremlinExampleIndexQuery.__new__(GremlinExampleIndexQuery)
+    query.num_examples = 1
+    query.vector_index = index
+    embedding = MagicMock()
+    embedding.get_texts_embeddings.return_value = [[1.0, 0.0]]
+    query.embedding = embedding
+
+    assert query._get_match_result({}, "show all vertices") == [example]
+
+
 def test_milvus_threshold_semantics_include_exact_matches(monkeypatch):
     pytest.importorskip("pymilvus", reason="Install the vectordb extra")
     from hugegraph_llm.indices.vector_index import milvus_vector_store as store

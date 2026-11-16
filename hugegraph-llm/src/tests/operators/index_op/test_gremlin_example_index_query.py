@@ -17,6 +17,7 @@
 
 # pylint: disable=unused-argument,unused-variable
 
+import json
 import shutil
 import tempfile
 import unittest
@@ -325,6 +326,23 @@ class TestGremlinExampleIndexQuery(unittest.TestCase):
 
         # Verify that get_texts_embeddings was called since query_embedding wasn't a list
         mock_embedding.get_texts_embeddings.assert_called_once_with(["find all persons"])
+
+    def test_get_match_result_decodes_stored_json_text(self):
+        """Text-column backends return stored example dicts as JSON text; the query decodes them back."""
+        mock_embedding = Mock()
+        mock_embedding.get_embedding_dim.return_value = self.embed_dim
+        mock_embedding.get_texts_embeddings.return_value = [self.vectors[0]]
+
+        mock_vector_index_class = MagicMock()
+        mock_index_instance = MagicMock()
+        mock_vector_index_class.exist.return_value = True
+        mock_vector_index_class.from_name.return_value = mock_index_instance
+        stored = self.properties[0]
+        mock_index_instance.search.return_value = [json.dumps(stored), stored]
+
+        query = GremlinExampleIndexQuery(vector_index=mock_vector_index_class, embedding=mock_embedding, num_examples=2)
+
+        self.assertEqual(query._get_match_result({}, "find all persons"), [stored, stored])
 
 
 class TestDefaultExampleBatching(unittest.TestCase):

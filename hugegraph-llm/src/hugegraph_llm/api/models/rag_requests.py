@@ -50,9 +50,9 @@ class RAGRequest(BaseModel):
     topk_return_results: int = Query(20, description="Number of sorted results to return finally.")
     vector_dis_threshold: Optional[float] = Query(
         None,
-        description="Distance threshold override for this request, applied to chunk retrieval and \
-                                        keyword-to-vertex matching. Omit to use CHUNK_DIS_THRESHOLD and \
-                                        VECTOR_DIS_THRESHOLD respectively.",
+        description="Distance threshold override for keyword-to-vertex matching, falling back to \
+                                        VECTOR_DIS_THRESHOLD when omitted. Chunk retrieval always prunes at \
+                                        CHUNK_DIS_THRESHOLD and ignores this field.",
     )
     topk_per_keyword: int = Query(
         1,
@@ -82,9 +82,9 @@ class GraphRAGRequest(BaseModel):
     topk_return_results: int = Query(20, description="Number of sorted results to return finally.")
     vector_dis_threshold: Optional[float] = Query(
         None,
-        description="Distance threshold override for this request, applied to chunk retrieval and \
-                                        keyword-to-vertex matching. Omit to use CHUNK_DIS_THRESHOLD and \
-                                        VECTOR_DIS_THRESHOLD respectively.",
+        description="Distance threshold override for keyword-to-vertex matching, falling back to \
+                                        VECTOR_DIS_THRESHOLD when omitted. Chunk retrieval always prunes at \
+                                        CHUNK_DIS_THRESHOLD and ignores this field.",
     )
     topk_per_keyword: int = Query(
         1,

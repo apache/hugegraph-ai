@@ -120,6 +120,22 @@ class TestInfoExtract(unittest.TestCase):
         self.assertEqual(actual_edges, expected_edges)
         self.assertEqual(graph["schema"], self.schema)
 
+    def test_extract_by_regex_with_schema_lookup_semantics(self):
+        """Property matching stays case-insensitive while edge labels stay exact."""
+        llm_output = (
+            "1. (Alice, AGE, 25) - person\n2. (Alice, roommate, Bob) - roommate\n3. (Alice, Roommate, Bob) - Roommate\n"
+        )
+        graph = {"triples": [], "vertices": [], "edges": [], "schema": self.schema}
+
+        extract_triples_by_regex_with_schema(self.schema, llm_output, graph)
+
+        alice = next(v for v in graph["vertices"] if v["id"] == "person-Alice")
+        self.assertEqual(alice["properties"], {"AGE": "25"})
+        self.assertEqual(
+            graph["edges"],
+            [{"start": "person-Alice", "end": "person-Bob", "type": "roommate", "properties": {}}],
+        )
+
     def test_extract_by_regex(self):
         graph = {"triples": []}
         extract_triples_by_regex(self.llm_output, graph)

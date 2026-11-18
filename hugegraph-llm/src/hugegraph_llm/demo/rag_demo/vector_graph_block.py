@@ -300,15 +300,13 @@ def create_vector_graph_block():
             out = gr.Code(label="Output Info", language="json", elem_classes="code-container-edit")
 
         with gr.Row():
-            with gr.Accordion("Get RAG Info", open=False):
-                with gr.Column():
-                    vector_index_btn0 = gr.Button("Get Vector Index Info", size="sm")
-                    graph_index_btn0 = gr.Button("Get Graph Index Info", size="sm")
-            with gr.Accordion("Clear RAG Data", open=False):
-                with gr.Column():
-                    vector_index_btn1 = gr.Button("Clear Chunks Vector Index", size="sm")
-                    graph_index_btn1 = gr.Button("Clear Graph Vid Vector Index", size="sm")
-                    graph_data_btn0 = gr.Button("Clear Graph Data", size="sm")
+            with gr.Accordion("Get RAG Info", open=False), gr.Column():
+                vector_index_btn0 = gr.Button("Get Vector Index Info", size="sm")
+                graph_index_btn0 = gr.Button("Get Graph Index Info", size="sm")
+            with gr.Accordion("Clear RAG Data", open=False), gr.Column():
+                vector_index_btn1 = gr.Button("Clear Chunks Vector Index", size="sm")
+                graph_index_btn1 = gr.Button("Clear Graph Vid Vector Index", size="sm")
+                graph_data_btn0 = gr.Button("Clear Graph Data", size="sm")
 
             vector_import_bt = gr.Button("Import into Vector", variant="primary")
             graph_split_type = gr.Dropdown(

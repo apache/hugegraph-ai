@@ -23,7 +23,7 @@ from hugegraph_mcp.backend_capabilities import (
     CapabilityEvidence,
     profile_for,
 )
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
     mark_readonly_preview,
@@ -56,7 +56,7 @@ OPERATIONS = frozenset({"append", "eliminate"})
 
 
 def _graph_manager():
-    return build_hugegraph_client(MCPConfig.from_env(), client_cls=PyHugeClient).graph()
+    return build_hugegraph_client(get_effective_config(), client_cls=PyHugeClient).graph()
 
 
 def mutate_graph_properties(
@@ -156,7 +156,7 @@ def mutate_graph_properties(
     if dry_run:
         warnings = ["Preview only: HugeGraph does not expose an atomic conditional property update."]
         next_actions = ["Enable confirmation only after the backend provides compare-and-set for property replacement."]
-        if MCPConfig.from_env().is_readonly():
+        if get_effective_config().is_readonly():
             payload, warnings, next_actions = mark_readonly_preview(
                 payload,
                 warning=(

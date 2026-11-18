@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 
 import requests
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 
 _MAX_NESTED_THIN_ENVELOPES = 1
@@ -46,7 +46,7 @@ def request(
     """
 
     start = time.perf_counter()
-    cfg = cfg or MCPConfig.from_env()
+    cfg = cfg or get_effective_config()
     method = method.upper()
 
     if not _is_relative_path(path):
@@ -362,5 +362,5 @@ def _is_thin_api_envelope(data: Any) -> bool:
         and isinstance(data.get("next_actions"), list)
         and isinstance(meta, dict)
         and isinstance(meta.get("request_id"), str)
-        and isinstance(meta.get("duration_ms"), (int, float))
+        and isinstance(meta.get("duration_ms"), int | float)
     )

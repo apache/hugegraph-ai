@@ -20,9 +20,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from hugegraph_mcp import gremlin_tools
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.guard import Capability
 from hugegraph_mcp.plan_store import PlanStore, plan_store_from_config
+from hugegraph_mcp.target_context import resolve_target_from_config, target_mismatch_details
 from hugegraph_mcp.tools.graph_data_gremlin import _g, _has_steps, _write_query
 from hugegraph_mcp.tools.graph_write_plan import (
     CREATE_EDGE,
@@ -409,15 +410,8 @@ def _is_ambiguous_write_result(result: Any) -> bool:
 
 
 def _target_mismatch_receipt(plan: WritePlan, operation: OperationPlan, attempt: int) -> ApplyReceipt | None:
-    cfg = MCPConfig.from_env()
-    current = (cfg.url, cfg.graph, cfg.graphspace or "DEFAULT", cfg.user)
-    planned = (
-        plan.graph_target.graph_url,
-        plan.graph_target.graph_name,
-        plan.graph_target.graphspace or "DEFAULT",
-        plan.principal,
-    )
-    if current == planned:
+    mismatch = target_mismatch_details(resolve_target_from_config(get_effective_config()), plan)
+    if mismatch is None:
         return None
     return _receipt(
         plan,

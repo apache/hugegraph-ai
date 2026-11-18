@@ -63,6 +63,17 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=12 --health-start-period=90s
         ports:
           - 8080:8080
+      postgres:
+        image: ${{ matrix.python-version == inputs.integration-python && 'postgres:14-alpine' || '' }}
+        env:
+          POSTGRES_USER: mcp_ci
+          POSTGRES_PASSWORD: mcp_ci_password
+          POSTGRES_DB: hugegraph_mcp
+        options: >-
+          --health-cmd="pg_isready -U mcp_ci -d hugegraph_mcp"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v6
         with:
@@ -136,6 +147,20 @@ jobs:
           HUGEGRAPH_MCP_READONLY: 'false'
           HUGEGRAPH_MCP_ALLOW_AI: 'false'
         run: ../.venv-mcp/bin/python -m pytest tests/integration/test_real_write_path.py -m real_hugegraph
+      - name: Install MCP postgres extra for integration tests
+        if: matrix.python-version == inputs.integration-python
+        run: |
+          uv --no-config pip install --python .venv-mcp/bin/python \
+            -e ./hugegraph-python-client -e "./hugegraph-mcp[postgres]"
+      - name: Run PostgreSQL and outbox integration tests
+        if: matrix.python-version == inputs.integration-python
+        working-directory: hugegraph-mcp
+        env:
+          HUGEGRAPH_URL: http://127.0.0.1:8080
+          HUGEGRAPH_USER: admin
+          HUGEGRAPH_PASSWORD: admin
+          HUGEGRAPH_MCP_TEST_PG_DSN: postgresql://mcp_ci:mcp_ci_password@127.0.0.1:5432/hugegraph_mcp
+        run: ../.venv-mcp/bin/python -m pytest tests/integration/test_live_v2_postgres_and_hugegraph.py tests/integration/test_postgres_outbox_regression.py -m integration
       - name: Dump HugeGraph diagnostics
         if: failure() && matrix.python-version == inputs.integration-python
         run: |

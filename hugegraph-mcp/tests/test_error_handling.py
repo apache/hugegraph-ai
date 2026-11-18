@@ -566,4 +566,4 @@ def test_successful_execution_preserves_format():
         assert result["data"]["is_read"] is True
         assert result["data"]["total"] == 1
         assert result["data"]["data"] == [{"id": "1", "label": "person"}]
-        assert isinstance(result["meta"]["duration_ms"], (int, float))
+        assert isinstance(result["meta"]["duration_ms"], int | float)

@@ -25,7 +25,7 @@ from typing import Any
 from pyhugegraph.client import PyHugeClient
 
 from hugegraph_mcp import schema_tools
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
     issue_plan,
@@ -70,6 +70,8 @@ ALLOWED_OPERATION_TYPES = frozenset(
         "create_vertex_label",
         "create_edge_label",
         "create_index_label",
+        "append_vertex_label",
+        "append_edge_label",
     }
 )
 P0A_APPLY_OPERATION_TYPES = frozenset(
@@ -77,6 +79,8 @@ P0A_APPLY_OPERATION_TYPES = frozenset(
         "create_property_key",
         "create_vertex_label",
         "create_edge_label",
+        "append_vertex_label",
+        "append_edge_label",
     }
 )
 
@@ -85,6 +89,8 @@ REQUIRED_FIELDS = {
     "create_vertex_label": ("name",),
     "create_edge_label": ("name", "source_label", "target_label"),
     "create_index_label": ("name", "base_type", "base_label"),
+    "append_vertex_label": ("name",),
+    "append_edge_label": ("name",),
 }
 
 IDENTIFIER_FIELDS = {
@@ -92,6 +98,8 @@ IDENTIFIER_FIELDS = {
     "create_vertex_label": ("name",),
     "create_edge_label": ("name", "source_label", "target_label"),
     "create_index_label": ("name", "base_label"),
+    "append_vertex_label": ("name",),
+    "append_edge_label": ("name",),
 }
 
 UNSUPPORTED_EDGE_LABEL_FIELDS = frozenset({"parent_label", "parentLabel", "edgelabel_type", "edgeLabelType"})
@@ -919,6 +927,73 @@ def validate_schema_operations(
                 property_keys=available_property_keys,
                 errors=errors,
             )
+        elif op_type in {"append_vertex_label", "append_edge_label"}:
+            target_labels = live_vertex_labels if op_type == "append_vertex_label" else live_edge_labels
+            kind_label = "vertex label" if op_type == "append_vertex_label" else "edge label"
+            if name not in target_labels:
+                errors.append(
+                    _validation_error(
+                        idx,
+                        operation,
+                        f"{kind_label} does not exist: {name}",
+                        f"Create {kind_label} {name!r} before appending to it.",
+                    )
+                )
+            has_append_payload = any(
+                bool(operation.get(field)) for field in ("properties", "nullable_keys", "user_data")
+            )
+            if not has_append_payload:
+                errors.append(
+                    _validation_error(
+                        idx,
+                        operation,
+                        f"{op_type} requires at least one of properties, nullable_keys, or user_data",
+                        "Provide properties, nullable_keys, or user_data to append.",
+                    )
+                )
+            _validate_property_references(
+                idx=idx,
+                operation=operation,
+                field="properties",
+                property_keys=available_property_keys,
+                errors=errors,
+            )
+            _validate_property_references(
+                idx=idx,
+                operation=operation,
+                field="nullable_keys",
+                property_keys=available_property_keys,
+                errors=errors,
+            )
+            schema_root = live_schema.get("schema") if isinstance(live_schema, dict) else None
+            if not isinstance(schema_root, dict):
+                schema_root = live_schema if isinstance(live_schema, dict) else {}
+            collection_name = "vertexlabels" if op_type == "append_vertex_label" else "edgelabels"
+            existing_obj = _find_schema_item(schema_root, collection_name, name) or {}
+            existing_props = set(_normalize_name_list(_field_value(existing_obj, "properties") or []) or [])
+            requested_props = _normalize_name_list(operation.get("properties") or []) or []
+            requested_nullable = set(_normalize_name_list(operation.get("nullable_keys") or []) or [])
+            declared_props = set(requested_props) | existing_props
+            for key in requested_nullable:
+                if key not in declared_props:
+                    errors.append(
+                        _validation_error(
+                            idx,
+                            operation,
+                            f"nullable_keys references property {key} not on {kind_label} {name}",
+                            "Include the property in properties or ensure it already exists on the label.",
+                        )
+                    )
+            for key in requested_props:
+                if key not in existing_props and key not in requested_nullable:
+                    errors.append(
+                        _validation_error(
+                            idx,
+                            operation,
+                            f"appended property {key} on {kind_label} {name} must be included in nullable_keys",
+                            "Add newly appended properties to nullable_keys when appending to an existing label.",
+                        )
+                    )
         elif op_type == "create_edge_label":
             if name in live_edge_labels:
                 errors.append(
@@ -1257,7 +1332,7 @@ def _design_from_operations(operations: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _schema_manager():
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     return build_hugegraph_client(
         cfg,
         client_cls=PyHugeClient,
@@ -1277,7 +1352,16 @@ def apply_schema_operations(
         raise ValueError("A schema apply plan must contain exactly one operation")
 
     operation = operations[0]
+    op_type = _operation_type(operation)
     existing_state, existing_object = _schema_object_state(operation, live_schema)
+    if op_type in {"append_vertex_label", "append_edge_label"} and existing_state == "missing":
+        return ApplyReceipt(
+            status=ApplyStatus.CONFLICT,
+            operation=operation,
+            observed_state=existing_object,
+            reason="target schema label does not exist",
+            reconciliation_required=False,
+        ).to_dict()
     if existing_state == "identical":
         return ApplyReceipt(
             status=ApplyStatus.ALREADY_APPLIED,
@@ -1377,7 +1461,27 @@ def _apply_one_operation(manager, operation: dict[str, Any]) -> None:
         _apply_edge_label_options(builder, operation)
         builder.create()
         return
+    if op_type == "append_vertex_label":
+        builder = manager.vertex_label(operation["name"])
+        _apply_append_label_options(builder, op_type, operation)
+        builder.append()
+        return
+    if op_type == "append_edge_label":
+        builder = manager.edge_label(operation["name"])
+        _apply_append_label_options(builder, op_type, operation)
+        builder.append()
+        return
     raise ValueError(f"Unsupported P0a schema apply operation: {op_type}")
+
+
+def _apply_append_label_options(builder, op_type: str, operation: dict[str, Any]) -> None:
+    properties = _normalize_name_list(operation.get("properties")) or []
+    if properties:
+        builder.properties(*properties)
+    nullable_keys = _normalize_name_list(operation.get("nullable_keys")) or []
+    if nullable_keys:
+        builder.nullable_keys(*nullable_keys)
+    _forward_parameter_fields(builder, op_type, operation)
 
 
 def _apply_property_key_options(builder, operation: dict[str, Any]) -> None:
@@ -1522,9 +1626,47 @@ def _schema_object_state(
     )
     if observed is None:
         return "missing", None
+    op_type = _operation_type(operation)
+    if op_type in {"append_vertex_label", "append_edge_label"}:
+        if _append_fields_match(operation, observed):
+            return "identical", observed
+        return "pending", observed
     if _operation_fields_match(operation, observed):
         return "identical", observed
     return "conflict", observed
+
+
+def _append_fields_match(operation: dict[str, Any], observed: dict[str, Any]) -> bool:
+    op_type = _operation_type(operation)
+    if op_type not in SUPPORTED_FIELDS or any(field not in SUPPORTED_FIELDS[op_type] for field in operation):
+        return False
+    req_props = set(_normalize_name_list(operation.get("properties")) or [])
+    obs_props = set(_normalize_name_list(_field_value(observed, "properties") or []) or [])
+    if not req_props.issubset(obs_props):
+        return False
+    req_nullable = set(_normalize_name_list(operation.get("nullable_keys")) or [])
+    obs_nullable = set(_normalize_name_list(_field_value(observed, "nullable_keys", "nullableKeys") or []) or [])
+    if not req_nullable.issubset(obs_nullable):
+        return False
+    req_user_data = operation.get("user_data")
+    if isinstance(req_user_data, dict) and req_user_data:
+        obs_user_data = _field_value(observed, "user_data", "userData", "userdata")
+        if not isinstance(obs_user_data, dict):
+            return False
+        for key, value in req_user_data.items():
+            if key not in obs_user_data or not _json_values_equal(obs_user_data[key], value):
+                return False
+    return True
+
+
+def _json_values_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, bool) != isinstance(right, bool):
+        return False
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(_json_values_equal(left[k], right[k]) for k in left)
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(_json_values_equal(a, b) for a, b in zip(left, right, strict=False))
+    return left == right
 
 
 def _find_schema_item(
@@ -1597,7 +1739,13 @@ def _list_field_matches(
     )
     if observed_values is None:
         return False
-    return observed_values == operation[field]
+    expected_raw = operation[field]
+    expected_values = [] if expected_raw is None else _normalize_name_list(expected_raw)
+    if expected_values is None:
+        return False
+    if field in {"properties", "nullable_keys"}:
+        return len(observed_values) == len(expected_values) and set(observed_values) == set(expected_values)
+    return observed_values == expected_values
 
 
 def _enum_field_matches(
@@ -1764,7 +1912,7 @@ def manage_schema(
         if error:
             return error
         result = dry_run_schema_operations(operations, live_schema, nonce=nonce)
-        if result.get("valid") and not MCPConfig.from_env().is_readonly():
+        if result.get("valid") and not get_effective_config().is_readonly():
             plan_context = _build_schema_plan_context(
                 operations=operations,
                 live_schema=live_schema,
@@ -1784,6 +1932,12 @@ def manage_schema(
                     live_schema=live_schema,
                 )
                 plan_store_from_config().save_plan(canonical_plan)
+                from hugegraph_mcp.confirmation_store import ConfirmationStore
+
+                ConfirmationStore.from_config().bind_plan_id(
+                    nonce=plan_context.nonce,
+                    plan_id=canonical_plan.plan_id,
+                )
             except Exception as exc:
                 return envelope_err(
                     ErrorType.SERVER_ERROR,
@@ -1794,7 +1948,7 @@ def manage_schema(
             result["plan_id"] = canonical_plan.plan_id
             result["status"] = canonical_plan.status.value
             result["expires_at"] = canonical_plan.expires_at
-        if result.get("valid") and MCPConfig.from_env().is_readonly():
+        if result.get("valid") and get_effective_config().is_readonly():
             result["confirmable"] = False
             result["readonly_preview_only"] = True
             return envelope_ok(

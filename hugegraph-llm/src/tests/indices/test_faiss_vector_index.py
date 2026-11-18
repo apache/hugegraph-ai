@@ -158,6 +158,19 @@ class TestVectorIndex(unittest.TestCase):
         self.assertEqual(loaded_index.index.ntotal, 0)
         self.assertEqual(loaded_index.properties, [])
 
+    def test_load_readonly_dimension_mismatch_raises_value_error(self):
+        index = FaissVectorIndex(self.embed_dim)
+        index.add(self.vectors, self.properties)
+        index.save_index_by_name(self.test_dir)
+
+        with self.assertRaises(ValueError):
+            FaissVectorIndex.from_name(self.embed_dim + 1, self.test_dir, read_only=True)
+
+    def test_load_readonly_missing_raises_file_not_found(self):
+        nonexistent_dir = os.path.join(self.test_dir, "missing_readonly")
+        with self.assertRaises(FileNotFoundError):
+            FaissVectorIndex.from_name(self.embed_dim, nonexistent_dir, read_only=True)
+
     def test_remove_keeps_remaining_properties_aligned_with_vectors(self):
         index = FaissVectorIndex(self.embed_dim)
         index.add(self.vectors, self.properties)

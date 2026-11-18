@@ -308,9 +308,9 @@ def _freeze_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):
         return _freeze_mapping(value)
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return tuple(_freeze(item) for item in value)
-    if isinstance(value, (set, frozenset)):
+    if isinstance(value, set | frozenset):
         return frozenset(_freeze(item) for item in value)
     return value
 

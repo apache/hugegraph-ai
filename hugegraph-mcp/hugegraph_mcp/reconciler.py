@@ -25,6 +25,10 @@ from hugegraph_mcp.plan_store import (
     PlanTransitionError,
     plan_store_from_config,
 )
+from hugegraph_mcp.target_context import (
+    resolve_target_from_config,
+    target_mismatch_details,
+)
 from hugegraph_mcp.write_executor import WriteExecutor, WriteExecutorRegistry
 from hugegraph_mcp.write_plan import (
     ApplyReceipt,
@@ -81,12 +85,21 @@ class WriteReconciler:
                 "No persisted write plan matches this plan_id.",
                 retryable=False,
             )
-        if record["tool_name"] == "legacy":
+        if record.get("tool_name") == "legacy":
             return envelope_err(
                 ErrorType.FEATURE_DISABLED,
                 "Legacy confirmation state cannot be safely reconciled.",
                 retryable=False,
                 details={"reason_code": "LEGACY_PLAN_NOT_RECONCILABLE"},
+            )
+        target = resolve_target_from_config()
+        mismatch = target_mismatch_details(target, record)
+        if mismatch is not None:
+            return envelope_err(
+                ErrorType.WRITE_CONFLICT,
+                "Active HugeGraph target does not match the persisted write plan.",
+                retryable=False,
+                details=mismatch,
             )
         try:
             plan = self.store.begin_reconcile(plan_id)

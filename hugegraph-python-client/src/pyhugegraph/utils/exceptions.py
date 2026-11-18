@@ -103,3 +103,13 @@ class TaskTimeoutError(TimeoutError):
     def __init__(self, task_id, timeout):
         self.task_id = task_id
         super().__init__(f"Task {task_id} did not complete within {timeout} seconds")
+
+
+class ResponseTooLargeError(Exception):
+    """HTTP response exceeded the configured streaming byte budget."""
+
+    def __init__(self, max_bytes: int, actual_bytes: int | None = None):
+        self.max_bytes = max_bytes
+        self.actual_bytes = actual_bytes
+        detail = f" ({actual_bytes} bytes)" if actual_bytes is not None else ""
+        super().__init__(f"Response body exceeded max_response_bytes budget of {max_bytes} bytes{detail}")

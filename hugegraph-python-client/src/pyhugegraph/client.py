@@ -60,6 +60,11 @@ class PyHugeClient:
             self.use_token(token)
         self._managers: dict[type, Any] = {}
 
+    @property
+    def session(self) -> HGraphSession:
+        """Expose the underlying HGraphSession for request_guard scoping."""
+        return self._session
+
     def _manager(self, manager_type: type[T]) -> T:
         if manager_type not in self._managers:
             self._managers[manager_type] = manager_type(self._session)

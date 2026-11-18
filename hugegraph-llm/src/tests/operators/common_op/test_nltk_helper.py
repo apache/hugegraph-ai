@@ -105,7 +105,7 @@ def test_explicit_nltk_data_precedes_packaged_and_resource_defaults(tmp_path, mo
     from hugegraph_llm.operators.common_op import nltk_helper
 
     roots = [tmp_path / "first", tmp_path / "second"]
-    for root, language in zip(roots, ["english", "chinese"]):
+    for root, language in zip(roots, ["english", "chinese"], strict=False):
         corpus = root / "corpora/stopwords"
         corpus.mkdir(parents=True)
         (corpus / language).write_text(f"custom-{language}\n", encoding="utf-8")

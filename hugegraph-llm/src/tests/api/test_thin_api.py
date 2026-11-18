@@ -611,3 +611,192 @@ def test_thin_api_response_defaults_are_not_shared():
     second_error = ThinAPIError(type="Y", message="y")
     first_error.details["secret"] = "value"
     assert second_error.details == {}
+
+
+def test_retrieve_context_api_uses_connection_snapshot_from_lock(monkeypatch):
+    from hugegraph_llm.api import thin_api
+
+    monkeypatch.setattr(thin_api.huge_settings, "graph_url", "http://127.0.0.1:8080")
+    monkeypatch.setattr(thin_api.huge_settings, "graph_name", "graph_a")
+    monkeypatch.setattr(thin_api.huge_settings, "graph_user", "user_a")
+    monkeypatch.setattr(thin_api.huge_settings, "graph_pwd", "pwd_a")
+    monkeypatch.setattr(thin_api.huge_settings, "graph_space", "space_a")
+
+    captured_connections = []
+    mock_client = Mock()
+    mock_client.graph.return_value = Mock(get_vertices_by_id=Mock(return_value=[{"id": "1:v1"}]))
+    mock_client.traverser.return_value = Mock(k_neighbor=Mock(return_value={"vertices": []}))
+
+    def fake_get_hg_client(connection):
+        captured_connections.append(dict(connection))
+        return mock_client
+
+    def mutating_retrieve_meta(graph, graphspace):
+        # Simulate concurrent config change after lock release, before client creation.
+        thin_api.huge_settings.graph_name = "graph_b"
+        thin_api.huge_settings.graph_space = "space_b"
+        return {"index_generation": 1, "refreshed_at": None}
+
+    monkeypatch.setattr("hugegraph_llm.utils.hugegraph_utils.get_hg_client", fake_get_hg_client)
+    monkeypatch.setattr(
+        "hugegraph_llm.operators.index_op.build_semantic_index.read_vid_index_meta",
+        mutating_retrieve_meta,
+    )
+
+    client = _client(monkeypatch, Mock())
+    response = client.post(
+        "/v1/retrieve-context",
+        json={
+            "mode": "graph",
+            "seed_ids": ["1:v1"],
+            "expected_graph": "graph_a",
+            "expected_graphspace": "space_a",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    _assert_envelope(body, expected_ok=True)
+    assert captured_connections == [
+        {
+            "url": "http://127.0.0.1:8080",
+            "graph": "graph_a",
+            "user": "user_a",
+            "pwd": "pwd_a",
+            "graphspace": "space_a",
+        }
+    ]
+    assert body["data"]["evidence"][0]["graph_target"] == {"graph": "graph_a", "graphspace": "space_a"}
+
+
+def test_readonly_faiss_dimension_mismatch_fails_instead_of_false_empty(monkeypatch, tmp_path):
+    from hugegraph_llm.api import thin_api
+    from hugegraph_llm.indices.vector_index.faiss_vector_store import FaissVectorIndex
+    from hugegraph_llm.operators.index_op import build_semantic_index
+
+    monkeypatch.setattr(build_semantic_index, "resource_path", str(tmp_path))
+    monkeypatch.setattr("hugegraph_llm.indices.vector_index.faiss_vector_store.resource_path", str(tmp_path))
+    monkeypatch.setattr(thin_api.huge_settings, "graph_name", "target")
+    monkeypatch.setattr(thin_api.huge_settings, "graph_space", "DEFAULT")
+    monkeypatch.setattr(thin_api.index_settings, "cur_vector_index", "Faiss")
+
+    parts = build_semantic_index.vid_index_name_parts("target", "DEFAULT")
+    old_index = FaissVectorIndex(4)
+    old_index.add([[1.0, 0.0, 0.0, 0.0]], ["1:alice"])
+    old_index.save_index_by_name(*parts)
+    build_semantic_index._write_vid_index_meta(
+        "target",
+        "DEFAULT",
+        total_vids=1,
+        added_count=1,
+        removed_count=0,
+    )
+
+    mock_embedding = Mock()
+    mock_embedding.get_embedding_dim.return_value = 8
+    mock_embedding.get_text_embedding.return_value = [0.0] * 8
+    monkeypatch.setattr(
+        "hugegraph_llm.models.embeddings.init_embedding.Embeddings.get_embedding",
+        Mock(return_value=mock_embedding),
+    )
+    monkeypatch.setattr("hugegraph_llm.utils.hugegraph_utils.get_hg_client", Mock())
+
+    client = _client(monkeypatch, Mock())
+
+    search_resp = client.post(
+        "/v1/vid-embeddings/search",
+        json={"query": "alice", "top_k": 5, "expected_graph": "target", "expected_graphspace": "DEFAULT"},
+    )
+    assert search_resp.status_code == 200
+    _assert_envelope(search_resp.json(), expected_ok=False)
+    assert search_resp.json()["error"]["type"] == "FLOW_EXECUTION_FAILED"
+
+    retrieve_resp = client.post(
+        "/v1/retrieve-context",
+        json={
+            "query": "alice",
+            "mode": "vector",
+            "top_k": 5,
+            "expected_graph": "target",
+            "expected_graphspace": "DEFAULT",
+        },
+    )
+    assert retrieve_resp.status_code == 200
+    _assert_envelope(retrieve_resp.json(), expected_ok=False)
+    assert retrieve_resp.json()["error"]["type"] == "FLOW_EXECUTION_FAILED"
+
+
+def test_retrieve_context_api_graph_timeout_and_hybrid_partial_error(monkeypatch, tmp_path):
+    from hugegraph_llm.api import thin_api
+    from hugegraph_llm.indices.vector_index.faiss_vector_store import FaissVectorIndex
+    from hugegraph_llm.operators.index_op import build_semantic_index
+
+    monkeypatch.setattr(build_semantic_index, "resource_path", str(tmp_path))
+    monkeypatch.setattr("hugegraph_llm.indices.vector_index.faiss_vector_store.resource_path", str(tmp_path))
+    monkeypatch.setattr(thin_api.huge_settings, "graph_name", "target")
+    monkeypatch.setattr(thin_api.huge_settings, "graph_space", "DEFAULT")
+    monkeypatch.setattr(thin_api.index_settings, "cur_vector_index", "Faiss")
+
+    parts = build_semantic_index.vid_index_name_parts("target", "DEFAULT")
+    vid_index = FaissVectorIndex(2)
+    vid_index.add([[1.0, 0.0]], ["1:alice"])
+    vid_index.save_index_by_name(*parts)
+    build_semantic_index._write_vid_index_meta(
+        "target",
+        "DEFAULT",
+        total_vids=1,
+        added_count=1,
+        removed_count=0,
+    )
+
+    mock_embedding = Mock()
+    mock_embedding.get_embedding_dim.return_value = 2
+    mock_embedding.get_text_embedding.return_value = [1.0, 0.0]
+    monkeypatch.setattr(
+        "hugegraph_llm.models.embeddings.init_embedding.Embeddings.get_embedding",
+        Mock(return_value=mock_embedding),
+    )
+
+    mock_client = Mock()
+    mock_client.graph.return_value.get_vertices_by_id.side_effect = TimeoutError("graph timeout secret=db_pass")
+    mock_client.traverser.return_value.k_neighbor.side_effect = TimeoutError("traverser timeout token=api_key")
+    monkeypatch.setattr("hugegraph_llm.utils.hugegraph_utils.get_hg_client", Mock(return_value=mock_client))
+
+    client = _client(monkeypatch, Mock())
+
+    graph_resp = client.post(
+        "/v1/retrieve-context",
+        json={
+            "mode": "graph",
+            "seed_ids": ["1:alice"],
+            "expected_graph": "target",
+            "expected_graphspace": "DEFAULT",
+        },
+    )
+    assert graph_resp.status_code == 200
+    _assert_envelope(graph_resp.json(), expected_ok=False)
+    assert graph_resp.json()["error"]["type"] == "FLOW_EXECUTION_FAILED"
+    assert "db_pass" not in graph_resp.text
+    assert "api_key" not in graph_resp.text
+
+    hybrid_resp = client.post(
+        "/v1/retrieve-context",
+        json={
+            "query": "alice",
+            "mode": "hybrid",
+            "top_k": 5,
+            "expected_graph": "target",
+            "expected_graphspace": "DEFAULT",
+        },
+    )
+    assert hybrid_resp.status_code == 200
+    hybrid_body = hybrid_resp.json()
+    _assert_envelope(hybrid_body, expected_ok=True)
+    assert [item["vid"] for item in hybrid_body["data"]["evidence"]] == ["1:alice"]
+    assert len(hybrid_body["data"]["partial_errors"]) == 2
+    assert hybrid_body["warnings"] == [
+        "graph_vertices: TimeoutError (count=1)",
+        "graph_neighborhood: TimeoutError (count=1)",
+    ]
+    assert "db_pass" not in hybrid_resp.text
+    assert "api_key" not in hybrid_resp.text

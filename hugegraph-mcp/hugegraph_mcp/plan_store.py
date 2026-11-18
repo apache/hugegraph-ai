@@ -109,9 +109,9 @@ class SQLitePlanStore:
     @classmethod
     def from_config(cls, cfg=None) -> SQLitePlanStore:
         if cfg is None:
-            from hugegraph_mcp.config import MCPConfig
+            from hugegraph_mcp.config import get_effective_config
 
-            cfg = MCPConfig.from_env()
+            cfg = get_effective_config()
         return cls(cfg.state_dir)
 
     @staticmethod
@@ -133,10 +133,13 @@ class SQLitePlanStore:
                     f"write plan database schema {version} is newer than supported {SCHEMA_VERSION}"
                 )
             self._migrate_schema(connection, version)
+            plan_columns = {row[1] for row in connection.execute("PRAGMA table_info(write_plans)")}
+            if "owner_principal" not in plan_columns:
+                connection.execute("ALTER TABLE write_plans ADD COLUMN owner_principal TEXT NOT NULL DEFAULT ''")
             self._migrate_legacy(connection)
             connection.commit()
 
-    def save_plan(self, plan: WritePlan) -> None:
+    def save_plan(self, plan: WritePlan, *, owner_principal: str | None = None) -> None:
         """Persist one immutable plan and its ordered operations atomically."""
         self.prepare()
         payload_json = canonical_plan_json(plan)
@@ -146,16 +149,17 @@ class SQLitePlanStore:
             connection.execute(
                 """
                 INSERT INTO write_plans (
-                    plan_id, tool_name, graph_target_json, principal,
+                    plan_id, tool_name, graph_target_json, principal, owner_principal,
                     payload_json, payload_digest, schema_fingerprint, status,
                     created_at, expires_at, confirmed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                 """,
                 (
                     plan.plan_id,
                     plan.tool_name,
                     self._canonical_json(plan.graph_target.to_dict()),
                     plan.principal,
+                    owner_principal or "",
                     payload_json,
                     plan.payload_digest,
                     plan.schema_fingerprint,
@@ -312,6 +316,39 @@ class SQLitePlanStore:
         if plan is None:
             raise PlanTransitionError("plan disappeared after claim")
         return plan, claimed
+
+    def renew_lease(
+        self,
+        plan_id: str,
+        *,
+        owner_token: str,
+        lease_seconds: int = 30,
+    ) -> int:
+        """Extend an active executor lease if owner_token matches and the lease has not expired."""
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        self.prepare()
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            now = int(time.time())
+            new_expires_at = now + lease_seconds
+            updated = connection.execute(
+                """
+                UPDATE write_plans
+                SET lease_expires_at = ?
+                WHERE plan_id = ?
+                  AND status IN ('EXECUTING', 'PARTIAL')
+                  AND lease_owner = ?
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at > ?
+                """,
+                (new_expires_at, plan_id, owner_token, now),
+            )
+            if updated.rowcount != 1:
+                connection.rollback()
+                raise PlanTransitionError("executor lease is absent, fenced out, or expired")
+            connection.commit()
+        return new_expires_at
 
     def claim_operation(
         self,
@@ -607,6 +644,7 @@ class SQLitePlanStore:
             "tool_name": plan["tool_name"],
             "graph_target": json.loads(plan["graph_target_json"]),
             "principal": plan["principal"],
+            "owner_principal": plan["owner_principal"] if "owner_principal" in plan.keys() else "",  # noqa: SIM118
             "payload": json.loads(plan["payload_json"]),
             "payload_digest": plan["payload_digest"],
             "schema_fingerprint": plan["schema_fingerprint"],
@@ -632,6 +670,57 @@ class SQLitePlanStore:
                 for operation in operations
             ],
         }
+
+    def list_plans(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 20,
+        owner_principals: tuple[str, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        self.prepare()
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        if owner_principals is not None:
+            if not owner_principals:
+                return []
+            placeholders = ", ".join("?" for _ in owner_principals)
+            clauses.append(f"owner_principal IN ({placeholders})")
+            params.extend(owner_principals)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                f"""
+                SELECT plan_id, tool_name, status, graph_target_json,
+                       created_at, expires_at, confirmed_at
+                FROM write_plans
+                {where_sql}
+                ORDER BY created_at DESC, plan_id DESC
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            target = json.loads(row["graph_target_json"])
+            items.append(
+                {
+                    "plan_id": row["plan_id"],
+                    "tool_name": row["tool_name"],
+                    "status": row["status"],
+                    "graphspace": target.get("graphspace") or "DEFAULT",
+                    "graph": target.get("graph_name") or target.get("graph") or "",
+                    "created_at": row["created_at"],
+                    "expires_at": row["expires_at"],
+                    "confirmed_at": row["confirmed_at"],
+                }
+            )
+        return items
 
     def _migrate_schema(self, connection: sqlite3.Connection, version: int) -> None:
         """Apply additive schema steps in order; never silently downgrade."""
@@ -854,10 +943,152 @@ class SQLitePlanStore:
 
 
 def plan_store_from_config(cfg=None) -> PlanStore:
-    if cfg is None:
-        from hugegraph_mcp.config import MCPConfig
+    from hugegraph_mcp.runtime import get_current_actor, get_current_runtime
 
-        cfg = MCPConfig.from_env()
+    rt = get_current_runtime()
+    if cfg is None:
+        if rt is not None:
+            cfg = rt.config
+        else:
+            from hugegraph_mcp.config import get_effective_config
+
+            cfg = get_effective_config()
     if not cfg.has_safe_write_store():
         raise PlanStoreUnavailableError("The configured plan store is not safe for this write topology")
-    return SQLitePlanStore(cfg.state_dir)
+    if cfg.plan_store_backend == "postgres":
+        from hugegraph_mcp.stores.postgres import PostgresPlanStore, PostgresSyncPlanStore
+
+        actor = get_current_actor()
+        if rt is not None and isinstance(rt.plan_store, PostgresPlanStore):
+            return PostgresSyncPlanStore(rt.plan_store, actor=actor, loop=rt._loop)
+        if not cfg.plan_store_dsn:
+            raise PlanStoreUnavailableError("PostgreSQL plan store requires plan_store_dsn")
+        return PostgresSyncPlanStore(PostgresPlanStore(cfg.plan_store_dsn), actor=actor, loop=None)
+    if cfg.plan_store_backend != "sqlite":
+        raise PlanStoreUnavailableError(f"Unsupported plan_store_backend: {cfg.plan_store_backend!r}")
+    from hugegraph_mcp.runtime import get_current_actor
+
+    return ActorScopedSQLitePlanStore(SQLitePlanStore(cfg.state_dir), actor=get_current_actor())
+
+
+class ActorScopedSQLitePlanStore(SQLitePlanStore):
+    """Actor-scoped sync wrapper around SQLitePlanStore enforcing plan ownership."""
+
+    def __init__(self, base: SQLitePlanStore, *, actor: Any) -> None:
+        super().__init__(base.state_dir)
+        self._base = base
+        self._actor = actor
+
+    def _is_owner_record(self, record: dict[str, Any] | None) -> bool:
+        if record is None:
+            return False
+        owner = str(record.get("owner_principal") or "")
+        if getattr(self._actor, "issuer", "") == "local-stdio":
+            return owner in {"", self._actor.principal_key}
+        return owner == self._actor.principal_key
+
+    def _require_owner(self, plan_id: str) -> None:
+        record = self._base.get_plan_record(plan_id)
+        if not self._is_owner_record(record):
+            raise PlanTransitionError(f"plan {plan_id!r} was not found")
+
+    def save_plan(self, plan: WritePlan, *, owner_principal: str | None = None) -> None:
+        self._base.save_plan(plan, owner_principal=owner_principal or self._actor.principal_key)
+
+    def get_plan(self, plan_id: str) -> WritePlan | None:
+        record = self._base.get_plan_record(plan_id)
+        if not self._is_owner_record(record):
+            return None
+        return self._base.get_plan(plan_id)
+
+    def get_plan_record(self, plan_id: str) -> dict[str, Any] | None:
+        record = self._base.get_plan_record(plan_id)
+        if not self._is_owner_record(record):
+            return None
+        return record
+
+    def transition_plan(
+        self,
+        plan_id: str,
+        *,
+        expected: PlanStatus,
+        target: PlanStatus,
+    ) -> WritePlan:
+        self._require_owner(plan_id)
+        return self._base.transition_plan(plan_id, expected=expected, target=target)
+
+    def claim_plan(
+        self,
+        plan_id: str,
+        *,
+        owner_token: str | None = None,
+        lease_seconds: int = 30,
+        resume: bool = False,
+    ) -> tuple[WritePlan, bool]:
+        self._require_owner(plan_id)
+        return self._base.claim_plan(
+            plan_id,
+            owner_token=owner_token,
+            lease_seconds=lease_seconds,
+            resume=resume,
+        )
+
+    def renew_lease(
+        self,
+        plan_id: str,
+        *,
+        owner_token: str,
+        lease_seconds: int = 30,
+    ) -> int:
+        self._require_owner(plan_id)
+        return self._base.renew_lease(
+            plan_id,
+            owner_token=owner_token,
+            lease_seconds=lease_seconds,
+        )
+
+    def claim_operation(
+        self,
+        plan_id: str,
+        operation_id: str,
+        *,
+        owner_token: str | None = None,
+        attempt_token: str | None = None,
+        lease_seconds: int = 30,
+    ) -> int:
+        self._require_owner(plan_id)
+        return self._base.claim_operation(
+            plan_id,
+            operation_id,
+            owner_token=owner_token,
+            attempt_token=attempt_token,
+            lease_seconds=lease_seconds,
+        )
+
+    def record_receipt(
+        self,
+        receipt: ApplyReceipt,
+        *,
+        owner_token: str | None = None,
+        attempt_token: str | None = None,
+    ) -> None:
+        self._require_owner(receipt.plan_id)
+        self._base.record_receipt(receipt, owner_token=owner_token, attempt_token=attempt_token)
+
+    def begin_reconcile(self, plan_id: str) -> WritePlan:
+        self._require_owner(plan_id)
+        return self._base.begin_reconcile(plan_id)
+
+    def record_reconciliation_receipt(self, receipt: ApplyReceipt) -> None:
+        self._require_owner(receipt.plan_id)
+        self._base.record_reconciliation_receipt(receipt)
+
+    def list_plans(self, *, status: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        if getattr(self._actor, "issuer", "") == "local-stdio":
+            owners: tuple[str, ...] = ("", self._actor.principal_key)
+        else:
+            owners = (self._actor.principal_key,)
+        return self._base.list_plans(status=status, limit=limit, owner_principals=owners)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)

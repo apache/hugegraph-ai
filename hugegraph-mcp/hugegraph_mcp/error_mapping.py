@@ -15,17 +15,20 @@
 
 from dataclasses import dataclass
 
+import requests
 from pyhugegraph.utils.exceptions import (
     DataFormatError,
     InvalidParameterError,
     NotAuthorizedError,
     NotFoundError,
     ResponseParseError,
+    ResponseTooLargeError,
     ServerError,
     ServiceUnavailableError,
 )
 
 from hugegraph_mcp.envelope import ErrorType
+from hugegraph_mcp.read_budget import ReadBudgetExceededError
 
 
 @dataclass(frozen=True)
@@ -60,7 +63,59 @@ NOT_FOUND_MARKERS = (
 )
 
 
+def _is_wrapped_timeout(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    queue: list[BaseException] = [exc]
+    while queue:
+        cur = queue.pop(0)
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        if isinstance(cur, TimeoutError | requests.Timeout) or type(cur).__name__ in {
+            "ReadTimeoutError",
+            "ConnectTimeoutError",
+        }:
+            return True
+        if isinstance(cur, requests.ConnectionError) and "read timed out" in str(cur).lower():
+            return True
+        for nxt in (cur.__cause__, cur.__context__):
+            if nxt is not None:
+                queue.append(nxt)
+        for arg in getattr(cur, "args", ()):
+            if isinstance(arg, BaseException):
+                queue.append(arg)
+    return False
+
+
 def classify_hugegraph_exception(exc: Exception) -> ErrorClassification:
+    if isinstance(exc, ReadBudgetExceededError) and exc.reason_code != "READ_DEADLINE_EXCEEDED":
+        return ErrorClassification(
+            error_type=ErrorType.VALIDATION_ERROR,
+            retryable=False,
+            suggestion="Narrow the query scope, add fields projection, or reduce limit.",
+            reason=exc.reason_code.lower(),
+        )
+    if isinstance(exc, ResponseTooLargeError):
+        return ErrorClassification(
+            error_type=ErrorType.VALIDATION_ERROR,
+            retryable=False,
+            suggestion="Reduce max_depth, max_degree, capacity, or limit and retry.",
+            reason="response_bytes_exceeded",
+        )
+    if isinstance(exc, TimeoutError | requests.Timeout) or _is_wrapped_timeout(exc):
+        return ErrorClassification(
+            error_type=ErrorType.TIMEOUT,
+            retryable=True,
+            suggestion="Narrow the query scope or retry when HugeGraph Server load decreases.",
+            reason="timeout",
+        )
+    if isinstance(exc, requests.ConnectionError):
+        return ErrorClassification(
+            error_type=ErrorType.CONNECTION_FAILED,
+            retryable=True,
+            suggestion="Verify HugeGraph Server is running and reachable at HUGEGRAPH_URL.",
+            reason="connection_failed",
+        )
     if isinstance(exc, NotAuthorizedError):
         return ErrorClassification(
             error_type=ErrorType.AUTHENTICATION_FAILED,
@@ -75,7 +130,7 @@ def classify_hugegraph_exception(exc: Exception) -> ErrorClassification:
             suggestion="Verify the graph, graphspace, and endpoint before retrying.",
             reason="not_found_error",
         )
-    if isinstance(exc, (InvalidParameterError, DataFormatError)):
+    if isinstance(exc, InvalidParameterError | DataFormatError):
         return ErrorClassification(
             error_type=ErrorType.VALIDATION_ERROR,
             retryable=False,

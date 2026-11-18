@@ -23,7 +23,7 @@ from copy import deepcopy
 from typing import Any
 
 from hugegraph_mcp import gremlin_tools
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.guard import Capability
 from hugegraph_mcp.tools.graph_data_gremlin import (
@@ -139,7 +139,7 @@ def calculate_graph_change_plan_hash(
 
     用于防篡改安全链：dry_run 返回 plan_hash，执行时校验匹配。
     """
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     payload: dict[str, Any] = {
         "change_plan": change_plan,
         "graph": cfg.graph if graph is None else graph,

@@ -17,8 +17,27 @@ import logging
 
 DEFAULT_TOOLSET = "core"
 VALID_TOOLSETS = frozenset({DEFAULT_TOOLSET, "legacy"})
+DEFAULT_CORE_PROFILE = "compat"
+VALID_CORE_PROFILES = frozenset({DEFAULT_CORE_PROFILE, "lean"})
 _ALIASES = {"v2_core": "core", "v1": "legacy"}
 LOGGER = logging.getLogger(__name__)
+
+
+def resolve_core_profile(value: str | None) -> str:
+    """Normalize the core toolset profile (compat or lean)."""
+    if value is None:
+        return DEFAULT_CORE_PROFILE
+    normalized = value.strip().lower()
+    if normalized in VALID_CORE_PROFILES:
+        return normalized
+    raise ValueError(f"Invalid HUGEGRAPH_MCP_CORE_PROFILE value {value!r}; expected compat or lean.")
+
+
+def tool_contract_version(toolset: str, core_profile: str = DEFAULT_CORE_PROFILE) -> str:
+    """Return the tool contract version string for the active toolset/profile."""
+    if toolset != "legacy" and core_profile == "lean":
+        return "3.0"
+    return "2.0"
 
 
 def resolve_toolset(value: str | None) -> str:

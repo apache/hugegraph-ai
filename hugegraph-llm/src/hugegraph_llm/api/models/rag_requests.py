@@ -200,5 +200,12 @@ class ValidatedVidEmbeddingsRefreshRequest(VidEmbeddingsRefreshRequest):
     expected_graphspace: Optional[str] = Field(...)
 
 
+class VidEmbeddingsSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    top_k: int = Field(default=10, ge=1, le=50)
+    expected_graph: str = Field(min_length=1)
+    expected_graphspace: Optional[str] = Field(...)
+
+
 class GraphIndexInfoRequest(BaseModel):
     pass

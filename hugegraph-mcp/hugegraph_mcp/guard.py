@@ -19,7 +19,7 @@ readonly 模式下只允许 READ + GENERATE 能力，其他操作返回 READONLY
 from enum import Enum
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err
 
 
@@ -57,7 +57,7 @@ def guard(
     *,
     cfg: MCPConfig | None = None,
 ) -> dict[str, Any] | None:
-    cfg = cfg or MCPConfig.from_env()
+    cfg = cfg or get_effective_config()
     readonly = cfg.is_readonly()
 
     if capability in WRITE_CAPABILITIES and not readonly and not cfg.has_safe_write_store():

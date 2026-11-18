@@ -70,7 +70,7 @@ def test_execute_gremlin_write_basic(monkeypatch):
     assert res["error"] is None
     assert res["data"]["is_write"] is True
     assert res["data"]["affected"] == 2
-    assert isinstance(res["data"]["duration_ms"], (int, float))
+    assert isinstance(res["data"]["duration_ms"], int | float)
     assert res["meta"]["duration_ms"] == res["data"]["duration_ms"]
     assert guarded == [Capability.DATA_WRITE]
 

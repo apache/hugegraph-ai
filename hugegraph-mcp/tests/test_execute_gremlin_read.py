@@ -69,7 +69,7 @@ def test_execute_gremlin_read_basic(monkeypatch):
     assert result["error"] is None
     assert result["data"]["is_read"] is True
     assert result["data"]["total"] == 2
-    assert isinstance(result["data"]["duration_ms"], (int, float))
+    assert isinstance(result["data"]["duration_ms"], int | float)
     assert result["meta"]["duration_ms"] == result["data"]["duration_ms"]
 
 

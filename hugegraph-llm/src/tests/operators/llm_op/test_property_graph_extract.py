@@ -1144,3 +1144,105 @@ def test_primary_key_id_uses_server_separator_encoding_in_schema_order(propertie
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize(
+    "out_id,in_id",
+    [(0, 1), (1, 0), (0, 0), (-1, 1), (1, 2), ("0", "1")],
+)
+def test_run_preserves_edges_with_zero_numeric_vertex_ids(out_id, in_id):
+    schema = {
+        "vertexlabels": [
+            {
+                "name": "person",
+                "id_strategy": "CUSTOMIZE_STRING" if isinstance(out_id, str) else "CUSTOMIZE_NUMBER",
+                "primary_keys": [],
+                "properties": [],
+                "nullable_keys": [],
+            }
+        ],
+        "edgelabels": [{"name": "knows", "source_label": "person", "target_label": "person", "properties": []}],
+    }
+    graph = {
+        "vertices": [{"id": value, "label": "person", "properties": {}} for value in dict.fromkeys((out_id, in_id))],
+        "edges": [
+            {
+                "label": "knows",
+                "outV": out_id,
+                "outVLabel": "person",
+                "inV": in_id,
+                "inVLabel": "person",
+                "properties": {},
+            }
+        ],
+    }
+    llm = FakeLLM([json.dumps(graph)])
+
+    result = PropertyGraphExtract(llm=llm).run({"schema": schema, "chunks": ["One person knows another."]})
+
+    assert len(result["edges"]) == 1
+    assert result["edges"][0]["outV"] == out_id
+    assert result["edges"][0]["inV"] == in_id
+    assert type(result["edges"][0]["outV"]) is type(out_id)
+    assert type(result["edges"][0]["inV"]) is type(in_id)
+    assert result["call_count"] == 1
+
+
+@pytest.mark.parametrize("invalid_id", [None, "", False])
+def test_run_keeps_rejecting_missing_or_false_vertex_ids(invalid_id):
+    schema = {
+        "vertexlabels": [
+            {
+                "name": "person",
+                "id_strategy": "CUSTOMIZE_NUMBER",
+                "primary_keys": [],
+                "properties": [],
+                "nullable_keys": [],
+            }
+        ],
+        "edgelabels": [{"name": "knows", "source_label": "person", "target_label": "person", "properties": []}],
+    }
+    graph = {
+        "vertices": [
+            {"id": invalid_id, "label": "person", "properties": {}},
+            {"id": 1, "label": "person", "properties": {}},
+        ],
+        "edges": [
+            {
+                "label": "knows",
+                "outV": invalid_id,
+                "outVLabel": "person",
+                "inV": 1,
+                "inVLabel": "person",
+                "properties": {},
+            }
+        ],
+    }
+    result = PropertyGraphExtract(llm=FakeLLM([json.dumps(graph)])).run(
+        {"schema": schema, "chunks": ["One person knows another."]}
+    )
+    assert result["edges"] == []
+
+
+def test_run_resolves_zero_numeric_alias_for_a_primary_key_vertex():
+    schema = {
+        "vertexlabels": [
+            {"id": 1, "name": "person", "primary_keys": ["name"], "properties": ["name"], "nullable_keys": []}
+        ],
+        "edgelabels": [{"name": "knows", "source_label": "person", "target_label": "person", "properties": []}],
+    }
+    graph = {
+        "vertices": [
+            {"id": 0, "label": "person", "properties": {"name": "zero"}},
+            {"id": 1, "label": "person", "properties": {"name": "one"}},
+        ],
+        "edges": [
+            {"label": "knows", "outV": 0, "outVLabel": "person", "inV": 1, "inVLabel": "person", "properties": {}}
+        ],
+    }
+    result = PropertyGraphExtract(llm=FakeLLM([json.dumps(graph)])).run(
+        {"schema": schema, "chunks": ["Person zero knows person one."]}
+    )
+    assert len(result["edges"]) == 1
+    assert result["edges"][0]["outV"] == "1:zero"
+    assert result["edges"][0]["inV"] == "1:one"

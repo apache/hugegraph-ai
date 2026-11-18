@@ -76,6 +76,7 @@ class FakeSession(HGraphSession):
     ("vertex_id", "expected"),
     [
         ("person:marko", '"person:marko"'),
+        ("1:张三", '"1:张三"'),
         ('a"b\\c', '"a\\"b\\\\c"'),
         (123, "123"),
         (-(2**63), str(-(2**63))),
@@ -134,6 +135,31 @@ def test_graph_vertex_path_formats_json_literal_ids():
     assert session.calls[0][0] == "graph/vertices/%22person%3Amarko%22"
     assert session.calls[1][0] == "graph/vertices/123"
     assert session.calls[2][0] == "graph/vertices/%22a%2Fb%3Fc%23d%26e%22"
+
+
+def test_graph_vertex_path_sends_non_ascii_ids_as_utf8():
+    vertex_id = "1:张三"
+    session = FakeSession(
+        responses=[
+            {"id": vertex_id, "label": "person", "properties": {}},
+            {"id": vertex_id, "label": "person", "properties": {"city": "Beijing"}},
+            {},
+            {"vertices": [{"id": vertex_id}]},
+        ]
+    )
+    graph = GraphManager(session)
+
+    graph.get_vertex_by_id(vertex_id)
+    graph.append_vertex(vertex_id, {"city": "Beijing"})
+    graph.remove_vertex_by_id(vertex_id)
+    graph.get_vertices_by_id([vertex_id])
+
+    # Percent-encoded UTF-8, not a JSON "\uXXXX" escape (%5Cu...), which the server rejects.
+    encoded = "%221%3A%E5%BC%A0%E4%B8%89%22"
+    assert session.calls[0][0] == f"graph/vertices/{encoded}"
+    assert session.calls[1][0] == f"graph/vertices/{encoded}?action=append"
+    assert session.calls[2][0] == f"graph/vertices/{encoded}"
+    assert session.calls[3][0] == f"traversers/vertices?ids={encoded}"
 
 
 def test_graph_edge_id_paths_encode_reserved_characters():

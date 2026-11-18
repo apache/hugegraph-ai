@@ -176,6 +176,8 @@ class WkFlowState(GParam):
     vertex_num: Optional[int] = None
     edge_num: Optional[int] = None
     note: Optional[str] = None
+    vid_scan_complete: Optional[bool] = None
+    vid_scan_incomplete_reason: Optional[str] = None
     removed_vid_vector_num: Optional[int] = None
     added_vid_vector_num: Optional[int] = None
     raw_texts: Optional[List] = None
@@ -235,6 +237,8 @@ class WkFlowState(GParam):
         self.vertex_num = None
         self.edge_num = None
         self.note = None
+        self.vid_scan_complete = None
+        self.vid_scan_incomplete_reason = None
         self.removed_vid_vector_num = None
         self.added_vid_vector_num = None
 

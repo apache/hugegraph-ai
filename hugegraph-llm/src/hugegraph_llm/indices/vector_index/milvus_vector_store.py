@@ -43,6 +43,8 @@ class MilvusVectorIndex(VectorStoreBase):
         user="",
         password="",
         embed_dim: int = 1024,
+        *,
+        read_only: bool = False,
     ):
         self.embed_dim = embed_dim
         self.host = host
@@ -51,6 +53,8 @@ class MilvusVectorIndex(VectorStoreBase):
         connections.connect(host=host, port=port, user=user, password=password)
 
         if not utility.has_collection(self.name):
+            if read_only:
+                raise FileNotFoundError(f"Milvus collection '{self.name}' does not exist")
             self._create_collection()
         else:
             # dim is different, recreate
@@ -60,6 +64,10 @@ class MilvusVectorIndex(VectorStoreBase):
                 if field.name == "embedding" and field.params.get("dim"):
                     existing_dim = int(field.params["dim"])
                     if existing_dim != self.embed_dim:
+                        if read_only:
+                            raise ValueError(
+                                f"Milvus collection '{self.name}' dimension mismatch: {existing_dim} != {self.embed_dim}"
+                            )
                         log.debug(
                             "Milvus collection '%s' dimension mismatch: %d != %d. Recreating.",
                             self.name,
@@ -118,7 +126,7 @@ class MilvusVectorIndex(VectorStoreBase):
         count = self.collection.num_entities
         entities = []
 
-        for i, (vector, prop) in enumerate(zip(vectors, props)):
+        for i, (vector, prop) in enumerate(zip(vectors, props, strict=False)):
             idx = count + i
             entities.append(
                 {
@@ -236,7 +244,7 @@ class MilvusVectorIndex(VectorStoreBase):
             utility.drop_collection(COLLECTION_NAME_PREFIX + name_str)
 
     @staticmethod
-    def from_name(embed_dim: int, *name: str) -> "MilvusVectorIndex":
+    def from_name(embed_dim: int, *name: str, read_only: bool = False) -> "MilvusVectorIndex":
         name_str = "_".join(name)
         assert index_settings.milvus_host, "Milvus host is not configured"
         return MilvusVectorIndex(
@@ -246,6 +254,7 @@ class MilvusVectorIndex(VectorStoreBase):
             user=index_settings.milvus_user,
             password=index_settings.milvus_password,
             embed_dim=embed_dim,
+            read_only=read_only,
         )
 
     @staticmethod

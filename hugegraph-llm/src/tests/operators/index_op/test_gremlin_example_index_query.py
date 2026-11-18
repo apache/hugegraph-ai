@@ -397,9 +397,9 @@ def test_invalid_batch_count_does_not_mutate_or_save_index(tmp_path, failed_batc
         patch.object(
             operator.vector_index, "save_index_by_name", wraps=operator.vector_index.save_index_by_name
         ) as save,
+        pytest.raises(ValueError, match="Embedding batch returned"),
     ):
-        with pytest.raises(ValueError, match="Embedding batch returned"):
-            operator._build_default_example_index()
+        operator._build_default_example_index()
 
     expected_batches = [[str(i) for i in range(start, min(start + 10, 23))] for start in (0, 10, 20)]
     assert batches == expected_batches[: failed_batch + 1]

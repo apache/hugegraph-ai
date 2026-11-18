@@ -29,7 +29,16 @@ COLLECTION_NAME_PREFIX = "hugegraph_llm_"
 
 
 class QdrantVectorIndex(VectorStoreBase):
-    def __init__(self, name: str, host: str, port: int, api_key=None, embed_dim: int = 1024):
+    def __init__(
+        self,
+        name: str,
+        host: str,
+        port: int,
+        api_key=None,
+        embed_dim: int = 1024,
+        *,
+        read_only: bool = False,
+    ):
         self.embed_dim = embed_dim
         self.host = host
         self.port = port
@@ -38,11 +47,17 @@ class QdrantVectorIndex(VectorStoreBase):
         collections = self.client.get_collections().collections
         collection_names = [collection.name for collection in collections]
         if self.name not in collection_names:
+            if read_only:
+                raise FileNotFoundError(f"Qdrant collection '{self.name}' does not exist")
             self._create_collection()
         else:
             collection_info = self.client.get_collection(self.name)
             existing_dim = collection_info.config.params.vectors.size  # type: ignore
             if existing_dim != self.embed_dim:
+                if read_only:
+                    raise ValueError(
+                        f"Qdrant collection '{self.name}' dimension mismatch: {existing_dim} != {self.embed_dim}"
+                    )
                 log.debug(
                     "Qdrant collection '%s' dimension mismatch: %d != %d. Recreating.",
                     self.name,
@@ -70,7 +85,7 @@ class QdrantVectorIndex(VectorStoreBase):
 
         points = []
 
-        for vector, prop in zip(vectors, props):
+        for vector, prop in zip(vectors, props, strict=False):
             # Use UUID to ensure unique point IDs across multiple add operations
             # This prevents data loss from ID collisions
             points.append(
@@ -199,7 +214,7 @@ class QdrantVectorIndex(VectorStoreBase):
             client.delete_collection(collection_name=name_str)
 
     @staticmethod
-    def from_name(embed_dim: int, *name: str) -> "QdrantVectorIndex":
+    def from_name(embed_dim: int, *name: str, read_only: bool = False) -> "QdrantVectorIndex":
         assert index_settings.qdrant_host, "Qdrant host is not configured"
         name_str = "_".join(name)
         return QdrantVectorIndex(
@@ -208,6 +223,7 @@ class QdrantVectorIndex(VectorStoreBase):
             port=index_settings.qdrant_port,
             embed_dim=embed_dim,
             api_key=index_settings.qdrant_api_key,
+            read_only=read_only,
         )
 
     @staticmethod

@@ -16,6 +16,7 @@
 # under the License.
 
 
+import os
 import traceback
 from typing import Any, Dict, List, Union
 
@@ -46,11 +47,19 @@ def get_graph_index_info():
 
 def clean_all_graph_index():
     # Lazy import to avoid circular dependency
-    from ..config import index_settings  # pylint: disable=import-outside-toplevel
+    from ..config import index_settings, resource_path  # pylint: disable=import-outside-toplevel
+    from ..operators.index_op.build_semantic_index import (  # pylint: disable=import-outside-toplevel
+        _VID_META_FILE,
+        vid_index_name_parts,
+    )
     from .vector_index_utils import get_vector_index_class  # pylint: disable=import-outside-toplevel
 
+    index_parts = vid_index_name_parts(huge_settings.graph_name, huge_settings.graph_space)
     vector_index = get_vector_index_class(index_settings.cur_vector_index)
-    vector_index.clean(huge_settings.graph_name, "graph_vids")
+    vector_index.clean(*index_parts)
+    meta_path = os.path.join(resource_path, *index_parts, _VID_META_FILE)
+    if os.path.exists(meta_path):
+        os.remove(meta_path)
     vector_index.clean("gremlin_examples")
     log.warning("Clear graph index and text2gql index successfully!")
     gr.Info("Clear graph index and text2gql index successfully!")

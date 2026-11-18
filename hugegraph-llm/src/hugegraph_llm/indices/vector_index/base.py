@@ -85,7 +85,7 @@ class VectorStoreBase(ABC):
 
     @staticmethod
     @abstractmethod
-    def from_name(embed_dim: int, *name: str) -> "VectorStoreBase":
+    def from_name(embed_dim: int, *name: str, read_only: bool = False) -> "VectorStoreBase":
         """
         #TODO: finish comment
         """

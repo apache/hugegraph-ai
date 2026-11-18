@@ -48,13 +48,16 @@ class InMemoryVectorIndex:
         return cls.stores[key]
 
     def add(self, embeddings, chunks):
-        self.entries.extend(zip(embeddings, chunks))
+        self.entries.extend(zip(embeddings, chunks, strict=False))
 
     def save_index_by_name(self, graph_name, index_name):
         return None
 
     def search(self, query_embedding, topk, dis_threshold=2):
-        scored = [(sum(a * b for a, b in zip(query_embedding, embedding)), chunk) for embedding, chunk in self.entries]
+        scored = [
+            (sum(a * b for a, b in zip(query_embedding, embedding, strict=False)), chunk)
+            for embedding, chunk in self.entries
+        ]
         return [chunk for _, chunk in sorted(scored, reverse=True)[:topk]]
 
 

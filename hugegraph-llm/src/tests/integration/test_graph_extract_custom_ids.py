@@ -49,7 +49,9 @@ def inline_schema(strategy, *, nullable=False, data_type="TEXT"):
 
 def vertices(ids, properties):
     return {
-        "vertices": [{"id": value, "label": "person", "properties": props} for value, props in zip(ids, properties)],
+        "vertices": [
+            {"id": value, "label": "person", "properties": props} for value, props in zip(ids, properties, strict=False)
+        ],
         "edges": [],
     }
 

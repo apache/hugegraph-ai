@@ -140,7 +140,7 @@ class MultiLingualTextRank:
 
         # PageRank
         unique_words = list(dict.fromkeys(words))
-        ranks = dict(zip(unique_words, [0] * len(unique_words)))
+        ranks = dict(zip(unique_words, [0] * len(unique_words), strict=False))
         if len(unique_words) > 1:
             self._build_graph(words)
             if not self.graph or self.graph.number_of_nodes() == 0:

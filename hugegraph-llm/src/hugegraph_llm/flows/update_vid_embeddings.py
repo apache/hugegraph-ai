@@ -35,7 +35,7 @@ class UpdateVidEmbeddingsFlow(BaseFlow):
         pipeline.createGParam(prepared_input, "wkflow_input")
         pipeline.createGParam(WkFlowState(), "wkflow_state")
 
-        fetch_node = FetchGraphDataNode()
+        fetch_node = FetchGraphDataNode(fetch_all_vids=True)
         build_node = BuildSemanticIndexNode()
         pipeline.registerGElement(fetch_node, set(), "fetch_node")
         pipeline.registerGElement(build_node, {fetch_node}, "build_node")

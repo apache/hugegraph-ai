@@ -170,19 +170,26 @@ def rag_http_api(
             answer_prompt=req.answer_prompt or prompt.answer_prompt,
             keywords_extract_prompt=req.keywords_extract_prompt or prompt.keywords_extract_prompt,
             gremlin_prompt=req.gremlin_prompt or prompt.gremlin_generate_prompt,
+            include_trace=req.include_trace,
         )
-        # TODO: we need more info in the response for users to understand the query logic
-        return {
+        answers = result[:4]
+        payload = {
             "query": req.query,
             **{
                 key: value
                 for key, value in zip(
                     ["raw_answer", "vector_only", "graph_only", "graph_vector_answer"],
-                    result,
+                    answers,
                 )
                 if getattr(req, key)
             },
         }
+        # Opt-in retrieval trace. The graph flow already computes these fields for
+        # `/rag/graph`; expose them here with the same names so a caller can debug
+        # retrieval without parsing logs, while the default response stays compact.
+        if req.include_trace:
+            payload["trace"] = result[4] if len(result) > 4 else {}
+        return payload
 
     @router.post("/rag/graph", status_code=status.HTTP_200_OK)
     def graph_rag_recall_api(req: GraphRAGRequest):

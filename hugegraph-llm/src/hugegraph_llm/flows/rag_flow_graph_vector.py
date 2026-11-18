@@ -59,9 +59,11 @@ class RAGGraphVectorFlow(BaseFlow):
         topk_return_results: Optional[int] = None,
         vector_dis_threshold: Optional[float] = None,
         topk_per_keyword: Optional[int] = None,
+        include_trace: bool = False,
         **kwargs,
     ):
         prepared_input.query = query
+        prepared_input.include_trace = include_trace
         prepared_input.vector_search = vector_search
         prepared_input.graph_search = graph_search
         prepared_input.raw_answer = raw_answer
@@ -87,6 +89,7 @@ class RAGGraphVectorFlow(BaseFlow):
             "vector_search": vector_search,
             "graph_search": graph_search,
             "max_graph_items": max_graph_items or huge_settings.max_graph_items,
+            "include_trace": include_trace,
         }
 
     def build_flow(self, **kwargs):
@@ -121,6 +124,10 @@ class RAGGraphVectorFlow(BaseFlow):
             return {"error": "No pipeline provided"}
         res = pipeline.getGParamWithNoEmpty("wkflow_state").to_json()
         log.info("RAGGraphVectorFlow post processing success")
+        if res.get("include_trace", False):
+            # Callers that asked for the retrieval trace get the whole state;
+            # rag_answer() picks the graph-recall fields out of it.
+            return res
         return {
             "raw_answer": res.get("raw_answer", ""),
             "vector_only_answer": res.get("vector_only_answer", ""),

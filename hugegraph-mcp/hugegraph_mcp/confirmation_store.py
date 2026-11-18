@@ -26,7 +26,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.plan_hash import DEFAULT_PLAN_TTL_SECONDS
 from hugegraph_mcp.write_plan import PlanStatus
 
@@ -62,7 +62,7 @@ class ConfirmationStore:
 
     @classmethod
     def from_config(cls) -> ConfirmationStore:
-        return cls(MCPConfig.from_env().state_dir)
+        return cls(get_effective_config().state_dir)
 
     def has_consumed(self, nonce: str | None) -> bool:
         """Check whether a nonce was consumed without creating persistent state."""
@@ -130,6 +130,18 @@ class ConfirmationStore:
         except (OSError, sqlite3.Error, TypeError) as exc:
             raise ConfirmationStoreUnavailableError from exc
 
+    def _current_owner(self) -> tuple[str, bool]:
+        from hugegraph_mcp.runtime import get_current_actor
+
+        actor = get_current_actor()
+        return actor.principal_key, actor.issuer == "local-stdio"
+
+    def _owner_matches(self, stored_owner: str) -> bool:
+        principal_key, is_stdio = self._current_owner()
+        if is_stdio:
+            return stored_owner in {"", principal_key}
+        return stored_owner == principal_key
+
     def issue(
         self,
         *,
@@ -142,6 +154,7 @@ class ConfirmationStore:
         nonce_digest = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
         issued_at = int(time.time())
         expires_at = int(expires_at)
+        owner_principal, _ = self._current_owner()
         payload_json = (
             json.dumps(
                 plan_payload,
@@ -164,16 +177,17 @@ class ConfirmationStore:
                 connection.execute(
                     """
                     INSERT INTO issued_confirmations (
-                        nonce_digest, plan_hash, expires_at, issued_at, plan_payload_json
-                    ) VALUES (?, ?, ?, ?, ?)
+                        nonce_digest, plan_hash, expires_at, issued_at, plan_payload_json, owner_principal
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(nonce_digest) DO UPDATE SET
                         plan_hash = excluded.plan_hash,
                         expires_at = excluded.expires_at,
                         issued_at = excluded.issued_at,
-                        plan_payload_json = excluded.plan_payload_json
+                        plan_payload_json = excluded.plan_payload_json,
+                        owner_principal = excluded.owner_principal
                     WHERE issued_confirmations.plan_hash = excluded.plan_hash
                     """,
-                    (nonce_digest, plan_hash, expires_at, issued_at, payload_json),
+                    (nonce_digest, plan_hash, expires_at, issued_at, payload_json, owner_principal),
                 )
                 row = connection.execute(
                     """
@@ -201,14 +215,16 @@ class ConfirmationStore:
                 self._ensure_schema(connection)
                 row = connection.execute(
                     """
-                    SELECT plan_hash, expires_at, issued_at, plan_payload_json
+                    SELECT plan_hash, expires_at, issued_at, plan_payload_json, owner_principal
                     FROM issued_confirmations WHERE nonce_digest = ?
                     """,
                     (nonce_digest,),
                 ).fetchone()
             if row is None:
                 raise ConfirmationNotIssuedError
-            issued_hash, issued_expires_at, issued_at, payload_json = row
+            issued_hash, issued_expires_at, issued_at, payload_json, stored_owner = row
+            if not self._owner_matches(str(stored_owner or "")):
+                raise ConfirmationNotIssuedError
             if issued_hash != plan_hash or issued_expires_at != int(expires_at):
                 raise ConfirmationPlanMismatchError
             if current_time > issued_expires_at or issued_expires_at > issued_at + DEFAULT_PLAN_TTL_SECONDS:
@@ -221,6 +237,36 @@ class ConfirmationStore:
         ):
             raise
         except (OSError, sqlite3.Error, json.JSONDecodeError) as exc:
+            raise ConfirmationStoreUnavailableError from exc
+
+    def bind_plan_id(self, *, nonce: str, plan_id: str) -> None:
+        """Associate a WritePlan plan_id with an issued confirmation token."""
+        if not self.database_path.exists():
+            return
+        nonce_digest = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+        try:
+            with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
+                self._ensure_schema(connection)
+                connection.execute(
+                    "UPDATE issued_confirmations SET plan_id = ? WHERE nonce_digest = ?",
+                    (plan_id, nonce_digest),
+                )
+        except (OSError, sqlite3.Error) as exc:
+            raise ConfirmationStoreUnavailableError from exc
+
+    def revoke_by_plan_id(self, plan_id: str) -> int:
+        """Revoke any issued legacy confirmation token bound to plan_id."""
+        if not self.database_path.exists():
+            return 0
+        try:
+            with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
+                self._ensure_schema(connection)
+                cur = connection.execute(
+                    "DELETE FROM issued_confirmations WHERE plan_id = ?",
+                    (plan_id,),
+                )
+                return int(cur.rowcount or 0)
+        except (OSError, sqlite3.Error) as exc:
             raise ConfirmationStoreUnavailableError from exc
 
     def consume(self, *, nonce: str, plan_hash: str, expires_at: int) -> Any | None:
@@ -250,14 +296,16 @@ class ConfirmationStore:
                         raise ConfirmationAlreadyUsedError
                     issued = connection.execute(
                         """
-                        SELECT plan_hash, expires_at, issued_at, plan_payload_json
+                        SELECT plan_hash, expires_at, issued_at, plan_payload_json, owner_principal
                         FROM issued_confirmations WHERE nonce_digest = ?
                         """,
                         (nonce_digest,),
                     ).fetchone()
                     if issued is None:
                         raise ConfirmationNotIssuedError
-                    issued_hash, issued_expires_at, issued_at, payload_json = issued
+                    issued_hash, issued_expires_at, issued_at, payload_json, stored_owner = issued
+                    if not self._owner_matches(str(stored_owner or "")):
+                        raise ConfirmationNotIssuedError
                     if issued_hash != plan_hash or issued_expires_at != int(expires_at):
                         raise ConfirmationPlanMismatchError
                     if consumed_at > issued_expires_at or issued_expires_at > issued_at + DEFAULT_PLAN_TTL_SECONDS:
@@ -341,6 +389,10 @@ class ConfirmationStore:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(issued_confirmations)")}
         if "plan_payload_json" not in columns:
             connection.execute("ALTER TABLE issued_confirmations ADD COLUMN plan_payload_json TEXT")
+        if "owner_principal" not in columns:
+            connection.execute("ALTER TABLE issued_confirmations ADD COLUMN owner_principal TEXT NOT NULL DEFAULT ''")
+        if "plan_id" not in columns:
+            connection.execute("ALTER TABLE issued_confirmations ADD COLUMN plan_id TEXT")
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS write_operations (

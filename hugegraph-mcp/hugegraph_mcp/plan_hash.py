@@ -26,7 +26,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType
 
 # Default plan lifetime in seconds.
@@ -78,7 +78,7 @@ def build_plan_context(
     Returns:
         (PlanContext, plan_hash) 元组。
     """
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     now = int(time.time())
 
     if nonce is None:
@@ -121,7 +121,7 @@ def verify_plan_hash(
         (valid, error_type, details) 元组。
         valid=True 时 error_type 和 details 为 None。
     """
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
 
     if nonce is None:
         return (

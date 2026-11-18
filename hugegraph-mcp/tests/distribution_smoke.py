@@ -109,7 +109,7 @@ def exercise(process, timeout):
         )
     send({"method": "notifications/initialized"})
     tools = {tool["name"] for tool in call(2, "tools/list", {})["tools"]}
-    require(len(tools) == 16, f"Expected 16 core tools, received {len(tools)}")
+    require(len(tools) == 24, f"Expected 24 core tools, received {len(tools)}")
     require({"inspect_graph_tool", "query_graph_data_tool"} <= tools, "Missing inspection/query tools")
 
     def tool_call(request_id, name, arguments):

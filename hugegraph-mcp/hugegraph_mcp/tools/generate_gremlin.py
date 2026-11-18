@@ -19,7 +19,7 @@ execute=True 且安全分类为 safe 时才自动执行，不安全查询只返�
 
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.gremlin_policy import check_gremlin_read
 from hugegraph_mcp.gremlin_tools import execute_gremlin_read
@@ -67,7 +67,7 @@ def generate_gremlin(
             },
         )
 
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     client_config = {
         "graph": cfg.graph,
     }

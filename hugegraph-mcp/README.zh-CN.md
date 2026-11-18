@@ -25,7 +25,7 @@ export HUGEGRAPH_MCP_READONLY=true
 uvx hugegraph-mcp@1.8.0
 ```
 
-进程通过 stdout 提供 MCP JSON-RPC。除非明确需要受控写入，请保持 `HUGEGRAPH_MCP_READONLY=true`。不设置 `HUGEGRAPH_MCP_TOOLSET` 即使用默认 `core` 工具集。需要 10 工具的兼容工具集时使用 `legacy`；从 `1.7.1` 升级请参考下文的工具集命名与迁移说明。
+默认传输模式（`HUGEGRAPH_MCP_TRANSPORT=stdio`）下，进程通过 stdout 提供 MCP JSON-RPC（也可配置为 `streamable-http`、`http` 或 `sse`）。除非明确需要受控写入，请保持 `HUGEGRAPH_MCP_READONLY=true`。不设置 `HUGEGRAPH_MCP_TOOLSET` 即使用默认 `core` 工具集。需要 10 工具的兼容工具集时使用 `legacy`；从 `1.7.1` 升级请参考下文的工具集命名与迁移说明。
 
 支持 JSON Server 配置的 MCP 客户端可使用：
 
@@ -90,11 +90,11 @@ Windows PowerShell：
 
 ![MCP Inspector 查看图状态](https://raw.githubusercontent.com/hugegraph/hugegraph-ai/fb6a3d91c26fc82cc4e0a98667e9d49418659bcf/docs/images/mcp/inspector.png)
 
-结构化查询的 `limit` 默认是 `100`，输入必须是 `1–500` 的整数；超过 `500` 返回 `VALIDATION_ERROR`。合法值再按 `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` 收紧，例如配置上限为 `50` 时，请求 `100` 实际使用 `50`。超过有效上限的 ID 批次会在查询前被拒绝。返回结果超过条数或字节上限时整体拒绝，不截断结果或返回后续游标；这些检查不限制服务端执行量或传输期间的内存占用。
+结构化查询的 `limit` 默认为 `100`（合法范围 `1–500`，若 `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` 更小则以其为上限）。超过上限的 ID 批次或超出条数/字节限制的返回结果会被直接拒绝而不截断。
 
 ## 对外工具面
 
-默认 `core` 工具集注册 16 个工具。`legacy` 兼容工具集注册 10 个工具，不包含六个 core 专属工具。工具已注册不代表其所有操作都已启用。
+默认 `core` 工具集注册 24 个工具。`legacy` 兼容工具集注册 10 个工具，不包含 14 个 core 专属工具。工具已注册不代表其所有操作都已启用。
 
 | 工具 | 工具集 | 说明 |
 |------|------|------|
@@ -103,19 +103,51 @@ Windows PowerShell：
 | `execute_gremlin_read_tool` | legacy、core | 为兼容保留注册；公开 Raw Gremlin 执行当前返回 `FEATURE_DISABLED` |
 | `extract_graph_data_tool` | legacy、core | 抽取候选图数据，不写图 |
 | `design_schema_tool` | legacy、core | 提供 schema 设计建议 |
-| `apply_schema_tool` | legacy、core | 校验或预览一个 schema create；core 支持确认执行 |
+| `apply_schema_tool` | legacy、core | 校验或预览单个 schema 创建/追加；core 支持确认执行 |
 | `import_graph_data_tool` | legacy、core | 校验并预览结构化点边创建；确认当前返回 `FEATURE_DISABLED` |
 | `delete_graph_data_tool` | legacy、core | 预览精确删除；支持确认删除边 |
 | `refresh_vid_embeddings_tool` | legacy、core | 管理写工具，仅在 admin mode 与写入均启用时开放 |
 | `execute_gremlin_write_tool` | legacy、core | 为兼容保留注册；公开 Raw Gremlin 执行当前返回 `FEATURE_DISABLED` |
 | `inspect_schema_tool` | core | 查看并筛选 schema 对象及关系 |
 | `query_graph_data_tool` | core | 执行类型化、有界的点边读取 |
+| `traverse_graph_tool` | core | 执行有界图遍历（`neighbors`、`k_out`、`shortest_path`、`paths`） |
+| `search_vid_embeddings_tool` | core | 通过 HugeGraph-AI 进行 VID 语义相似度检索（需启用 `HUGEGRAPH_MCP_ALLOW_AI=true`） |
+| `get_task_status_tool` | core | 管理读工具，查询单个 HugeGraph 异步任务状态（不含原始大结果） |
+| `list_tasks_tool` | core | 管理读工具，分页列出 HugeGraph 异步任务 |
+| `cancel_task_tool` | core | 管理写工具，按 `task_id` 请求取消 HugeGraph 异步任务 |
+| `list_graphs_tool` | core | 管理读工具，列出当前 graphspace 下的可用图 |
 | `mutate_graph_properties_tool` | core | 预览属性变更；缺少原子 CAS 时禁止确认 |
 | `confirm_write_tool` | core | 仅通过 `plan_id` 确认一个持久化计划 |
 | `get_write_status_tool` | core | 仅通过 `plan_id` 查询计划及操作的持久化结果 |
+| `list_write_plans_tool` | core | 按最近时间顺序列出当前操作者拥有的写计划 |
+| `cancel_write_plan_tool` | core | 将未执行的 `ISSUED` 写计划取消并转为 `EXPIRED` |
 | `reconcile_write_tool` | core | 仅通过 `plan_id` 和只读检查协调 `UNKNOWN` 或 `PARTIAL` 结果 |
 
 空白或未知的 `HUGEGRAPH_MCP_TOOLSET` 值会导致启动报错；未设置时使用 `core`。工具注册在进程启动时确定，修改工具集后需要重启服务。
+
+## MCP Resources 与 Prompts
+
+服务端注册了 4 个 MCP Resource 模板（支持订阅与失效通知）和 6 个 MCP Prompts：
+
+### Resources
+
+| URI 模板 | 名称 | 说明 |
+|----------|------|------|
+| `hugegraph://{deployment}/{graphspace}/{graph}/schema` | `hugegraph_schema` | 带 SHA-256 指纹的有界 HugeGraph Schema JSON 快照 |
+| `hugegraph://{deployment}/{graphspace}/{graph}/summary` | `hugegraph_summary` | 图身份信息、标签摘要及观测到的实体数量 |
+| `hugegraph://{deployment}/{graphspace}/{graph}/embeddings/vid` | `hugegraph_vid_embeddings` | 目标图的 AI VID 向量索引状态 |
+| `plan://{plan_id}` | `hugegraph_write_plan` | 脱敏后的写计划与持久化回执只读视图（按操作者归属校验） |
+
+### Prompts
+
+| Prompt | 参数 | 说明 |
+|--------|------|------|
+| `explore_graph` | `question`, `depth=2` | 引导使用 schema 与 summary 资源进行有界只读图探索 |
+| `design_graph_schema` | `use_case`, `constraints?` | 引导带冲突检查的渐进式 HugeGraph Schema 设计 |
+| `review_write_plan` | `plan_id` | 审查待执行写计划（不触发确认执行） |
+| `investigate_write_status` | `plan_id` | 引导排查 `PARTIAL`/`UNKNOWN` 写计划的回执与对账 |
+| `ingest_text_to_graph` | `text_source`, `graph_goal?` | 引导文本抽取、Schema 对齐及 dry-run 预览导入（不自动确认） |
+| `optimize_gremlin_query` | `query`, `symptom?` | 引导基于 Schema 的 Gremlin 查询限界与优化 |
 
 ## 统一响应格式
 
@@ -179,11 +211,11 @@ Windows PowerShell：
 
 旧的 `plan_hash`、`nonce`、`expires_at` locator 只在 plan-ID 合同引入后的首个兼容版本中保留于 legacy 写入入口。这三个字段必须同时提供，不得与 `plan_id` 混用，并会返回 `LEGACY_CONFIRMATION_DEPRECATED` 警告。新集成必须调用 `confirm_write_tool(plan_id)`。
 
-内置 SQLite plan store 只适用于单个可写 MCP 实例。多实例部署前必须提供共享事务存储；当前使用 SQLite 且 `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` 大于一时会 fail closed。
+内置 SQLite plan store（`HUGEGRAPH_MCP_PLAN_STORE=sqlite`）只适用于单个可写 MCP 实例，当 `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` 大于一时会 fail closed。多实例部署请配置 `HUGEGRAPH_MCP_PLAN_STORE=postgres` 及 `HUGEGRAPH_MCP_PLAN_STORE_DSN`。
 
 ### 操作边界
 
-- 可确认的 schema plan 只能包含一个 `create_property_key`、`create_vertex_label` 或 `create_edge_label`。成功状态为 `APPLIED`。索引创建、append/eliminate 和 drop 不在 apply 范围内。
+- 可确认的 schema plan 只能包含一个 `create_property_key`、`create_vertex_label`、`create_edge_label`、`append_vertex_label` 或 `append_edge_label`。成功状态为 `APPLIED`。索引创建、`eliminate` 和 `drop` 不在 apply 范围内。
 - 图导入始终仅支持预览，因为 HugeGraph 1.7.0 的原子 create-if-absent 能力尚未得到验证。预览返回 `confirmable=false`、`preview_only=true`，不签发 `plan_id`；确认返回 `FEATURE_DISABLED` 且不写入。
 - 属性变更仅支持预览。HugeGraph 1.7.0 没有原子 compare-and-set 属性更新，确认请求返回 `FEATURE_DISABLED`。
 - 孤立点删除仅支持预览。Docker 并发测试已证明 HugeGraph 1.7.0 无法原子保证“仅在没有关联边时删除”；确认请求返回 `FEATURE_DISABLED`。请显式删除关联边，再通过独立受控维护路径处理顶点。
@@ -218,11 +250,18 @@ Schema 和图数据 dry-run 在操作数超过 200 或 payload 超过 1 MiB 时�
 | `HUGEGRAPH_WRITE_TIMEOUT_SECONDS` | `15` | HugeGraph 数据与 schema 写入超时；范围 `0.001..86400` |
 | `HUGEGRAPH_AI_TIMEOUT_SECONDS` | `30` | HugeGraph-AI HTTP 超时；范围 `1..86400` |
 | `HUGEGRAPH_MCP_TIMEOUT_SECONDS` | `30` | AI 超时的废弃兼容配置 |
-| `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` | `100` | 响应完整落入内存后的条数保护；范围 `1..1000000` |
-| `HUGEGRAPH_MCP_MAX_RESULT_BYTES` | `1048576` | 响应完整落入内存后的字节保护；范围 `1..1073741824` |
-| `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | 持久化 plan store；当前仅支持 `sqlite` |
+| `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` | `100` | 输出条数上限保护；范围 `1..1000000` |
+| `HUGEGRAPH_MCP_MAX_RESULT_BYTES` | `1048576` | 输出字节上限保护；范围 `1..1073741824` |
+| `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | 持久化 plan store 后端（`sqlite` 或 `postgres`） |
+| `HUGEGRAPH_MCP_PLAN_STORE_DSN` | 未设置 | PostgreSQL 连接 DSN（当 `HUGEGRAPH_MCP_PLAN_STORE=postgres` 时必填） |
 | `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` | `1` | 可写 MCP 实例数；SQLite 要求精确为一 |
-| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` 或 `~/.local/state/hugegraph-mcp` | plan、operation 与 receipt 数据库目录 |
+| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` 或 `~/.local/state/hugegraph-mcp` | SQLite plan、operation 与 receipt 数据库目录 |
+| `HUGEGRAPH_MCP_TRANSPORT` | `stdio` | MCP 传输方式（`stdio`、`http`、`streamable-http` 或 `sse`） |
+| `HUGEGRAPH_MCP_HTTP_HOST` | `127.0.0.1` | HTTP/SSE 传输监听地址 |
+| `HUGEGRAPH_MCP_HTTP_PORT` | `8000` | HTTP/SSE 传输监听端口；范围 `1..65535` |
+| `HUGEGRAPH_MCP_HTTP_PATH` | `/mcp` | HTTP 传输端点路径 |
+| `HUGEGRAPH_MCP_DEPLOYMENT` | `default` | MCP Resource URI 中的部署标识 |
+| `HUGEGRAPH_MCP_EVENT_BUS` | `memory` | 用于资源失效通知的进程内事件总线后端 |
 
 布尔值不区分大小写，支持 `1/true/yes/on` 和 `0/false/no/off`。非法值采用安全默认值；非法、非有限或越界的数值采用文档默认值。
 
@@ -230,27 +269,11 @@ Schema 和图数据 dry-run 在操作数超过 200 或 payload 超过 1 MiB 时�
 
 ### AI 服务配置
 
-设置 `HUGEGRAPH_MCP_ALLOW_AI=true`、可访问的 `HUGEGRAPH_AI_URL`，并在 AI 服务启用 bearer 认证时设置
-`HUGEGRAPH_AI_TOKEN`。在 AI 服务自身配置 `GRAPH_URL`、`GRAPH_NAME` 和 `GRAPH_SPACE`：地址必须能从
-AI 服务访问，例如 Docker 内的 `http://server:8080`；图名与 graphspace 必须与 MCP 目标一致。
-修改 MCP 的 `HUGEGRAPH_URL` 不会重新配置 AI 服务；`HUGEGRAPH_AI_GRAPH_URL` 不生效，不能用于覆盖 AI 目标。
-使用 MCP 默认目标 `DEFAULT/hugegraph` 时，请设置 AI 的 `GRAPH_NAME=hugegraph`。
-目标校验将 AI 侧未设置、null、空字符串或全空白的 graphspace 视为 `GRAPH_SPACE=DEFAULT`；
-该比较不修改保存的配置，也不改变现有向量索引路径约定。
+启用 AI 相关工具（`search_vid_embeddings_tool`、`refresh_vid_embeddings_tool`、`extract_graph_data_tool`、`design_schema_tool`、`generate_gremlin_tool`）需完成以下配置：
 
-刷新需要 MCP 允许写入、启用管理模式、启用 AI，并在调用时设置 `confirm=true`。当前 AI 源码还要求服务侧
-`ENABLE_LOGIN=true`、`HUGEGRAPH_LLM_ENABLE_THIN_WRITES=true`，配置强 `USER_TOKEN`，并通过 MCP 的
-`HUGEGRAPH_AI_TOKEN` 传入。上述 AI 写入门禁适用于当前实现；旧部署可能没有这些门禁，必须核对实际服务版本，
-不能假设所有 AI 部署都实现了相同的门禁。
-
-当前 MCP 刷新路径先检查 `GET /vid-embeddings/refresh-capabilities` 返回的 `protocol_version=1`，
-再向 `POST /v1/vid-embeddings/refresh` 传入两个必填目标字段，在同一配置锁内完成目标校验与刷新。
-滚动升级时，能力探测与 POST 可能落到不同副本，因此安全边界是版本化 POST 路由。
-旧副本缺少该路由时，MCP 会提示升级 AI，绝不回退到 `POST /vid-embeddings/refresh`。
-旧路由为兼容已有调用方，仍允许已认证且开启写入的调用方传入空请求。
-
-此校验只确认图名和 graphspace，不证明 MCP 与 AI 连接的是同一台物理服务器；部署者仍需配置并核对两侧地址。
-刷新读取图 ID/schema 并更新 VID 向量索引，不写入图记录。
+1. 在 MCP 侧设置 `HUGEGRAPH_MCP_ALLOW_AI=true`、`HUGEGRAPH_AI_URL`，以及 `HUGEGRAPH_AI_TOKEN`（若 AI 服务开启认证）。
+2. 在 HugeGraph-AI 服务侧配置与 MCP 一致的 `GRAPH_URL`、`GRAPH_NAME` 与 `GRAPH_SPACE`（未设置或空白 `GRAPH_SPACE` 视为 `DEFAULT`；`HUGEGRAPH_AI_GRAPH_URL` 已失效）。
+3. 使用 `refresh_vid_embeddings_tool`（调用 `POST /v1/vid-embeddings/refresh`）时，需在 MCP 开启 `HUGEGRAPH_MCP_READONLY=false`、`HUGEGRAPH_MCP_ADMIN_MODE=true` 并传入 `confirm=true`；同时在 AI 服务侧开启 `ENABLE_LOGIN=true`、`HUGEGRAPH_LLM_ENABLE_THIN_WRITES=true`，并配置与 `HUGEGRAPH_AI_TOKEN` 一致的 `USER_TOKEN`。
 
 ## License
 

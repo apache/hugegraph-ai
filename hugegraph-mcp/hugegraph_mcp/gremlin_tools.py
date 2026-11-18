@@ -33,7 +33,7 @@ from pyhugegraph.utils.exceptions import (
     ServiceUnavailableError,
 )
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.error_mapping import classify_hugegraph_exception
 from hugegraph_mcp.gremlin_policy import check_gremlin_read, gremlin_cost_warnings
@@ -81,11 +81,11 @@ LIMIT_POLICIES = frozenset({"warn", "reject_unbounded", "auto_append"})
 
 
 def _get_read_client():
-    return GremlinExecutor(MCPConfig.from_env()).get_read_client()
+    return GremlinExecutor(get_effective_config()).get_read_client()
 
 
 def _get_write_client():
-    return GremlinExecutor(MCPConfig.from_env()).get_write_client()
+    return GremlinExecutor(get_effective_config()).get_write_client()
 
 
 def _gremlin_error_envelope(result: dict[str, Any]) -> dict[str, Any]:
@@ -156,7 +156,7 @@ def _gremlin_output_guard_error(
     This is deliberately an output guard, not an execution or transport budget:
     PyHugeGraph has already downloaded and decoded ``data`` at this point.
     """
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     byte_size = _gremlin_result_byte_size(data)
     exceeded = []
     item_limit = cfg.max_result_items if max_items is None else min(cfg.max_result_items, max_items)

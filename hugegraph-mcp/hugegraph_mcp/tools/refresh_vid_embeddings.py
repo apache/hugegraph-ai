@@ -19,7 +19,7 @@
 import re
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.guard import Capability, guard
 from hugegraph_mcp.hugegraph_ai_client import get, post
@@ -42,7 +42,7 @@ def refresh_vid_embeddings(confirm: bool = False) -> dict[str, Any]:
             suggestion="Pass confirm=True to refresh VID embeddings.",
         )
 
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     capability = get("/vid-embeddings/refresh-capabilities", cfg=cfg)
     if not capability.get("ok"):
         error = capability.get("error") or {}

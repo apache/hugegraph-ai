@@ -17,7 +17,7 @@ from typing import Any
 
 from pyhugegraph.client import PyHugeClient
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.hugegraph_client import build_hugegraph_client
 from hugegraph_mcp.tools.schema_utils import (
@@ -32,7 +32,7 @@ FILTER_KINDS = frozenset({"property_key", "vertex_label", "edge_label", "index_l
 
 
 def _schema_manager():
-    return build_hugegraph_client(MCPConfig.from_env(), client_cls=PyHugeClient).schema()
+    return build_hugegraph_client(get_effective_config(), client_cls=PyHugeClient).schema()
 
 
 def inspect_schema(

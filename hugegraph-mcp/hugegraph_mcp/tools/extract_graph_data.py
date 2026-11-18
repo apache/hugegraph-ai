@@ -24,7 +24,7 @@ import hashlib
 import json
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.hugegraph_ai_client import post
 from hugegraph_mcp.tools.live_schema import fetch_live_schema_or_none
@@ -57,7 +57,7 @@ def extract_graph_data(
     返回 standard envelope，其中 graph_data 含 vertices/edges 供用户审阅。
     """
 
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     if schema is None and not cfg.allow_ai:
         # Preserve the capability gate without requiring HugeGraph connectivity.
         schema_message = cfg.graph

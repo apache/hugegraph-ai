@@ -73,7 +73,7 @@ does not establish compatibility with a client published only on public PyPI.
 The shared workflow tests wheel/sdist installation and uses
 `tests/distribution_smoke.py` to exercise MCP stdio with a local HTTP fixture.
 The script starts the installed command in a temporary directory, removes source
-import overrides, and verifies initialization, 16 core tools, inspection, and a
+import overrides, and verifies initialization, 24 core tools, inspection, and a
 structured query. This checks packaging and protocol wiring; it does not replace
 real-server integration tests.
 

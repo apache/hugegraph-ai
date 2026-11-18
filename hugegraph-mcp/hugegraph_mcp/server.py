@@ -13,7 +13,7 @@
 
 """FastMCP 服务器入口 — MCP 工具注册和轻量 mode 路由。
 
-每个 @mcp.tool() 装饰的函数就是一个对外暴露的 MCP 工具。
+每个 @_register_tool 装饰的函数就是一个对外暴露的 MCP 工具。
 server.py 只负责参数校验和 mode 分发，具体业务逻辑委托给 tools/ 下的模块。
 """
 
@@ -23,15 +23,35 @@ from importlib.metadata import version as distribution_version
 from typing import Any
 
 from fastmcp import FastMCP
+from starlette.middleware import Middleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
+from hugegraph_mcp.auth_middleware import (
+    ActorContextMiddleware,
+    BearerTokenVerifier,
+    StaticSecretBearerVerifier,
+)
 from hugegraph_mcp.backend_capabilities import BackendFeature, profile_for
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.envelope import ErrorType, envelope_err
+from hugegraph_mcp.events import ResourceEvent
 from hugegraph_mcp.gremlin_tools import execute_gremlin_read, execute_gremlin_write
 from hugegraph_mcp.guard import Capability
+from hugegraph_mcp.prompts import register_prompts
 from hugegraph_mcp.reconciler import reconcile_write
+from hugegraph_mcp.resource_uri import build_graph_resource_uri
+from hugegraph_mcp.resources import register_resources
+from hugegraph_mcp.runtime import (
+    create_runtime_lifespan,
+    get_current_actor,
+    get_current_runtime,
+    reset_current_runtime,
+    set_current_runtime,
+)
 from hugegraph_mcp.tools.extract_graph_data import extract_graph_data
 from hugegraph_mcp.tools.generate_gremlin import generate_gremlin
+from hugegraph_mcp.tools.graph_discovery import list_graphs
 from hugegraph_mcp.tools.inspect_graph import inspect_graph
 from hugegraph_mcp.tools.inspect_schema import inspect_schema
 from hugegraph_mcp.tools.manage_graph_data import manage_graph_data
@@ -39,18 +59,65 @@ from hugegraph_mcp.tools.manage_schema import manage_schema
 from hugegraph_mcp.tools.mutate_graph_properties import mutate_graph_properties
 from hugegraph_mcp.tools.query_graph_data import query_graph_data
 from hugegraph_mcp.tools.refresh_vid_embeddings import refresh_vid_embeddings
+from hugegraph_mcp.tools.search_vid_embeddings import search_vid_embeddings
+from hugegraph_mcp.tools.task_tools import cancel_task, get_task_status, list_tasks
+from hugegraph_mcp.tools.traverse_graph import traverse_graph
 from hugegraph_mcp.toolsets import resolve_toolset
 from hugegraph_mcp.write_contract import resolve_optional_legacy_locator
-from hugegraph_mcp.write_executor import confirm_write, get_write_status
+from hugegraph_mcp.write_executor import (
+    cancel_write_plan,
+    confirm_write,
+    get_write_status,
+    list_write_plans,
+)
 
 READONLY = MCPConfig.from_env().is_readonly()
 MCP_TOOL_CONTRACT_VERSION = "2.0"
 ACTIVE_TOOLSET = resolve_toolset(os.getenv("HUGEGRAPH_MCP_TOOLSET"))
+_BACKGROUND_TASKS: set[Any] = set()
 
-mcp = FastMCP("HugeGraph MCP", version=distribution_version("hugegraph-mcp"))
+mcp = FastMCP(
+    "HugeGraph MCP",
+    version=distribution_version("hugegraph-mcp"),
+    lifespan=create_runtime_lifespan(),
+)
+_ALWAYS_TOOL_FUNCS: list[Any] = []
+_CORE_TOOL_FUNCS: list[Any] = []
+
+
+def _register_health_routes(server: FastMCP) -> None:
+    @server.custom_route("/healthz", methods=["GET"], include_in_schema=False)
+    async def healthz(_request: Request) -> JSONResponse:
+        """Liveness probe: process alive and event loop responsive."""
+        return JSONResponse({"status": "ok"}, status_code=200)
+
+    @server.custom_route("/readyz", methods=["GET"], include_in_schema=False)
+    async def readyz(_request: Request) -> JSONResponse:
+        """Readiness probe: checks PlanStore and EventBus health."""
+        rt = get_current_runtime()
+        if rt is None:
+            return JSONResponse({"status": "not_ready", "checks": {"runtime": "uninitialized"}}, status_code=503)
+        ok, checks = await rt.check_ready()
+        return JSONResponse(
+            {"status": "ready" if ok else "not_ready", "checks": checks},
+            status_code=200 if ok else 503,
+        )
+
+
+register_resources(mcp)
+register_prompts(mcp)
+_register_health_routes(mcp)
+
+
+def _register_tool(func):
+    if func not in _ALWAYS_TOOL_FUNCS:
+        _ALWAYS_TOOL_FUNCS.append(func)
+    return mcp.tool()(func)
 
 
 def _register_core_tool(func):
+    if func not in _CORE_TOOL_FUNCS:
+        _CORE_TOOL_FUNCS.append(func)
     if ACTIVE_TOOLSET == "legacy":
         return func
     return mcp.tool()(func)
@@ -107,6 +174,11 @@ def _call_legacy_write_tool(
     """Validate the deprecated locator before delegating to a write workflow."""
 
     start = time.perf_counter()
+    if kwargs.get("confirm") or kwargs.get("mode") == "apply":
+        blocked = _write_actor_gate(tool_name)
+        if blocked is not None:
+            return blocked
+
     resolution, error = resolve_optional_legacy_locator(
         plan_hash=plan_hash,
         nonce=nonce,
@@ -119,15 +191,35 @@ def _call_legacy_write_tool(
             duration_ms=(time.perf_counter() - start) * 1000.0,
         )
 
-    result = _call_public_tool(
-        tool_name,
-        func,
-        *args,
-        plan_hash=plan_hash,
-        nonce=nonce,
-        expires_at=expires_at,
-        **kwargs,
+    is_confirmed_write = bool(kwargs.get("confirm")) and (
+        kwargs.get("mode") in {"apply", "delete"} or not kwargs.get("dry_run", True)
     )
+    rt = get_current_runtime() if is_confirmed_write else None
+    if rt is not None:
+        rt.begin_write()
+    try:
+        result = _call_public_tool(
+            tool_name,
+            func,
+            *args,
+            plan_hash=plan_hash,
+            nonce=nonce,
+            expires_at=expires_at,
+            **kwargs,
+        )
+    finally:
+        if rt is not None:
+            rt.end_write()
+    if is_confirmed_write:
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        error_details = result.get("error", {}).get("details") if isinstance(result.get("error"), dict) else {}
+        if not isinstance(error_details, dict):
+            error_details = {}
+        status = str(data.get("status") or error_details.get("status") or "")
+        if result.get("ok") is True or status in {"PARTIAL", "UNKNOWN"}:
+            event_kind = "invalidated" if status in {"PARTIAL", "UNKNOWN"} else "updated"
+            _invalidate_and_publish_resource("schema", event_kind=event_kind)
+            _invalidate_and_publish_resource("summary", event_kind=event_kind)
     if resolution is not None:
         result["warnings"] = [
             *(result.get("warnings") or []),
@@ -136,8 +228,25 @@ def _call_legacy_write_tool(
     return result
 
 
+def _effective_config() -> MCPConfig:
+    rt = get_current_runtime()
+    return rt.config if rt is not None else MCPConfig.from_env()
+
+
+def _write_actor_gate(tool_name: str) -> dict | None:
+    actor = get_current_actor()
+    if actor.is_anonymous or "mcp:write" not in actor.scopes:
+        return envelope_err(
+            ErrorType.READONLY_VIOLATION,
+            f"{tool_name} requires an authenticated actor with 'mcp:write' scope.",
+            source=tool_name,
+            details={"subject": actor.subject, "is_anonymous": actor.is_anonymous},
+        )
+    return None
+
+
 def _is_admin_mode_enabled() -> bool:
-    return MCPConfig.from_env().admin_mode
+    return _effective_config().admin_mode
 
 
 def _admin_gate(tool_name: str, *, requires_write: bool = False) -> dict | None:
@@ -163,7 +272,7 @@ def _admin_gate(tool_name: str, *, requires_write: bool = False) -> dict | None:
             },
         )
 
-    if requires_write and MCPConfig.from_env().is_readonly():
+    if requires_write and _effective_config().is_readonly():
         return envelope_err(
             ErrorType.READONLY_VIOLATION,
             f"{tool_name} requires HUGEGRAPH_MCP_READONLY=false.",
@@ -181,6 +290,32 @@ def _admin_gate(tool_name: str, *, requires_write: bool = False) -> dict | None:
             },
             readonly=True,
         )
+
+    actor = get_current_actor()
+    if actor.issuer != "local-stdio":
+        if actor.is_anonymous or "mcp:admin" not in actor.scopes:
+            return envelope_err(
+                ErrorType.AUTHORIZATION_FAILED,
+                f"{tool_name} requires an authenticated actor with 'mcp:admin' scope.",
+                source=tool_name,
+                details={
+                    "tool": tool_name,
+                    "subject": actor.subject,
+                    "is_anonymous": actor.is_anonymous,
+                    "required_scope": "mcp:admin",
+                },
+            )
+        if requires_write and "mcp:write" not in actor.scopes:
+            return envelope_err(
+                ErrorType.AUTHORIZATION_FAILED,
+                f"{tool_name} requires 'mcp:write' scope.",
+                source=tool_name,
+                details={
+                    "tool": tool_name,
+                    "subject": actor.subject,
+                    "required_scope": "mcp:write",
+                },
+            )
     return None
 
 
@@ -226,7 +361,7 @@ def _raw_gremlin_hard_budget_gate(tool_name: str) -> dict | None:
 # ========== Tool 1: inspect graph status and schema ==========
 
 
-@mcp.tool()
+@_register_tool
 def inspect_graph_tool(
     include_raw_schema: bool = False,
     include_counts: bool = False,
@@ -268,19 +403,71 @@ def get_write_status_tool(plan_id: str) -> dict:
 @_register_core_tool
 def confirm_write_tool(plan_id: str) -> dict:
     """Confirm exactly one immutable server-persisted plan by plan_id only."""
-    return _call_public_tool(
-        "confirm_write_tool",
-        confirm_write,
-        plan_id=plan_id,
-    )
+    blocked = _write_actor_gate("confirm_write_tool")
+    if blocked is not None:
+        return blocked
+    rt = get_current_runtime()
+    if rt is not None:
+        rt.begin_write()
+    try:
+        result = _call_public_tool(
+            "confirm_write_tool",
+            confirm_write,
+            plan_id=plan_id,
+        )
+    finally:
+        if rt is not None:
+            rt.end_write()
+
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    error_details = result.get("error", {}).get("details") if isinstance(result.get("error"), dict) else {}
+    if not isinstance(error_details, dict):
+        error_details = {}
+    status = str(data.get("status") or error_details.get("status") or "")
+    if result.get("ok") is True or status in {"PARTIAL", "UNKNOWN"}:
+        event_kind = "invalidated" if status in {"PARTIAL", "UNKNOWN"} else "updated"
+        _invalidate_and_publish_resource("schema", event_kind=event_kind)
+        _invalidate_and_publish_resource("summary", event_kind=event_kind)
+    return result
 
 
 @_register_core_tool
 def reconcile_write_tool(plan_id: str) -> dict:
     """Reconcile an UNKNOWN or PARTIAL plan by plan_id using read-only checks."""
-    return _call_public_tool(
+    result = _call_public_tool(
         "reconcile_write_tool",
         reconcile_write,
+        plan_id=plan_id,
+    )
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    status = str(data.get("status") or "")
+    if result.get("ok") is True and status in {"APPLIED", "ALREADY_APPLIED", "PARTIAL", "UNKNOWN"}:
+        event_kind = "invalidated" if status in {"PARTIAL", "UNKNOWN"} else "updated"
+        _invalidate_and_publish_resource("schema", event_kind=event_kind)
+        _invalidate_and_publish_resource("summary", event_kind=event_kind)
+    return result
+
+
+@_register_core_tool
+def list_write_plans_tool(status: str | None = None, limit: int = 20) -> dict:
+    """List actor-owned write plans ordered by most recent first."""
+    return _call_public_tool(
+        "list_write_plans_tool",
+        list_write_plans,
+        status=status,
+        limit=limit,
+    )
+
+
+@_register_core_tool
+def cancel_write_plan_tool(plan_id: str) -> dict:
+    """Cancel an unexecuted ISSUED write plan by transitioning it to EXPIRED."""
+    blocked = _write_actor_gate("cancel_write_plan_tool")
+    if blocked is not None:
+        return blocked
+    return _call_public_tool(
+        "cancel_write_plan_tool",
+        cancel_write_plan,
         plan_id=plan_id,
     )
 
@@ -354,10 +541,115 @@ def query_graph_data_tool(
     )
 
 
+@_register_core_tool
+def traverse_graph_tool(
+    operation: str,
+    source_id: str | int,
+    target_id: str | int | None = None,
+    direction: str = "BOTH",
+    label: str | None = None,
+    max_depth: int = 2,
+    max_degree: int = 16,
+    capacity: int = 1000,
+    limit: int | None = None,
+) -> dict:
+    """Execute a bounded graph traversal or path analysis query.
+
+    Capability: READ.
+    operation values: neighbors, k_out, shortest_path, paths.
+    Hard budgets: max_depth <= 3, max_degree <= 64, capacity <= 5000, limit <= 100.
+    """
+    return _call_public_tool(
+        "traverse_graph_tool",
+        traverse_graph,
+        operation=operation,
+        source_id=source_id,
+        target_id=target_id,
+        direction=direction,
+        label=label,
+        max_depth=max_depth,
+        max_degree=max_degree,
+        capacity=capacity,
+        limit=limit,
+    )
+
+
+@_register_core_tool
+def get_task_status_tool(task_id: int) -> dict:
+    """Query a HugeGraph async task status without loading large task_result payloads.
+
+    Capability: ADMIN_READ (requires HUGEGRAPH_MCP_ADMIN_MODE=true and mcp:admin in HTTP mode).
+    """
+    gate = _admin_gate("get_task_status_tool", requires_write=False)
+    if gate is not None:
+        return gate
+    return _call_public_tool(
+        "get_task_status_tool",
+        get_task_status,
+        task_id=task_id,
+    )
+
+
+@_register_core_tool
+def list_tasks_tool(
+    status: str | None = None,
+    limit: int = 20,
+    page: str | None = None,
+) -> dict:
+    """List HugeGraph async tasks with bounded limit and sanitized fields.
+
+    Capability: ADMIN_READ (requires HUGEGRAPH_MCP_ADMIN_MODE=true and mcp:admin in HTTP mode).
+    """
+    gate = _admin_gate("list_tasks_tool", requires_write=False)
+    if gate is not None:
+        return gate
+    return _call_public_tool(
+        "list_tasks_tool",
+        list_tasks,
+        status=status,
+        limit=limit,
+        page=page,
+    )
+
+
+@_register_core_tool
+def cancel_task_tool(task_id: int) -> dict:
+    """Request cancellation of a HugeGraph async task by task_id.
+
+    Capability: ADMIN_WRITE (requires HUGEGRAPH_MCP_ADMIN_MODE=true, non-readonly,
+    and mcp:admin + mcp:write in HTTP mode).
+    """
+    gate = _admin_gate("cancel_task_tool", requires_write=True)
+    if gate is not None:
+        return gate
+    return _call_public_tool(
+        "cancel_task_tool",
+        cancel_task,
+        task_id=task_id,
+    )
+
+
+@_register_core_tool
+def list_graphs_tool(prefix: str | None = None, limit: int = 50) -> dict:
+    """List HugeGraph graphs in the configured graphspace.
+
+    Capability: ADMIN_READ (requires HUGEGRAPH_MCP_ADMIN_MODE=true and mcp:admin in HTTP mode).
+    """
+    gate = _admin_gate("list_graphs_tool", requires_write=False)
+    if gate is not None:
+        return gate
+    return _call_public_tool(
+        "list_graphs_tool",
+        list_graphs,
+        prefix=prefix,
+        limit=limit,
+    )
+
+
 # ========== Tools shared by core and legacy ==========
 
 
-@mcp.tool()
+@_register_tool
 def generate_gremlin_tool(
     query: str,
     execute: bool = False,
@@ -387,7 +679,7 @@ def generate_gremlin_tool(
     )
 
 
-@mcp.tool()
+@_register_tool
 def execute_gremlin_read_tool(gremlin_query: str, limit_policy: str = "reject_unbounded") -> dict:
     """Registered compatibility tool; raw read execution is currently disabled.
 
@@ -409,7 +701,7 @@ def execute_gremlin_read_tool(gremlin_query: str, limit_policy: str = "reject_un
     )
 
 
-@mcp.tool()
+@_register_tool
 def extract_graph_data_tool(
     text: str,
     graph_schema: dict | None = None,
@@ -430,7 +722,7 @@ def extract_graph_data_tool(
     )
 
 
-@mcp.tool()
+@_register_tool
 def design_schema_tool(operations: list[dict] | None = None) -> dict:
     """共享工具：schema 设计指导。
 
@@ -444,7 +736,7 @@ def design_schema_tool(operations: list[dict] | None = None) -> dict:
     )
 
 
-@mcp.tool()
+@_register_tool
 def apply_schema_tool(
     mode: str,
     operations: list[dict] | None = None,
@@ -525,7 +817,7 @@ def mutate_graph_properties_tool(
 # ========== Graph data import entry point ==========
 
 
-@mcp.tool()
+@_register_tool
 def import_graph_data_tool(
     mode: str,
     text: str | None = None,
@@ -609,7 +901,7 @@ def import_graph_data_tool(
 # ========== Controlled graph data deletion entry point ==========
 
 
-@mcp.tool()
+@_register_tool
 def delete_graph_data_tool(
     change_plan: dict,
     dry_run: bool = True,
@@ -642,20 +934,53 @@ def delete_graph_data_tool(
 # ========== Advanced debugging tools ==========
 
 
-@mcp.tool()
+def _invalidate_and_publish_resource(kind: str, *, event_kind: str = "updated") -> None:
+    """Invalidate cached graph resources and publish an out-of-band update event if runtime is active."""
+    rt = get_current_runtime()
+    if rt is None:
+        return
+    cfg = rt.config
+    graphspace = cfg.graphspace or "DEFAULT"
+    rt.resource_cache.invalidate_graph(cfg.deployment_id, graphspace, cfg.graph)
+    if kind in {"schema", "summary", "embeddings_vid"}:
+        uri = build_graph_resource_uri(cfg.deployment_id, graphspace, cfg.graph, kind)  # type: ignore[arg-type]
+        event = ResourceEvent.create(
+            deployment=cfg.deployment_id,
+            graphspace=graphspace,
+            graph=cfg.graph,
+            uri=uri,
+            kind=event_kind,  # type: ignore[arg-type]
+            resource_version=int(time.time() * 1000),
+        )
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(rt.event_bus.publish(event))
+            _BACKGROUND_TASKS.add(task)
+            task.add_done_callback(_BACKGROUND_TASKS.discard)
+        except RuntimeError:
+            if rt._loop is not None and not rt._loop.is_closed():
+                asyncio.run_coroutine_threadsafe(rt.event_bus.publish(event), rt._loop)
+
+
+@_register_tool
 def refresh_vid_embeddings_tool(confirm: bool = False) -> dict:
     """手动刷新 VID 嵌入 — 需 admin mode 且 readonly=false。"""
     blocked = _admin_gate("refresh_vid_embeddings_tool", requires_write=True)
     if blocked:
         return blocked
-    return _call_public_tool(
+    result = _call_public_tool(
         "refresh_vid_embeddings_tool",
         refresh_vid_embeddings,
         confirm=confirm,
     )
+    if result.get("ok") is True and confirm:
+        _invalidate_and_publish_resource("embeddings_vid")
+    return result
 
 
-@mcp.tool()
+@_register_tool
 def execute_gremlin_write_tool(gremlin_query: str) -> dict:
     """Disabled direct Gremlin write pending a verified hard-budget contract.
 
@@ -675,9 +1000,112 @@ def execute_gremlin_write_tool(gremlin_query: str) -> dict:
     )
 
 
+@_register_core_tool
+def search_vid_embeddings_tool(query: str, top_k: int = 10) -> dict:
+    """Search indexed vertex IDs semantically similar to a query string.
+
+    Requires HUGEGRAPH_MCP_ALLOW_AI=true and a HugeGraph-AI service with
+    /v1/vid-embeddings/search. Returns ranked VIDs and index freshness metadata.
+    """
+    return _call_public_tool(
+        "search_vid_embeddings_tool",
+        search_vid_embeddings,
+        query=query,
+        top_k=top_k,
+    )
+
+
+def _attach_runtime_middleware(server: FastMCP) -> None:
+    from fastmcp.server.middleware import Middleware as FastMCPMiddleware
+
+    class _RuntimeBindingMiddleware(FastMCPMiddleware):
+        async def on_message(self, context, call_next):
+            rt = getattr(server, "_hugegraph_runtime", None)
+            if rt is None:
+                return await call_next(context)
+            token = set_current_runtime(rt)
+            try:
+                return await call_next(context)
+            finally:
+                reset_current_runtime(token)
+
+    server.add_middleware(_RuntimeBindingMiddleware())
+
+
+def create_server(config: MCPConfig | None = None) -> FastMCP:
+    """Create an isolated FastMCP server instance bound to the given MCPConfig."""
+    server = FastMCP(
+        "HugeGraph MCP",
+        version=distribution_version("hugegraph-mcp"),
+        lifespan=create_runtime_lifespan(config),
+    )
+    _attach_runtime_middleware(server)
+    register_resources(server)
+    register_prompts(server)
+    _register_health_routes(server)
+    for tool_func in _ALWAYS_TOOL_FUNCS:
+        server.tool()(tool_func)
+    if ACTIVE_TOOLSET != "legacy":
+        for tool_func in _CORE_TOOL_FUNCS:
+            server.tool()(tool_func)
+    return server
+
+
+def create_http_app(
+    config: MCPConfig | None = None,
+    *,
+    require_auth: bool = True,
+    verifier: BearerTokenVerifier | None = None,
+):
+    """Build the Starlette ASGI app for Streamable HTTP / SSE with Actor auth middleware."""
+    cfg = config or MCPConfig.from_env()
+    target_mcp = create_server(cfg) if config is not None else mcp
+    transport = "streamable-http" if cfg.transport in {"http", "streamable-http"} else cfg.transport
+    if verifier is None:
+        secret = os.getenv("HUGEGRAPH_MCP_BEARER_SECRET")
+        if secret:
+            raw_scopes = os.getenv("HUGEGRAPH_MCP_BEARER_SCOPES", "")
+            scopes = tuple(s.strip() for s in raw_scopes.split(",") if s.strip()) or ("mcp:read", "mcp:write")
+            verifier = StaticSecretBearerVerifier(secret, scopes=scopes)
+    return target_mcp.http_app(
+        path=cfg.http_path,
+        transport=transport,  # type: ignore[arg-type]
+        middleware=[
+            Middleware(
+                ActorContextMiddleware,
+                require_auth=require_auth,
+                verifier=verifier,
+                runtime_getter=lambda: getattr(target_mcp, "_hugegraph_runtime", None),
+            )
+        ],
+    )
+
+
 def main() -> None:
-    """CLI 入口 — 默认 stdio 模式。"""
-    mcp.run()
+    """CLI 入口 — 支持 stdio 与远程 streamable-http / sse 双模传输。"""
+    import sys
+
+    cfg = MCPConfig.from_env()
+    transport = cfg.transport
+    if transport == "stdio":
+        if sys.platform == "win32" and cfg.plan_store_backend == "postgres":
+            import asyncio
+
+            asyncio.run(mcp.run_async(), loop_factory=asyncio.SelectorEventLoop)
+            return
+        mcp.run()
+        return
+    import uvicorn
+
+    require_auth = os.getenv("HUGEGRAPH_MCP_REQUIRE_AUTH", "true").strip().lower() not in {"0", "false", "no"}
+    app = create_http_app(cfg, require_auth=require_auth)
+    if sys.platform == "win32" and cfg.plan_store_backend == "postgres":
+        import asyncio
+
+        uv_server = uvicorn.Server(uvicorn.Config(app, host=cfg.http_host, port=cfg.http_port))
+        asyncio.run(uv_server.serve(), loop_factory=asyncio.SelectorEventLoop)
+        return
+    uvicorn.run(app, host=cfg.http_host, port=cfg.http_port)
 
 
 if __name__ == "__main__":  # pragma: no cover - manual launch

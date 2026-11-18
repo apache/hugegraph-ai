@@ -19,7 +19,7 @@ from typing import Any
 from pyhugegraph.client import PyHugeClient
 from pyhugegraph.utils.id_format import format_vertex_id
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.error_mapping import classify_hugegraph_exception
 from hugegraph_mcp.gremlin_tools import _gremlin_output_guard_error
@@ -33,7 +33,7 @@ VALID_DIRECTIONS = frozenset({"OUT", "IN", "BOTH"})
 
 
 def _graph_manager():
-    return build_hugegraph_client(MCPConfig.from_env(), client_cls=PyHugeClient).graph()
+    return build_hugegraph_client(get_effective_config(), client_cls=PyHugeClient).graph()
 
 
 def query_graph_data(
@@ -82,7 +82,7 @@ def query_graph_data(
     if validation_error is not None:
         return validation_error
 
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     bounded_limit = min(DEFAULT_LIMIT if limit is None else int(limit), MAX_LIMIT, cfg.max_result_items)
     normalized_direction = _normalize_direction(direction)
 

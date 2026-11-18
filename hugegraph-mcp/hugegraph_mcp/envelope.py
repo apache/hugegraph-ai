@@ -22,7 +22,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 
 REDACTED_VALUE = "***REDACTED***"
 SENSITIVE_KEY_PARTS = (
@@ -152,7 +152,7 @@ def build_meta(
     extra_meta: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     meta = {
         "request_id": request_id or generate_request_id(),
         "graph": cfg.graph if graph is None else graph,

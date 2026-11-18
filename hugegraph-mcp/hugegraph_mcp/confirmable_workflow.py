@@ -16,7 +16,7 @@
 import time
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.confirmation_store import (
     ConfirmationAlreadyUsedError,
     ConfirmationNotIssuedError,
@@ -262,7 +262,7 @@ def verify_and_consume_issued_plan(
     if not valid:
         return False, error_type, details, None
 
-    if MCPConfig.from_env().is_readonly():
+    if get_effective_config().is_readonly():
         return (
             False,
             ErrorType.READONLY_VIOLATION,

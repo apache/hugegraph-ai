@@ -47,8 +47,15 @@ CONFIG_ENV_NAMES = (
     "HUGEGRAPH_MCP_MAX_RESULT_ITEMS",
     "HUGEGRAPH_MCP_MAX_RESULT_BYTES",
     "HUGEGRAPH_MCP_PLAN_STORE",
+    "HUGEGRAPH_MCP_PLAN_STORE_DSN",
     "HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT",
     "HUGEGRAPH_MCP_STATE_DIR",
+    "HUGEGRAPH_MCP_TRANSPORT",
+    "HUGEGRAPH_MCP_HTTP_HOST",
+    "HUGEGRAPH_MCP_HTTP_PORT",
+    "HUGEGRAPH_MCP_HTTP_PATH",
+    "HUGEGRAPH_MCP_DEPLOYMENT",
+    "HUGEGRAPH_MCP_EVENT_BUS",
     "XDG_STATE_HOME",
 )
 _CONFIG_CACHE: tuple[tuple[tuple[str, str | None], ...], "MCPConfig"] | None = None
@@ -72,6 +79,7 @@ _NUMERIC_FIELD_SPECS = {
     "max_result_items": _NumericFieldSpec("integer", 100, 1, 1_000_000),
     "max_result_bytes": _NumericFieldSpec("integer", 1_048_576, 1, 1_073_741_824),
     "write_instance_count": _NumericFieldSpec("integer", 1, 1, 1024),
+    "http_port": _NumericFieldSpec("integer", 8000, 1, 65535),
 }
 
 
@@ -97,8 +105,15 @@ class MCPConfig:
     max_result_items: int = 100
     max_result_bytes: int = 1_048_576
     plan_store_backend: str = "sqlite"
+    plan_store_dsn: str | None = None
     write_instance_count: int = 1
     state_dir: Path = field(default_factory=lambda: Path.home() / ".local" / "state" / "hugegraph-mcp")
+    transport: str = "stdio"
+    http_host: str = "127.0.0.1"
+    http_port: int = 8000
+    http_path: str = "/mcp"
+    deployment_id: str = "default"
+    event_bus_backend: str = "memory"
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
@@ -194,11 +209,18 @@ class MCPConfig:
                 "max_result_bytes",
             ),
             plan_store_backend=(env.get("HUGEGRAPH_MCP_PLAN_STORE", "sqlite").strip().lower() or "invalid"),
+            plan_store_dsn=_optional_non_empty(env.get("HUGEGRAPH_MCP_PLAN_STORE_DSN")),
             write_instance_count=_parse_numeric_field(
                 env.get("HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT"),
                 "write_instance_count",
             ),
             state_dir=_state_dir(env),
+            transport=_parse_transport(env.get("HUGEGRAPH_MCP_TRANSPORT"), warnings),
+            http_host=_non_empty(env.get("HUGEGRAPH_MCP_HTTP_HOST", "127.0.0.1"), "127.0.0.1"),
+            http_port=_parse_numeric_field(env.get("HUGEGRAPH_MCP_HTTP_PORT"), "http_port"),
+            http_path=_normalize_http_path(env.get("HUGEGRAPH_MCP_HTTP_PATH", "/mcp")),
+            deployment_id=_non_empty(env.get("HUGEGRAPH_MCP_DEPLOYMENT", "default"), "default"),
+            event_bus_backend=(env.get("HUGEGRAPH_MCP_EVENT_BUS", "memory").strip().lower() or "memory"),
             warnings=tuple(warnings),
         )
         for warning in config.warnings:
@@ -214,7 +236,28 @@ class MCPConfig:
         return self.readonly
 
     def has_safe_write_store(self) -> bool:
-        return self.plan_store_backend == "sqlite" and self.write_instance_count == 1
+        if self.plan_store_backend == "sqlite":
+            return self.write_instance_count == 1
+        if self.plan_store_backend == "postgres":
+            return bool(self.plan_store_dsn)
+        return False
+
+
+def _parse_transport(value: str | None, warnings: list[str]) -> str:
+    if value is None or not value.strip():
+        return "stdio"
+    normalized = value.strip().lower()
+    if normalized in {"stdio", "http", "streamable-http", "sse"}:
+        return normalized
+    warnings.append(f"Invalid HUGEGRAPH_MCP_TRANSPORT={value!r}; falling back to 'stdio'")
+    return "stdio"
+
+
+def _normalize_http_path(value: str | None) -> str:
+    if value is None or not value.strip():
+        return "/mcp"
+    cleaned = value.strip()
+    return cleaned if cleaned.startswith("/") else f"/{cleaned}"
 
 
 def _parse_graph_path(graph_path: str) -> tuple[str, str]:
@@ -301,14 +344,24 @@ def _environment_snapshot(env: Mapping[str, str]) -> dict[str, str]:
     return snapshot
 
 
+def get_effective_config() -> MCPConfig:
+    """Return the active runtime's MCPConfig when inside a runtime lifespan, else from_env()."""
+    from hugegraph_mcp.runtime import get_current_runtime
+
+    rt = get_current_runtime()
+    if rt is not None:
+        return rt.config
+    return MCPConfig.from_env()
+
+
 class RuntimeConfigProxy:
     """Compatibility proxy for code that imports config directly."""
 
     def __getattr__(self, name: str):
-        return getattr(MCPConfig.from_env(), name)
+        return getattr(get_effective_config(), name)
 
     def is_readonly(self) -> bool:
-        return MCPConfig.from_env().is_readonly()
+        return get_effective_config().is_readonly()
 
 
 config = RuntimeConfigProxy()

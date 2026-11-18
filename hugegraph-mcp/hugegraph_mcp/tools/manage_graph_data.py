@@ -21,7 +21,7 @@ validation, Gremlin generation, and execution helpers live in focused modules.
 from typing import Any
 
 from hugegraph_mcp import gremlin_tools, schema_tools
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.confirmable_workflow import (
     confirm_required_error,
     issue_plan,
@@ -271,7 +271,7 @@ def manage_graph_data(
     if dry_run:
         warnings = list(dry_run_result.get("warnings", []))
         next_actions: list[str] = []
-        if MCPConfig.from_env().is_readonly():
+        if get_effective_config().is_readonly():
             dry_run_result, readonly_warnings, readonly_next_actions = mark_readonly_preview(
                 dry_run_result,
                 warning=(
@@ -317,7 +317,7 @@ def manage_graph_data(
                 next_actions.append(
                     "Do not confirm this import until the required backend capabilities pass integration tests."
                 )
-        elif not MCPConfig.from_env().is_readonly():
+        elif not get_effective_config().is_readonly():
             issue_error = issue_plan(
                 plan_context,
                 target_bound_hash,

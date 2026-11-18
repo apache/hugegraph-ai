@@ -23,7 +23,7 @@ from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.guard import Capability, guard
 from hugegraph_mcp.plan_hash import PlanContext
 from hugegraph_mcp.tools.schema_utils import normalized_schema_summary
@@ -37,6 +37,7 @@ from hugegraph_mcp.write_plan import (
 )
 
 CREATE_SCHEMA = "CREATE_SCHEMA"
+APPEND_SCHEMA = "APPEND_SCHEMA"
 
 
 def compile_schema_write_plan(
@@ -63,6 +64,11 @@ def compile_schema_write_plan(
         "name": name,
         "operation": canonical_operation,
     }
+    is_append = schema_kind in {"append_vertex_label", "append_edge_label"}
+    plan_kind = APPEND_SCHEMA if is_append else CREATE_SCHEMA
+    expected_state: dict[str, Any] = (
+        {"exists": True, "schema_kind": schema_kind, "name": name} if is_append else {"exists": False}
+    )
     created_at = int(time.time())
     return WritePlan(
         plan_id=plan_id,
@@ -76,9 +82,9 @@ def compile_schema_write_plan(
         operations=(
             OperationPlan(
                 operation_id=operation_id,
-                kind=CREATE_SCHEMA,
+                kind=plan_kind,
                 target=target,
-                expected_state={"exists": False},
+                expected_state=expected_state,
                 desired_state=desired,
                 idempotency_key=_digest(target),
             ),
@@ -143,6 +149,8 @@ def schema_reconcile_reader(_plan: WritePlan, operation: OperationPlan) -> Mappi
     if state == "identical":
         return dict(operation.desired_state)
     if state == "missing":
+        return {"exists": False}
+    if state == "pending":
         return dict(operation.expected_state)
     return {
         "exists": True,
@@ -154,10 +162,12 @@ def schema_reconcile_reader(_plan: WritePlan, operation: OperationPlan) -> Mappi
 
 def register_schema_write_adapters(registry: Any) -> None:
     registry.register(CREATE_SCHEMA, schema_create_adapter)
+    registry.register(APPEND_SCHEMA, schema_create_adapter)
 
 
 def register_schema_reconcile_readers(registry: Any) -> None:
     registry.register(CREATE_SCHEMA, schema_reconcile_reader)
+    registry.register(APPEND_SCHEMA, schema_reconcile_reader)
 
 
 def _target_mismatch(
@@ -165,7 +175,7 @@ def _target_mismatch(
     operation: OperationPlan,
     attempt: int,
 ) -> ApplyReceipt | None:
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     current = (cfg.url, cfg.graph, cfg.graphspace or "DEFAULT", cfg.user)
     planned = (
         plan.graph_target.graph_url,

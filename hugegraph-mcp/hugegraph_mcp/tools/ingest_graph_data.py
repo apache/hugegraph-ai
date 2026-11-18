@@ -41,7 +41,7 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.confirmable_workflow import mark_readonly_preview
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.guard import Capability, guard
@@ -703,7 +703,7 @@ def calculate_plan_hash(
     """计算图数据导入的计划哈希（兼容旧接口）。"""
     from hugegraph_mcp.plan_hash import compute_payload_digest
 
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     schema_summary = normalized_schema_summary(live_schema)
     payload = {
         "graph_data": _normalize_graph_data(graph_data, schema_summary),
@@ -795,7 +795,7 @@ def ingest_graph_data_via_ai(
     warnings = validation["warnings"]
 
     # Build the target-bound plan context, including url, user, readonly, nonce, and expires_at.
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     schema_summary = normalized_schema_summary(live_schema)
     payload_for_digest = {
         "graph_data": _normalize_graph_data(graph_data, schema_summary),
@@ -834,7 +834,7 @@ def ingest_graph_data_via_ai(
             "preview_only": True,
         }
         next_actions: list[str] = []
-        if MCPConfig.from_env().is_readonly():
+        if get_effective_config().is_readonly():
             payload, readonly_warnings, next_actions = mark_readonly_preview(
                 payload,
                 warning=(

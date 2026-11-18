@@ -329,7 +329,7 @@ def rag_http_api(
                 inp=req.query,
                 example_num=req.example_num,
                 schema_input=graph_connection["graph"],
-                gremlin_prompt_input=req.gremlin_prompt,
+                gremlin_prompt_input=req.gremlin_prompt or prompt.gremlin_generate_prompt,
                 requested_outputs=output_types_str_list,
                 graph_client_config=graph_connection,
             )

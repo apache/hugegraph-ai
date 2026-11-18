@@ -176,7 +176,7 @@ def record_write_outcome(
     receipt: dict[str, Any],
 ) -> bool:
     """Persist an execution receipt; return False if durability is unavailable."""
-    persisted_status = PlanStatus(status.value if isinstance(status, (PlanStatus, ApplyStatus)) else status)
+    persisted_status = PlanStatus(status.value if isinstance(status, PlanStatus | ApplyStatus) else status)
     try:
         ConfirmationStore.from_config().record_outcome(
             plan_hash=plan_hash,

@@ -20,13 +20,16 @@
 # The extraction prompt contains intentionally long, copy-pasteable JSON contracts.
 # ruff: noqa: E501
 
-import hashlib
 import json
 from typing import Any
 
+from hugegraph_mcp.artifacts import get_default_artifact_store
 from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.hugegraph_ai_client import post
+from hugegraph_mcp.resource_uri import build_artifact_resource_uri
+from hugegraph_mcp.runtime import get_current_actor
+from hugegraph_mcp.stores.base import default_stdio_actor
 from hugegraph_mcp.tools.live_schema import fetch_live_schema_or_none
 from hugegraph_mcp.tools.schema_utils import schema_payload
 
@@ -47,15 +50,27 @@ DEFAULT_GRAPH_EXTRACT_PROMPT_ZH = """## 主要任务
 6. 不要输出 Markdown、解释、注释或额外文本。"""
 
 
+AUTO_ARTIFACT_THRESHOLD_BYTES = 32_768
+
+
 def extract_graph_data(
     text: str,
     schema: dict[str, Any] | str | None = None,
     example_prompt: str | None = None,
+    review_options: dict[str, Any] | None = None,
+    output: str = "inline",
 ) -> dict[str, Any]:
     """从自然语言文本中抽取候选图数据 — 不写入 HugeGraph。
 
     返回 standard envelope，其中 graph_data 含 vertices/edges 供用户审阅。
     """
+
+    if output not in {"inline", "artifact", "auto"}:
+        return envelope_err(
+            ErrorType.VALIDATION_ERROR,
+            f"Unsupported output mode: {output!r}; expected inline, artifact, or auto.",
+            details={"output": output},
+        )
 
     cfg = get_effective_config()
     if schema is None and not cfg.allow_ai:
@@ -72,15 +87,15 @@ def extract_graph_data(
             details={"graph": cfg.graph, "graphspace": cfg.graphspace},
         )
     prompt_message = _example_prompt_message(example_prompt)
-    ai_result = post(
-        "/graph-extract",
-        json={
-            "text": text,
-            "schema": schema_message,
-            "example_prompt": prompt_message,
-            "language": "zh",
-        },
-    )
+    request_body: dict[str, Any] = {
+        "text": text,
+        "schema": schema_message,
+        "example_prompt": prompt_message,
+        "language": "zh",
+    }
+    if review_options is not None:
+        request_body["review_options"] = dict(review_options)
+    ai_result = post("/graph-extract", json=request_body)
     if not ai_result.get("ok"):
         return ai_result
 
@@ -93,19 +108,86 @@ def extract_graph_data(
             details={"data": payload},
         )
 
-    return envelope_ok(
-        {
-            "graph_data": {
-                "schema_ref": schema_ref,
-                "vertices": graph_data.get("vertices", []),
-                "edges": graph_data.get("edges", []),
-                "warnings": graph_data.get("warnings", []),
-                "raw": graph_data.get("raw"),
-            },
-            "raw_summary": graph_data.get("raw_summary"),
-            "schema_warnings": graph_data.get("schema_warnings", []),
-        }
-    )
+    payload_dict = payload if isinstance(payload, dict) else {}
+    raw_chunks = graph_data.get("chunks") or payload_dict.get("chunks") or payload_dict.get("chunk_results") or []
+    if isinstance(raw_chunks, str):
+        try:
+            raw_chunks = json.loads(raw_chunks)
+        except json.JSONDecodeError:
+            raw_chunks = []
+    chunks = raw_chunks if isinstance(raw_chunks, list) else []
+
+    raw_issues = graph_data.get("issues") or payload_dict.get("issues") or []
+    if isinstance(raw_issues, str):
+        try:
+            raw_issues = json.loads(raw_issues)
+        except json.JSONDecodeError:
+            raw_issues = [raw_issues] if raw_issues else []
+    issues = raw_issues if isinstance(raw_issues, list) else []
+
+    extraction_status = graph_data.get("extraction_status") or payload_dict.get("extraction_status") or "complete"
+    if not isinstance(extraction_status, str):
+        extraction_status = str(extraction_status)
+    if extraction_status not in {"failed", "blocked"} and any(
+        isinstance(ch, dict) and ch.get("status") in {"partial", "blocked", "failed"} for ch in chunks
+    ):
+        extraction_status = "partial"
+
+    full_graph_data = {
+        "schema_ref": schema_ref,
+        "vertices": graph_data.get("vertices", []),
+        "edges": graph_data.get("edges", []),
+        "warnings": graph_data.get("warnings", []),
+        "raw": graph_data.get("raw"),
+    }
+    response_data: dict[str, Any] = {
+        "graph_data": full_graph_data,
+        "raw_summary": graph_data.get("raw_summary"),
+        "schema_warnings": graph_data.get("schema_warnings", []),
+        "extraction_status": extraction_status,
+        "chunks": chunks,
+        "issues": issues,
+        "call_count": graph_data.get("call_count") or payload_dict.get("call_count"),
+    }
+
+    encoded_response = json.dumps(response_data, ensure_ascii=False, separators=(",", ":"), default=str)
+    encoded_size = len(encoded_response.encode("utf-8"))
+    if output == "artifact" or (output == "auto" and encoded_size > AUTO_ARTIFACT_THRESHOLD_BYTES):
+        actor = get_current_actor() or default_stdio_actor()
+        owner_key = actor.principal_key
+        tenant = actor.tenant
+        try:
+            manifest = get_default_artifact_store(cfg).put(
+                encoded_response,
+                owner_key=owner_key,
+                tenant=tenant,
+                target_graph={"url": cfg.url, "graph": cfg.graph, "graphspace": cfg.graphspace or "DEFAULT"},
+                kind="extraction_result",
+                schema_fingerprint=(
+                    schema_ref.get("fingerprint") or schema_ref.get("sha256") if isinstance(schema_ref, dict) else None
+                ),
+            )
+        except Exception as exc:
+            return envelope_err(
+                ErrorType.SERVER_ERROR,
+                f"Failed to persist extraction artifact: {exc}",
+                retryable=False,
+                source="extract_graph_data_tool",
+            )
+        return envelope_ok(
+            {
+                "artifact_id": manifest.artifact_id,
+                "artifact_uri": build_artifact_resource_uri(manifest.artifact_id),
+                "part_count": manifest.part_count,
+                "size_bytes": manifest.size_bytes,
+                "vertex_count": len(full_graph_data["vertices"]),
+                "edge_count": len(full_graph_data["edges"]),
+                "extraction_status": extraction_status,
+                "issues": issues,
+            }
+        )
+
+    return envelope_ok(response_data)
 
 
 def _schema_context(schema: dict[str, Any] | str | None, cfg: MCPConfig) -> tuple[str | None, dict[str, Any]]:
@@ -150,8 +232,9 @@ def _schema_ref(cfg: MCPConfig, schema_source: str, fingerprint: str | None) -> 
 
 
 def _schema_fingerprint(schema: dict[str, Any]) -> str:
-    encoded = json.dumps(schema, sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    from hugegraph_mcp.schema_snapshot import compute_schema_fingerprint
+
+    return compute_schema_fingerprint(schema)
 
 
 def _example_prompt_message(example_prompt: str | None) -> str:

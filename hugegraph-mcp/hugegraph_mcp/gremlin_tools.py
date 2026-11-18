@@ -129,10 +129,10 @@ def _gremlin_result_count(data: Any) -> int:
         inner_data = data.get("data")
         if inner_data is None:
             return 0
-        if isinstance(inner_data, (list, tuple, set)):
+        if isinstance(inner_data, list | tuple | set):
             return len(inner_data)
         return 1
-    if isinstance(data, (list, tuple, set)):
+    if isinstance(data, list | tuple | set):
         return len(data)
     return 1
 
@@ -359,7 +359,7 @@ def _execute_gremlin_with_error_handling(client, gremlin_query: str, operation_t
         ServerError,
     ) as e:
         duration_ms = (time.perf_counter() - start) * 1000.0
-        if isinstance(e, (InvalidParameterError, DataFormatError)):
+        if isinstance(e, InvalidParameterError | DataFormatError):
             return {
                 "success": False,
                 "error_type": "query_syntax_error",

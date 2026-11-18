@@ -20,10 +20,20 @@ from pyhugegraph.client import PyHugeClient
 from pyhugegraph.utils.id_format import format_vertex_id
 
 from hugegraph_mcp.config import get_effective_config
+from hugegraph_mcp.cursor_store import (
+    CursorError,
+    compute_query_hash,
+    get_default_cursor_store,
+)
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.error_mapping import classify_hugegraph_exception
 from hugegraph_mcp.gremlin_tools import _gremlin_output_guard_error
 from hugegraph_mcp.hugegraph_client import build_hugegraph_client
+from hugegraph_mcp.pagination import ItemTooLargeError, pack_paginated_items
+from hugegraph_mcp.projection import project_items, validate_fields
+from hugegraph_mcp.read_budget import read_budget_from_config
+from hugegraph_mcp.runtime import get_current_actor
+from hugegraph_mcp.target_context import resolve_target_from_config
 
 TARGETS = frozenset({"vertex", "edge"})
 OPERATIONS = frozenset({"get_by_id", "get_by_ids", "page", "condition"})
@@ -46,25 +56,26 @@ def query_graph_data(
     properties: dict[str, Any] | None = None,
     limit: int | None = None,
     page: str | None = None,
+    cursor: str | None = None,
+    fields: list[str] | None = None,
     vertex_id: Any = None,
     direction: str | None = None,
 ) -> dict[str, Any]:
     """Query vertices or edges through HugeGraph GraphManager.
 
     Capability: READ.
-
-    target values: vertex, edge.
-    operation values:
-    - get_by_id: requires id.
-    - get_by_ids: requires non-empty ids, duplicates are ignored with a warning.
-    - page: vertex requires label; edge may use label and/or vertex_id+direction.
-    - condition: exact-match properties only; no full graph Gremlin fallback.
-
-    limit defaults to 100, rejects values above 500, and is capped by the configured
-    result item limit. ID batches larger than the effective limit are rejected.
-    Oversized results are rejected without truncation or a continuation cursor.
-    Edge page/condition with vertex_id must also pass direction=OUT|IN|BOTH.
     """
+
+    if cursor is not None and not _is_blank(page):
+        return _validation_error(
+            "page and cursor cannot be combined.",
+            "Pass either cursor (recommended) or legacy page, not both.",
+            {"page": page, "cursor": cursor},
+        )
+    try:
+        normalized_fields = validate_fields(fields)
+    except ValueError as exc:
+        return _validation_error(str(exc), "Pass a list of valid field names.", {"fields": fields})
 
     warnings: list[str] = []
     validation_error = _validate_inputs(
@@ -85,6 +96,7 @@ def query_graph_data(
     cfg = get_effective_config()
     bounded_limit = min(DEFAULT_LIMIT if limit is None else int(limit), MAX_LIMIT, cfg.max_result_items)
     normalized_direction = _normalize_direction(direction)
+    use_cursor_contract = cursor is not None or normalized_fields is not None or cfg.core_profile == "lean"
 
     try:
         normalized_ids = _normalize_ids(ids, warnings, target=target) if operation == "get_by_ids" else []
@@ -94,20 +106,40 @@ def query_graph_data(
                 "Split the IDs into smaller batches or increase limit within configured bounds.",
                 {"ids_length": len(normalized_ids), "limit": bounded_limit},
             )
+        if use_cursor_contract:
+            return _query_with_cursor_contract(
+                cfg=cfg,
+                warnings=warnings,
+                target=target,
+                operation=operation,
+                id=id,
+                normalized_ids=normalized_ids,
+                label=label,
+                properties=properties,
+                bounded_limit=bounded_limit,
+                page=page,
+                cursor=cursor,
+                normalized_fields=normalized_fields,
+                vertex_id=vertex_id,
+                normalized_direction=normalized_direction,
+            )
+
         manager = _graph_manager()
-        result, next_page = _execute_query(
-            manager=manager,
-            target=target,
-            operation=operation,
-            id=id,
-            ids=normalized_ids,
-            label=label,
-            properties=properties,
-            limit=bounded_limit,
-            page=page,
-            vertex_id=vertex_id,
-            direction=normalized_direction,
-        )
+        budget = read_budget_from_config(cfg, max_items=bounded_limit)
+        with budget.request_guard(manager):
+            result, next_page = _execute_query(
+                manager=manager,
+                target=target,
+                operation=operation,
+                id=id,
+                ids=normalized_ids,
+                label=label,
+                properties=properties,
+                limit=bounded_limit,
+                page=page,
+                vertex_id=vertex_id,
+                direction=normalized_direction,
+            )
     except Exception as exc:
         return _query_error(exc)
 
@@ -140,6 +172,147 @@ def query_graph_data(
             "or ask an administrator to create the index outside MCP.",
         ],
     )
+
+
+def _query_with_cursor_contract(
+    *,
+    cfg,
+    warnings: list[str],
+    target: str,
+    operation: str,
+    id: Any,
+    normalized_ids: list[Any],
+    label: str | None,
+    properties: dict[str, Any] | None,
+    bounded_limit: int,
+    page: str | None,
+    cursor: str | None,
+    normalized_fields: tuple[str, ...] | None,
+    vertex_id: Any,
+    normalized_direction: str | None,
+) -> dict[str, Any]:
+    actor = get_current_actor()
+    actor_key = actor.principal_key if actor is not None else "local:operator"
+    resolved_target = resolve_target_from_config(cfg)
+    query_hash = compute_query_hash(
+        {
+            "target": target,
+            "operation": operation,
+            "id": id,
+            "ids": normalized_ids,
+            "label": label,
+            "properties": properties,
+            "vertex_id": vertex_id,
+            "direction": normalized_direction,
+        }
+    )
+    store = get_default_cursor_store()
+    buffered: list[Any] = []
+    backend_page = page
+    backend_next_page: str | None = None
+
+    if cursor is not None:
+        try:
+            record = store.acquire(
+                cursor,
+                actor_key=actor_key,
+                target=resolved_target.as_tuple(),
+                query_hash=query_hash,
+                fields=normalized_fields,
+                route_version=resolved_target.route_version,
+            )
+        except CursorError as exc:
+            if exc.reason_code == "CURSOR_IN_FLIGHT":
+                return envelope_err(
+                    ErrorType.VALIDATION_ERROR,
+                    str(exc),
+                    suggestion="Wait for the in-flight cursor request to finish, then retry.",
+                    retryable=True,
+                    source="query_graph_data_tool",
+                    details={"reason_code": exc.reason_code},
+                )
+            return _validation_error(
+                str(exc),
+                "Restart pagination without cursor to obtain a fresh cursor.",
+                {"reason_code": exc.reason_code},
+            )
+        buffered = list(record.buffered_items)
+        backend_page = record.backend_next_page if not _is_blank(record.backend_next_page) else None
+        backend_next_page = backend_page
+
+    committed = False
+    try:
+        if not buffered and (cursor is None or not _is_blank(backend_page)):
+            manager = _graph_manager()
+            budget = read_budget_from_config(cfg, max_items=bounded_limit)
+            with budget.request_guard(manager):
+                raw_result, fetched_next_page = _execute_query(
+                    manager=manager,
+                    target=target,
+                    operation=operation,
+                    id=id,
+                    ids=normalized_ids,
+                    label=label,
+                    properties=properties,
+                    limit=bounded_limit,
+                    page=backend_page,
+                    vertex_id=vertex_id,
+                    direction=normalized_direction,
+                )
+            buffered = _normalize_items(raw_result)
+            backend_next_page = fetched_next_page if not _is_blank(fetched_next_page) else None
+
+        projected = project_items(buffered, normalized_fields)
+        try:
+            packed, overflow, byte_truncated = pack_paginated_items(
+                projected,
+                max_items=bounded_limit,
+                max_bytes=cfg.max_result_bytes,
+            )
+        except ItemTooLargeError as exc:
+            return envelope_err(
+                ErrorType.VALIDATION_ERROR,
+                str(exc),
+                suggestion="Narrow projected fields using the `fields` parameter.",
+                source="query_graph_data_tool",
+                details={"reason_code": "SINGLE_ITEM_TOO_LARGE"},
+            )
+
+        next_cursor: str | None = None
+        has_backend_next = not _is_blank(backend_next_page)
+        if overflow or has_backend_next:
+            next_cursor = store.complete(
+                cursor,
+                actor_key=actor_key,
+                target=resolved_target.as_tuple(),
+                query_hash=query_hash,
+                fields=normalized_fields,
+                continuation_scope="backend",
+                buffered_items=overflow,
+                backend_next_page=backend_next_page if has_backend_next else None,
+                exhausted_backend=not has_backend_next,
+                route_version=resolved_target.route_version,
+            )
+        elif cursor is not None:
+            store.commit(cursor)
+        committed = True
+    finally:
+        if cursor is not None and not committed:
+            store.release(cursor)
+
+    data = {
+        "target": target,
+        "operation": operation,
+        "items": packed,
+        "count": len(packed),
+        "next_cursor": next_cursor,
+        "has_more": next_cursor is not None,
+        "truncated": byte_truncated,
+        "truncation_reason": "max_bytes_exceeded" if byte_truncated else None,
+        "continuation_scope": "backend",
+        "limit": bounded_limit,
+    }
+    return envelope_ok(data, warnings=warnings)
 
 
 def _validate_inputs(

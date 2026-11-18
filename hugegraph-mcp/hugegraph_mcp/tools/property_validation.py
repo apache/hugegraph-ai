@@ -134,7 +134,7 @@ def value_matches_type(value: Any, data_type: str) -> bool:
         minimum, maximum = _INTEGER_RANGES[data_type]
         return minimum <= value <= maximum
     if data_type in {"FLOAT", "DOUBLE"}:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if isinstance(value, bool) or not isinstance(value, int | float):
             return False
         maximum = _FLOATING_MAXIMUMS[data_type]
         if isinstance(value, int):

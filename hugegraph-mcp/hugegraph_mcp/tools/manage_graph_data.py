@@ -333,6 +333,12 @@ def manage_graph_data(
                     tool_name=plan_tool_name,
                 )
                 plan_store_from_config().save_plan(canonical_plan)
+                from hugegraph_mcp.confirmation_store import ConfirmationStore
+
+                ConfirmationStore.from_config().bind_plan_id(
+                    nonce=plan_context.nonce,
+                    plan_id=canonical_plan.plan_id,
+                )
             except Exception as exc:
                 return envelope_err(
                     ErrorType.FEATURE_DISABLED,

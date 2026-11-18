@@ -244,7 +244,7 @@ def validate_graph_change_plan(
     errors: list[ValidationError] = []
     warnings: list[str] = []
 
-    if not isinstance(change_plan, (dict, list)):
+    if not isinstance(change_plan, dict | list):
         return {
             "valid": False,
             "errors": [

@@ -171,8 +171,8 @@ def test_live_http_app_with_postgres_and_hugegraph(monkeypatch):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     monkeypatch.setenv("HUGEGRAPH_URL", HG_URL)
-    monkeypatch.setenv("HUGEGRAPH_USER", "admin")
-    monkeypatch.setenv("HUGEGRAPH_PASSWORD", "admin")
+    monkeypatch.setenv("HUGEGRAPH_USER", os.getenv("HUGEGRAPH_USER", "admin"))
+    monkeypatch.setenv("HUGEGRAPH_PASSWORD", os.getenv("HUGEGRAPH_PASSWORD", "admin"))
     monkeypatch.setenv("HUGEGRAPH_GRAPH", "hugegraph")
     monkeypatch.setenv("HUGEGRAPH_GRAPHSPACE", "DEFAULT")
     monkeypatch.setenv("HUGEGRAPH_MCP_DEPLOYMENT", "live")
@@ -185,7 +185,7 @@ def test_live_http_app_with_postgres_and_hugegraph(monkeypatch):
     app = server.create_http_app(
         cfg,
         require_auth=True,
-        verifier=StaticSecretBearerVerifier("live-secret", default_subject="live-agent"),
+        verifier=StaticSecretBearerVerifier("live-secret", default_subject="alice", tenant="t_live"),
     )
 
     with TestClient(app) as client:
@@ -218,6 +218,7 @@ def test_live_postgres_sync_bridge_write_executor_and_reconcile(monkeypatch):
     monkeypatch.setenv("HUGEGRAPH_MCP_PLAN_STORE", "postgres")
     monkeypatch.setenv("HUGEGRAPH_MCP_PLAN_STORE_DSN", PG_DSN)
     monkeypatch.setenv("HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT", "2")
+    monkeypatch.setenv("HUGEGRAPH_USER", "t_live:alice")
 
     cfg = MCPConfig.from_env()
     sync_store = plan_store_from_config(cfg)

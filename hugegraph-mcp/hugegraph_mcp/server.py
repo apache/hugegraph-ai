@@ -17,12 +17,13 @@
 server.py 只负责参数校验和 mode 分发，具体业务逻辑委托给 tools/ 下的模块。
 """
 
+import asyncio
 import os
 import time
 from importlib.metadata import version as distribution_version
 from typing import Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -32,10 +33,14 @@ from hugegraph_mcp.auth_middleware import (
     BearerTokenVerifier,
     StaticSecretBearerVerifier,
 )
+from hugegraph_mcp.authorization import authorize_actor_for_route
 from hugegraph_mcp.backend_capabilities import BackendFeature, profile_for
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config, reset_request_config, set_request_config
+from hugegraph_mcp.confirmation_policy import requires_interactive_confirmation
+from hugegraph_mcp.elicitation import confirm_plan_via_elicitation
 from hugegraph_mcp.envelope import ErrorType, envelope_err
 from hugegraph_mcp.events import ResourceEvent
+from hugegraph_mcp.graph_routes import GraphRouteError, GraphRouteRegistry
 from hugegraph_mcp.gremlin_tools import execute_gremlin_read, execute_gremlin_write
 from hugegraph_mcp.guard import Capability
 from hugegraph_mcp.prompts import register_prompts
@@ -49,6 +54,8 @@ from hugegraph_mcp.runtime import (
     reset_current_runtime,
     set_current_runtime,
 )
+from hugegraph_mcp.stores.base import ActorAuthorizationError
+from hugegraph_mcp.tool_registry import ToolRegistry, ToolSpec
 from hugegraph_mcp.tools.extract_graph_data import extract_graph_data
 from hugegraph_mcp.tools.generate_gremlin import generate_gremlin
 from hugegraph_mcp.tools.graph_discovery import list_graphs
@@ -57,12 +64,15 @@ from hugegraph_mcp.tools.inspect_schema import inspect_schema
 from hugegraph_mcp.tools.manage_graph_data import manage_graph_data
 from hugegraph_mcp.tools.manage_schema import manage_schema
 from hugegraph_mcp.tools.mutate_graph_properties import mutate_graph_properties
+from hugegraph_mcp.tools.prepare_write import prepare_write
 from hugegraph_mcp.tools.query_graph_data import query_graph_data
 from hugegraph_mcp.tools.refresh_vid_embeddings import refresh_vid_embeddings
+from hugegraph_mcp.tools.retrieve_context import retrieve_context
 from hugegraph_mcp.tools.search_vid_embeddings import search_vid_embeddings
 from hugegraph_mcp.tools.task_tools import cancel_task, get_task_status, list_tasks
 from hugegraph_mcp.tools.traverse_graph import traverse_graph
-from hugegraph_mcp.toolsets import resolve_toolset
+from hugegraph_mcp.tools.validate_schema import validate_schema_structure
+from hugegraph_mcp.toolsets import resolve_core_profile, resolve_toolset, tool_contract_version
 from hugegraph_mcp.write_contract import resolve_optional_legacy_locator
 from hugegraph_mcp.write_executor import (
     cancel_write_plan,
@@ -71,9 +81,11 @@ from hugegraph_mcp.write_executor import (
     list_write_plans,
 )
 
-READONLY = MCPConfig.from_env().is_readonly()
-MCP_TOOL_CONTRACT_VERSION = "2.0"
+_INITIAL_CONFIG = MCPConfig.from_env()
+READONLY = _INITIAL_CONFIG.is_readonly()
 ACTIVE_TOOLSET = resolve_toolset(os.getenv("HUGEGRAPH_MCP_TOOLSET"))
+ACTIVE_CORE_PROFILE = resolve_core_profile(os.getenv("HUGEGRAPH_MCP_CORE_PROFILE"))
+MCP_TOOL_CONTRACT_VERSION = tool_contract_version(ACTIVE_TOOLSET, ACTIVE_CORE_PROFILE)
 _BACKGROUND_TASKS: set[Any] = set()
 
 mcp = FastMCP(
@@ -83,6 +95,54 @@ mcp = FastMCP(
 )
 _ALWAYS_TOOL_FUNCS: list[Any] = []
 _CORE_TOOL_FUNCS: list[Any] = []
+TOOL_REGISTRY = ToolRegistry()
+
+_COMPAT_LEGACY = frozenset({"legacy", "core:compat"})
+_COMPAT_ONLY = frozenset({"core:compat"})
+_ALL_CORE = frozenset({"legacy", "core:compat", "core:lean"})
+_CORE_BOTH = frozenset({"core:compat", "core:lean"})
+_LEAN_ONLY = frozenset({"core:lean"})
+
+_TOOL_SPECS: dict[str, ToolSpec] = {
+    "inspect_graph_tool": ToolSpec("inspect_graph_tool", _ALL_CORE),
+    "get_write_status_tool": ToolSpec("get_write_status_tool", _CORE_BOTH),
+    "confirm_write_tool": ToolSpec("confirm_write_tool", _CORE_BOTH, requires_write=True, side_effect="write"),
+    "reconcile_write_tool": ToolSpec("reconcile_write_tool", _CORE_BOTH),
+    "list_write_plans_tool": ToolSpec("list_write_plans_tool", _CORE_BOTH),
+    "cancel_write_plan_tool": ToolSpec("cancel_write_plan_tool", _CORE_BOTH, requires_write=True, side_effect="write"),
+    "inspect_schema_tool": ToolSpec("inspect_schema_tool", _CORE_BOTH),
+    "query_graph_data_tool": ToolSpec("query_graph_data_tool", _CORE_BOTH),
+    "traverse_graph_tool": ToolSpec("traverse_graph_tool", _CORE_BOTH),
+    "get_task_status_tool": ToolSpec("get_task_status_tool", _CORE_BOTH, requires_admin=True),
+    "list_tasks_tool": ToolSpec("list_tasks_tool", _CORE_BOTH, requires_admin=True),
+    "cancel_task_tool": ToolSpec(
+        "cancel_task_tool", _CORE_BOTH, requires_admin=True, requires_write=True, side_effect="admin"
+    ),
+    "list_graphs_tool": ToolSpec("list_graphs_tool", _CORE_BOTH, requires_admin=True),
+    "generate_gremlin_tool": ToolSpec("generate_gremlin_tool", _COMPAT_LEGACY, requires_ai=True),
+    "execute_gremlin_read_tool": ToolSpec("execute_gremlin_read_tool", _COMPAT_LEGACY, placeholder=True),
+    "extract_graph_data_tool": ToolSpec("extract_graph_data_tool", _ALL_CORE, requires_ai=True),
+    "design_schema_tool": ToolSpec("design_schema_tool", _COMPAT_LEGACY, requires_ai=True),
+    "apply_schema_tool": ToolSpec("apply_schema_tool", _COMPAT_LEGACY, side_effect="write"),
+    "mutate_graph_properties_tool": ToolSpec("mutate_graph_properties_tool", _COMPAT_ONLY, side_effect="write"),
+    "import_graph_data_tool": ToolSpec("import_graph_data_tool", _COMPAT_LEGACY, side_effect="write"),
+    "delete_graph_data_tool": ToolSpec("delete_graph_data_tool", _COMPAT_LEGACY, side_effect="write"),
+    "refresh_vid_embeddings_tool": ToolSpec(
+        "refresh_vid_embeddings_tool",
+        _CORE_BOTH | _COMPAT_LEGACY,
+        requires_ai=True,
+        requires_admin=True,
+        requires_write=True,
+        side_effect="admin",
+    ),
+    "execute_gremlin_write_tool": ToolSpec(
+        "execute_gremlin_write_tool", _COMPAT_LEGACY, placeholder=True, side_effect="write"
+    ),
+    "search_vid_embeddings_tool": ToolSpec("search_vid_embeddings_tool", _CORE_BOTH, requires_ai=True),
+    "prepare_write_tool": ToolSpec("prepare_write_tool", _LEAN_ONLY, side_effect="preview"),
+    "validate_schema_tool": ToolSpec("validate_schema_tool", _LEAN_ONLY),
+    "retrieve_context_tool": ToolSpec("retrieve_context_tool", _LEAN_ONLY, requires_ai=True),
+}
 
 
 def _register_health_routes(server: FastMCP) -> None:
@@ -109,18 +169,43 @@ register_prompts(mcp)
 _register_health_routes(mcp)
 
 
+def _should_register_on_default_mcp(spec: ToolSpec) -> bool:
+    selected = TOOL_REGISTRY.select(
+        ACTIVE_TOOLSET,
+        core_profile=ACTIVE_CORE_PROFILE,
+        readonly=_INITIAL_CONFIG.readonly,
+        allow_ai=_INITIAL_CONFIG.allow_ai,
+        admin_mode=_INITIAL_CONFIG.admin_mode,
+    )
+    return any(item_spec.name == spec.name for item_spec, _ in selected)
+
+
 def _register_tool(func):
     if func not in _ALWAYS_TOOL_FUNCS:
         _ALWAYS_TOOL_FUNCS.append(func)
-    return mcp.tool()(func)
+    spec = _TOOL_SPECS[func.__name__]
+    TOOL_REGISTRY.register(spec, func)
+    if _should_register_on_default_mcp(spec):
+        return mcp.tool()(func)
+    return func
 
 
 def _register_core_tool(func):
     if func not in _CORE_TOOL_FUNCS:
         _CORE_TOOL_FUNCS.append(func)
-    if ACTIVE_TOOLSET == "legacy":
-        return func
-    return mcp.tool()(func)
+    spec = _TOOL_SPECS[func.__name__]
+    TOOL_REGISTRY.register(spec, func)
+    if _should_register_on_default_mcp(spec):
+        return mcp.tool()(func)
+    return func
+
+
+def _register_lean_tool(func):
+    spec = _TOOL_SPECS[func.__name__]
+    TOOL_REGISTRY.register(spec, func)
+    if _should_register_on_default_mcp(spec):
+        return mcp.tool()(func)
+    return func
 
 
 def _align_public_tool_envelope(
@@ -143,10 +228,68 @@ def _align_public_tool_envelope(
     return aligned
 
 
+def _is_write_tool_call(tool_name: str, kwargs: dict[str, Any]) -> bool:
+    spec = _TOOL_SPECS.get(tool_name)
+    if spec is not None and spec.requires_write:
+        return True
+    if tool_name == "prepare_write_tool":
+        return True
+    if tool_name in {
+        "apply_schema_tool",
+        "mutate_graph_properties_tool",
+        "import_graph_data_tool",
+        "delete_graph_data_tool",
+    }:
+        return bool(kwargs.get("confirm")) or kwargs.get("mode") == "apply"
+    return False
+
+
 def _call_public_tool(tool_name: str, func, *args, **kwargs) -> dict[str, Any]:
     start = time.perf_counter()
+    base_cfg = get_effective_config()
+    token = None
+    if base_cfg.graph_routes_json:
+        is_write = _is_write_tool_call(tool_name, kwargs)
+        try:
+            route = GraphRouteRegistry.from_config(base_cfg).resolve(None)
+        except GraphRouteError as exc:
+            return envelope_err(
+                ErrorType.VALIDATION_ERROR,
+                f"Invalid graph route configuration: {exc!s}",
+                source=tool_name,
+                details={"tool": tool_name},
+                duration_ms=(time.perf_counter() - start) * 1000.0,
+            )
+
+        actor = get_current_actor()
+        try:
+            authorize_actor_for_route(actor, route, write=is_write)
+        except ActorAuthorizationError as exc:
+            error_type = (
+                ErrorType.READONLY_VIOLATION
+                if is_write and (base_cfg.readonly or route.readonly)
+                else ErrorType.AUTHORIZATION_FAILED
+            )
+            return envelope_err(
+                error_type,
+                str(exc),
+                source=tool_name,
+                details={"tool": tool_name, "subject": actor.subject, "tenant": actor.tenant},
+                readonly=bool(base_cfg.readonly or route.readonly)
+                if error_type == ErrorType.READONLY_VIOLATION
+                else None,
+                duration_ms=(time.perf_counter() - start) * 1000.0,
+            )
+
+        route_cfg = route.to_config(base_cfg)
+        token = set_request_config(route_cfg)
     try:
         result = func(*args, **kwargs)
+        return _align_public_tool_envelope(
+            result,
+            tool_name=tool_name,
+            duration_ms=(time.perf_counter() - start) * 1000.0,
+        )
     except Exception as exc:
         return envelope_err(
             ErrorType.FLOW_EXECUTION_FAILED,
@@ -155,11 +298,9 @@ def _call_public_tool(tool_name: str, func, *args, **kwargs) -> dict[str, Any]:
             details={"tool": tool_name},
             duration_ms=(time.perf_counter() - start) * 1000.0,
         )
-    return _align_public_tool_envelope(
-        result,
-        tool_name=tool_name,
-        duration_ms=(time.perf_counter() - start) * 1000.0,
-    )
+    finally:
+        if token is not None:
+            reset_request_config(token)
 
 
 def _call_legacy_write_tool(
@@ -229,8 +370,7 @@ def _call_legacy_write_tool(
 
 
 def _effective_config() -> MCPConfig:
-    rt = get_current_runtime()
-    return rt.config if rt is not None else MCPConfig.from_env()
+    return get_effective_config()
 
 
 def _write_actor_gate(tool_name: str) -> dict | None:
@@ -380,11 +520,15 @@ def inspect_graph_tool(
         include_counts=include_counts,
         toolset=ACTIVE_TOOLSET,
     )
+    from hugegraph_mcp.config import get_effective_config
+
+    cfg = get_effective_config()
+    contract_version = tool_contract_version(ACTIVE_TOOLSET, cfg.core_profile)
     if result.get("ok") and isinstance(result.get("data"), dict):
-        result["data"]["mcp_tool_contract_version"] = MCP_TOOL_CONTRACT_VERSION
+        result["data"]["mcp_tool_contract_version"] = contract_version
         result["data"]["toolset"] = ACTIVE_TOOLSET
     meta = dict(result.get("meta") or {})
-    meta["mcp_tool_contract_version"] = MCP_TOOL_CONTRACT_VERSION
+    meta["mcp_tool_contract_version"] = contract_version
     meta["toolset"] = ACTIVE_TOOLSET
     result["meta"] = meta
     return result
@@ -397,6 +541,40 @@ def get_write_status_tool(plan_id: str) -> dict:
         "get_write_status_tool",
         get_write_status,
         plan_id=plan_id,
+    )
+
+
+@_register_lean_tool
+def prepare_write_tool(
+    kind: str,
+    mode: str | None = None,
+    operations: list[dict[str, Any]] | None = None,
+    graph_data: dict[str, Any] | None = None,
+    change_plan: dict[str, Any] | None = None,
+    target: str | None = None,
+    operation: str | None = None,
+    id: Any = None,
+    properties: dict[str, Any] | None = None,
+) -> dict:
+    """Typed write-preparation entry point for the lean core profile.
+
+    Supported kinds: schema, import, delete, properties.
+    """
+    gate_error = _write_actor_gate("prepare_write_tool")
+    if gate_error is not None:
+        return gate_error
+    return _call_public_tool(
+        "prepare_write_tool",
+        prepare_write,
+        kind=kind,
+        mode=mode,
+        operations=operations,
+        graph_data=graph_data,
+        change_plan=change_plan,
+        target=target,
+        operation=operation,
+        id=id,
+        properties=properties,
     )
 
 
@@ -509,6 +687,8 @@ def query_graph_data_tool(
     properties: dict[str, Any] | None = None,
     limit: int | None = None,
     page: str | None = None,
+    cursor: str | None = None,
+    fields: list[str] | None = None,
     vertex_id: Any = None,
     direction: str | None = None,
 ) -> dict:
@@ -522,8 +702,7 @@ def query_graph_data_tool(
     - page: vertex requires label; edge may use label and/or vertex_id+direction.
     - condition: exact-match properties only; no Gremlin full-scan fallback.
     limit defaults to 100, rejects values above 500, and respects configured result
-    limits. Oversized ID batches/results are rejected, not truncated. For edge page/condition,
-    direction is required when vertex_id is provided.
+    limits. Use cursor and fields for bounded pagination and projection.
     """
     return _call_public_tool(
         "query_graph_data_tool",
@@ -536,6 +715,8 @@ def query_graph_data_tool(
         properties=properties,
         limit=limit,
         page=page,
+        cursor=cursor,
+        fields=fields,
         vertex_id=vertex_id,
         direction=direction,
     )
@@ -552,6 +733,8 @@ def traverse_graph_tool(
     max_degree: int = 16,
     capacity: int = 1000,
     limit: int | None = None,
+    cursor: str | None = None,
+    page_size: int | None = None,
 ) -> dict:
     """Execute a bounded graph traversal or path analysis query.
 
@@ -571,6 +754,8 @@ def traverse_graph_tool(
         max_degree=max_degree,
         capacity=capacity,
         limit=limit,
+        cursor=cursor,
+        page_size=page_size,
     )
 
 
@@ -701,11 +886,49 @@ def execute_gremlin_read_tool(gremlin_query: str, limit_policy: str = "reject_un
     )
 
 
+@_register_lean_tool
+def retrieve_context_tool(
+    query: str = "",
+    mode: str = "hybrid",
+    top_k: int = 10,
+    seed_ids: list[Any] | None = None,
+    cursor: str | None = None,
+    page_size: int | None = None,
+) -> dict:
+    """Retrieve bounded graph, vector, or hybrid evidence via HugeGraph-AI."""
+    return _call_public_tool(
+        "retrieve_context_tool",
+        retrieve_context,
+        query=query,
+        mode=mode,
+        top_k=top_k,
+        seed_ids=seed_ids,
+        cursor=cursor,
+        page_size=page_size,
+    )
+
+
+@_register_lean_tool
+def validate_schema_tool(
+    schema: dict[str, Any] | None = None,
+    artifact_id: str | None = None,
+) -> dict:
+    """Validate a HugeGraph schema structure offline using hugegraph-llm-sdk."""
+    return _call_public_tool(
+        "validate_schema_tool",
+        validate_schema_structure,
+        schema=schema,
+        artifact_id=artifact_id,
+    )
+
+
 @_register_tool
 def extract_graph_data_tool(
     text: str,
     graph_schema: dict | None = None,
     example_prompt: str | None = None,
+    review_options: dict[str, Any] | None = None,
+    output: str = "inline",
 ) -> dict:
     """共享工具：自然语言文本 → 候选 graph_data（不写入）。
 
@@ -713,12 +936,18 @@ def extract_graph_data_tool(
     graph_schema 可传入 HugeGraph schema；为空时从当前 HugeGraph 读取 live schema，
     并在 schema_ref 中返回图目标和 schema fingerprint。
     """
+    extra_kwargs: dict[str, Any] = {}
+    if review_options is not None:
+        extra_kwargs["review_options"] = review_options
+    if output != "inline":
+        extra_kwargs["output"] = output
     return _call_public_tool(
         "extract_graph_data_tool",
         extract_graph_data,
         text=text,
         schema=graph_schema,
         example_prompt=example_prompt,
+        **extra_kwargs,
     )
 
 
@@ -1032,21 +1261,41 @@ def _attach_runtime_middleware(server: FastMCP) -> None:
     server.add_middleware(_RuntimeBindingMiddleware())
 
 
-def create_server(config: MCPConfig | None = None) -> FastMCP:
+def create_server(config: MCPConfig | None = None, *, toolset: str | None = None) -> FastMCP:
     """Create an isolated FastMCP server instance bound to the given MCPConfig."""
+    cfg = config or MCPConfig.from_env()
+    active_toolset = (
+        resolve_toolset(os.getenv("HUGEGRAPH_MCP_TOOLSET")) if toolset is None else resolve_toolset(toolset)
+    )
     server = FastMCP(
         "HugeGraph MCP",
         version=distribution_version("hugegraph-mcp"),
-        lifespan=create_runtime_lifespan(config),
+        lifespan=create_runtime_lifespan(cfg),
     )
     _attach_runtime_middleware(server)
     register_resources(server)
     register_prompts(server)
     _register_health_routes(server)
-    for tool_func in _ALWAYS_TOOL_FUNCS:
-        server.tool()(tool_func)
-    if ACTIVE_TOOLSET != "legacy":
-        for tool_func in _CORE_TOOL_FUNCS:
+    for _spec, tool_func in TOOL_REGISTRY.select(
+        active_toolset,
+        core_profile=cfg.core_profile,
+        readonly=cfg.readonly,
+        allow_ai=cfg.allow_ai,
+        admin_mode=cfg.admin_mode,
+    ):
+        if tool_func is confirm_write_tool and requires_interactive_confirmation(cfg, side_effect="write"):
+
+            async def _interactive_confirm_write_tool(plan_id: str, ctx: Context) -> dict:
+                """Confirm exactly one immutable server-persisted plan with interactive stdio elicitation."""
+                approved, err_env, _approval = await confirm_plan_via_elicitation(ctx, plan_id, cfg=cfg)
+                if not approved:
+                    assert err_env is not None
+                    return err_env
+                return await asyncio.to_thread(confirm_write_tool, plan_id)
+
+            _interactive_confirm_write_tool.__name__ = "confirm_write_tool"
+            server.tool()(_interactive_confirm_write_tool)
+        else:
             server.tool()(tool_func)
     return server
 
@@ -1065,8 +1314,19 @@ def create_http_app(
         secret = os.getenv("HUGEGRAPH_MCP_BEARER_SECRET")
         if secret:
             raw_scopes = os.getenv("HUGEGRAPH_MCP_BEARER_SCOPES", "")
-            scopes = tuple(s.strip() for s in raw_scopes.split(",") if s.strip()) or ("mcp:read", "mcp:write")
+            scopes = frozenset(s.strip() for s in raw_scopes.split(",") if s.strip()) or frozenset(
+                {"mcp:read", "mcp:write"}
+            )
             verifier = StaticSecretBearerVerifier(secret, scopes=scopes)
+        elif cfg.oauth_issuer and (cfg.oauth_jwks_url or cfg.oauth_jwks_json):
+            from hugegraph_mcp.oauth_verifier import OAuthBearerVerifier
+
+            verifier = OAuthBearerVerifier(
+                issuer=cfg.oauth_issuer,
+                audience=cfg.oauth_audience,
+                jwks_url=cfg.oauth_jwks_url,
+                jwks_payload=cfg.oauth_jwks_json,
+            )
     return target_mcp.http_app(
         path=cfg.http_path,
         transport=transport,  # type: ignore[arg-type]
@@ -1088,12 +1348,13 @@ def main() -> None:
     cfg = MCPConfig.from_env()
     transport = cfg.transport
     if transport == "stdio":
+        target_mcp = create_server(cfg)
         if sys.platform == "win32" and cfg.plan_store_backend == "postgres":
             import asyncio
 
-            asyncio.run(mcp.run_async(), loop_factory=asyncio.SelectorEventLoop)
+            asyncio.run(target_mcp.run_async(), loop_factory=asyncio.SelectorEventLoop)
             return
-        mcp.run()
+        target_mcp.run()
         return
     import uvicorn
 

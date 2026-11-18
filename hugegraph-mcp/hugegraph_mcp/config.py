@@ -15,6 +15,7 @@
 
 环境变量优先级高于默认值，避免硬编码连接信息。"""
 
+import contextvars
 import logging
 import math
 import os
@@ -22,6 +23,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+
+from hugegraph_mcp.confirmation_policy import DEFAULT_CONFIRMATION_MODE, resolve_confirmation_mode
+from hugegraph_mcp.toolsets import DEFAULT_CORE_PROFILE, resolve_core_profile
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_VALUES = frozenset({"0", "false", "no", "off"})
@@ -56,6 +60,13 @@ CONFIG_ENV_NAMES = (
     "HUGEGRAPH_MCP_HTTP_PATH",
     "HUGEGRAPH_MCP_DEPLOYMENT",
     "HUGEGRAPH_MCP_EVENT_BUS",
+    "HUGEGRAPH_MCP_CORE_PROFILE",
+    "HUGEGRAPH_MCP_CONFIRMATION_MODE",
+    "HUGEGRAPH_MCP_GRAPH_ROUTES",
+    "HUGEGRAPH_MCP_OAUTH_ISSUER",
+    "HUGEGRAPH_MCP_OAUTH_AUDIENCE",
+    "HUGEGRAPH_MCP_OAUTH_JWKS_URL",
+    "HUGEGRAPH_MCP_OAUTH_JWKS_JSON",
     "XDG_STATE_HOME",
 )
 _CONFIG_CACHE: tuple[tuple[tuple[str, str | None], ...], "MCPConfig"] | None = None
@@ -114,6 +125,13 @@ class MCPConfig:
     http_path: str = "/mcp"
     deployment_id: str = "default"
     event_bus_backend: str = "memory"
+    core_profile: str = DEFAULT_CORE_PROFILE
+    confirmation_mode: str = DEFAULT_CONFIRMATION_MODE
+    graph_routes_json: str | None = None
+    oauth_issuer: str | None = None
+    oauth_audience: str | None = None
+    oauth_jwks_url: str | None = None
+    oauth_jwks_json: str | None = None
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
@@ -221,6 +239,13 @@ class MCPConfig:
             http_path=_normalize_http_path(env.get("HUGEGRAPH_MCP_HTTP_PATH", "/mcp")),
             deployment_id=_non_empty(env.get("HUGEGRAPH_MCP_DEPLOYMENT", "default"), "default"),
             event_bus_backend=(env.get("HUGEGRAPH_MCP_EVENT_BUS", "memory").strip().lower() or "memory"),
+            core_profile=resolve_core_profile(env.get("HUGEGRAPH_MCP_CORE_PROFILE")),
+            confirmation_mode=resolve_confirmation_mode(env.get("HUGEGRAPH_MCP_CONFIRMATION_MODE")),
+            graph_routes_json=_optional_non_empty(env.get("HUGEGRAPH_MCP_GRAPH_ROUTES")),
+            oauth_issuer=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_ISSUER")),
+            oauth_audience=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_AUDIENCE")),
+            oauth_jwks_url=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_JWKS_URL")),
+            oauth_jwks_json=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_JWKS_JSON")),
             warnings=tuple(warnings),
         )
         for warning in config.warnings:
@@ -344,8 +369,28 @@ def _environment_snapshot(env: Mapping[str, str]) -> dict[str, str]:
     return snapshot
 
 
+_REQUEST_CONFIG: contextvars.ContextVar[MCPConfig | None] = contextvars.ContextVar(
+    "hugegraph_mcp_request_config",
+    default=None,
+)
+
+
+def set_request_config(cfg: MCPConfig | None) -> contextvars.Token[MCPConfig | None]:
+    """Bind a request-local MCPConfig override for the current execution context."""
+    return _REQUEST_CONFIG.set(cfg)
+
+
+def reset_request_config(token: contextvars.Token[MCPConfig | None]) -> None:
+    """Restore the previous request-local MCPConfig override."""
+    _REQUEST_CONFIG.reset(token)
+
+
 def get_effective_config() -> MCPConfig:
-    """Return the active runtime's MCPConfig when inside a runtime lifespan, else from_env()."""
+    """Return the request-local, active runtime, or environment MCPConfig."""
+    request_cfg = _REQUEST_CONFIG.get()
+    if request_cfg is not None:
+        return request_cfg
+
     from hugegraph_mcp.runtime import get_current_runtime
 
     rt = get_current_runtime()

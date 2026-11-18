@@ -21,9 +21,18 @@ from typing import Any
 from pyhugegraph.client import PyHugeClient
 
 from hugegraph_mcp.config import MCPConfig, get_effective_config
+from hugegraph_mcp.cursor_store import (
+    CursorError,
+    compute_query_hash,
+    get_default_cursor_store,
+)
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.error_mapping import classify_hugegraph_exception
 from hugegraph_mcp.hugegraph_client import build_hugegraph_client
+from hugegraph_mcp.pagination import ItemTooLargeError, pack_paginated_items
+from hugegraph_mcp.read_budget import read_budget_from_config
+from hugegraph_mcp.runtime import get_current_actor
+from hugegraph_mcp.target_context import resolve_target_from_config
 
 OPERATIONS = frozenset({"neighbors", "k_out", "shortest_path", "paths"})
 PATH_OPERATIONS = frozenset({"shortest_path", "paths"})
@@ -234,6 +243,8 @@ def traverse_graph(
     max_degree: int = 16,
     capacity: int = 1000,
     limit: int | None = None,
+    cursor: str | None = None,
+    page_size: int | None = None,
 ) -> dict[str, Any]:
     """Execute a strictly bounded graph traversal or path query."""
     cfg = get_effective_config()
@@ -252,15 +263,47 @@ def traverse_graph(
     if validation_err is not None:
         return validation_err
 
+    if page_size is not None and not _is_int_in_range(page_size, min_val=1, max_val=MAX_TRAVERSE_LIMIT):
+        return envelope_err(
+            ErrorType.VALIDATION_ERROR,
+            f"page_size must be an integer between 1 and {MAX_TRAVERSE_LIMIT}.",
+            details={"reason": "invalid_page_size", "page_size": page_size},
+        )
+
+    if cursor is not None and operation == "shortest_path":
+        return envelope_err(
+            ErrorType.VALIDATION_ERROR,
+            "cursor pagination is not supported for operation='shortest_path'.",
+            details={"reason_code": "CURSOR_UNSUPPORTED_OPERATION", "operation": operation},
+        )
+
+    use_snapshot_cursor = cursor is not None or page_size is not None or cfg.core_profile == "lean"
+    if use_snapshot_cursor and operation in {"neighbors", "k_out", "paths"}:
+        return _traverse_with_snapshot_cursor(
+            cfg=cfg,
+            operation=operation,
+            source_id=source_id,
+            target_id=target_id,
+            direction=direction,
+            label=label,
+            max_depth=max_depth,
+            max_degree=max_degree,
+            capacity=capacity,
+            effective_limit=effective_limit,
+            cursor=cursor,
+            page_size=min(page_size or effective_limit, effective_limit),
+        )
+
     try:
         client = _build_client(cfg)
         traverser = client.traverser()
-        byte_budget = max(1, min(MAX_TRAVERSE_BYTES, cfg.max_result_bytes))
+        budget = read_budget_from_config(cfg, max_items=effective_limit)
+        byte_budget = max(1, min(MAX_TRAVERSE_BYTES, budget.max_response_bytes))
         sess = getattr(client, "session", None) or getattr(client, "_session", None)
         guard = (
             sess.request_guard(
                 max_response_bytes=byte_budget,
-                deadline_seconds=TRAVERSE_DEADLINE_SECONDS,
+                deadline_seconds=budget.deadline_seconds,
                 retries=False,
             )
             if sess is not None and hasattr(sess, "request_guard")
@@ -350,3 +393,183 @@ def traverse_graph(
         }
     )
     return envelope_ok(normalized)
+
+
+def _traverse_with_snapshot_cursor(
+    *,
+    cfg: MCPConfig,
+    operation: str,
+    source_id: str | int,
+    target_id: str | int | None,
+    direction: str,
+    label: str | None,
+    max_depth: int,
+    max_degree: int,
+    capacity: int,
+    effective_limit: int,
+    cursor: str | None,
+    page_size: int,
+) -> dict[str, Any]:
+    actor = get_current_actor()
+    actor_key = actor.principal_key if actor is not None else "local:operator"
+    resolved_target = resolve_target_from_config(cfg)
+    query_hash = compute_query_hash(
+        {
+            "operation": operation,
+            "source_id": source_id,
+            "target_id": target_id,
+            "direction": direction,
+            "label": label,
+            "max_depth": max_depth,
+            "max_degree": max_degree,
+            "capacity": capacity,
+        }
+    )
+    store = get_default_cursor_store()
+    item_key = "paths" if operation == "paths" else "vertices"
+    exhausted_backend = True
+
+    if cursor is not None:
+        try:
+            record = store.consume(
+                cursor,
+                actor_key=actor_key,
+                target=resolved_target.as_tuple(),
+                query_hash=query_hash,
+                fields=None,
+                route_version=resolved_target.route_version,
+            )
+        except CursorError as exc:
+            return envelope_err(
+                ErrorType.VALIDATION_ERROR,
+                str(exc),
+                suggestion="Restart traversal without cursor to capture a fresh snapshot.",
+                details={"reason_code": exc.reason_code},
+            )
+        all_items = list(record.buffered_items)
+        exhausted_backend = record.exhausted_backend
+    else:
+        try:
+            client = _build_client(cfg)
+            traverser = client.traverser()
+            budget = read_budget_from_config(cfg, max_items=effective_limit)
+            byte_budget = max(1, min(MAX_TRAVERSE_BYTES, budget.max_response_bytes))
+            sess = getattr(client, "session", None) or getattr(client, "_session", None)
+            guard = (
+                sess.request_guard(
+                    max_response_bytes=byte_budget,
+                    deadline_seconds=budget.deadline_seconds,
+                    retries=False,
+                )
+                if sess is not None and hasattr(sess, "request_guard")
+                else nullcontext()
+            )
+            with guard:
+                if operation == "neighbors":
+                    raw = traverser.k_neighbor(
+                        source_id,
+                        max_depth,
+                        direction=direction,
+                        label=label,
+                        max_degree=max_degree,
+                        limit=effective_limit,
+                    )
+                elif operation == "k_out":
+                    raw = traverser.k_out(
+                        source_id,
+                        max_depth,
+                        direction=direction,
+                        label=label,
+                        max_degree=max_degree,
+                        capacity=capacity,
+                        limit=effective_limit,
+                    )
+                else:
+                    raw = traverser.paths(
+                        source_id,
+                        target_id,
+                        max_depth,
+                        direction=direction,
+                        label=label,
+                        max_degree=max_degree,
+                        capacity=capacity,
+                        limit=effective_limit,
+                    )
+        except Exception as exc:
+            classified = classify_hugegraph_exception(exc)
+            return envelope_err(
+                classified.error_type,
+                f"Graph traversal failed: {exc}",
+                suggestion=classified.suggestion,
+                retryable=classified.retryable,
+                details={"reason": classified.reason, "operation": operation},
+            )
+        try:
+            normalized = _normalize_result(operation, raw, effective_limit=effective_limit)
+        except ValueError as exc:
+            return envelope_err(
+                ErrorType.SERVER_ERROR,
+                f"HugeGraph returned an unexpected traversal response: {exc}",
+                suggestion="Check HugeGraph server version and traversal endpoint compatibility.",
+                retryable=False,
+                details={"reason": "invalid_response_shape", "operation": operation},
+            )
+        all_items = list(normalized.get(item_key) or [])
+        exhausted_backend = len(all_items) < effective_limit and len(all_items) < capacity
+
+    try:
+        packed, overflow, byte_truncated = pack_paginated_items(
+            all_items,
+            max_items=page_size,
+            max_bytes=min(MAX_TRAVERSE_BYTES, cfg.max_result_bytes),
+        )
+    except ItemTooLargeError as exc:
+        return envelope_err(
+            ErrorType.VALIDATION_ERROR,
+            str(exc),
+            details={"reason_code": "SINGLE_ITEM_TOO_LARGE", "operation": operation},
+        )
+
+    next_cursor: str | None = None
+    if overflow:
+        next_cursor = store.issue(
+            actor_key=actor_key,
+            target=resolved_target.as_tuple(),
+            query_hash=query_hash,
+            fields=None,
+            continuation_scope="snapshot",
+            buffered_items=overflow,
+            backend_next_page=None,
+            exhausted_backend=exhausted_backend,
+            route_version=resolved_target.route_version,
+        )
+
+    return envelope_ok(
+        {
+            item_key: packed,
+            "count": len(packed),
+            "next_cursor": next_cursor,
+            "has_more": next_cursor is not None,
+            "truncated": byte_truncated,
+            "truncation_reason": "max_bytes_exceeded" if byte_truncated else None,
+            "continuation_scope": "snapshot",
+            "capture_exhausted": exhausted_backend and next_cursor is None,
+            "operation": operation,
+            "source_id": source_id,
+            "target_id": target_id,
+            "direction": direction,
+            "budgets_applied": {
+                "max_depth": max_depth,
+                "max_degree": max_degree,
+                "capacity": capacity,
+                "limit": effective_limit,
+                "page_size": page_size,
+                "max_response_bytes": min(MAX_TRAVERSE_BYTES, cfg.max_result_bytes),
+                "deadline_seconds": TRAVERSE_DEADLINE_SECONDS,
+            },
+            "graph_target": {
+                "graph": cfg.graph,
+                "graphspace": cfg.graphspace or "DEFAULT",
+            },
+        }
+    )

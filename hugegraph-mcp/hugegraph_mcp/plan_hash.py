@@ -188,7 +188,7 @@ def _canonicalize(obj: Any) -> Any:
     """Canonical JSON 序列化 — 递归排序 dict keys。"""
     if isinstance(obj, dict):
         return {k: _canonicalize(v) for k, v in sorted(obj.items())}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [_canonicalize(item) for item in obj]
     return obj
 

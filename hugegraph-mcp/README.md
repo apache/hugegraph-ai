@@ -95,7 +95,7 @@ Structured query `limit` defaults to `100` (valid range `1–500`, capped by `HU
 
 ## Public Tool Surface
 
-The default `core` toolset registers 24 tools. The `legacy` compatibility toolset registers 10 tools and omits the 14 core-only tools. Registration does not imply that every operation is enabled.
+With default `HUGEGRAPH_MCP_CORE_PROFILE=compat`, the `core` toolset registers 24 tools (`mcp_tool_contract_version="2.0"`), and `legacy` registers 10 tools. Setting `HUGEGRAPH_MCP_CORE_PROFILE=lean` enables the capability-filtered `3.0` contract (`prepare_write_tool`, `validate_schema_tool`, and `retrieve_context_tool` when AI is enabled, hiding disabled write/admin/AI/placeholder tools). Registration does not imply that every operation is enabled.
 
 | Tool | Toolset | Description |
 |------|----------|-------------|
@@ -123,12 +123,15 @@ The default `core` toolset registers 24 tools. The `legacy` compatibility toolse
 | `list_write_plans_tool` | core | List actor-owned durable write plans ordered by most recent first |
 | `cancel_write_plan_tool` | core | Cancel an unexecuted `ISSUED` write plan by transitioning it to `EXPIRED` |
 | `reconcile_write_tool` | core | Reconcile `UNKNOWN` or `PARTIAL` outcomes by `plan_id` using read-only checks |
+| `prepare_write_tool` | lean (`3.0`) | Unified dry-run planner for `schema`, `import`, `mutate`, and `delete` writes |
+| `validate_schema_tool` | lean (`3.0`) | Validate inline JSON or an `artifact_id`. With `hugegraph-llm-sdk`, the result has `validation_scope="schema_structure"`. Standalone installs check required collections and references and return `validation_scope="limited_fallback"`. |
+| `retrieve_context_tool` | lean (`3.0`) | Graph/vector/hybrid evidence retrieval via HugeGraph-AI `/v1/retrieve-context` (`HUGEGRAPH_MCP_ALLOW_AI=true`) |
 
 Empty or unknown `HUGEGRAPH_MCP_TOOLSET` values stop startup with an error; an unset variable selects `core`. Tool registration is fixed at process startup, so restart the server after changing the toolset.
 
 ## MCP Resources & Prompts
 
-The server registers 4 MCP Resource templates (supporting subscription and invalidation notifications) and 6 MCP Prompts:
+The server registers 6 MCP Resource templates (graph resources under `hugegraph://` support subscription and invalidation notifications; `plan://` subscriptions are rejected as unsupported) and 6 MCP Prompts:
 
 ### Resources
 
@@ -138,6 +141,8 @@ The server registers 4 MCP Resource templates (supporting subscription and inval
 | `hugegraph://{deployment}/{graphspace}/{graph}/summary` | `hugegraph_summary` | Graph identity, label summary, and observed counts |
 | `hugegraph://{deployment}/{graphspace}/{graph}/embeddings/vid` | `hugegraph_vid_embeddings` | AI VID embedding index status for the target graph |
 | `plan://{plan_id}` | `hugegraph_write_plan` | Sanitized read-only projection of an actor-owned write plan and its durable receipts |
+| `artifact://{artifact_id}` | `hugegraph_artifact_manifest` | Owner-authorized manifest for an immutable extraction or preview artifact |
+| `artifact://{artifact_id}/parts/{part_id}` | `hugegraph_artifact_part` | Bounded part slice of an immutable MCP artifact |
 
 ### Prompts
 
@@ -219,7 +224,7 @@ The confirmation call never accepts the original payload. The persisted plan is 
 
 The old `plan_hash`, `nonce`, and `expires_at` locator remains on legacy write entry points for the single compatibility release immediately following introduction of the plan-ID contract. All three fields are required together, cannot be mixed with `plan_id`, and produce a `LEGACY_CONFIRMATION_DEPRECATED` warning. New integrations must use `confirm_write_tool(plan_id)`.
 
-The bundled SQLite plan store (`HUGEGRAPH_MCP_PLAN_STORE=sqlite`) is safe for a single write-capable MCP instance and fails closed when `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` is greater than one. For multi-instance deployments, configure `HUGEGRAPH_MCP_PLAN_STORE=postgres` with `HUGEGRAPH_MCP_PLAN_STORE_DSN`.
+The bundled SQLite plan store (`HUGEGRAPH_MCP_PLAN_STORE=sqlite`) is safe for a single write-capable MCP instance and fails closed when `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` is greater than one. For multi-instance deployments, install the optional PostgreSQL drivers (`hugegraph-mcp[postgres]`), configure `HUGEGRAPH_MCP_PLAN_STORE=postgres` with `HUGEGRAPH_MCP_PLAN_STORE_DSN`, and mount a shared read-write volume at `HUGEGRAPH_MCP_STATE_DIR` across all instances so `LocalArtifactStore` (`artifact://`) manifests and parts remain readable by any instance.
 
 ### Operation Boundaries
 
@@ -247,6 +252,8 @@ Structured reads remain available. `generate_gremlin_tool(execute=false)` additi
 | `HUGEGRAPH_USER` | `admin` | HugeGraph username |
 | `HUGEGRAPH_PASSWORD` | empty | HugeGraph password |
 | `HUGEGRAPH_MCP_TOOLSET` | `core` | `core` or `legacy`; empty/unknown values prevent startup |
+| `HUGEGRAPH_MCP_CORE_PROFILE` | `compat` | `compat` (`2.0`, 24 tools) or `lean` (`3.0`, capability-filtered tools + `prepare_write_tool`/`validate_schema_tool`/`retrieve_context_tool`) |
+| `HUGEGRAPH_MCP_CONFIRMATION_MODE` | `manual` | `manual` or `elicitation` (requires interactive MCP stdio elicitation before `confirm_write_tool`) |
 | `HUGEGRAPH_MCP_READONLY` | `true` | Disable all controlled writes when true |
 | `HUGEGRAPH_MCP_ALLOW_AI` | `false` | Allow HugeGraph-AI calls |
 | `HUGEGRAPH_MCP_ADMIN_MODE` | `false` | Enable eligible admin/debug tools |
@@ -263,13 +270,18 @@ Structured reads remain available. `generate_gremlin_tool(execute=false)` additi
 | `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | Durable plan-store backend (`sqlite` or `postgres`) |
 | `HUGEGRAPH_MCP_PLAN_STORE_DSN` | unset | PostgreSQL connection DSN (required when `HUGEGRAPH_MCP_PLAN_STORE=postgres`) |
 | `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` | `1` | Declared count of write-capable MCP instances; SQLite requires exactly one |
-| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` or `~/.local/state/hugegraph-mcp` | Directory containing the SQLite plan, operation, and receipt database |
+| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` or `~/.local/state/hugegraph-mcp` | Directory for the SQLite plan store and `LocalArtifactStore` (`artifacts/`); must be a shared RWX volume in multi-instance deployments |
 | `HUGEGRAPH_MCP_TRANSPORT` | `stdio` | MCP transport (`stdio`, `http`, `streamable-http`, or `sse`) |
 | `HUGEGRAPH_MCP_HTTP_HOST` | `127.0.0.1` | Bind host for HTTP/SSE transports |
 | `HUGEGRAPH_MCP_HTTP_PORT` | `8000` | Bind port for HTTP/SSE transports; range `1..65535` |
 | `HUGEGRAPH_MCP_HTTP_PATH` | `/mcp` | Endpoint path for HTTP transport |
 | `HUGEGRAPH_MCP_DEPLOYMENT` | `default` | Deployment identifier used in MCP Resource URIs |
 | `HUGEGRAPH_MCP_EVENT_BUS` | `memory` | In-process event bus backend for resource invalidation notifications |
+| `HUGEGRAPH_MCP_GRAPH_ROUTES` | unset | JSON route definitions. Public graph tools use the `default` route's connection and enforce its tenant, scope and readonly policy. The global readonly setting also applies. Tool arguments do not select other aliases. |
+| `HUGEGRAPH_MCP_OAUTH_ISSUER` | unset | Expected OAuth2/OIDC token `iss` claim for bearer verification |
+| `HUGEGRAPH_MCP_OAUTH_AUDIENCE` | unset | Expected OAuth2/OIDC token `aud` claim |
+| `HUGEGRAPH_MCP_OAUTH_JWKS_URL` | unset | Remote JWKS URL for RS256/ES256 bearer token verification |
+| `HUGEGRAPH_MCP_OAUTH_JWKS_JSON` | unset | Inline JWKS JSON string (takes precedence over remote fetch when set) |
 
 Boolean values accept `1/true/yes/on` and `0/false/no/off`, case-insensitively. Invalid values use safe defaults. Invalid, non-finite, or out-of-range numeric values use the documented defaults.
 

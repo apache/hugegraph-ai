@@ -265,7 +265,8 @@ def test_mcp_resource_subscribe_and_remote_cache_invalidation(tmp_path: Path) ->
                 async def send_resource_updated(self, updated_uri) -> None:
                     delivered.append(str(updated_uri))
 
-            rt.subscription_manager.subscribe_session("sess-1", uri, _FakeSession())
+            session = _FakeSession()
+            rt.subscription_manager.subscribe_session("sess-1", uri, session)
             assert len(rt.subscription_manager._sessions) == 1
             key = ("default", "DEFAULT", "hugegraph", "schema", "public")
             rt.resource_cache.set(key, {"schema": "stale"}, now=time.time())
@@ -766,8 +767,9 @@ def test_new_workflow_prompts_render_cleanly() -> None:
     assert "confirmable=false" in ingest
 
     opt = render_optimize_gremlin_query_prompt("g.V().count()", symptom="Full scan")
-    assert "execute_gremlin_read_tool" in opt
-    assert "limit_policy" in opt
+    assert "execute_gremlin_read_tool" not in opt
+    assert "query_graph_data_tool" in opt and "traverse_graph_tool" in opt
+    assert ".limit(N)" in opt
 
 
 def test_cancel_write_plan_revokes_legacy_confirmation_token(monkeypatch, tmp_path: Path) -> None:

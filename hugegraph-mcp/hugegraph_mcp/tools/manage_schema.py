@@ -1739,7 +1739,13 @@ def _list_field_matches(
     )
     if observed_values is None:
         return False
-    return observed_values == operation[field]
+    expected_raw = operation[field]
+    expected_values = [] if expected_raw is None else _normalize_name_list(expected_raw)
+    if expected_values is None:
+        return False
+    if field in {"properties", "nullable_keys"}:
+        return len(observed_values) == len(expected_values) and set(observed_values) == set(expected_values)
+    return observed_values == expected_values
 
 
 def _enum_field_matches(

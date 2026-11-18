@@ -362,5 +362,5 @@ def _is_thin_api_envelope(data: Any) -> bool:
         and isinstance(data.get("next_actions"), list)
         and isinstance(meta, dict)
         and isinstance(meta.get("request_id"), str)
-        and isinstance(meta.get("duration_ms"), (int, float))
+        and isinstance(meta.get("duration_ms"), int | float)
     )

@@ -20,6 +20,8 @@ from pyhugegraph.client import PyHugeClient
 from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.envelope import ErrorType, envelope_err, envelope_ok
 from hugegraph_mcp.hugegraph_client import build_hugegraph_client
+from hugegraph_mcp.read_budget import read_budget_from_config
+from hugegraph_mcp.schema_snapshot import bound_schema_payload
 from hugegraph_mcp.tools.schema_utils import (
     edge_schema_endpoint_label,
     primary_key_names,
@@ -61,7 +63,9 @@ def inspect_schema(
 
     try:
         manager = _schema_manager()
-        raw_schema = manager.get_schema()
+        budget = read_budget_from_config()
+        with budget.request_guard(manager):
+            raw_schema = manager.get_schema()
         if raw_schema is None:
             return envelope_err(
                 ErrorType.CONNECTION_FAILED,
@@ -72,7 +76,17 @@ def inspect_schema(
                     "Check HugeGraph Server health and retry inspect_schema_tool.",
                 ],
             )
-        relations = _safe_get_relations(manager) if include_relations else []
+        try:
+            import json as _json
+
+            budget.record_bytes(len(_json.dumps(raw_schema, default=str).encode("utf-8")))
+        except Exception:
+            pass
+        if include_relations:
+            with budget.request_guard(manager):
+                relations = _safe_get_relations(manager)
+        else:
+            relations = []
     except Exception as exc:
         return _schema_dependency_error(exc)
 
@@ -90,14 +104,36 @@ def inspect_schema(
             ],
         )
 
+    summary_truncated = False
+    max_summary_items = max(1, int(budget.max_items))
+    for key in ("property_keys", "vertex_labels", "edge_labels", "index_labels"):
+        items = summary.get(key)
+        if isinstance(items, list) and len(items) > max_summary_items:
+            summary[key] = items[:max_summary_items]
+            summary_truncated = True
+    if len(relations) > max_summary_items:
+        relations = relations[:max_summary_items]
+        summary_truncated = True
+
     data: dict[str, Any] = {
         "summary": summary,
         "relations": relations,
         "index_labels": summary["index_labels"] if include_index_labels else [],
         "filtered": filtered,
+        "truncated": summary_truncated,
     }
+    if summary_truncated:
+        data["truncation_reason"] = "RESULT_BUDGET_ITEMS_EXCEEDED"
     if include_raw_schema:
-        data["raw_schema"] = raw_payload
+        from hugegraph_mcp.schema_snapshot import compute_schema_fingerprint
+
+        data["schema_fingerprint"] = compute_schema_fingerprint(
+            raw_payload if isinstance(raw_payload, dict) else {"raw_schema": raw_payload}
+        )
+        bounded_raw, truncated, truncation_reason = bound_schema_payload(raw_payload)
+        data["raw_schema"] = bounded_raw
+        data["truncated"] = summary_truncated or truncated
+        data["truncation_reason"] = truncation_reason or data.get("truncation_reason")
 
     return envelope_ok(
         data,
@@ -142,12 +178,23 @@ def _validate_filter(
 def _safe_get_relations(manager) -> list[str]:
     try:
         relations = manager.get_relations()
-    except Exception:
+    except (AttributeError, NotImplementedError):
         return []
     return [str(item) for item in relations or []]
 
 
 def _schema_dependency_error(exc: Exception) -> dict[str, Any]:
+    from hugegraph_mcp.read_budget import ReadBudgetExceededError
+
+    if isinstance(exc, ReadBudgetExceededError):
+        is_deadline = exc.reason_code == "READ_DEADLINE_EXCEEDED"
+        return envelope_err(
+            ErrorType.TIMEOUT if is_deadline else ErrorType.VALIDATION_ERROR,
+            f"Schema inspection exceeded read budget: {exc!s}",
+            retryable=is_deadline,
+            source="inspect_schema_tool",
+            details={"error": str(exc), "reason_code": exc.reason_code},
+        )
     return envelope_err(
         ErrorType.CONNECTION_FAILED,
         f"Cannot inspect HugeGraph schema: {exc!s}",

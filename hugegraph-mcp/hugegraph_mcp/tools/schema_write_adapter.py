@@ -23,7 +23,6 @@ from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
-from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.guard import Capability, guard
 from hugegraph_mcp.plan_hash import PlanContext
 from hugegraph_mcp.tools.schema_utils import normalized_schema_summary
@@ -175,22 +174,17 @@ def _target_mismatch(
     operation: OperationPlan,
     attempt: int,
 ) -> ApplyReceipt | None:
-    cfg = get_effective_config()
-    current = (cfg.url, cfg.graph, cfg.graphspace or "DEFAULT", cfg.user)
-    planned = (
-        plan.graph_target.graph_url,
-        plan.graph_target.graph_name,
-        plan.graph_target.graphspace or "DEFAULT",
-        plan.principal,
-    )
-    if current == planned:
+    from hugegraph_mcp.target_context import resolve_target_from_config, target_mismatch_details
+
+    mismatch = target_mismatch_details(resolve_target_from_config(), plan)
+    if mismatch is None:
         return None
     return _receipt(
         plan,
         operation,
         attempt,
         ApplyStatus.REJECTED,
-        {"target_matches": False},
+        {"target_matches": False, **mismatch},
         reason_code="TARGET_CHANGED",
     )
 

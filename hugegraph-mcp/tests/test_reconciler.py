@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import sqlite3
 
 import pytest
@@ -224,3 +225,78 @@ def test_public_reconcile_tool_routes_only_plan_id(monkeypatch):
 
     assert result["ok"] is True
     assert calls == ["wp-reconcile"]
+
+
+def test_reconcile_fails_closed_when_plan_matches_non_default_alias(tmp_path, monkeypatch):
+    store = SQLitePlanStore(tmp_path)
+    _crash_plan(store)
+    monkeypatch.setenv("HUGEGRAPH_GRAPH", "graph_b")
+    monkeypatch.setenv(
+        "HUGEGRAPH_MCP_GRAPH_ROUTES",
+        json.dumps(
+            [
+                {
+                    "alias": "alias_a",
+                    "graph_url": "http://127.0.0.1:8080",
+                    "graph_name": "hugegraph",
+                    "graphspace": "DEFAULT",
+                    "user": "admin",
+                }
+            ]
+        ),
+    )
+
+    reads = []
+    readers = ReconcileReaderRegistry()
+    readers.register("REPLACE_PROPERTIES", lambda *_: reads.append(True) or {})
+
+    begin_calls = []
+    original_begin = store.begin_reconcile
+
+    def tracked_begin(plan_id):
+        begin_calls.append(plan_id)
+        return original_begin(plan_id)
+
+    monkeypatch.setattr(store, "begin_reconcile", tracked_begin)
+
+    result = WriteReconciler(store=store, readers=readers).reconcile("wp-reconcile")
+
+    assert result["ok"] is False
+    assert result["error"]["type"] == "WRITE_CONFLICT"
+    assert result["error"]["details"]["reason_code"] == "TARGET_CHANGED"
+    assert reads == []
+    assert begin_calls == []
+    assert store.get_plan_record("wp-reconcile")["status"] == "EXECUTING"
+
+
+def test_reconcile_succeeds_when_bound_default_target_matches_plan(tmp_path, monkeypatch):
+    store = SQLitePlanStore(tmp_path)
+    _crash_plan(store)
+    monkeypatch.setenv("HUGEGRAPH_GRAPH", "hugegraph")
+    monkeypatch.setenv(
+        "HUGEGRAPH_MCP_GRAPH_ROUTES",
+        json.dumps(
+            [
+                {
+                    "alias": "alias_b",
+                    "graph_url": "http://127.0.0.1:8080",
+                    "graph_name": "graph_b",
+                    "graphspace": "DEFAULT",
+                    "user": "admin",
+                }
+            ]
+        ),
+    )
+
+    reads = []
+    readers = ReconcileReaderRegistry()
+    readers.register(
+        "REPLACE_PROPERTIES",
+        lambda plan, operation: reads.append((plan.plan_id, operation.operation_id)) or {"properties": {"age": 21}},
+    )
+
+    result = WriteReconciler(store=store, readers=readers).reconcile("wp-reconcile")
+
+    assert result["ok"] is True
+    assert result["data"]["status"] == "APPLIED"
+    assert reads == [("wp-reconcile", "op-reconcile")]

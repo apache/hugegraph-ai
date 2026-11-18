@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Protocol, runtime_checkable
 
 from hugegraph_mcp.events import EventBus, ResourceEvent
-from hugegraph_mcp.plan_store import PlanStore, PlanTransitionError
+from hugegraph_mcp.plan_store import PlanTransitionError, SQLitePlanStore
 from hugegraph_mcp.write_plan import ApplyReceipt, PlanStatus, WritePlan
 
 
@@ -49,7 +49,7 @@ class Actor:
 
     @property
     def principal_key(self) -> str:
-        return json.dumps([self.tenant, self.subject], separators=(",", ":"))
+        return json.dumps([self.issuer, self.tenant, self.subject], separators=(",", ":"))
 
 
 def default_stdio_actor() -> Actor:
@@ -161,7 +161,7 @@ class SyncToAsyncPlanStoreAdapter:
 
     def __init__(
         self,
-        sync_store: PlanStore,
+        sync_store: SQLitePlanStore,
         *,
         event_bus: EventBus | None = None,
     ) -> None:
@@ -266,13 +266,21 @@ class SyncToAsyncPlanStoreAdapter:
             )
 
     async def renew(self, lease: Lease, actor: Actor, ttl_s: int = 30) -> Lease:
+        if ttl_s <= 0:
+            raise ValueError("ttl_s must be positive")
         async with self._lock:
             await self._read_unlocked(lease.plan_id, actor)
             if self._fences.get(lease.plan_id) != lease.fence:
                 raise LeaseConflictError(f"Lease fenced out for plan {lease.plan_id!r}")
             if time.time() > lease.expires_at:
                 raise LeaseConflictError(f"Lease expired for plan {lease.plan_id!r}")
-            return replace(lease, expires_at=time.time() + ttl_s)
+            try:
+                new_expires_at = await asyncio.to_thread(
+                    self._sync_store.renew_lease, lease.plan_id, owner_token=lease.holder, lease_seconds=ttl_s
+                )
+            except PlanTransitionError as exc:
+                raise LeaseConflictError(str(exc)) from exc
+            return replace(lease, expires_at=float(new_expires_at))
 
     async def record_operation(
         self,

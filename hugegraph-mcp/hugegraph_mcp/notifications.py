@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import weakref
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -24,6 +23,40 @@ from typing import Any
 from hugegraph_mcp.events import ResourceEvent
 
 NotifyCallback = Callable[[str], Awaitable[None]]
+
+
+async def _send_resource_updated(resolved: Any, updated_uri: str) -> None:
+    sender = getattr(resolved, "send_resource_updated", None)
+    if sender is None:
+        return
+    try:
+        from pydantic import AnyUrl
+
+        await sender(AnyUrl(updated_uri))
+    except TypeError:
+        await sender(updated_uri)
+
+
+def _make_weak_notify(
+    session_ref: weakref.ref[Any],
+    session_id: str,
+    remove_cb: Callable[[str], None],
+) -> NotifyCallback:
+    async def _notify(updated_uri: str) -> None:
+        resolved = session_ref()
+        if resolved is None:
+            remove_cb(session_id)
+            return
+        await _send_resource_updated(resolved, updated_uri)
+
+    return _notify
+
+
+def _make_strong_notify(session: Any) -> NotifyCallback:
+    async def _notify(updated_uri: str) -> None:
+        await _send_resource_updated(session, updated_uri)
+
+    return _notify
 
 
 @dataclass
@@ -68,30 +101,19 @@ class SubscriptionManager:
 
     def subscribe_session(self, session_id: str, uri: str, session: Any) -> None:
         """Bind a FastMCP / MCP ServerSession to receive notifications/resources/updated."""
+        is_new_session = session_id not in self._sessions
+        conn = getattr(session, "_connection", None)
+        target = conn if callable(getattr(conn, "send_resource_updated", None)) else session
         try:
-            session_ref = weakref.ref(session)
+            ref = weakref.ref(target)
         except TypeError:
-            session_ref = None
-        target = getattr(session, "_connection", session)
-        with contextlib.suppress(TypeError):
-            weakref.finalize(target, self.remove_session, session_id)
+            notify = _make_strong_notify(session)
+        else:
+            if is_new_session:
+                weakref.finalize(target, self.remove_session, session_id)
+            notify = _make_weak_notify(ref, session_id, self.remove_session)
 
-        async def _notify(updated_uri: str) -> None:
-            resolved = session_ref() if session_ref is not None else session
-            if resolved is None:
-                self.remove_session(session_id)
-                return
-            sender = getattr(resolved, "send_resource_updated", None)
-            if sender is None:
-                return
-            try:
-                from pydantic import AnyUrl
-
-                await sender(AnyUrl(updated_uri))
-            except TypeError:
-                await sender(updated_uri)
-
-        self.subscribe(session_id, uri, _notify)
+        self.subscribe(session_id, uri, notify)
 
     async def dispatch(self, event: ResourceEvent) -> int:
         """Deliver notifications/resources/updated to subscribed sessions with version dedup."""

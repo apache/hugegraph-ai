@@ -47,6 +47,7 @@ POSTGRES_DDL = """
 CREATE TABLE IF NOT EXISTS write_plans (
     plan_id TEXT PRIMARY KEY,
     tool_name TEXT NOT NULL,
+    owner_issuer TEXT NOT NULL DEFAULT '',
     owner_tenant TEXT NOT NULL,
     owner_subject TEXT NOT NULL,
     graphspace TEXT NOT NULL,
@@ -67,6 +68,10 @@ CREATE TABLE IF NOT EXISTS write_plans (
 
 ALTER TABLE write_plans
     ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
+ALTER TABLE write_plans
+    ADD COLUMN IF NOT EXISTS owner_issuer TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_write_plans_owner
+    ON write_plans (owner_issuer, owner_tenant, owner_subject);
 
 CREATE TABLE IF NOT EXISTS plan_operations (
     plan_id TEXT NOT NULL REFERENCES write_plans(plan_id) ON DELETE CASCADE,
@@ -138,6 +143,8 @@ class AsyncDBPool(Protocol):
 class PostgresPlanStore:
     """Shared multi-instance PlanStore backed by PostgreSQL + transactional outbox."""
 
+    _OUTBOX_ADVISORY_LOCK_KEY = 0x68675F6F75746278  # "hg_outbx"
+
     def __init__(
         self,
         dsn: str,
@@ -180,7 +187,6 @@ class PostgresPlanStore:
                        resource_version, EXTRACT(EPOCH FROM created_at) AS created_at
                 FROM event_outbox
                 WHERE seq > %s
-                  AND txid < txid_snapshot_xmin(txid_current_snapshot())
                 ORDER BY seq ASC
                 LIMIT %s
                 """,
@@ -217,14 +223,15 @@ class PostgresPlanStore:
             await conn.execute(
                 """
                 INSERT INTO write_plans (
-                    plan_id, tool_name, owner_tenant, owner_subject,
+                    plan_id, tool_name, owner_issuer, owner_tenant, owner_subject,
                     graphspace, graph, payload_json, payload_digest,
                     status, version, fence, expires_at, summary_json
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, 1, 0, to_timestamp(%s), %s::jsonb)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, 1, 0, to_timestamp(%s), %s::jsonb)
                 """,
                 (
                     plan.plan_id,
                     plan.tool_name,
+                    actor.issuer,
                     actor.tenant,
                     actor.subject,
                     graphspace,
@@ -272,9 +279,9 @@ class PostgresPlanStore:
                    status, version, EXTRACT(EPOCH FROM expires_at) AS expires_at,
                    summary_json
             FROM write_plans
-            WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+            WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
             """,
-            (plan_id, actor.tenant, actor.subject),
+            (plan_id, actor.issuer, actor.tenant, actor.subject),
         )
         if row is None:
             raise PlanNotFoundError(f"Write plan {plan_id!r} not found")
@@ -331,13 +338,14 @@ class PostgresPlanStore:
                     version = version + 1,
                     updated_at = NOW()
                 WHERE plan_id = %s
+                  AND owner_issuer = %s
                   AND owner_tenant = %s
                   AND owner_subject = %s
                   AND status = 'ISSUED'
                   AND expires_at > NOW()
                 RETURNING fence, version, EXTRACT(EPOCH FROM lease_expires_at) AS lease_expires_at
                 """,
-                (holder, ttl_s, plan_id, actor.tenant, actor.subject),
+                (holder, ttl_s, plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if row is None:
                 # Distinguish missing/unauthorized from lease conflict only after verifying ownership.
@@ -365,6 +373,7 @@ class PostgresPlanStore:
                 SET lease_expires_at = NOW() + (%s || ' seconds')::interval,
                     updated_at = NOW()
                 WHERE plan_id = %s
+                  AND owner_issuer = %s
                   AND owner_tenant = %s
                   AND owner_subject = %s
                   AND status = 'EXECUTING'
@@ -373,7 +382,7 @@ class PostgresPlanStore:
                   AND lease_expires_at > NOW()
                 RETURNING EXTRACT(EPOCH FROM lease_expires_at) AS lease_expires_at
                 """,
-                (ttl_s, lease.plan_id, actor.tenant, actor.subject, lease.holder, lease.fence),
+                (ttl_s, lease.plan_id, actor.issuer, actor.tenant, actor.subject, lease.holder, lease.fence),
             )
             if row is None:
                 raise LeaseConflictError(f"Lease renew rejected for plan {lease.plan_id!r}")
@@ -404,6 +413,7 @@ class PostgresPlanStore:
                 SET version = version + 1,
                     updated_at = NOW()
                 WHERE plan_id = %s
+                  AND owner_issuer = %s
                   AND owner_tenant = %s
                   AND owner_subject = %s
                   AND status = 'EXECUTING'
@@ -412,7 +422,7 @@ class PostgresPlanStore:
                   AND lease_expires_at > NOW()
                 RETURNING version
                 """,
-                (lease.plan_id, actor.tenant, actor.subject, expected_version, lease.fence),
+                (lease.plan_id, actor.issuer, actor.tenant, actor.subject, expected_version, lease.fence),
             )
             if plan_row is None:
                 raise LeaseConflictError(f"Stale version or expired lease for plan {lease.plan_id!r}")
@@ -455,6 +465,7 @@ class PostgresPlanStore:
                     lease_holder = NULL,
                     updated_at = NOW()
                 WHERE plan_id = %s
+                  AND owner_issuer = %s
                   AND owner_tenant = %s
                   AND owner_subject = %s
                   AND status = 'EXECUTING'
@@ -468,6 +479,7 @@ class PostgresPlanStore:
                     outcome.status.value,
                     json.dumps(outcome.summary),
                     lease.plan_id,
+                    actor.issuer,
                     actor.tenant,
                     actor.subject,
                     lease.holder,
@@ -479,24 +491,7 @@ class PostgresPlanStore:
                 raise LeaseConflictError(
                     f"Cannot finish plan {lease.plan_id!r}: stale version, holder, or expired lease"
                 )
-            for event in events:
-                await conn.execute(
-                    """
-                    INSERT INTO event_outbox (
-                        event_id, deployment, graphspace, graph, uri, kind, resource_version
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (event_id) DO NOTHING
-                    """,
-                    (
-                        event.event_id,
-                        event.deployment,
-                        event.graphspace,
-                        event.graph,
-                        event.uri,
-                        event.kind,
-                        event.resource_version,
-                    ),
-                )
+            await self._insert_outbox_events(conn, events)
             return await self._read_with_conn(conn, lease.plan_id, actor)
         except BaseException as exc:
             err = exc
@@ -524,13 +519,14 @@ class PostgresPlanStore:
                     lease_holder = NULL,
                     updated_at = NOW()
                 WHERE plan_id = %s
+                  AND owner_issuer = %s
                   AND owner_tenant = %s
                   AND owner_subject = %s
                   AND status IN ('ISSUED', 'EXECUTING', 'PARTIAL', 'UNKNOWN')
                   AND version = %s
                 RETURNING version
                 """,
-                (reason, plan_id, actor.tenant, actor.subject, expected_version),
+                (reason, plan_id, actor.issuer, actor.tenant, actor.subject, expected_version),
             )
             if row is None:
                 raise LeaseConflictError(f"Cannot mark plan {plan_id!r} uncertain: terminal status or version mismatch")
@@ -607,9 +603,9 @@ class PostgresPlanStore:
                 """
                 SELECT payload_json, status
                 FROM write_plans
-                WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+                WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 """,
-                (plan_id, actor.tenant, actor.subject),
+                (plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if row is None:
                 return None
@@ -631,9 +627,9 @@ class PostgresPlanStore:
                        EXTRACT(EPOCH FROM created_at) AS created_at,
                        EXTRACT(EPOCH FROM updated_at) AS updated_at
                 FROM write_plans
-                WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+                WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 """,
-                (plan_id, actor.tenant, actor.subject),
+                (plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if row is None:
                 return None
@@ -696,7 +692,7 @@ class PostgresPlanStore:
         pool = self._require_pool()
         conn = await pool.acquire()
         try:
-            params: list[Any] = [actor.tenant, actor.subject]
+            params: list[Any] = [actor.issuer, actor.tenant, actor.subject]
             status_clause = ""
             if status is not None:
                 status_clause = "AND status = %s"
@@ -709,7 +705,7 @@ class PostgresPlanStore:
                        EXTRACT(EPOCH FROM expires_at) AS expires_at,
                        EXTRACT(EPOCH FROM confirmed_at) AS confirmed_at
                 FROM write_plans
-                WHERE owner_tenant = %s AND owner_subject = %s
+                WHERE owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 {status_clause}
                 ORDER BY created_at DESC, plan_id DESC
                 LIMIT %s
@@ -760,6 +756,7 @@ class PostgresPlanStore:
                         version = version + 1,
                         updated_at = NOW()
                     WHERE plan_id = %s
+                      AND owner_issuer = %s
                       AND owner_tenant = %s
                       AND owner_subject = %s
                       AND status = %s
@@ -770,6 +767,7 @@ class PostgresPlanStore:
                         target.value,
                         reason,
                         plan_id,
+                        actor.issuer,
                         actor.tenant,
                         actor.subject,
                         expected.value,
@@ -787,6 +785,7 @@ class PostgresPlanStore:
                         version = version + 1,
                         updated_at = NOW()
                     WHERE plan_id = %s
+                      AND owner_issuer = %s
                       AND owner_tenant = %s
                       AND owner_subject = %s
                       AND status = %s
@@ -796,6 +795,7 @@ class PostgresPlanStore:
                         target.value,
                         target.value,
                         plan_id,
+                        actor.issuer,
                         actor.tenant,
                         actor.subject,
                         expected.value,
@@ -828,15 +828,18 @@ class PostgresPlanStore:
             row = await conn.fetchone(
                 """
                 SELECT status, payload_json,
-                       (lease_expires_at IS NULL OR lease_expires_at <= NOW()) AS lease_available
+                       (lease_expires_at IS NULL OR lease_expires_at <= NOW()) AS lease_available,
+                       (expires_at > NOW()) AS not_expired
                 FROM write_plans
-                WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+                WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 FOR UPDATE
                 """,
-                (plan_id, actor.tenant, actor.subject),
+                (plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if row is None:
                 raise PlanTransitionError("plan was not found")
+            if not bool(row["not_expired"]):
+                raise PlanTransitionError("plan has expired")
             current = PlanStatus(row["status"])
             claimable = {PlanStatus.ISSUED}
             if resume:
@@ -856,9 +859,11 @@ class PostgresPlanStore:
                         version = version + 1,
                         updated_at = NOW()
                     WHERE plan_id = %s
+                      AND owner_issuer = %s
                       AND owner_tenant = %s
                       AND owner_subject = %s
                       AND status = %s
+                      AND expires_at > NOW()
                       AND (lease_expires_at IS NULL OR lease_expires_at <= NOW())
                     RETURNING status
                     """,
@@ -867,6 +872,7 @@ class PostgresPlanStore:
                         owner_token,
                         float(lease_seconds),
                         plan_id,
+                        actor.issuer,
                         actor.tenant,
                         actor.subject,
                         current.value,
@@ -905,10 +911,10 @@ class PostgresPlanStore:
                 """
                 SELECT lease_holder, (lease_expires_at IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
                 FROM write_plans
-                WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+                WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 FOR UPDATE
                 """,
-                (plan_id, actor.tenant, actor.subject),
+                (plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if plan_row is None or not bool(plan_row["lease_active"]):
                 raise PlanTransitionError("executor lease is absent or expired")
@@ -949,13 +955,14 @@ class PostgresPlanStore:
                 SET lease_expires_at = NOW() + make_interval(secs => %s),
                     updated_at = NOW()
                 WHERE plan_id = %s
+                  AND owner_issuer = %s
                   AND owner_tenant = %s
                   AND owner_subject = %s
                   AND lease_holder = %s
                   AND lease_expires_at > NOW()
                 RETURNING plan_id
                 """,
-                (float(lease_seconds), plan_id, actor.tenant, actor.subject, effective_owner),
+                (float(lease_seconds), plan_id, actor.issuer, actor.tenant, actor.subject, effective_owner),
             )
             if renewed is None:
                 raise PlanTransitionError("executor lease could not be renewed")
@@ -988,10 +995,10 @@ class PostgresPlanStore:
                 FROM plan_operations o
                 JOIN write_plans p ON p.plan_id = o.plan_id
                 WHERE o.plan_id = %s AND o.operation_id = %s
-                  AND p.owner_tenant = %s AND p.owner_subject = %s
+                  AND p.owner_issuer = %s AND p.owner_tenant = %s AND p.owner_subject = %s
                 FOR UPDATE
                 """,
-                (receipt.plan_id, receipt.operation_id, actor.tenant, actor.subject),
+                (receipt.plan_id, receipt.operation_id, actor.issuer, actor.tenant, actor.subject),
             )
             if op_row is None:
                 raise PlanTransitionError("operation receipt target was not found")
@@ -1066,53 +1073,77 @@ class PostgresPlanStore:
                 """,
                 (aggregate.value, keep_lease, keep_lease, receipt.plan_id),
             )
-            if aggregate in {PlanStatus.APPLIED, PlanStatus.PARTIAL, PlanStatus.UNKNOWN}:
-                from hugegraph_mcp.events import ResourceEvent
-                from hugegraph_mcp.resource_uri import build_graph_resource_uri
-
-                raw_payload = plan_row.get("payload_json")
-                if isinstance(raw_payload, str):
-                    try:
-                        raw_payload = json.loads(raw_payload)
-                    except json.JSONDecodeError:
-                        raw_payload = {}
-                target_meta = raw_payload.get("graph_target") if isinstance(raw_payload, dict) else {}
-                deployment = str((target_meta or {}).get("deployment_id") or self._deployment_id)
-                graphspace = str(plan_row.get("graphspace") or "DEFAULT")
-                graph = str(plan_row.get("graph") or "hugegraph")
-                event_kind = "invalidated" if aggregate in {PlanStatus.PARTIAL, PlanStatus.UNKNOWN} else "updated"
-                resource_version = int(time.time() * 1000)
-                for res_kind in ("schema", "summary"):
-                    event = ResourceEvent.create(
-                        deployment=deployment,
-                        graphspace=graphspace,
-                        graph=graph,
-                        uri=build_graph_resource_uri(deployment, graphspace, graph, res_kind),  # type: ignore[arg-type]
-                        kind=event_kind,  # type: ignore[arg-type]
-                        resource_version=resource_version,
-                    )
-                    await conn.execute(
-                        """
-                        INSERT INTO event_outbox (
-                            event_id, deployment, graphspace, graph, uri, kind, resource_version
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (event_id) DO NOTHING
-                        """,
-                        (
-                            event.event_id,
-                            event.deployment,
-                            event.graphspace,
-                            event.graph,
-                            event.uri,
-                            event.kind,
-                            event.resource_version,
-                        ),
-                    )
+            await self._emit_plan_outbox_events(conn, plan_row, aggregate)
         except BaseException as exc:
             err = exc
             raise
         finally:
             await pool.release(conn, err)
+
+    async def _insert_outbox_events(
+        self,
+        conn: AsyncDBConnection,
+        events: tuple[ResourceEvent, ...] | list[ResourceEvent],
+    ) -> None:
+        if not events:
+            return
+        # Serialize outbox seq allocation with commit order across all writers so
+        # concurrent transactions cannot commit a higher seq before a lower seq.
+        await conn.execute("SELECT pg_advisory_xact_lock(%s)", (self._OUTBOX_ADVISORY_LOCK_KEY,))
+        for event in events:
+            await conn.execute(
+                """
+                INSERT INTO event_outbox (
+                    event_id, deployment, graphspace, graph, uri, kind, resource_version
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (event_id) DO NOTHING
+                """,
+                (
+                    event.event_id,
+                    event.deployment,
+                    event.graphspace,
+                    event.graph,
+                    event.uri,
+                    event.kind,
+                    event.resource_version,
+                ),
+            )
+
+    async def _emit_plan_outbox_events(
+        self,
+        conn: Any,
+        plan_row: dict[str, Any],
+        aggregate: PlanStatus,
+    ) -> None:
+        if aggregate not in {PlanStatus.APPLIED, PlanStatus.PARTIAL, PlanStatus.UNKNOWN}:
+            return
+        from hugegraph_mcp.events import ResourceEvent
+        from hugegraph_mcp.resource_uri import build_graph_resource_uri
+
+        raw_payload = plan_row.get("payload_json")
+        if isinstance(raw_payload, str):
+            try:
+                raw_payload = json.loads(raw_payload)
+            except json.JSONDecodeError:
+                raw_payload = {}
+        target_meta = raw_payload.get("graph_target") if isinstance(raw_payload, dict) else {}
+        deployment = str((target_meta or {}).get("deployment_id") or self._deployment_id)
+        graphspace = str(plan_row.get("graphspace") or "DEFAULT")
+        graph = str(plan_row.get("graph") or "hugegraph")
+        event_kind = "invalidated" if aggregate in {PlanStatus.PARTIAL, PlanStatus.UNKNOWN} else "updated"
+        resource_version = int(time.time() * 1000)
+        outbox_events = [
+            ResourceEvent.create(
+                deployment=deployment,
+                graphspace=graphspace,
+                graph=graph,
+                uri=build_graph_resource_uri(deployment, graphspace, graph, res_kind),  # type: ignore[arg-type]
+                kind=event_kind,  # type: ignore[arg-type]
+                resource_version=resource_version,
+            )
+            for res_kind in ("schema", "summary")
+        ]
+        await self._insert_outbox_events(conn, outbox_events)
 
     async def begin_reconcile(self, plan_id: str, actor: Actor) -> WritePlan:
         pool = self._require_pool()
@@ -1124,10 +1155,10 @@ class PostgresPlanStore:
                 SELECT status, payload_json,
                        (lease_expires_at IS NOT NULL AND lease_expires_at > NOW()) AS lease_active
                 FROM write_plans
-                WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+                WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 FOR UPDATE
                 """,
-                (plan_id, actor.tenant, actor.subject),
+                (plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if row is None:
                 raise PlanTransitionError("plan was not found")
@@ -1175,12 +1206,12 @@ class PostgresPlanStore:
         try:
             plan_row = await conn.fetchone(
                 """
-                SELECT lease_holder
+                SELECT lease_holder, payload_json, graphspace, graph
                 FROM write_plans
-                WHERE plan_id = %s AND owner_tenant = %s AND owner_subject = %s
+                WHERE plan_id = %s AND owner_issuer = %s AND owner_tenant = %s AND owner_subject = %s
                 FOR UPDATE
                 """,
-                (receipt.plan_id, actor.tenant, actor.subject),
+                (receipt.plan_id, actor.issuer, actor.tenant, actor.subject),
             )
             if plan_row is None or plan_row["lease_holder"] is not None:
                 raise PlanTransitionError("reconciliation requires a fenced executor")
@@ -1220,6 +1251,7 @@ class PostgresPlanStore:
                 """,
                 (aggregate.value, receipt.plan_id),
             )
+            await self._emit_plan_outbox_events(conn, plan_row, aggregate)
         except BaseException as exc:
             err = exc
             raise
@@ -1314,6 +1346,12 @@ class PostgresSyncPlanStore:
 
     def _run(self, fn):
         if self._loop is not None and self._loop.is_running():
+            try:
+                running = asyncio.get_running_loop()
+            except RuntimeError:
+                running = None
+            if running is self._loop:
+                raise RuntimeError("PostgresSyncPlanStore cannot block on the currently running event loop")
             return asyncio.run_coroutine_threadsafe(fn(self._pg_store), self._loop).result()
 
         async def _ephemeral():

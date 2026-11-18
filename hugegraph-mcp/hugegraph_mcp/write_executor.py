@@ -27,6 +27,10 @@ from hugegraph_mcp.plan_store import (
     PlanTransitionError,
     plan_store_from_config,
 )
+from hugegraph_mcp.target_context import (
+    resolve_target_from_config,
+    target_mismatch_details,
+)
 from hugegraph_mcp.write_plan import (
     ApplyReceipt,
     ApplyStatus,
@@ -80,6 +84,15 @@ class WriteExecutor:
             )
             return self._confirmation_result(plan_id)
 
+        mismatch = target_mismatch_details(resolve_target_from_config(), plan)
+        if mismatch is not None:
+            return envelope_err(
+                ErrorType.WRITE_CONFLICT,
+                "Active HugeGraph target does not match the persisted write plan.",
+                retryable=False,
+                details=mismatch,
+            )
+
         missing = [operation.kind for operation in plan.operations if self.registry.adapter_for(operation.kind) is None]
         if missing:
             return envelope_err(
@@ -112,6 +125,8 @@ class WriteExecutor:
         record = self.store.get_plan_record(plan_id)
         if plan is None or record is None:
             raise PlanTransitionError("resume requires a reconciled RETRYABLE_NOT_APPLIED plan")
+        if int(time.time()) > plan.expires_at:
+            raise PlanTransitionError("plan has expired")
         operation_statuses = {operation["operation_id"]: operation["status"] for operation in record["operations"]}
         reconciled_operations = {
             operation["operation_id"]: operation["reconciled"] for operation in record["operations"]

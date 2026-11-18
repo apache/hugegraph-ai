@@ -154,6 +154,7 @@ class _FakePostgresConn:
             (
                 plan_id,
                 tool_name,
+                owner_issuer,
                 owner_tenant,
                 owner_subject,
                 graphspace,
@@ -167,6 +168,7 @@ class _FakePostgresConn:
             self.state["plans"][plan_id] = {
                 "plan_id": plan_id,
                 "tool_name": tool_name,
+                "owner_issuer": owner_issuer,
                 "owner_tenant": owner_tenant,
                 "owner_subject": owner_subject,
                 "graphspace": graphspace,
@@ -224,16 +226,22 @@ class _FakePostgresConn:
         if q == "SELECT 1 AS ok":
             return {"ok": 1}
         if q.startswith("SELECT plan_id, tool_name"):
-            plan_id, tenant, subject = params
-            row = self.state["plans"].get(plan_id)
-            if row and row["owner_tenant"] == tenant and row["owner_subject"] == subject:
-                return dict(row)
-            return None
-        if q.startswith("UPDATE write_plans SET status = 'EXECUTING'"):
-            holder, ttl_s, plan_id, tenant, subject = params
+            plan_id, issuer, tenant, subject = params
             row = self.state["plans"].get(plan_id)
             if (
                 row
+                and row["owner_issuer"] == issuer
+                and row["owner_tenant"] == tenant
+                and row["owner_subject"] == subject
+            ):
+                return dict(row)
+            return None
+        if q.startswith("UPDATE write_plans SET status = 'EXECUTING'"):
+            holder, ttl_s, plan_id, issuer, tenant, subject = params
+            row = self.state["plans"].get(plan_id)
+            if (
+                row
+                and row["owner_issuer"] == issuer
                 and row["owner_tenant"] == tenant
                 and row["owner_subject"] == subject
                 and row["status"] == "ISSUED"
@@ -251,10 +259,11 @@ class _FakePostgresConn:
                 }
             return None
         if q.startswith("UPDATE write_plans SET version = version + 1"):
-            plan_id, tenant, subject, expected_version, fence = params
+            plan_id, issuer, tenant, subject, expected_version, fence = params
             row = self.state["plans"].get(plan_id)
             if (
                 row
+                and row["owner_issuer"] == issuer
                 and row["owner_tenant"] == tenant
                 and row["owner_subject"] == subject
                 and row["status"] == "EXECUTING"
@@ -266,10 +275,11 @@ class _FakePostgresConn:
                 return {"version": row["version"]}
             return None
         if q.startswith("UPDATE write_plans SET status = 'UNKNOWN'"):
-            reason, plan_id, tenant, subject, expected_version = params
+            reason, plan_id, issuer, tenant, subject, expected_version = params
             row = self.state["plans"].get(plan_id)
             if (
                 row
+                and row["owner_issuer"] == issuer
                 and row["owner_tenant"] == tenant
                 and row["owner_subject"] == subject
                 and row["status"] in {"ISSUED", "EXECUTING", "PARTIAL", "UNKNOWN"}
@@ -282,10 +292,11 @@ class _FakePostgresConn:
                 return {"version": row["version"]}
             return None
         if q.startswith("UPDATE write_plans SET status = %s"):
-            status, summary_json, plan_id, tenant, subject, holder, expected_version, fence = params
+            status, summary_json, plan_id, issuer, tenant, subject, holder, expected_version, fence = params
             row = self.state["plans"].get(plan_id)
             if (
                 row
+                and row["owner_issuer"] == issuer
                 and row["owner_tenant"] == tenant
                 and row["owner_subject"] == subject
                 and row["status"] == "EXECUTING"

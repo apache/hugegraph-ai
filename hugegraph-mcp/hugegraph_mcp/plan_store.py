@@ -317,6 +317,39 @@ class SQLitePlanStore:
             raise PlanTransitionError("plan disappeared after claim")
         return plan, claimed
 
+    def renew_lease(
+        self,
+        plan_id: str,
+        *,
+        owner_token: str,
+        lease_seconds: int = 30,
+    ) -> int:
+        """Extend an active executor lease if owner_token matches and the lease has not expired."""
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        self.prepare()
+        with closing(sqlite3.connect(self.database_path, timeout=30)) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            now = int(time.time())
+            new_expires_at = now + lease_seconds
+            updated = connection.execute(
+                """
+                UPDATE write_plans
+                SET lease_expires_at = ?
+                WHERE plan_id = ?
+                  AND status IN ('EXECUTING', 'PARTIAL')
+                  AND lease_owner = ?
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at > ?
+                """,
+                (new_expires_at, plan_id, owner_token, now),
+            )
+            if updated.rowcount != 1:
+                connection.rollback()
+                raise PlanTransitionError("executor lease is absent, fenced out, or expired")
+            connection.commit()
+        return new_expires_at
+
     def claim_operation(
         self,
         plan_id: str,
@@ -998,6 +1031,20 @@ class ActorScopedSQLitePlanStore(SQLitePlanStore):
             owner_token=owner_token,
             lease_seconds=lease_seconds,
             resume=resume,
+        )
+
+    def renew_lease(
+        self,
+        plan_id: str,
+        *,
+        owner_token: str,
+        lease_seconds: int = 30,
+    ) -> int:
+        self._require_owner(plan_id)
+        return self._base.renew_lease(
+            plan_id,
+            owner_token=owner_token,
+            lease_seconds=lease_seconds,
         )
 
     def claim_operation(

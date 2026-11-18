@@ -28,6 +28,7 @@ from pyhugegraph.utils.exceptions import (
 )
 
 from hugegraph_mcp.envelope import ErrorType
+from hugegraph_mcp.read_budget import ReadBudgetExceededError
 
 
 @dataclass(frozen=True)
@@ -70,7 +71,7 @@ def _is_wrapped_timeout(exc: BaseException) -> bool:
         if id(cur) in seen:
             continue
         seen.add(id(cur))
-        if isinstance(cur, (TimeoutError, requests.Timeout)) or type(cur).__name__ in {
+        if isinstance(cur, TimeoutError | requests.Timeout) or type(cur).__name__ in {
             "ReadTimeoutError",
             "ConnectTimeoutError",
         }:
@@ -87,6 +88,13 @@ def _is_wrapped_timeout(exc: BaseException) -> bool:
 
 
 def classify_hugegraph_exception(exc: Exception) -> ErrorClassification:
+    if isinstance(exc, ReadBudgetExceededError) and exc.reason_code != "READ_DEADLINE_EXCEEDED":
+        return ErrorClassification(
+            error_type=ErrorType.VALIDATION_ERROR,
+            retryable=False,
+            suggestion="Narrow the query scope, add fields projection, or reduce limit.",
+            reason=exc.reason_code.lower(),
+        )
     if isinstance(exc, ResponseTooLargeError):
         return ErrorClassification(
             error_type=ErrorType.VALIDATION_ERROR,
@@ -94,7 +102,7 @@ def classify_hugegraph_exception(exc: Exception) -> ErrorClassification:
             suggestion="Reduce max_depth, max_degree, capacity, or limit and retry.",
             reason="response_bytes_exceeded",
         )
-    if isinstance(exc, (TimeoutError, requests.Timeout)) or _is_wrapped_timeout(exc):
+    if isinstance(exc, TimeoutError | requests.Timeout) or _is_wrapped_timeout(exc):
         return ErrorClassification(
             error_type=ErrorType.TIMEOUT,
             retryable=True,
@@ -122,7 +130,7 @@ def classify_hugegraph_exception(exc: Exception) -> ErrorClassification:
             suggestion="Verify the graph, graphspace, and endpoint before retrying.",
             reason="not_found_error",
         )
-    if isinstance(exc, (InvalidParameterError, DataFormatError)):
+    if isinstance(exc, InvalidParameterError | DataFormatError):
         return ErrorClassification(
             error_type=ErrorType.VALIDATION_ERROR,
             retryable=False,

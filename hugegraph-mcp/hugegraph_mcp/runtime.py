@@ -23,10 +23,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+from hugegraph_mcp.artifacts import get_default_artifact_store
 from hugegraph_mcp.config import MCPConfig
 from hugegraph_mcp.events import EventBus, InMemoryEventBus, OutboxEventRelay, OutboxSource
 from hugegraph_mcp.notifications import SubscriptionManager
-from hugegraph_mcp.plan_store import SQLitePlanStore
+from hugegraph_mcp.plan_store import PlanStoreUnavailableError, SQLitePlanStore
 from hugegraph_mcp.stores.base import (
     Actor,
     AsyncPlanStore,
@@ -158,15 +159,23 @@ class RuntimeContainer:
 
 def build_runtime(config: MCPConfig | None = None) -> RuntimeContainer:
     cfg = config or MCPConfig.from_env()
+    if cfg.graph_routes_json:
+        from hugegraph_mcp.graph_routes import GraphRouteRegistry
+
+        cfg = GraphRouteRegistry.from_config(cfg).resolve().to_config(cfg)
     event_bus = InMemoryEventBus()
-    if cfg.plan_store_backend == "postgres" and cfg.plan_store_dsn:
+    if cfg.plan_store_backend == "postgres":
+        if not cfg.plan_store_dsn:
+            raise PlanStoreUnavailableError("PostgreSQL plan store requires HUGEGRAPH_MCP_PLAN_STORE_DSN")
         plan_store: AsyncPlanStore = PostgresPlanStore(
             cfg.plan_store_dsn,
             deployment_id=cfg.deployment_id,
         )
-    else:
+    elif cfg.plan_store_backend == "sqlite":
         sync_store = SQLitePlanStore.from_config(cfg)
         plan_store = SyncToAsyncPlanStoreAdapter(sync_store, event_bus=event_bus)
+    else:
+        raise PlanStoreUnavailableError(f"Unsupported plan_store_backend: {cfg.plan_store_backend!r}")
     return RuntimeContainer(
         config=cfg,
         plan_store=plan_store,
@@ -174,7 +183,14 @@ def build_runtime(config: MCPConfig | None = None) -> RuntimeContainer:
     )
 
 
-def create_runtime_lifespan(config: MCPConfig | None = None):
+_ARTIFACT_SWEEP_INTERVAL_SECONDS = 300.0
+
+
+def create_runtime_lifespan(
+    config: MCPConfig | None = None,
+    *,
+    artifact_sweep_interval_s: float = _ARTIFACT_SWEEP_INTERVAL_SECONDS,
+):
     """Create a FastMCP lifespan context manager bound to an immutable MCPConfig."""
 
     async def _fanout_events(runtime: RuntimeContainer) -> None:
@@ -190,6 +206,13 @@ def create_runtime_lifespan(config: MCPConfig | None = None):
                 # Never let a single failing subscriber callback terminate event fan-out.
                 continue
 
+    async def _sweep_expired_artifacts(runtime: RuntimeContainer, interval_s: float) -> None:
+        sleep_s = max(0.001, float(interval_s))
+        while not runtime.shutting_down:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(get_default_artifact_store(runtime.config).cleanup_expired)
+            await asyncio.sleep(sleep_s)
+
     @asynccontextmanager
     async def _lifespan(server: Any) -> AsyncIterator[RuntimeContainer]:
         global _ACTIVE_RUNTIME
@@ -201,6 +224,7 @@ def create_runtime_lifespan(config: MCPConfig | None = None):
         token = _CURRENT_RUNTIME.set(runtime)
         actor_token = _CURRENT_ACTOR.set(default_stdio_actor())
         fanout_task: asyncio.Task[None] | None = None
+        artifact_sweep_task: asyncio.Task[None] | None = None
         try:
             runtime._loop = asyncio.get_running_loop()
             if hasattr(runtime.plan_store, "prepare"):
@@ -215,6 +239,7 @@ def create_runtime_lifespan(config: MCPConfig | None = None):
                 )
                 runtime.outbox_relay.start()
             runtime.ready = True
+            artifact_sweep_task = asyncio.create_task(_sweep_expired_artifacts(runtime, artifact_sweep_interval_s))
             yield runtime
         finally:
             if runtime.outbox_relay is not None:
@@ -223,6 +248,11 @@ def create_runtime_lifespan(config: MCPConfig | None = None):
                 runtime.outbox_relay = None
             await runtime.drain_writes(timeout_s=5.0)
             await runtime.event_bus.close()
+            if artifact_sweep_task is not None:
+                if not artifact_sweep_task.done():
+                    artifact_sweep_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await artifact_sweep_task
             if fanout_task is not None:
                 if not fanout_task.done():
                     fanout_task.cancel()

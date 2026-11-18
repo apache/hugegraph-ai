@@ -22,7 +22,7 @@ from urllib.parse import quote, unquote, urlsplit
 MAX_SEGMENT_LENGTH = 128
 MAX_PLAN_ID_LENGTH = 128
 
-ResourceKind = Literal["schema", "summary", "embeddings_vid", "plan"]
+ResourceKind = Literal["schema", "summary", "embeddings_vid", "plan", "artifact", "artifact_part"]
 
 
 class InvalidResourceURIError(ValueError):
@@ -76,7 +76,20 @@ class PlanResourceURI:
         return f"plan://{_encode_segment(self.plan_id)}"
 
 
-ParsedResourceURI = GraphResourceURI | PlanResourceURI
+@dataclass(frozen=True)
+class ArtifactResourceURI:
+    artifact_id: str
+    part_id: int | None = None
+    kind: Literal["artifact", "artifact_part"] = "artifact"
+
+    def to_uri(self) -> str:
+        base = f"artifact://{_encode_segment(self.artifact_id)}"
+        if self.part_id is not None:
+            return f"{base}/parts/{self.part_id}"
+        return base
+
+
+ParsedResourceURI = GraphResourceURI | PlanResourceURI | ArtifactResourceURI
 
 
 def build_graph_resource_uri(
@@ -98,6 +111,16 @@ def build_plan_resource_uri(plan_id: str) -> str:
     return PlanResourceURI(plan_id=pid).to_uri()
 
 
+def build_artifact_resource_uri(artifact_id: str, *, part_id: int | None = None) -> str:
+    """Build a canonical artifact://{artifact_id} or .../parts/{part_id} URI."""
+    aid = _validate_segment(artifact_id, field_name="artifact_id", max_length=MAX_PLAN_ID_LENGTH)
+    if part_id is not None:
+        if isinstance(part_id, bool) or not isinstance(part_id, int) or part_id < 0:
+            raise InvalidResourceURIError("part_id must be a non-negative integer")
+        return ArtifactResourceURI(artifact_id=aid, part_id=part_id, kind="artifact_part").to_uri()
+    return ArtifactResourceURI(artifact_id=aid, kind="artifact").to_uri()
+
+
 def parse_resource_uri(uri: str) -> ParsedResourceURI:
     """Parse and validate a hugegraph:// or plan:// resource URI."""
     if not isinstance(uri, str) or not uri:
@@ -114,6 +137,17 @@ def parse_resource_uri(uri: str) -> ParsedResourceURI:
             raise InvalidResourceURIError("plan:// URI must have no path segments")
         plan_id = _validate_segment(parsed.netloc, field_name="plan_id", max_length=MAX_PLAN_ID_LENGTH)
         return PlanResourceURI(plan_id=plan_id)
+
+    if scheme == "artifact":
+        artifact_id = _validate_segment(parsed.netloc, field_name="artifact_id", max_length=MAX_PLAN_ID_LENGTH)
+        if parsed.path in {"", "/"}:
+            return ArtifactResourceURI(artifact_id=artifact_id, kind="artifact")
+        if parsed.path.endswith("/") or "//" in parsed.path:
+            raise InvalidResourceURIError("artifact:// URI must not contain empty path segments")
+        parts = [p for p in parsed.path.split("/") if p != ""]
+        if len(parts) == 2 and parts[0] == "parts" and parts[1].isdigit():
+            return ArtifactResourceURI(artifact_id=artifact_id, part_id=int(parts[1]), kind="artifact_part")
+        raise InvalidResourceURIError(f"Unsupported artifact:// resource path: {parsed.path!r}")
 
     if scheme == "hugegraph":
         deployment = _validate_segment(parsed.netloc, field_name="deployment")

@@ -94,7 +94,7 @@ Windows PowerShell：
 
 ## 对外工具面
 
-默认 `core` 工具集注册 24 个工具。`legacy` 兼容工具集注册 10 个工具，不包含 14 个 core 专属工具。工具已注册不代表其所有操作都已启用。
+在默认 `HUGEGRAPH_MCP_CORE_PROFILE=compat` 下，`core` 工具集注册 24 个工具（`mcp_tool_contract_version="2.0"`），`legacy` 注册 10 个工具。将 `HUGEGRAPH_MCP_CORE_PROFILE` 设为 `lean` 时启用按能力过滤的 `3.0` 契约（提供 `prepare_write_tool`、`validate_schema_tool`，并在开启 AI 时提供 `retrieve_context_tool`，同时隐藏未开启的写/管理/AI/占位工具）。工具已注册不代表其所有操作都已启用。
 
 | 工具 | 工具集 | 说明 |
 |------|------|------|
@@ -122,12 +122,15 @@ Windows PowerShell：
 | `list_write_plans_tool` | core | 按最近时间顺序列出当前操作者拥有的写计划 |
 | `cancel_write_plan_tool` | core | 将未执行的 `ISSUED` 写计划取消并转为 `EXPIRED` |
 | `reconcile_write_tool` | core | 仅通过 `plan_id` 和只读检查协调 `UNKNOWN` 或 `PARTIAL` 结果 |
+| `prepare_write_tool` | lean (`3.0`) | 统一写前干跑规划入口，覆盖 `schema`、`import`、`mutate`、`delete` |
+| `validate_schema_tool` | lean (`3.0`) | 校验内联 JSON 或 `artifact_id`。安装 `hugegraph-llm-sdk` 时返回 `validation_scope="schema_structure"`。独立安装时检查必要集合和引用，返回 `validation_scope="limited_fallback"`。 |
+| `retrieve_context_tool` | lean (`3.0`) | 通过 HugeGraph-AI `/v1/retrieve-context` 执行图/向量/混合证据检索（需 `HUGEGRAPH_MCP_ALLOW_AI=true`） |
 
 空白或未知的 `HUGEGRAPH_MCP_TOOLSET` 值会导致启动报错；未设置时使用 `core`。工具注册在进程启动时确定，修改工具集后需要重启服务。
 
 ## MCP Resources 与 Prompts
 
-服务端注册了 4 个 MCP Resource 模板（支持订阅与失效通知）和 6 个 MCP Prompts：
+服务端注册了 6 个 MCP Resource 模板（`hugegraph://` 图资源支持订阅与失效通知；`plan://` 订阅会被显式拒绝）和 6 个 MCP Prompts：
 
 ### Resources
 
@@ -137,6 +140,8 @@ Windows PowerShell：
 | `hugegraph://{deployment}/{graphspace}/{graph}/summary` | `hugegraph_summary` | 图身份信息、标签摘要及观测到的实体数量 |
 | `hugegraph://{deployment}/{graphspace}/{graph}/embeddings/vid` | `hugegraph_vid_embeddings` | 目标图的 AI VID 向量索引状态 |
 | `plan://{plan_id}` | `hugegraph_write_plan` | 脱敏后的写计划与持久化回执只读视图（按操作者归属校验） |
+| `artifact://{artifact_id}` | `hugegraph_artifact_manifest` | 不可变抽取/预览 Artifact 的清单视图（按操作者与租户校验） |
+| `artifact://{artifact_id}/parts/{part_id}` | `hugegraph_artifact_part` | 不可变 MCP Artifact 的有界分片读取视图 |
 
 ### Prompts
 
@@ -211,7 +216,7 @@ Windows PowerShell：
 
 旧的 `plan_hash`、`nonce`、`expires_at` locator 只在 plan-ID 合同引入后的首个兼容版本中保留于 legacy 写入入口。这三个字段必须同时提供，不得与 `plan_id` 混用，并会返回 `LEGACY_CONFIRMATION_DEPRECATED` 警告。新集成必须调用 `confirm_write_tool(plan_id)`。
 
-内置 SQLite plan store（`HUGEGRAPH_MCP_PLAN_STORE=sqlite`）只适用于单个可写 MCP 实例，当 `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` 大于一时会 fail closed。多实例部署请配置 `HUGEGRAPH_MCP_PLAN_STORE=postgres` 及 `HUGEGRAPH_MCP_PLAN_STORE_DSN`。
+内置 SQLite plan store（`HUGEGRAPH_MCP_PLAN_STORE=sqlite`）只适用于单个可写 MCP 实例，当 `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` 大于一时会 fail closed。多实例部署请安装可选 PostgreSQL 依赖（`hugegraph-mcp[postgres]`），配置 `HUGEGRAPH_MCP_PLAN_STORE=postgres` 及 `HUGEGRAPH_MCP_PLAN_STORE_DSN`，并在所有实例间为 `HUGEGRAPH_MCP_STATE_DIR` 挂载共享读写卷，以确保 `LocalArtifactStore`（`artifact://`）的清单与分片可跨实例读取。
 
 ### 操作边界
 
@@ -239,6 +244,8 @@ Schema 和图数据 dry-run 在操作数超过 200 或 payload 超过 1 MiB 时�
 | `HUGEGRAPH_USER` | `admin` | HugeGraph 用户名 |
 | `HUGEGRAPH_PASSWORD` | 空 | HugeGraph 密码 |
 | `HUGEGRAPH_MCP_TOOLSET` | `core` | `core` 或 `legacy`；空白或未知值导致启动失败 |
+| `HUGEGRAPH_MCP_CORE_PROFILE` | `compat` | `compat`（`2.0`，24 个工具）或 `lean`（`3.0`，按能力过滤并启用 `prepare_write_tool`/`validate_schema_tool`/`retrieve_context_tool`） |
+| `HUGEGRAPH_MCP_CONFIRMATION_MODE` | `manual` | `manual` 或 `elicitation`（要求交互式 MCP stdio elicitation 确认后方可执行 `confirm_write_tool`） |
 | `HUGEGRAPH_MCP_READONLY` | `true` | 为 true 时禁止全部受控写入 |
 | `HUGEGRAPH_MCP_ALLOW_AI` | `false` | 是否允许调用 HugeGraph-AI |
 | `HUGEGRAPH_MCP_ADMIN_MODE` | `false` | 是否启用符合条件的管理/调试工具 |
@@ -255,13 +262,18 @@ Schema 和图数据 dry-run 在操作数超过 200 或 payload 超过 1 MiB 时�
 | `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | 持久化 plan store 后端（`sqlite` 或 `postgres`） |
 | `HUGEGRAPH_MCP_PLAN_STORE_DSN` | 未设置 | PostgreSQL 连接 DSN（当 `HUGEGRAPH_MCP_PLAN_STORE=postgres` 时必填） |
 | `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` | `1` | 可写 MCP 实例数；SQLite 要求精确为一 |
-| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` 或 `~/.local/state/hugegraph-mcp` | SQLite plan、operation 与 receipt 数据库目录 |
+| `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` 或 `~/.local/state/hugegraph-mcp` | SQLite plan store 与 `LocalArtifactStore`（`artifacts/`）目录；多实例部署需挂载共享读写卷 |
 | `HUGEGRAPH_MCP_TRANSPORT` | `stdio` | MCP 传输方式（`stdio`、`http`、`streamable-http` 或 `sse`） |
 | `HUGEGRAPH_MCP_HTTP_HOST` | `127.0.0.1` | HTTP/SSE 传输监听地址 |
 | `HUGEGRAPH_MCP_HTTP_PORT` | `8000` | HTTP/SSE 传输监听端口；范围 `1..65535` |
 | `HUGEGRAPH_MCP_HTTP_PATH` | `/mcp` | HTTP 传输端点路径 |
 | `HUGEGRAPH_MCP_DEPLOYMENT` | `default` | MCP Resource URI 中的部署标识 |
 | `HUGEGRAPH_MCP_EVENT_BUS` | `memory` | 用于资源失效通知的进程内事件总线后端 |
+| `HUGEGRAPH_MCP_GRAPH_ROUTES` | 未设置 | JSON 路由定义。公开图工具使用 `default` 路由的连接，并检查租户、作用域和只读策略。全局只读设置也生效。工具参数不支持切换其他别名。 |
+| `HUGEGRAPH_MCP_OAUTH_ISSUER` | 未设置 | Bearer 校验期望的 OAuth2/OIDC `iss` 声明 |
+| `HUGEGRAPH_MCP_OAUTH_AUDIENCE` | 未设置 | Bearer 校验期望的 OAuth2/OIDC `aud` 声明 |
+| `HUGEGRAPH_MCP_OAUTH_JWKS_URL` | 未设置 | RS256/ES256 Bearer Token 校验的远程 JWKS URL |
+| `HUGEGRAPH_MCP_OAUTH_JWKS_JSON` | 未设置 | 内联 JWKS JSON 字符串（配置后优先于远程拉取） |
 
 布尔值不区分大小写，支持 `1/true/yes/on` 和 `0/false/no/off`。非法值采用安全默认值；非法、非有限或越界的数值采用文档默认值。
 

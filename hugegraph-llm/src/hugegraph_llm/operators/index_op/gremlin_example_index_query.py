@@ -16,6 +16,7 @@
 # under the License.
 
 
+import json
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -50,7 +51,11 @@ class GremlinExampleIndexQuery:
         query_embedding = context.get("query_embedding")
         if not isinstance(query_embedding, list):
             query_embedding = self.embedding.get_texts_embeddings([query])[0]
-        return self.vector_index.search(query_embedding, self.num_examples, dis_threshold=1.8)
+        results = self.vector_index.search(query_embedding, self.num_examples, dis_threshold=1.8)
+        # Text-column backends store each example dict as its JSON text; parse it back
+        # here, where the {"query", "gremlin"} shape is known, so chunk text in other
+        # indexes stays untouched.
+        return [json.loads(result) if isinstance(result, str) else result for result in results]
 
     def _build_default_example_index(self):
         properties = pd.read_csv(resource_file("demo", "text2gremlin.csv", root=resource_path)).to_dict(

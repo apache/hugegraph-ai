@@ -57,6 +57,7 @@ class HugeGraphConfig(BaseConfig):
 
     # vector config
     vector_dis_threshold: float = 0.9
+    chunk_dis_threshold: float = 2.0
     topk_per_keyword: int = 1
 
     # rerank config

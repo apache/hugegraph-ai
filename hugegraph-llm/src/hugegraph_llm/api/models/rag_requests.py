@@ -48,10 +48,11 @@ class RAGRequest(BaseModel):
     # Graph Configs
     max_graph_items: int = Query(30, description="Maximum number of items for GQL queries in graph.")
     topk_return_results: int = Query(20, description="Number of sorted results to return finally.")
-    vector_dis_threshold: float = Query(
-        0.9,
-        description="Threshold for vector similarity\
-                                         (results greater than this will be ignored).",
+    vector_dis_threshold: Optional[float] = Query(
+        None,
+        description="Distance threshold override for keyword-to-vertex matching, falling back to \
+                                        VECTOR_DIS_THRESHOLD when omitted. Chunk retrieval always prunes at \
+                                        CHUNK_DIS_THRESHOLD and ignores this field.",
     )
     topk_per_keyword: int = Query(
         1,
@@ -79,10 +80,11 @@ class GraphRAGRequest(BaseModel):
     # Graph Configs
     max_graph_items: int = Query(30, description="Maximum number of items for GQL queries in graph.")
     topk_return_results: int = Query(20, description="Number of sorted results to return finally.")
-    vector_dis_threshold: float = Query(
-        0.9,
-        description="Threshold for vector similarity \
-                                        (results greater than this will be ignored).",
+    vector_dis_threshold: Optional[float] = Query(
+        None,
+        description="Distance threshold override for keyword-to-vertex matching, falling back to \
+                                        VECTOR_DIS_THRESHOLD when omitted. Chunk retrieval always prunes at \
+                                        CHUNK_DIS_THRESHOLD and ignores this field.",
     )
     topk_per_keyword: int = Query(
         1,

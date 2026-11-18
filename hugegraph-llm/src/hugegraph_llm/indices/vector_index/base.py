@@ -32,15 +32,27 @@ class VectorStoreBase(ABC):
         """
         Add a list of vectors and their corresponding properties to the store.
 
+        Non-string values are stored in a backend-defined form and read back
+        in that form: the file-backed store keeps the original Python values
+        (pickle), server-backed JSON-payload stores keep JSON-representable
+        values, and text-column backends store JSON text and return that text.
+        Input APIs (add, remove) take the original values; read APIs (search,
+        get_all_properties) return the stored form. Pass string properties to
+        avoid these per-backend differences.
+
         Args:
             vectors (List[List[float]]): List of embedding vectors.
             props (List[Any]): List of associated metadata or properties for each vector.
         """
 
     @abstractmethod
-    def get_all_properties(self) -> list[str]:
+    def get_all_properties(self) -> list[Any]:
         """
-        #TODO: finish comment
+        Return all properties currently stored in the index.
+
+        Returns:
+            List[Any]: The values passed to add() in their stored form; see
+            add() for the per-backend differences.
         """
 
     @abstractmethod
@@ -66,13 +78,19 @@ class VectorStoreBase(ABC):
             dis_threshold (float): Distance threshold below which results are considered relevant.
 
         Returns:
-            List[Any]: List of properties of the matched vectors.
+            List[Any]: Properties of the matched vectors in the stored form
+            described on add().
         """
 
     @abstractmethod
     def save_index_by_name(self, *name: str):
         """
-        #TODO: finish comment
+        Persist the index under the given name.
+
+        Server-backed stores persist on write and may do nothing here.
+
+        Args:
+            *name (str): Path segments identifying the index.
         """
 
     @abstractmethod
@@ -80,26 +98,55 @@ class VectorStoreBase(ABC):
         self,
     ) -> Dict:
         """
-        #TODO: finish comment
+        Return backend-specific statistics about the index.
+
+        Returns:
+            Dict: Informational stats (e.g. dimensions and entry counts) for display and diagnostics.
         """
 
     @staticmethod
     @abstractmethod
     def from_name(embed_dim: int, *name: str) -> "VectorStoreBase":
         """
-        #TODO: finish comment
+        Return the index registered under the given name.
+
+        Loads persisted data when it exists; otherwise returns an empty index sized to embed_dim.
+        Reusing persisted vectors requires passing their existing dimension as embed_dim: vectors
+        built with a different dimension cannot be reused, so the call returns a fresh empty index
+        sized to embed_dim instead of failing the load. Disposal of the stale data is
+        backend-specific: the file-backed store keeps its saved files untouched, while
+        server-backed stores delete and recreate the underlying collection, so a caller that
+        changes embed_dim must expect to re-index.
+
+        Args:
+            embed_dim (int): Vector dimension used when a new index is needed, including when
+                the persisted dimension cannot be reused.
+            *name (str): Path segments identifying the index.
+
+        Returns:
+            VectorStoreBase: The loaded index, or an empty index sized to embed_dim when no
+                reusable data is persisted.
         """
 
     @staticmethod
     @abstractmethod
     def exist(*name: str) -> bool:
         """
-        #TODO: finish comment
+        Check whether an index exists under the given name.
+
+        Args:
+            *name (str): Path segments identifying the index.
+
+        Returns:
+            bool: True when the index exists.
         """
 
     @staticmethod
     @abstractmethod
-    def clean(*name: str) -> bool:
+    def clean(*name: str) -> None:
         """
-        #TODO: finish comment
+        Delete the index stored under the given name, if it exists.
+
+        Args:
+            *name (str): Path segments identifying the index.
         """

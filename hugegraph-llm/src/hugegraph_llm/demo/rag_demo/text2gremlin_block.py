@@ -30,6 +30,7 @@ from hugegraph_llm.flows.scheduler import SchedulerSingleton
 from hugegraph_llm.utils.embedding_utils import get_index_folder_name
 from hugegraph_llm.utils.hugegraph_utils import run_gremlin_query
 from hugegraph_llm.utils.log import log
+from hugegraph_llm.utils.query_validation import validate_rag_query_length
 
 
 @dataclass
@@ -304,6 +305,7 @@ def graph_rag_recall(
     topk_per_keyword: int,
     get_vertex_only: bool = False,
 ) -> dict:
+    validate_rag_query_length(query)
     context = SchedulerSingleton.get_instance().schedule_flow(
         FlowName.RAG_GRAPH_ONLY,
         query=query,

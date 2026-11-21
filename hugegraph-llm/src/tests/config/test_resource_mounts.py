@@ -18,6 +18,8 @@
 
 """Exercise deployment configuration through the real settings sources and files."""
 
+import pytest
+
 from hugegraph_llm.config import paths
 from hugegraph_llm.config.models import base_config, base_prompt_config
 
@@ -55,6 +57,25 @@ def test_missing_readonly_prompt_uses_memory_without_creating_files(tmp_path, mo
     settings.ensure_yaml_file_exists()
     assert settings.answer_prompt == settings.answer_prompt_EN
     assert not path.parent.exists()
+
+
+@pytest.mark.contract
+@pytest.mark.parametrize("contents", ["", "# No prompt overrides\n"], ids=["empty", "comments-only"])
+def test_empty_prompt_file_uses_defaults_without_rewriting(tmp_path, monkeypatch, contents):
+    from types import SimpleNamespace
+
+    from hugegraph_llm.config.prompt_config import PromptConfig
+
+    path = tmp_path / "config_prompt.yaml"
+    path.write_text(contents, encoding="utf-8")
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(path))
+    settings = PromptConfig(SimpleNamespace(language="EN"))
+
+    settings.ensure_yaml_file_exists()
+
+    assert settings.answer_prompt == settings.answer_prompt_EN
+    assert settings.extract_graph_prompt == settings.extract_graph_prompt_EN
+    assert path.read_bytes() == contents.encode("utf-8")
 
 
 def test_runtime_operators_read_bundled_assets_and_write_index_to_data_root(tmp_path, monkeypatch):

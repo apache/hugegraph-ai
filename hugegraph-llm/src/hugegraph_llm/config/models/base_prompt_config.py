@@ -91,12 +91,17 @@ class BasePromptConfig:
 
     def ensure_yaml_file_exists(self):
         if os.path.exists(yaml_file_path):
-            log.info("Loading prompt file '%s' successfully.", F_NAME)
             with open(yaml_file_path, "r", encoding="utf-8") as file:
                 data = yaml.safe_load(file)
-                # Load existing values from the YAML file into the class attributes
-                for key, value in data.items():
-                    setattr(self, key, value)
+
+            if data is None:
+                self._set_language_defaults()
+                log.info("Prompt file %s is empty; using built-in defaults without writing", yaml_file_path)
+                return
+
+            for key, value in data.items():
+                setattr(self, key, value)
+            log.info("Loading prompt file '%s' successfully.", F_NAME)
 
             # Check if the language in the .env file matches the language in the YAML file
             env_lang = (

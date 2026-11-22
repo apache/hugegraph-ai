@@ -19,6 +19,7 @@
 """Exercise deployment configuration through the real settings sources and files."""
 
 import pytest
+import yaml
 
 from hugegraph_llm.config import paths
 from hugegraph_llm.config.models import base_config, base_prompt_config
@@ -76,6 +77,37 @@ def test_empty_prompt_file_uses_defaults_without_rewriting(tmp_path, monkeypatch
     assert settings.answer_prompt == settings.answer_prompt_EN
     assert settings.extract_graph_prompt == settings.extract_graph_prompt_EN
     assert path.read_bytes() == contents.encode("utf-8")
+
+
+@pytest.mark.contract
+def test_reload_empty_prompt_file_discards_saved_overrides(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from hugegraph_llm.config.prompt_config import PromptConfig
+
+    path = tmp_path / "config_prompt.yaml"
+    overrides = {
+        "graph_schema": "custom schema",
+        "review_graph_prompt": "custom review prompt",
+        "repair_graph_prompt": "custom repair prompt",
+        "graph_extract_split_type": "paragraph",
+        "answer_prompt": "custom answer prompt",
+    }
+    path.write_text(yaml.safe_dump(overrides), encoding="utf-8")
+    monkeypatch.setattr(base_prompt_config, "yaml_file_path", str(path))
+    settings = PromptConfig(SimpleNamespace(language="EN"))
+    settings.ensure_yaml_file_exists()
+    assert {key: getattr(settings, key) for key in overrides} == overrides
+
+    path.write_bytes(b"")
+    settings.ensure_yaml_file_exists()
+
+    assert settings.graph_schema == PromptConfig.graph_schema
+    assert settings.review_graph_prompt == PromptConfig.review_graph_prompt
+    assert settings.repair_graph_prompt == PromptConfig.repair_graph_prompt
+    assert settings.graph_extract_split_type == "document"
+    assert settings.answer_prompt == PromptConfig.answer_prompt_EN
+    assert path.read_bytes() == b""
 
 
 def test_runtime_operators_read_bundled_assets_and_write_index_to_data_root(tmp_path, monkeypatch):

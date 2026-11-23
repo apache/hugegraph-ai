@@ -33,6 +33,7 @@ from pyhugegraph.api.olap import OlapManager
 from pyhugegraph.api.rest import RestManager
 from pyhugegraph.api.schema import SchemaManager
 from pyhugegraph.api.task import TaskManager
+from pyhugegraph.api.variable import VariableManager
 from pyhugegraph.client import PyHugeClient
 from pyhugegraph.structure.rank_data import NeighborRankStep
 from pyhugegraph.utils.exceptions import (
@@ -375,6 +376,62 @@ def test_wait_reuses_http_connections_when_retries_are_disabled():
             assert TaskManager(session).wait(7, timeout=2, poll_interval=0.001)["task_status"] == "success"
             assert len(ports) == 3
             assert len(set(ports)) == 1
+        finally:
+            session.close()
+            server.shutdown()
+            thread.join(timeout=2)
+
+
+@pytest.mark.parametrize(
+    ("method", "call"),
+    [
+        ("GET", lambda variables: variables.get("d")),
+        ("PUT", lambda variables: variables.set("d", {"a": 1})),
+        ("DELETE", lambda variables: variables.remove("d")),
+    ],
+)
+def test_retried_server_errors_raise_the_server_message(method, call):
+    calls = []
+    body = json.dumps(
+        {
+            "exception": "class java.lang.UnsupportedOperationException",
+            "message": "Graph variable value [{a=1}] is of type class java.util.LinkedHashMap is not supported",
+        }
+    ).encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def reply(self):
+            calls.append(self.command)
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            self.reply()
+
+        def do_PUT(self):
+            self.reply()
+
+        def do_DELETE(self):
+            self.reply()
+
+        def log_message(self, *_args):
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        cfg = HGraphConfig(f"http://127.0.0.1:{server.server_port}", "admin", "password", "g", graphspace="DEFAULT")
+        http = requests.Session()
+        http.trust_env = False
+        session = HGraphSession(cfg, retries=2, backoff_factor=0, session=http)
+        try:
+            with pytest.raises(ServerError, match=r"Graph variable value \[\{a=1\}\] .* is not supported"):
+                call(VariableManager(session))
+            assert calls == [method] * 3
         finally:
             session.close()
             server.shutdown()

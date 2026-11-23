@@ -92,6 +92,9 @@ class HGraphSession:
             connect=self._retries,
             backoff_factor=self._backoff_factor,
             status_forcelist=self._status_forcelist,
+            # Hand the last response to the validator once the retries are spent,
+            # so the server's error message is raised instead of a RetryError.
+            raise_on_status=False,
         )
         adapter = _RetryAdapter(max_retries=retry_strategy)
         self._session.mount("http://", adapter)

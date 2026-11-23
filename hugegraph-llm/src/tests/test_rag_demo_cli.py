@@ -44,6 +44,25 @@ def test_gradio_homepage_and_file_upload_schema(monkeypatch):
         client.close()
 
 
+def test_rag_answer_panes_support_inline_and_display_math(monkeypatch):
+    monkeypatch.setenv("GRADIO_ANALYTICS_ENABLED", "false")
+    monkeypatch.setattr(app.admin_settings, "enable_login", "false")
+
+    ui = app.init_rag_ui()
+    answer_panes = [
+        component["props"]
+        for component in ui.config["components"]
+        if component["type"] == "markdown" and "output-box" in component["props"].get("elem_classes", [])
+    ]
+
+    assert len(answer_panes) == 4
+    for pane in answer_panes:
+        assert pane["latex_delimiters"] == [
+            {"left": "$$", "right": "$$", "display": True},
+            {"left": "$", "right": "$", "display": False},
+        ]
+
+
 @pytest.mark.parametrize(
     ("render_name", "provider"),
     [

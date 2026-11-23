@@ -202,30 +202,34 @@ def create_rag_block():
                 lines=3,
             )
 
-            # TODO: Only support inline formula now. Should support block formula
+            # Match the longer delimiter first so $$ is not treated as an empty inline expression.
+            answer_math_delimiters = [
+                {"left": "$$", "right": "$$", "display": True},
+                {"left": "$", "right": "$", "display": False},
+            ]
             gr.Markdown("Basic LLM Answer", elem_classes="output-box-label")
             raw_out = gr.Markdown(
                 elem_classes="output-box",
                 buttons=["copy"],
-                latex_delimiters=[{"left": "$", "right": "$", "display": False}],
+                latex_delimiters=answer_math_delimiters,
             )
             gr.Markdown("Vector-only Answer", elem_classes="output-box-label")
             vector_only_out = gr.Markdown(
                 elem_classes="output-box",
                 buttons=["copy"],
-                latex_delimiters=[{"left": "$", "right": "$", "display": False}],
+                latex_delimiters=answer_math_delimiters,
             )
             gr.Markdown("Graph-only Answer", elem_classes="output-box-label")
             graph_only_out = gr.Markdown(
                 elem_classes="output-box",
                 buttons=["copy"],
-                latex_delimiters=[{"left": "$", "right": "$", "display": False}],
+                latex_delimiters=answer_math_delimiters,
             )
             gr.Markdown("Graph-Vector Answer", elem_classes="output-box-label")
             graph_vector_out = gr.Markdown(
                 elem_classes="output-box",
                 buttons=["copy"],
-                latex_delimiters=[{"left": "$", "right": "$", "display": False}],
+                latex_delimiters=answer_math_delimiters,
             )
             answer_prompt_input = gr.Textbox(
                 value=prompt.answer_prompt,

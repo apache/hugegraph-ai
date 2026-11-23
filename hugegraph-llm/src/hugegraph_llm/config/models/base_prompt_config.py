@@ -91,12 +91,20 @@ class BasePromptConfig:
 
     def ensure_yaml_file_exists(self):
         if os.path.exists(yaml_file_path):
-            log.info("Loading prompt file '%s' successfully.", F_NAME)
             with open(yaml_file_path, "r", encoding="utf-8") as file:
                 data = yaml.safe_load(file)
-                # Load existing values from the YAML file into the class attributes
-                for key, value in data.items():
-                    setattr(self, key, value)
+
+            if data is None:
+                # Remove saved overrides from the instance to expose class defaults.
+                for key in self._prompt_yaml_values():
+                    vars(self).pop(key, None)
+                self._set_language_defaults()
+                log.info("Prompt file %s is empty; using built-in defaults without writing", yaml_file_path)
+                return
+
+            for key, value in data.items():
+                setattr(self, key, value)
+            log.info("Loading prompt file '%s' successfully.", F_NAME)
 
             # Check if the language in the .env file matches the language in the YAML file
             env_lang = (
@@ -130,28 +138,32 @@ class BasePromptConfig:
             self._set_language_defaults()
             log.info("Prompt file %s is absent; using built-in defaults without writing", yaml_file_path)
 
-    def save_to_yaml(self):
-        def to_literal(val):
-            return LiteralStr(val) if isinstance(val, str) else val
-
-        data = {
-            "graph_schema": to_literal(self.graph_schema),
-            "text2gql_graph_schema": to_literal(self.text2gql_graph_schema),
-            "extract_graph_prompt": to_literal(self.extract_graph_prompt),
-            "review_graph_prompt": to_literal(self.review_graph_prompt),
-            "repair_graph_prompt": to_literal(self.repair_graph_prompt),
-            "default_question": to_literal(self.default_question),
-            "custom_rerank_info": to_literal(self.custom_rerank_info),
-            "answer_prompt": to_literal(self.answer_prompt),
-            "keywords_extract_prompt": to_literal(self.keywords_extract_prompt),
-            "gremlin_generate_prompt": to_literal(self.gremlin_generate_prompt),
-            "doc_input_text": to_literal(self.doc_input_text),
-            "graph_extract_split_type": to_literal(self.graph_extract_split_type),
-            "schema_generator_query_examples": to_literal(self.schema_generator_query_examples),
-            "schema_generator_few_shot_examples": to_literal(self.schema_generator_few_shot_examples),
-            "_language_generated": str(self.llm_settings.language).lower().strip(),
-            "generate_extract_prompt_template": to_literal(self.generate_extract_prompt_template),
+    def _prompt_yaml_values(self) -> dict[str, str]:
+        return {
+            "graph_schema": self.graph_schema,
+            "text2gql_graph_schema": self.text2gql_graph_schema,
+            "extract_graph_prompt": self.extract_graph_prompt,
+            "review_graph_prompt": self.review_graph_prompt,
+            "repair_graph_prompt": self.repair_graph_prompt,
+            "default_question": self.default_question,
+            "custom_rerank_info": self.custom_rerank_info,
+            "answer_prompt": self.answer_prompt,
+            "keywords_extract_prompt": self.keywords_extract_prompt,
+            "gremlin_generate_prompt": self.gremlin_generate_prompt,
+            "doc_input_text": self.doc_input_text,
+            "graph_extract_split_type": self.graph_extract_split_type,
+            "schema_generator_query_examples": self.schema_generator_query_examples,
+            "schema_generator_few_shot_examples": self.schema_generator_few_shot_examples,
+            "_language_generated": self._language_generated,
+            "generate_extract_prompt_template": self.generate_extract_prompt_template,
         }
+
+    def save_to_yaml(self):
+        data: dict[str, str] = {
+            key: LiteralStr(value) if isinstance(value, str) else value
+            for key, value in self._prompt_yaml_values().items()
+        }
+        data["_language_generated"] = str(self.llm_settings.language).lower().strip()
         Path(yaml_file_path).parent.mkdir(parents=True, exist_ok=True)
         with open(yaml_file_path, "w", encoding="utf-8") as file:
             yaml.dump(data, file, allow_unicode=True, sort_keys=False, default_flow_style=False)

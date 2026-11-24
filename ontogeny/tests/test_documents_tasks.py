@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import sys
 from pathlib import Path
@@ -28,6 +29,7 @@ from doc_fixtures import make_context
 from sqlalchemy import select
 
 from ontogeny.action.models import OutboxRow
+from ontogeny.documents.engine import DocumentService
 from ontogeny.documents.models import DocumentRow, ExtractCandidateRow, ExtractRunRow
 from ontogeny.documents.tasks import TaskError
 
@@ -173,6 +175,124 @@ async def test_rerun_after_confirm_creates_a_revision(doc_context):
     assert rerun["task"]["supersedes_task_id"] == task_id
     old = await sc.documents.tasks.detail(task_id)
     assert old["status"] == "confirmed"  # only flips when the revision confirms
+    new_id = rerun["task"]["id"]
+    await sc.documents.tasks.run(new_id, "tester")
+    await sc.documents.tasks.confirm(new_id, "tester")
+    old = await sc.documents.tasks.detail(task_id)
+    assert old["status"] == "superseded"
+    with pytest.raises(TaskError, match="superseded"):
+        await sc.documents.tasks.run(task_id, "tester")
+    with pytest.raises(TaskError, match="superseded"):
+        await sc.documents.tasks.save_graph(task_id, old["attempt"]["graph"], "tester")
+    with pytest.raises(TaskError, match="superseded"):
+        await sc.documents.tasks.confirm(task_id, "tester")
+    with pytest.raises(TaskError, match="superseded"):
+        await sc.documents.tasks.rerun(task_id, "tester")
+    assert (await sc.documents.tasks.detail(task_id))["status"] == "superseded"
+    assert (await sc.documents.tasks.confirm(new_id, "tester"))["already"] is True
+
+
+async def test_confirm_serializes_sibling_revisions(doc_context):
+    sc, _, _ = doc_context
+    await sc.sync("supplier")
+    tasks = sc.documents.tasks
+    created = await tasks.create_tasks(
+        "supplier-docs", _file("review.md", NOTE), scope=None, skill=None, principal="tester"
+    )
+    task_id = created["tasks"][0]["id"]
+    await tasks.run(task_id, "tester")
+    await tasks.confirm(task_id, "tester")
+    first = (await tasks.rerun(task_id, "tester"))["task"]["id"]
+    second = (await tasks.rerun(task_id, "tester"))["task"]["id"]
+    for revision in (first, second):
+        await tasks.run(revision, "tester")
+
+    other_tasks = DocumentService(sc).tasks
+    results = await asyncio.gather(
+        tasks.confirm(first, "tester"), other_tasks.confirm(second, "tester"), return_exceptions=True
+    )
+    [error] = [result for result in results if isinstance(result, BaseException)]
+    assert isinstance(error, TaskError)
+    assert "current confirmed revision" in str(error)
+    states = [(await tasks.detail(revision))["status"] for revision in (task_id, first, second)]
+    assert sorted(states) == ["confirmed", "review", "superseded"]
+
+
+async def test_reupload_creates_task_for_active_document_only(doc_context):
+    sc, _, _ = doc_context
+    tasks = sc.documents.tasks
+    first = await tasks.create_tasks(
+        "supplier-docs", _file("replacement.md", NOTE), scope=None, skill=None, principal="tester"
+    )
+    [old_task] = first["tasks"]
+    updated = await tasks.create_tasks(
+        "supplier-docs",
+        _file("replacement.md", NOTE.replace("HIGH", "LOW")),
+        scope=None,
+        skill=None,
+        principal="tester",
+    )
+    [new_task] = updated["tasks"]
+    assert new_task["doc_id"] != old_task["doc_id"]
+
+    async with sc.sessionmaker() as session:
+        assert (await session.get(DocumentRow, old_task["doc_id"])).status == "removed"
+        assert (await session.get(DocumentRow, new_task["doc_id"])).status == "active"
+    with pytest.raises(TaskError, match="inactive document ids"):
+        await tasks.create_tasks(
+            "supplier-docs", [], doc_ids=[old_task["doc_id"]], scope=None, skill=None, principal="tester"
+        )
+    with pytest.raises(TaskError, match="no longer active"):
+        await tasks.run(old_task["id"], "tester")
+    existing = await tasks.create_tasks(
+        "supplier-docs", [], doc_ids=[new_task["doc_id"]], scope=None, skill=None, principal="tester"
+    )
+    assert [task["id"] for task in existing["tasks"]] == [new_task["id"]]
+
+
+async def test_concurrent_uploads_bind_tasks_to_their_own_content(doc_context, monkeypatch):
+    sc, _, _ = doc_context
+    tasks = sc.documents.tasks
+    first_files = _file("same-name.md", NOTE)
+    second_files = _file("same-name.md", NOTE.replace("HIGH", "LOW"))
+    first_written = asyncio.Event()
+    second_ready = asyncio.Event()
+    upload = sc.documents._upload
+    snapshot = tasks._snapshot
+
+    async def wait_for_second(store_name, files):
+        result = await upload(store_name, files)
+        if files == first_files:
+            first_written.set()
+            await second_ready.wait()
+        return result
+
+    async def mark_second_ready(skill):
+        result = await snapshot(skill)
+        if skill is not None:
+            second_ready.set()
+        return result
+
+    monkeypatch.setattr(sc.documents, "_upload", wait_for_second)
+    monkeypatch.setattr(tasks, "_snapshot", mark_second_ready)
+
+    async def second_upload():
+        await first_written.wait()
+        return await tasks.create_tasks("supplier-docs", second_files, scope=None, skill={}, principal="tester")
+
+    first, second = await asyncio.wait_for(
+        asyncio.gather(
+            tasks.create_tasks("supplier-docs", first_files, scope=None, skill=None, principal="tester"),
+            second_upload(),
+        ),
+        timeout=5,
+    )
+    [old_task] = first["tasks"]
+    [new_task] = second["tasks"]
+    assert old_task["doc_id"] != new_task["doc_id"]
+    async with sc.sessionmaker() as session:
+        assert (await session.get(DocumentRow, old_task["doc_id"])).status == "removed"
+        assert (await session.get(DocumentRow, new_task["doc_id"])).status == "active"
 
 
 async def test_task_runs_the_configured_agent_command_directly(tmp_path):

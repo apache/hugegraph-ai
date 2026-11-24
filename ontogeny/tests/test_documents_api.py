@@ -279,12 +279,31 @@ async def test_api_corpus_ingest_runs_and_review(doc_context):
         assert detail["chunk"]["graph"]["vertices"]
         assert detail["current"]["risk_level"] == "HIGH"
 
+        for field, value in (("risk_level", "UNCLASSIFIED"), ("effective_date", "2026-02-30")):
+            invalid = await c.post(
+                f"/api/v1/admin/documents/candidates/{conflict['id']}/accept",
+                json={"overrides": {field: value}},
+            )
+            assert invalid.status_code == 422, invalid.text
+            assert invalid.json()["code"] == "DOCUMENT_ERROR"
+            assert field in invalid.json()["message"]
+            unchanged = (await c.get(f"/api/v1/admin/documents/candidates/{conflict['id']}")).json()
+            assert unchanged["candidate"] == detail["candidate"]
+            assert unchanged["current"] == detail["current"]
+
         accepted = await c.post(
             f"/api/v1/admin/documents/candidates/{conflict['id']}/accept",
             json={"overrides": {"risk_level": "MEDIUM"}, "note": "confirmed"},
         )
         assert accepted.status_code == 200, accepted.text
         assert accepted.json()["candidate"]["status"] == "accepted"
+        rejected = await c.post(
+            f"/api/v1/admin/documents/candidates/{conflict['id']}/reject",
+            json={"reason": "second decision"},
+        )
+        assert rejected.status_code == 422
+        unchanged = (await c.get(f"/api/v1/admin/documents/candidates/{conflict['id']}")).json()
+        assert unchanged["candidate"] == accepted.json()["candidate"]
 
         # accepted data is ordinary ontology data: the query surface sees it
         q = await c.post("/api/v1/objects/supplier-note/query", json={"limit": 10})

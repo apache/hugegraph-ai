@@ -26,7 +26,7 @@ from sqlalchemy import JSON, DateTime, Index, String, Text, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..core.loader import OntologyPackage
-from ..core.models import RESOURCE_BY_KIND, AnyResource, JoinTableJoin
+from ..core.models import RESOURCE_BY_KIND, AnyResource, ExtractedJoin, JoinTableJoin
 from ..core.validator import validate
 from ..db import Base
 from ..errors import DSLValidationError
@@ -156,7 +156,7 @@ class RegistryService:
         tables.update(
             compiled.link_table(name)
             for name, link in compiled.links.items()
-            if isinstance(link.spec.join, JoinTableJoin)
+            if isinstance(link.spec.join, (JoinTableJoin, ExtractedJoin))
         )
         # Retired definitions still own their tables: switching or removing a
         # resource does not remove its materialized data or sync checkpoint.

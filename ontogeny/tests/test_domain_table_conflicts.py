@@ -32,7 +32,7 @@ from ontogeny.stores.repo import utcnow
 from ontogeny.stores.sync import SyncStateRow
 
 
-def package(root, name, objects=(), link=None):
+def package(root, name, objects=(), link=None, link_kind="join-table"):
     root.mkdir(parents=True, exist_ok=True)
 
     def resource(kind, name, spec):
@@ -57,6 +57,13 @@ def package(root, name, objects=(), link=None):
             },
         )
     if link:
+        join = {"kind": link_kind}
+        if link_kind == "join-table":
+            join.update(
+                store="source",
+                relation={"table": "members"},
+                keys={"source": {"id": "src_id"}, "target": {"id": "dst_id"}},
+            )
         resource(
             "LinkType",
             link,
@@ -64,12 +71,7 @@ def package(root, name, objects=(), link=None):
                 "source": objects[0],
                 "target": objects[1],
                 "cardinality": "MANY_TO_MANY",
-                "join": {
-                    "kind": "join-table",
-                    "store": "source",
-                    "relation": {"table": "members"},
-                    "keys": {"source": {"id": "src_id"}, "target": {"id": "dst_id"}},
-                },
+                "join": join,
             },
         )
     return root
@@ -130,17 +132,29 @@ async def test_publish_cannot_claim_another_domains_current_or_retired_tables(tm
         await sc.engine.dispose()
 
 
-async def test_join_table_names_are_reserved_even_with_disjoint_object_names(tmp_path):
-    first = package(tmp_path / "first", "first-domain", ["container", "item"], "members")
-    second = package(tmp_path / "second", "second-domain", ["group", "person"], "members")
+@pytest.mark.parametrize("owner_kind", ["join-table", "extracted"])
+@pytest.mark.parametrize("claim_kind", ["join-table", "extracted"])
+@pytest.mark.parametrize("retire", [False, True])
+async def test_materialized_link_table_names_are_reserved(tmp_path, owner_kind, claim_kind, retire):
+    first = package(tmp_path / "first", "first-domain", ["container", "item"], "members", owner_kind)
+    empty = package(tmp_path / "empty", "empty-domain")
+    second = package(tmp_path / "second", "second-domain", ["group", "person"], "members", claim_kind)
     sc = ServiceContext(Settings(db_dsn=f"sqlite+aiosqlite:///{tmp_path / 'main.db'}"), str(first))
     await sc.initialize()
     try:
         async with sc.sessionmaker() as db:
             await sc.repo.link_add(db, "members", "C-1", "I-1", utcnow())
             await db.commit()
+        if retire:
+            await sc.activate_domain(empty)
+        active_runtime = sc.compiled
         with pytest.raises(DSLValidationError, match="ontogeny_lnk_members"):
             await sc.activate_domain(second)
+        assert sc.compiled is active_runtime
+        async with sc.sessionmaker() as db:
+            assert await db.scalar(select(ResourceRow).where(ResourceRow.pkg == "second-domain")) is None
+        if retire:
+            await sc.activate_domain(first)
         async with sc.sessionmaker() as db:
             assert await sc.repo.link_members(db, "members") == [("C-1", "I-1")]
     finally:

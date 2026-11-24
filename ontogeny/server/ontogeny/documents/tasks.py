@@ -28,11 +28,12 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+from asyncio import Lock
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from ..errors import NotFoundError, OOError
 from . import corpus, skills
@@ -162,11 +163,27 @@ class TaskService:
         except ValueError as exc:
             raise TaskError(str(exc)) from exc
 
-    def _doc(self, session, task: DocumentTaskRow) -> DocumentRow:
-        doc = session.get(DocumentRow, task.doc_id)
+    async def _active_doc(self, session, task: DocumentTaskRow) -> DocumentRow:
+        doc = await session.get(DocumentRow, task.doc_id)
         if doc is None:
             raise NotFoundError(f"document {task.doc_id} not found")
+        if doc.status != "active":
+            raise TaskError(f"document {doc.id} is no longer active")
         return doc
+
+    async def _task_lock(self, task_id: int) -> Lock:
+        # Short mutation phases share the corpus lock. Resolve the store before
+        # loading the task state that the mutation will rely on.
+        async with self.sc.sessionmaker() as session:
+            store = await session.scalar(select(DocumentTaskRow.store).where(DocumentTaskRow.id == task_id))
+        if store is None:
+            raise NotFoundError(f"no task {task_id}")
+        return self.docs._lock(store)
+
+    @staticmethod
+    def _require_current_revision(task: DocumentTaskRow) -> None:
+        if task.status == "superseded":
+            raise TaskError("superseded task is immutable")
 
     # -------------------------------------------------------------- skills
 
@@ -283,74 +300,81 @@ class TaskService:
             raise TaskError("choose at least one file or existing document")
         bundle = self._bundle(store_name, scope)
         snapshot = await self._snapshot(skill)
-        written: list[str] = []
-        if files:
-            uploaded = await self.docs._upload(store_name, files)
-            written = list(uploaded.get("written") or [])
-        _, unreadable = await self.docs._refresh_corpus(store_name)
-        root = self.docs._root(self.docs.store(store_name))
-        paths = {root / path for path in written}
-        blocked_uploads = sorted(
-            str(path.relative_to(root)) for path in paths if any(path.is_relative_to(blocked) for blocked in unreadable)
-        )
-        if blocked_uploads:
-            raise TaskError(f"could not read uploaded documents: {blocked_uploads}")
-        wanted_ids = set(doc_ids or [])
-        async with self.sc.sessionmaker() as session:
-            docs = (await session.execute(select(DocumentRow).where(DocumentRow.store == store_name))).scalars().all()
-            selected = [d for d in docs if d.id in wanted_ids or Path(d.path).resolve() in paths]
-            if not selected:
-                raise TaskError("no uploaded or existing document was found")
-            if wanted_ids:
-                missing = wanted_ids - {d.id for d in selected}
-                if missing:
-                    raise TaskError(f"unknown document ids: {sorted(missing)}")
-            tasks = []
-            for doc in selected:
-                existing = (
-                    (
-                        await session.execute(
-                            select(DocumentTaskRow)
-                            .where(
-                                DocumentTaskRow.doc_id == doc.id,
-                                DocumentTaskRow.status.in_(("draft", "review", "failed")),
-                            )
-                            .order_by(DocumentTaskRow.id.desc())
-                        )
-                    )
-                    .scalars()
-                    .first()
+        async with self.docs._lock(store_name):
+            written: list[str] = []
+            if files:
+                uploaded = await self.docs._upload(store_name, files)
+                written = list(uploaded.get("written") or [])
+            _, unreadable = await self.docs._refresh_corpus_locked(store_name)
+            root = self.docs._root(self.docs.store(store_name))
+            paths = {root / path for path in written}
+            blocked_uploads = sorted(
+                str(path.relative_to(root))
+                for path in paths
+                if any(path.is_relative_to(blocked) for blocked in unreadable)
+            )
+            if blocked_uploads:
+                raise TaskError(f"could not read uploaded documents: {blocked_uploads}")
+            wanted_ids = set(doc_ids or [])
+            async with self.sc.sessionmaker() as session:
+                docs = await session.scalars(
+                    select(DocumentRow).where(DocumentRow.store == store_name, DocumentRow.status == "active")
                 )
-                if existing is None:
-                    latest = (
+                selected = [d for d in docs if d.id in wanted_ids or Path(d.path).resolve() in paths]
+                if wanted_ids:
+                    missing = wanted_ids - {d.id for d in selected}
+                    if missing:
+                        raise TaskError(f"unknown or inactive document ids: {sorted(missing)}")
+                if not selected:
+                    raise TaskError("no uploaded or existing document was found")
+                tasks = []
+                for doc in selected:
+                    existing = (
                         (
                             await session.execute(
                                 select(DocumentTaskRow)
-                                .where(DocumentTaskRow.doc_id == doc.id)
-                                .order_by(DocumentTaskRow.revision.desc(), DocumentTaskRow.id.desc())
+                                .where(
+                                    DocumentTaskRow.doc_id == doc.id,
+                                    DocumentTaskRow.status.in_(("draft", "review", "failed")),
+                                )
+                                .order_by(DocumentTaskRow.id.desc())
                             )
                         )
                         .scalars()
                         .first()
                     )
-                    existing = DocumentTaskRow(
-                        store=store_name,
-                        doc_id=doc.id,
-                        status="draft",
-                        revision=(latest.revision + 1) if latest is not None else 1,
-                        supersedes_task_id=latest.id if latest is not None and latest.status == "confirmed" else None,
-                        created_by=principal,
-                    )
-                    session.add(existing)
-                existing.scope = scope
-                existing.schema_hash = bundle.hash
-                existing.skill = snapshot
-                existing.skill_hash = snapshot["hash"]
-                existing.error = None
-                existing.status = "draft"
-                await session.flush()
-                tasks.append(self._task_dict(existing, doc))
-            await session.commit()
+                    if existing is None:
+                        latest = (
+                            (
+                                await session.execute(
+                                    select(DocumentTaskRow)
+                                    .where(DocumentTaskRow.doc_id == doc.id)
+                                    .order_by(DocumentTaskRow.revision.desc(), DocumentTaskRow.id.desc())
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                        existing = DocumentTaskRow(
+                            store=store_name,
+                            doc_id=doc.id,
+                            status="draft",
+                            revision=(latest.revision + 1) if latest is not None else 1,
+                            supersedes_task_id=latest.id
+                            if latest is not None and latest.status == "confirmed"
+                            else None,
+                            created_by=principal,
+                        )
+                        session.add(existing)
+                    existing.scope = scope
+                    existing.schema_hash = bundle.hash
+                    existing.skill = snapshot
+                    existing.skill_hash = snapshot["hash"]
+                    existing.error = None
+                    existing.status = "draft"
+                    await session.flush()
+                    tasks.append(self._task_dict(existing, doc))
+                await session.commit()
         return {"tasks": tasks, "written": written, "schema_hash": bundle.hash, "scan_complete": not unreadable}
 
     async def list_tasks(self, store_name: str | None = None, status: str | None = None) -> dict[str, Any]:
@@ -496,15 +520,15 @@ class TaskService:
     # ---------------------------------------------------------------- run
 
     async def run(self, task_id: int, principal: str) -> dict[str, Any]:
-        async with self.sc.sessionmaker() as session:
+        lock = await self._task_lock(task_id)
+        async with lock, self.sc.sessionmaker() as session:
             task = await session.get(DocumentTaskRow, task_id)
             if task is None:
                 raise NotFoundError(f"no task {task_id}")
+            self._require_current_revision(task)
             if task.status == "confirmed":
                 raise TaskError("confirmed task is immutable; rerun creates a new revision")
-            doc = await session.get(DocumentRow, task.doc_id)
-            if doc is None:
-                raise NotFoundError(f"document {task.doc_id} not found")
+            doc = await self._active_doc(session, task)
             bundle = self._bundle(task.store, task.scope)
             last = (
                 await session.execute(
@@ -580,10 +604,13 @@ class TaskService:
                         seen_edges.add(key)
                     edges.append(edge)
             graph = {"vertices": vertices, "edges": edges}
-            validation = await self._validate(task_id, graph, bundle)
-            async with self.sc.sessionmaker() as session:
+            async with lock, self.sc.sessionmaker() as session:
                 attempt = await session.get(DocumentAttemptRow, attempt_id)
                 task = await session.get(DocumentTaskRow, task_id)
+                if task.status != "running" or task.current_attempt_id != attempt_id:
+                    raise TaskError("task changed during extraction")
+                await self._active_doc(session, task)
+                validation = await self._validate(task_id, graph, bundle)
                 attempt.status = "review"
                 attempt.agent_run_id = result.get("agent_run_id")
                 attempt.provider = result.get("provider")
@@ -596,14 +623,14 @@ class TaskService:
                 await session.commit()
             return await self.detail(task_id)
         except Exception as exc:
-            async with self.sc.sessionmaker() as session:
+            async with lock, self.sc.sessionmaker() as session:
                 attempt = await session.get(DocumentAttemptRow, attempt_id)
                 task = await session.get(DocumentTaskRow, task_id)
                 if attempt is not None:
                     attempt.status = "failed"
                     attempt.error = f"{type(exc).__name__}: {exc}"[:4000]
                     attempt.finished_at = _dt.datetime.now(_dt.UTC)
-                if task is not None:
+                if task is not None and task.status == "running" and task.current_attempt_id == attempt_id:
                     task.status = "failed"
                     task.error = f"{type(exc).__name__}: {exc}"[:4000]
                 await session.commit()
@@ -662,12 +689,14 @@ class TaskService:
             or not isinstance(graph.get("edges"), list)
         ):
             raise TaskError("graph must contain vertices[] and edges[]")
-        async with self.sc.sessionmaker() as session:
+        async with await self._task_lock(task_id), self.sc.sessionmaker() as session:
             task = await session.get(DocumentTaskRow, task_id)
             if task is None:
                 raise NotFoundError(f"no task {task_id}")
+            self._require_current_revision(task)
             if task.status == "confirmed":
                 raise TaskError("confirmed task is immutable")
+            await self._active_doc(session, task)
             attempt = (
                 await session.get(DocumentAttemptRow, task.current_attempt_id) if task.current_attempt_id else None
             )
@@ -693,12 +722,14 @@ class TaskService:
     # ------------------------------------------------------------- confirm
 
     async def confirm(self, task_id: int, principal: str) -> dict[str, Any]:
-        async with self.sc.sessionmaker() as session:
+        async with await self._task_lock(task_id), self.sc.sessionmaker() as session:
             task = await session.get(DocumentTaskRow, task_id)
             if task is None:
                 raise NotFoundError(f"no task {task_id}")
+            self._require_current_revision(task)
             if task.status == "confirmed":
                 return {"task": await self.detail(task_id), "already": True}
+            doc = await self._active_doc(session, task)
             if task.current_attempt_id is None:
                 raise TaskError("task has no attempt to confirm")
             attempt = await session.get(DocumentAttemptRow, task.current_attempt_id)
@@ -714,9 +745,19 @@ class TaskService:
                     "task has unresolved blockers; fix the graph before confirming",
                     details={"blockers": validation["blockers"]},
                 )
-            doc = await session.get(DocumentRow, task.doc_id)
+            if task.supersedes_task_id is not None:
+                # Only one successor can claim the previous revision. This
+                # update rolls back with the graph writes if confirmation fails.
+                previous_id = await session.scalar(
+                    update(DocumentTaskRow)
+                    .where(DocumentTaskRow.id == task.supersedes_task_id, DocumentTaskRow.status == "confirmed")
+                    .values(status="superseded")
+                    .returning(DocumentTaskRow.id)
+                )
+                if previous_id is None:
+                    raise TaskError("task no longer follows the current confirmed revision")
             text = "\n\n".join(str(c.get("text") or "") for c in (attempt.chunks or []) if isinstance(c, dict))
-            if not text and doc is not None:
+            if not text:
                 text, _ = corpus.read_for_agent(Path(doc.path))
             packet = SimpleNamespace(doc_id=task.doc_id, chunk_index=0, text=text)
             # Attempt ids and extraction run ids are independent sequences.
@@ -833,13 +874,8 @@ class TaskService:
             # document row is the one place the console reads "how much of this
             # file is in the graph" from -- leaving it at 0 chunks after a
             # confirmed task reads as "nothing was imported".
-            if doc is not None:
-                doc.extracted_at = _dt.datetime.now(_dt.UTC)
-                doc.chunk_count = max(1, len(attempt.chunks or []))
-            if task.supersedes_task_id:
-                old = await session.get(DocumentTaskRow, task.supersedes_task_id)
-                if old is not None:
-                    old.status = "superseded"
+            doc.extracted_at = _dt.datetime.now(_dt.UTC)
+            doc.chunk_count = max(1, len(attempt.chunks or []))
             await session.commit()
             result = {"summary": summary, "task": await self.detail(task_id), "already": False}
         return result
@@ -859,12 +895,12 @@ class TaskService:
         is updated in place and its stale attempt is detached; the UI can then
         run the new configuration.
         """
-        async with self.sc.sessionmaker() as session:
+        async with await self._task_lock(task_id), self.sc.sessionmaker() as session:
             task = await session.get(DocumentTaskRow, task_id)
             if task is None:
                 raise NotFoundError(f"no task {task_id}")
-            if task.status == "superseded":
-                raise TaskError("superseded task cannot be reconfigured")
+            self._require_current_revision(task)
+            await self._active_doc(session, task)
             bundle = self._bundle(task.store, scope)
             snapshot = await self._snapshot(skill)
             if task.status == "confirmed":
@@ -907,26 +943,31 @@ class TaskService:
             return await self.detail(task_id)
 
     async def rerun(self, task_id: int, principal: str) -> dict[str, Any]:
-        async with self.sc.sessionmaker() as session:
+        async with await self._task_lock(task_id), self.sc.sessionmaker() as session:
             task = await session.get(DocumentTaskRow, task_id)
             if task is None:
                 raise NotFoundError(f"no task {task_id}")
-            if task.status != "confirmed":
-                return {"task": await self.run(task_id, principal), "revision": task.revision}
-            new = DocumentTaskRow(
-                store=task.store,
-                doc_id=task.doc_id,
-                status="draft",
-                revision=task.revision + 1,
-                supersedes_task_id=task.id,
-                scope=task.scope,
-                schema_hash=task.schema_hash,
-                skill=task.skill,
-                skill_hash=task.skill_hash,
-                created_by=principal,
-            )
-            session.add(new)
-            await session.flush()
-            new_id = new.id
-            await session.commit()
-        return {"task": await self.detail(new_id), "revision": task.revision + 1}
+            self._require_current_revision(task)
+            await self._active_doc(session, task)
+            revision = task.revision
+            new_id = None
+            if task.status == "confirmed":
+                revision += 1
+                new = DocumentTaskRow(
+                    store=task.store,
+                    doc_id=task.doc_id,
+                    status="draft",
+                    revision=revision,
+                    supersedes_task_id=task.id,
+                    scope=task.scope,
+                    schema_hash=task.schema_hash,
+                    skill=task.skill,
+                    skill_hash=task.skill_hash,
+                    created_by=principal,
+                )
+                session.add(new)
+                await session.flush()
+                new_id = new.id
+                await session.commit()
+        detail = await self.detail(new_id) if new_id is not None else await self.run(task_id, principal)
+        return {"task": detail, "revision": revision}

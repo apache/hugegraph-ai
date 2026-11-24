@@ -161,6 +161,8 @@ export function DocumentWorkspace({
   const graph = parsed.graph ?? attempt?.graph ?? emptyGraph()
   const dirty = Boolean(parsed.graph) && JSON.stringify(parsed.graph) !== JSON.stringify(attempt?.graph ?? emptyGraph())
   const graphEmpty = !(graph.vertices?.length) && !(graph.edges?.length)
+  const superseded = detail?.status === 'superseded'
+  const readOnly = detail?.status === 'confirmed' || superseded
   const confirmReason = !detail?.attempt
     ? t('documents.task.runFirst')
     : graphEmpty
@@ -170,7 +172,7 @@ export function DocumentWorkspace({
         : dirty
           ? t('documents.task.saveFirst')
           : null
-  const stage = detail?.status === 'confirmed' ? 3 : detail?.status === 'review' ? 2 : 1
+  const stage = readOnly ? 3 : detail?.status === 'review' ? 2 : 1
   const steps = [t('documents.task.step.run'), t('documents.task.step.review'), t('documents.task.step.confirm')]
 
   return (
@@ -272,16 +274,18 @@ export function DocumentWorkspace({
               <span className="text-[12.5px] font-medium" style={{ color: 'var(--text-primary)' }}>{detail.name}</span>
               <span className="text-[10.5px] muted">{t('documents.task.revision')} {detail.revision}</span>
               <div className="ml-auto flex shrink-0 flex-nowrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  onClick={() => setConfigOpen(true)}
-                  className="shrink-0 whitespace-nowrap"
-                  data-testid="documents-task-config"
-                >
-                  {t('documents.task.configButton')}
-                </Button>
-                {detail.status !== 'confirmed' ? (
+                {!superseded ? (
+                  <Button
+                    size="sm"
+                    variant="subtle"
+                    onClick={() => setConfigOpen(true)}
+                    className="shrink-0 whitespace-nowrap"
+                    data-testid="documents-task-config"
+                  >
+                    {t('documents.task.configButton')}
+                  </Button>
+                ) : null}
+                {!readOnly ? (
                   <Button
                     size="sm"
                     variant="primary"
@@ -294,7 +298,7 @@ export function DocumentWorkspace({
                     {t('documents.task.run')}
                   </Button>
                 ) : null}
-                {detail.status !== 'confirmed' && detail.attempt ? (
+                {!readOnly && detail.attempt ? (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -307,7 +311,7 @@ export function DocumentWorkspace({
                     {t('documents.task.save')}
                   </Button>
                 ) : null}
-                {detail.status !== 'confirmed' ? (
+                {!readOnly ? (
                   <Button
                     size="sm"
                     variant="success"
@@ -321,17 +325,17 @@ export function DocumentWorkspace({
                   >
                     {t('documents.task.confirm')}
                   </Button>
-                ) : (
+                ) : detail.status === 'confirmed' ? (
                   <Button size="sm" variant="subtle" onClick={() => rerun.mutate()} disabled={rerun.isPending} data-testid="documents-task-rerun">
                     {t('documents.task.rerun')}
                   </Button>
-                )}
+                ) : null}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2" style={{ borderColor: 'var(--border-subtle)' }} data-testid="documents-task-flow">
               {steps.map((label, i) => {
-                const done = stage > i + 1 || detail.status === 'confirmed'
-                const current = stage === i + 1 && detail.status !== 'confirmed'
+                const done = stage > i + 1 || readOnly
+                const current = stage === i + 1 && !readOnly
                 return (
                   <div key={label} className="flex items-center gap-1.5">
                     <span
@@ -361,7 +365,7 @@ export function DocumentWorkspace({
                 compact
                 title={t('documents.task.runFirst')}
                 description={t('documents.task.runHint')}
-                action={<Button size="sm" onClick={() => run.mutate()} disabled={run.isPending} data-testid="documents-task-run-empty">{t('documents.task.runNow')}</Button>}
+                action={!readOnly ? <Button size="sm" onClick={() => run.mutate()} disabled={run.isPending} data-testid="documents-task-run-empty">{t('documents.task.runNow')}</Button> : undefined}
               />
             ) : (
               <>
@@ -384,12 +388,12 @@ export function DocumentWorkspace({
                     <ExtractionGraph
                       graph={graph}
                       jsonValue={json}
-                      onJsonChange={setJson}
+                      onJsonChange={readOnly ? undefined : setJson}
                       height={420}
                       testId="documents-task-extraction"
                     />
                     {parsed.error ? <p className="mt-2 text-[11px] text-[var(--tone-danger-fg)]">{parsed.error}</p> : null}
-                    <p className="mt-2 text-[11px] muted">{dirty ? t('documents.task.saveFirst') : t('documents.task.editHint')}</p>
+                    {!readOnly ? <p className="mt-2 text-[11px] muted">{dirty ? t('documents.task.saveFirst') : t('documents.task.editHint')}</p> : null}
                   </div>
                 </Split>
                 {warnings.length ? (
@@ -421,7 +425,7 @@ export function DocumentWorkspace({
         )}
       </Panel>
 
-      {configOpen && detail ? (
+      {configOpen && detail && !superseded ? (
         <TaskConfigDialog
           store={store}
           task={detail}

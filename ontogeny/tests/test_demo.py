@@ -23,6 +23,7 @@ These cover the "one command" promise: seed -> copy package -> publish -> sync
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 from pathlib import Path
@@ -258,6 +259,9 @@ class TestDemoIsRunnable:
             await client.post(
                 "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
+                headers={
+                    "X-Ontogeny-Principal": json.dumps({"id": f"demo-user-{_ % 2}", "Role": ["product"], "site": "hq"})
+                },
             )
         agg = await client.post("/api/v1/evolve/aggregate")
         assert any(s["kind"] == "unmapped_filter_field" for s in agg.json()["created"])

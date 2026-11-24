@@ -46,7 +46,7 @@ There is no mysticism in the loop: every beat is deterministic code plus a persi
 | Signal (kind) | Threshold (168h window) | Plain words · what it says | Channel |
 |---|---|---|---|
 | `empty_query_rate` | ≥10% | ≥10% of queries on a type return 0 rows — "everyone keeps querying it and finds nothing". Data may not be synced, or the model mismatches reality. | informational (display only) |
-| `unmapped_filter_field` | same field ≥5 times | **the strongest evolution signal**: the filter field exists in the source database but is not modeled (a schema gap) — directly generates an "add optional property" proposal. | **auto proposal** (T0 whitelist) |
+| `unmapped_filter_field` | same field ≥5 times | Repeated queries use a field absent from the active schema. Queries from at least two distinct named principals make it a suspected schema gap. | Optional-property proposal when the evidence meets the gate, informational otherwise |
 | `hot_query` | identical filters ≥3 times | the same query runs repeatedly **with results** — high-frequency real usage. A different direction: not "what broke" but **freezing key queries into eval cases** (eval-case-synth), so regression exams track real usage. | eval asset (case synthesis) |
 | `slow_query_p95` | P95 ≥2000ms | a type's P95 latency over 2 seconds — "slower every time". Hints at indexes, materialized columns or projection acceleration; a performance signal, the model is not changed. | informational (display only) |
 | `action_rule_reject` | ≥30% and ≥5 samples | an action keeps getting stopped by its business rules — "people keep trying, the rules keep saying no". Rules out of touch with reality: too strict, or the process should change. **Rules are human intent and are never auto-changed.** | informational (display only) |
@@ -55,6 +55,8 @@ There is no mysticism in the loop: every beat is deterministic code plus a persi
 | `approval_reject_rate` | ≥30% and ≥5 samples | **a governance-surface signal**: humans keep refusing an agent plugin's write approvals — "the AI keeps asking, the human keeps saying no". Either the plugin's permissions are too wide or it should take another action. **Presented to humans only; policy is never auto-changed.** | informational (display only) |
 
 Three design invariants: ① **thresholds are tunable** — every trigger line can be overridden by the domain's EvolutionPolicy.observability (different domains, different sensitivities); ② **de-duplicated** — identical (kind + evidence fingerprint) within a window records once, rolling windows don't spam; ③ **informational ≠ evolvable** — many errors don't mean the model should change; only **structural gaps** (missing fields, bad rows) enter the auto-proposal channel, the rest are presented to humans.
+
+Anonymous requests contribute to query counts but supply no distinct identity. Findings supported by fewer than two named principals, including older signals without a principal count, remain visible without generating a proposal. Unmapped-field evidence retains its first and last observation timestamps, but a shift in those timestamps alone does not create another signal.
 
 ## T0–T3 tiered promotion（EvolutionPolicy · evolution.yaml，human-editable only）
 
@@ -69,12 +71,12 @@ Three design invariants: ① **thresholds are tunable** — every trigger line c
 
 ## A worked example: one field from "the dashboard is red" to "modeled automatically"
 
-Scenario: a shop-floor analytics dashboard keeps filtering purchase orders by `cost_center`. The column really exists in the source table `mes.purchase_orders` but was missed during modeling — the query API throws `NotFoundError` for unmapped filter fields, and the dashboard stays red. Nobody files a ticket; the loop finds it itself.
+Scenario: two operators keep filtering purchase orders by `cost_center` on a shop-floor analytics dashboard. The column exists in the source table `mes.purchase_orders` but was missed during modeling. The query API returns `NotFoundError` for unmapped filter fields, and the loop detects the suspected schema gap.
 
 ```json
 // Beat 1 · signal — detector #2 of ontogeny evolve signals (fires at ≥5)
 {"id": 17, "kind": "unmapped_filter_field",
- "evidence": {"object_type": "purchase-order", "field": "cost_center", "count": 23}}   // → ontogeny_evolve_signal
+ "evidence": {"object_type": "purchase-order", "field": "cost_center", "count": 23, "distinct_principals": 2}}
 ```
 
 ```json
@@ -82,7 +84,7 @@ Scenario: a shop-floor analytics dashboard keeps filtering purchase orders by `c
 {"id": 42, "gap_kind": "add-optional-property", "origin": "heuristic", "status": "proposed",
  "diff": [{"mutation": "add-optional-property", "object": "purchase-order",
            "prop": "cost_center", "type": "string", "column": "cost_center"}],
- "rationale": "filter field 'cost_center' used 23x on 'purchase-order' but is not modeled; add as optional property"}
+ "rationale": "filter field 'cost_center' used 23x across 2 distinct principals on 'purchase-order' but is not modeled; suspected schema gap, add as optional property"}
 // the rationale carries the evidence count; without it the proposal is dropped
 ```
 

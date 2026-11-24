@@ -31,7 +31,7 @@ from test_function_ecosystem import PRODUCT
 from ontogeny.action.models import OutboxRow
 from ontogeny.api import build_app
 from ontogeny.config import Settings
-from ontogeny.core.models import PropertyDef
+from ontogeny.core.models import ExtractedJoin, PropertyDef
 from ontogeny.functions.derivation import DerivationPendingRow
 from ontogeny.service import ServiceContext
 from ontogeny.stores.repo import utcnow
@@ -67,12 +67,16 @@ async def test_postgres_numeric_and_string_keys_across_api_action_and_repository
         composite.spec.properties.pop("derived_count")
         lot = compiled.objects["wafer-lot"].model_copy(deep=True)
         lot.metadata.name = "int-lot"
+        lot.spec.properties["lot_id"].type = "integer"
         lot.spec.properties["version_id"].type = "integer"
         link = compiled.links["version-lots"].model_copy(deep=True)
         link.metadata.name = "int-version-lots"
         link.spec.source = "int-version"
         link.spec.target = "int-lot"
         link.spec.join.keys = {"int-lot.version_id": "int-version.version_id"}
+        extracted_link = link.model_copy(deep=True)
+        extracted_link.metadata.name = "extracted-int-lots"
+        extracted_link.spec.join = ExtractedJoin(kind="extracted")
         action = compiled.actions["tapeout"].model_copy(deep=True)
         action.spec.target = "int-version"
         sc._rebuild_services(
@@ -81,7 +85,7 @@ async def test_postgres_numeric_and_string_keys_across_api_action_and_repository
                 content_hash=uuid.uuid4().hex,
                 objects={**compiled.objects, "int-version": numeric, "composite-version": composite, "int-lot": lot},
                 actions={**compiled.actions, "tapeout": action},
-                links={**compiled.links, "int-version-lots": link},
+                links={**compiled.links, "int-version-lots": link, "extracted-int-lots": extracted_link},
             )
         )
         async with sc.sessionmaker() as s:
@@ -96,12 +100,11 @@ async def test_postgres_numeric_and_string_keys_across_api_action_and_repository
             await sc.repo.action_insert(s, "tapeout-version", {"version_id": "42", "project": "plain"}, utcnow())
             await sc.repo.action_insert(s, "composite-version", {"version_id": 42, "project": "a"}, utcnow())
             await sc.repo.action_insert(s, "composite-version", {"version_id": 42, "project": "b"}, utcnow())
-            await sc.repo.action_insert(
-                s, "int-lot", {"lot_id": "line", "version_id": 42, "site": "fab-site-a"}, utcnow()
-            )
+            await sc.repo.action_insert(s, "int-lot", {"lot_id": 75, "version_id": 42, "site": "fab-site-a"}, utcnow())
+            await sc.repo.link_assert(s, "extracted-int-lots", "42", "75", {"doc_id": "document"}, utcnow())
             await s.commit()
 
-        await sc.derivation.handle_event(OutboxRow(object_type="int-lot", object_id="line", op="upsert"))
+        await sc.derivation.handle_event(OutboxRow(object_type="int-lot", object_id="75", op="upsert"))
         async with sc.sessionmaker() as s:
             assert await s.get(DerivationPendingRow, {"object_type": "int-version", "object_id": "42"}) is not None
 
@@ -115,7 +118,28 @@ async def test_postgres_numeric_and_string_keys_across_api_action_and_repository
             assert response.status_code == 200 and response.json()["project"] == "leading"
             response = await client.get("/api/v1/objects/int-version/42/links/int-version-lots")
             assert response.status_code == 200, response.text
-            assert response.json()[0]["lot_id"] == "line"
+            assert response.json()[0]["lot_id"] == 75
+            response = await client.post("/api/v1/objects/int-version/query", json={"links": ["int-version-lots"]})
+            assert response.status_code == 200, response.text
+            assert response.json()["links"]["int-version-lots"]["42"][0]["lot_id"] == 75
+            response = await client.post("/api/v1/objects/int-lot/query", json={"links": ["int-version-lots"]})
+            assert response.status_code == 200, response.text
+            assert response.json()["links"]["int-version-lots"]["75"][0]["version_id"] == 42
+            response = await client.post(
+                "/api/v1/graph/traverse",
+                json={
+                    "start_type": "int-version",
+                    "start_ids": ["42"],
+                    "path": [
+                        {"link": "int-version-lots", "direction": "out"},
+                        {"link": "int-version-lots", "direction": "in"},
+                    ],
+                },
+            )
+            assert response.status_code == 200, response.text
+            traversed = response.json()
+            assert traversed["steps"][1]["ids"] == ["75"] and traversed["final_ids"] == ["42"]
+            assert len(traversed["edges"]) == 2
             response = await client.post("/api/v1/actions/tapeout/execute", json={"target_id": "42", "parameters": {}})
             assert response.status_code == 200, response.text
             assert response.json()["after"]["status"] == "FAB"
@@ -125,6 +149,15 @@ async def test_postgres_numeric_and_string_keys_across_api_action_and_repository
 
         async with sc.sessionmaker() as s:
             assert (await sc.repo.get_many(s, "int-version", ["42"]))[0]["version_id"] == 42
+            assert (
+                await sc.repo.link_members_by_ids(s, "int-version-lots", ["42", "0042", "99"], from_source=True)
+            ) == {"42": ["75"], "0042": ["75"], "99": []}
+            assert await sc.repo.link_members_by_ids(s, "extracted-int-lots", ["0042"], from_source=True) == {
+                "0042": ["75"]
+            }
+            assert await sc.repo.link_members_by_ids(s, "extracted-int-lots", ["075"], from_source=False) == {
+                "075": ["42"]
+            }
             assert (await sc.repo.get(s, "tapeout-version", "42"))["project"] == "plain"
             await sc.repo.set_derived_value(s, "int-version", "42", "notes", "fifteen", utcnow())
             assert (await sc.repo.get(s, "int-version", "42"))["notes"] == "fifteen"

@@ -61,7 +61,13 @@ class SseBroker:
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
-                log.warning("sse subscriber overflow, dropping event")
+                # This feed is no longer complete. Detach without blocking
+                # healthy subscribers and reserve space for a resync signal.
+                self.unsubscribe(q)
+                while not q.empty():
+                    q.get_nowait()
+                q.put_nowait({"resync_required": True})
+                log.warning("sse subscriber overflow, requiring resync")
 
 
 class OutboxDispatcher:

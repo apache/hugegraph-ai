@@ -19,18 +19,141 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from pathlib import Path
 
 import httpx
-from doc_fixtures import add_note
+import pytest
+import yaml
+from doc_fixtures import add_note, make_context
 
 from ontogeny.api import build_app
+from ontogeny.documents.models import DocumentRow
 
 ADMIN = {"X-Ontogeny-Principal": json.dumps({"id": "doc-admin", "is_admin": True})}
 
 
 async def _client(sc):
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=build_app(sc)), base_url="http://test", headers=ADMIN)
+
+
+@pytest.mark.parametrize(
+    ("selector", "names"),
+    [
+        ("supplier-notes/*.md", {"acme-2026-03.md", "note-format.md"}),
+        ("supplier-notes/acme-2026-03.md", {"acme-2026-03.md"}),
+    ],
+)
+async def test_document_listing_caches_only_selected_files(tmp_path, monkeypatch, selector, names):
+    def configure(pkg):
+        obj = pkg / "objects" / "supplier-note.yaml"
+        spec = yaml.safe_load(obj.read_text())
+        spec["spec"]["backing"]["source"]["table"] = selector
+        obj.write_text(yaml.safe_dump(spec))
+        store = pkg / "stores" / "supplier-docs.yaml"
+        spec = yaml.safe_load(store.read_text())
+        spec["spec"]["documents"].update(
+            include=["supplier-notes/*.md"],
+            exclude=["supplier-notes/globex-2026-02.md"],
+        )
+        store.write_text(yaml.safe_dump(spec))
+
+    sc, pkg, _ = await make_context(tmp_path, mutate=configure)
+    root = (pkg / "data" / "docs").resolve()
+    read_bytes = Path.read_bytes
+    files_read = []
+
+    def track_corpus_reads(path):
+        if path.is_relative_to(root):
+            files_read.append(path.name)
+        return read_bytes(path)
+
+    async def active_ids(client):
+        response = await client.get("/api/v1/admin/documents?store=supplier-docs")
+        assert response.status_code == 200
+        return {d["name"]: d["id"] for d in response.json()["documents"] if d["status"] == "active"}
+
+    try:
+        monkeypatch.setattr(Path, "read_bytes", track_corpus_reads)
+        async with await _client(sc) as client:
+            first = await active_ids(client)
+            assert first.keys() == names
+            assert sorted(files_read) == sorted(names)
+            files_read.clear()
+            assert await active_ids(client) == first
+            assert files_read == []
+
+            changed = "acme-2026-03.md"
+            add_note(pkg, changed, "Acme Components", "2026-07-01", "LOW", "Cache invalidation check")
+            refreshed = await active_ids(client)
+            assert refreshed.keys() == names
+            assert refreshed[changed] != first[changed]
+            assert files_read == [changed]
+    finally:
+        await sc.engine.dispose()
+
+
+async def test_corpus_registration_serializes_with_removal(doc_context, monkeypatch):
+    sc, _, _ = doc_context
+    listed = await sc.documents.list_documents("supplier-docs")
+    doc_id = listed["documents"][0]["id"]
+    scan_started = asyncio.Event()
+    continue_scan = asyncio.Event()
+    scan_documents = sc.documents._scan_documents
+
+    async def pause_after_scan(*args):
+        scanned = await scan_documents(*args)
+        scan_started.set()
+        await continue_scan.wait()
+        return scanned
+
+    monkeypatch.setattr(sc.documents, "_scan_documents", pause_after_scan)
+    listing = asyncio.create_task(sc.documents.list_documents("supplier-docs"))
+    await asyncio.wait_for(scan_started.wait(), timeout=5)
+    removal = asyncio.create_task(sc.documents.remove_document(doc_id))
+    try:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(removal), timeout=0.05)
+    finally:
+        continue_scan.set()
+    await listing
+    await removal
+    async with sc.sessionmaker() as session:
+        document = await session.get(DocumentRow, doc_id)
+    assert document.status == "removed"
+
+
+async def test_document_listing_returns_snapshot_during_extraction(doc_context, monkeypatch):
+    sc, pkg, _ = doc_context
+    started = asyncio.Event()
+    resume = asyncio.Event()
+    extract = sc.document_extractor.extract
+
+    async def pause_extractor(request):
+        started.set()
+        await resume.wait()
+        return await extract(request)
+
+    monkeypatch.setattr(sc.document_extractor, "extract", pause_extractor)
+    ingest = asyncio.create_task(sc.documents.ingest("supplier-docs"))
+    async with await _client(sc) as client:
+        try:
+            await asyncio.wait_for(started.wait(), timeout=5)
+            add_note(pkg, "new-during-ingest.md", "Acme Components", "2026-07-01", "LOW")
+            response = await asyncio.wait_for(client.get("/api/v1/admin/documents?store=supplier-docs"), timeout=2)
+            assert response.status_code == 200
+            assert {doc["name"] for doc in response.json()["documents"]} == {
+                "acme-2026-03.md",
+                "globex-2026-02.md",
+                "note-format.md",
+            }
+        finally:
+            resume.set()
+            await ingest
+        refreshed = await client.get("/api/v1/admin/documents?store=supplier-docs")
+        assert refreshed.status_code == 200
+        assert "new-during-ingest.md" in {doc["name"] for doc in refreshed.json()["documents"]}
 
 
 async def test_api_corpus_ingest_runs_and_review(doc_context):

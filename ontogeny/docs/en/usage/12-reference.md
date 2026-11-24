@@ -63,11 +63,25 @@ CLI database commands use `ONTOGENY_DB_DSN` or `--db`; they do not infer the run
 
 Other groups: **audit** (/audit/revisions) · **evolve** (/evolve/signals · aggregate · diagnose · proposals[/eval|promote]) · **assistant** (/assistant/chat, grounding + propose modes) · **admin** (llm/status · publish · sync/{t} · outbox/dispatch · derive · projection/rebuild · **domains[/import] (zip ontology package import)**) · **subscriptions** (SSE). The complete list is at `/docs` (OpenAPI).
 
+**Object change subscriptions (SSE)**
+
+`GET /api/v1/subscriptions/objects/{object_type}` is an authenticated, best-effort live notification feed, not a durable event log. Normal messages contain identifiers only; read current values through the authorized query API.
+
+Each subscriber has a bounded queue. If it overflows, the server discards that subscriber's incomplete backlog, emits the named SSE event `resync_required` with data `{"reason":"subscriber_overflow"}`, and ends the stream. Other subscribers continue independently. Register an explicit listener for this event: EventSource's default `onmessage` handler does not receive named events.
+
+On this event, invalidate cached state. Re-establish the subscription before fetching a fresh snapshot, and process or buffer notifications arriving during the fetch so changes during recovery are not missed. If another overflow occurs, repeat recovery. Resynchronize after other connection interruptions too: this endpoint does not implement Last-Event-ID replay. Automatic reconnection alone does not recover missed notifications.
+
+The outbox SSE receipt records dispatch to the broker, not acknowledgement by each remote subscriber. The resync signal does not promise lossless delivery or recover every intermediate historical state.
+
 The normal `serve`/ASGI factory runs an outbox dispatch tick about every second and drains derivations. This does not schedule source synchronization: `sync.schedule` is declarative, and repeated source pulls require an external scheduler calling the CLI or admin sync endpoint. Manual `/api/v1/admin/outbox/dispatch` remains available and shares the background loop’s process lock.
 
 **Outbox upgrade:** Stop all old dispatcher processes before upgrading. Start the new version only after the old workers have stopped; startup adds the pending columns and indexes, and the first dispatch reconciles pending state with existing receipts transactionally, including after a rollback. Do not run old and new dispatchers against the same database at the same time. Keep one server process per database; dispatch and replay coordination is in-process.
 
 **Document ID upgrade and rollback:** Existing document IDs and their references are retained; newly discovered documents use store-scoped IDs. Before upgrading, back up the database and document corpus together. Older versions do not understand the new IDs: after a downgrade they can create duplicate records or encounter conflicts. To roll back safely, stop all writers and restore the matched pre-upgrade database and corpus backups before starting the older version; changes made after the backup are not preserved by that restore. Do not run old and new versions against the same database. If a scan reports both legacy and store-scoped records for one document, stop writers, back up the current state, and reconcile the records and all references with a reviewed migration before retrying; the scanner does not delete either record.
+
+**Document filter upgrade:** `documents.include` and `documents.exclude` apply to both glob and literal selectors and are relative to the corpus root. For example, a `*.pdf` selector now needs `*.pdf` in `include`, and an include pattern `guides/*.md` under the `manuals` selector becomes `manuals/guides/*.md`. A literal filename selects only that file. A bare `source.table` identifier such as `fmea-notes` scans the corpus root when there is no file, directory, symlink, or registered path under that name. Use an explicit path such as `./manuals` for a directory that should select nothing when missing. Check these settings before the first ingest after upgrading.
+
+An unchanged file keeps the same ID when listed or scanned for an individual object type. Omission by a filter alone or a file access error leaves the entry active. Ingest logs how many active entries it retained outside the scan or could not verify as removed. Cleanup can still retract evidence from a registered file that disappears within the current selector or an old version whose selected path has new content. A full store scan also retires entries left behind when its corpus root changes. To deliberately retract an excluded file, use the document removal action.
 
 ## 12.5 Frontend routes
 

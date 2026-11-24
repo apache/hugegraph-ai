@@ -36,11 +36,11 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import Any
 
-from sqlalchemy import delete, func, select, tuple_
+from sqlalchemy import delete, func, select, tuple_, update
 
 from ..action.models import OutboxRow, RevisionRow
 from ..core.models import DocumentCfg, ExtractCfg, ExtractedJoin
-from ..errors import NotFoundError, OOError, StoreError
+from ..errors import NotFoundError, OOError, StoreError, TypeMismatchError
 from ..stores.repo import utcnow
 from . import corpus
 from .binder import Binder, BoundObject, Evidence, _jsonable
@@ -1422,25 +1422,29 @@ spec:
 
     async def _refresh_corpus(self, store_name: str) -> tuple[int, set[Path]]:
         async with self._lock(store_name):
-            store = self.store(store_name)
-            cfg = self._cfg(store)
-            root = self._root(store)
-            targets = self.object_types(store_name)
-            scanned, selector, unreadable = await self._scan_documents(store, cfg, root, targets)
-            if unreadable and not scanned:
-                return 0, unreadable
-            async with self.sc.sessionmaker() as session:
-                await self._sync_documents(
-                    session,
-                    store,
-                    root,
-                    scanned,
-                    selector=selector,
-                    complete_store=True,
-                    unreadable=unreadable,
-                )
-                await session.commit()
-            return len(scanned), unreadable
+            return await self._refresh_corpus_locked(store_name)
+
+    async def _refresh_corpus_locked(self, store_name: str) -> tuple[int, set[Path]]:
+        """Refresh the catalog while the caller holds the store lock."""
+        store = self.store(store_name)
+        cfg = self._cfg(store)
+        root = self._root(store)
+        targets = self.object_types(store_name)
+        scanned, selector, unreadable = await self._scan_documents(store, cfg, root, targets)
+        if unreadable and not scanned:
+            return 0, unreadable
+        async with self.sc.sessionmaker() as session:
+            await self._sync_documents(
+                session,
+                store,
+                root,
+                scanned,
+                selector=selector,
+                complete_store=True,
+                unreadable=unreadable,
+            )
+            await session.commit()
+        return len(scanned), unreadable
 
     async def list_documents(self, store_name: str) -> dict[str, Any]:
         self.store(store_name)
@@ -1615,15 +1619,29 @@ spec:
                 "current": current,
             }
 
+    async def _decide_candidate(
+        self, session, candidate_id: int, status: str, principal: str, note: str | None
+    ) -> ExtractCandidateRow:
+        # Claim the pending decision in the same transaction as any data writes.
+        stmt = (
+            update(ExtractCandidateRow)
+            .where(ExtractCandidateRow.id == candidate_id, ExtractCandidateRow.status == "pending")
+            .values(status=status, decided_by=principal, decided_at=utcnow(), note=note)
+            .returning(ExtractCandidateRow)
+        )
+        decided = (await session.execute(stmt)).scalar_one_or_none()
+        if decided is not None:
+            return decided
+        candidate = await session.get(ExtractCandidateRow, candidate_id)
+        if candidate is None:
+            raise NotFoundError(f"no candidate {candidate_id}")
+        raise DocumentError(f"candidate {candidate_id} is {candidate.status}")
+
     async def accept_candidate(
         self, candidate_id: int, overrides: dict[str, Any] | None = None, *, principal: str, note: str | None = None
     ) -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:
-            c = await session.get(ExtractCandidateRow, candidate_id)
-            if c is None:
-                raise NotFoundError(f"no candidate {candidate_id}")
-            if c.status != "pending":
-                raise DocumentError(f"candidate {candidate_id} is {c.status}")
+            c = await self._decide_candidate(session, candidate_id, "accepted", principal, note)
             payload = dict(c.payload or {})
             if c.kind == "object" and c.reason in (
                 "NO_IDENTITY",
@@ -1635,8 +1653,6 @@ spec:
                     f"candidate {candidate_id} ({c.reason}) cannot be accepted: resolve or complete the "
                     "entity first, then run extraction again"
                 )
-            if overrides:
-                payload.setdefault("props", {}).update(overrides)
             if c.kind == "link":
                 link = payload.get("link")
                 src, dst = payload.get("src_id"), payload.get("dst_id")
@@ -1689,8 +1705,8 @@ spec:
                         continue
                     try:
                         props[prop] = coerce_value(ptype.ptype(), value, prop=prop)
-                    except Exception:
-                        props[prop] = value
+                    except (TypeMismatchError, OverflowError) as exc:
+                        raise DocumentError(f"candidate {candidate_id}: invalid value for property {prop!r}") from exc
                 if c.reason == "MISSING_REQUIRED":
                     still = [p for p in (payload.get("missing") or []) if not _valid(props.get(p))]
                     if still:
@@ -1718,22 +1734,12 @@ spec:
                 )
                 if result == "candidate":
                     raise DocumentError("candidate could not be applied")
-            c.status = "accepted"
-            c.decided_by = principal
-            c.decided_at = utcnow()
-            c.note = note
             await session.commit()
             return {"ok": True, "candidate": _candidate_dict(c)}
 
     async def reject_candidate(self, candidate_id: int, *, principal: str, reason: str = "") -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:
-            c = await session.get(ExtractCandidateRow, candidate_id)
-            if c is None:
-                raise NotFoundError(f"no candidate {candidate_id}")
-            c.status = "rejected"
-            c.decided_by = principal
-            c.decided_at = utcnow()
-            c.note = reason
+            c = await self._decide_candidate(session, candidate_id, "rejected", principal, reason)
             await session.commit()
             return {"ok": True, "candidate": _candidate_dict(c)}
 

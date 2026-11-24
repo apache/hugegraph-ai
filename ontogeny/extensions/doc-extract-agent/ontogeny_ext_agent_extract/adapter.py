@@ -264,9 +264,9 @@ class AgentExtractor:
         if not isinstance(issues, list):
             issues = [{"message": "issues must be an array"}] if issues is not None else []
         status = chunk.get("status", "final")
-        if status not in _VALID_STATUS:
-            status = "failed"
+        if not isinstance(status, str) or status not in _VALID_STATUS:
             issues = [*issues, {"message": f"invalid status {status!r}"}]
+            status = "failed"
         index = chunk.get("index", position)
         if not isinstance(index, int):
             index = position

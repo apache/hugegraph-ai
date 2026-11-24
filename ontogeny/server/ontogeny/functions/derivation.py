@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import logging
 import secrets
+from itertools import batched
+from typing import Any
 
 from sqlalchemy import String, delete, select
 from sqlalchemy.orm import Mapped, mapped_column
@@ -45,8 +47,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..action.models import OutboxRow
 from ..db import Base
 from ..stores.repo import ObjectRepository, utcnow
+from .sandbox import SandboxFrameLimitError
 
 log = logging.getLogger("ontogeny.derive")
+_BATCH_ROWS = 64
 
 
 class DerivationPendingRow(Base):
@@ -175,6 +179,32 @@ class DerivationWorker:
 
     # ------------------------------------------------------------- computing
 
+    async def _map_batch(
+        self, session, fn, rows: list[dict[str, Any]], object_param: str, label: str
+    ) -> list[tuple[dict[str, Any], Any]]:
+        try:
+            values = await self.sandbox.map_rows(session, fn, rows, {}, object_param=object_param)
+        except Exception as exc:
+            log.warning("derivation %s failed for %d rows: %s", label, len(rows), exc)
+            await session.rollback()
+            if len(rows) == 1:
+                return []
+            if isinstance(exc, SandboxFrameLimitError):
+                middle = len(rows) // 2
+                retries = (rows[:middle], rows[middle:])
+            else:
+                # Isolate a failing object within this batch.
+                retries = tuple([row] for row in rows)
+            pairs = []
+            for batch in retries:
+                pairs.extend(await self._map_batch(session, fn, batch, object_param, label))
+            return pairs
+
+        if len(values) != len(rows):
+            log.warning("derivation %s returned %d values for %d rows", label, len(values), len(rows))
+            return []
+        return list(zip(rows, values, strict=True))
+
     async def _compute(
         self, object_type: str, prop: str, entry: str, generations: dict[str, str]
     ) -> tuple[int, set[str]]:
@@ -199,37 +229,12 @@ class DerivationWorker:
 
         done = 0
         ts = utcnow()
-        # one session AND one subprocess for the whole batch: the fn loop runs
-        # inside the child; ontogeny.query RPCs from the child are answered on this
-        # session, and the materialized values land in a single transaction
+        # Finish sandbox reads and retries before applying any materialized writes.
         async with self.session_factory() as s:
-            try:
-                values = await self.sandbox.map_rows(s, fn, assembled, {}, object_param=object_param)
-            except Exception as exc:
-                log.warning("derivation %s.%s failed for %d rows: %s", object_type, prop, len(rows), exc)
-                # A bad input must not permanently block every other object in
-                # the batch. Roll back any failed query before retrying rows;
-                # materialized writes happen only after all retries complete.
-                await s.rollback()
-                pairs = []
-                for row in assembled:
-                    try:
-                        one = await self.sandbox.map_rows(s, fn, [row], {}, object_param=object_param)
-                        if len(one) != 1:
-                            log.warning("derivation %s.%s returned %d values for one row", object_type, prop, len(one))
-                            continue
-                        pairs.append((row[pk], one[0]))
-                    except Exception as row_exc:
-                        await s.rollback()
-                        log.warning("derivation %s.%s failed for object %s: %s", object_type, prop, row[pk], row_exc)
-            else:
-                if len(values) != len(assembled):
-                    log.warning(
-                        "derivation %s.%s returned %d values for %d rows", object_type, prop, len(values), len(rows)
-                    )
-                    return 0, succeeded
-                pairs = list(zip([r[pk] for r in assembled], values, strict=True))
-            for row_id, value in pairs:
+            pairs = []
+            for rows_batch in batched(assembled, _BATCH_ROWS):
+                pairs.extend(await self._map_batch(s, fn, list(rows_batch), object_param, f"{object_type}.{prop}"))
+            for row, value in pairs:
                 if value is None and pdef.required:
                     continue
                 try:
@@ -237,7 +242,7 @@ class DerivationWorker:
                 except Exception as exc:
                     log.warning("derivation %s.%s: bad value %r (%s)", object_type, prop, value, exc)
                     continue
-                oid = str(row_id)
+                oid = str(row[pk])
                 current = await s.scalar(
                     select(DerivationPendingRow.generation)
                     .where(
@@ -248,7 +253,7 @@ class DerivationWorker:
                 )
                 if current != generations[oid]:
                     continue
-                await self.repo.set_derived_value(s, object_type, str(row_id), prop, coerced, ts)
+                await self.repo.set_derived_value(s, object_type, oid, prop, coerced, ts)
                 done += 1
                 succeeded.add(oid)
             await s.commit()

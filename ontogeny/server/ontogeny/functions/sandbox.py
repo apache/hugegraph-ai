@@ -41,6 +41,10 @@ from ..stores.repo import ObjectRepository
 from .declarative import _MAX_RESPONSE_BYTES as _MAX_FRAME_BYTES
 
 
+class SandboxFrameLimitError(SandboxError):
+    """A single frame from the sandbox exceeded the protocol limit."""
+
+
 def _limits() -> None:  # pragma: no cover -- preexec in the child process
     try:
         import resource
@@ -274,9 +278,11 @@ class FunctionSandbox:
                 try:
                     line = await proc.stdout.readline()
                 except ValueError as exc:
-                    raise SandboxError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit") from exc
+                    raise SandboxFrameLimitError(
+                        f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit"
+                    ) from exc
                 if len(line) > _MAX_FRAME_BYTES:
-                    raise SandboxError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit")
+                    raise SandboxFrameLimitError(f"sandbox protocol frame exceeds {_MAX_FRAME_BYTES}-byte limit")
                 if not line:
                     raise SandboxError("sandbox exited before returning a result")
                 try:

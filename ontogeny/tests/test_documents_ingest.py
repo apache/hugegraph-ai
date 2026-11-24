@@ -173,6 +173,28 @@ async def test_review_reject_writes_nothing(doc_context):
     assert next(c for c in refreshed if c.id == candidate.id).status == "rejected"
 
 
+async def test_candidate_decision_and_data_stay_aligned_when_reviewers_overlap(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    add_note(pkg, "acme-review.md", "Acme Components", "2026-03-01", "MEDIUM", "Review finding")
+    await sc.sync("supplier-note")
+    conflict = next(c for c in await _rows(sc, ExtractCandidateRow) if c.payload.get("field") == "risk_level")
+
+    outcomes = await asyncio.gather(
+        sc.documents.accept_candidate(conflict.id, principal="approver", note="approved"),
+        sc.documents.reject_candidate(conflict.id, principal="reviewer", reason="declined"),
+        return_exceptions=True,
+    )
+    [success] = [outcome["candidate"] for outcome in outcomes if isinstance(outcome, dict)]
+    [failure] = [outcome for outcome in outcomes if isinstance(outcome, DocumentError)]
+    assert str(failure) == f"candidate {conflict.id} is {success['status']}"
+    recorded = (await sc.documents.candidate_detail(conflict.id))["candidate"]
+    assert recorded == success
+    assert (await _note(sc, "Acme Components"))["risk_level"] == (
+        "MEDIUM" if recorded["status"] == "accepted" else "HIGH"
+    )
+
+
 async def test_document_removal_retracts_links_and_archives(doc_context):
     sc, _, _ = doc_context
     await sc.sync("supplier-note")

@@ -22,8 +22,10 @@ from sqlalchemy import select
 from test_function_ecosystem import sc as sc
 
 from ontogeny.action.models import OutboxConsumerRow, OutboxRow
+from ontogeny.functions import derivation
 from ontogeny.functions.derivation import DerivationPendingRow, DerivationWorker
-from ontogeny.stores.repo import ObjectRepository
+from ontogeny.functions.sandbox import SandboxFrameLimitError
+from ontogeny.stores.repo import ObjectRepository, utcnow
 
 # TO-A1 has no running lots (open_lot_count 0); TO-A0 owns LOT-2419, the one
 # lot still RUNNING, so its materialized open_lot_count is 1
@@ -111,6 +113,31 @@ async def test_poisoned_row_does_not_block_other_rows(sc):
     assert not await pending(sc)
     async with sc.sessionmaker() as session:
         assert (await sc.repo.get(session, OWNER, OTHER))["open_lot_count"] == 9
+
+
+async def test_derivation_batches_rows_and_splits_only_overflowing_batches(sc, monkeypatch):
+    await sc.outbox.dispatch_pending()
+    ids = [f"TO-BATCH-{number}" for number in range(7)]
+    async with sc.sessionmaker() as session:
+        for oid in ids:
+            await sc.repo.sync_upsert(session, OWNER, {"version_id": oid, "project": "Batch test"}, utcnow())
+        await session.commit()
+    for oid in ids:
+        await sc.derivation.handle_event(OutboxRow(object_type=OWNER, object_id=oid, op="upsert"))
+    monkeypatch.setattr(derivation, "_BATCH_ROWS", 3)
+    original = sc.functions.map_rows
+    sizes = []
+
+    async def frame_boundary(session, fn, rows, params, **kwargs):
+        sizes.append(len(rows))
+        if len(rows) > 2:
+            raise SandboxFrameLimitError("batch result exceeds the transport limit")
+        return await original(session, fn, rows, params, **kwargs)
+
+    monkeypatch.setattr(sc.functions, "map_rows", frame_boundary)
+    assert (await sc.derivation.drain())[f"{OWNER}.open_lot_count"] == len(ids)
+    assert sizes == [3, 1, 2, 3, 1, 2, 1]
+    assert not await pending(sc)
 
 
 async def test_new_event_during_compute_is_not_acknowledged_or_overwritten(sc, monkeypatch):

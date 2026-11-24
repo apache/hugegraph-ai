@@ -159,6 +159,20 @@ async def test_agent_errors_are_actionable():
     await client.aclose()
 
 
+@pytest.mark.parametrize("status", ["unexpected", ["unexpected"]])
+async def test_agent_reports_the_invalid_chunk_status(status):
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"chunks": [{"status": status, "vertices": [], "edges": []}]})
+
+    sc = SimpleNamespace(settings=Settings(doc_agent_url="http://agent.test/extract"), package_root=None)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        [result] = await AgentExtractor(sc, http=client).extract(
+            ExtractRequest(schema={}, docs=[DocInput("d", "/x.md", "text")], options=ExtractOptions())
+        )
+    assert result.status == "failed"
+    assert result.issues == [{"message": f"invalid status {status!r}"}]
+
+
 async def test_unconfigured_agent_fails_closed():
     sc = SimpleNamespace(settings=Settings(), package_root=None)
     agent = AgentExtractor(sc)

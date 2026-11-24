@@ -20,11 +20,18 @@ over a real (file-backed sqlite) ServiceContext through ASGI transport."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import event
+import httpx
+import yaml
+from sqlalchemy import event, select
+
+from ontogeny.action.models import RevisionRow
+from ontogeny.api import build_app
+from ontogeny.service import ServiceContext
 
 # hq product engineer: the role the production policies grant lifecycle planning actions
 PRODUCT = {"id": "u-product", "Role": ["product"], "site": "hq"}
@@ -49,6 +56,131 @@ def _hdr(p):
 
 
 class TestEndToEnd:
+    async def test_action_replays_after_a_separate_sqlite_writer_times_out(self, client, monkeypatch):
+        c, sc = client
+        assert (await c.post("/api/v1/admin/sync/tapeout-version")).status_code == 200
+        other = ServiceContext(sc.settings, str(sc.package_root))
+        flushed = asyncio.Event()
+        busy = asyncio.Event()
+        run = sc.runtime.execute
+
+        async def hold_first_write(*args, **kwargs):
+            revision = await run(*args, **kwargs)
+            flushed.set()
+            await asyncio.wait_for(busy.wait(), timeout=5)
+            return revision
+
+        def observe_error(context):
+            code = getattr(context.original_exception, "sqlite_errorcode", 0)
+            if code & 0xFF == sqlite3.SQLITE_BUSY:
+                busy.set()
+
+        monkeypatch.setattr(sc.runtime, "execute", hold_first_write)
+        url = "/api/v1/actions/tapeout/execute"
+        payload = {"parameters": {}, "target_id": "TO-A1", "idempotency_key": "sqlite-contention"}
+        try:
+            await other.initialize()
+            event.listen(other.engine.sync_engine, "handle_error", observe_error)
+            async with other.engine.connect() as connection:
+                await connection.exec_driver_sql("PRAGMA busy_timeout = 25")
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=build_app(other), raise_app_exceptions=False), base_url="http://other"
+            ) as retry_client:
+                first = asyncio.create_task(c.post(url, json=payload, headers=_hdr(PRODUCT)))
+                try:
+                    await asyncio.wait_for(flushed.wait(), timeout=5)
+                    retry = await retry_client.post(url, json=payload, headers=_hdr(PRODUCT))
+                    assert busy.is_set(), "the separate SQLite connection never hit write contention"
+                finally:
+                    busy.set()
+                    winner = await first
+        finally:
+            await other.engine.dispose()
+
+        assert winner.status_code == retry.status_code == 200, (winner.text, retry.text)
+        assert retry.json() == winner.json()
+        async with sc.sessionmaker() as session:
+            revisions = (
+                await session.scalars(select(RevisionRow).where(RevisionRow.idempotency_key == "sqlite-contention"))
+            ).all()
+            assert [revision.id for revision in revisions] == [winner.json()["revision_id"]]
+
+    async def test_action_cannot_replay_in_another_domain(self, client, tmp_path, monkeypatch):
+        c, sc = client
+        assert (await c.post("/api/v1/admin/sync/tapeout-version")).status_code == 200
+        url = "/api/v1/actions/tapeout/execute"
+        payload = {"parameters": {}, "target_id": "TO-A1", "idempotency_key": "retired-action"}
+
+        target = tmp_path / "replacement"
+        target.mkdir()
+        (target / "ontology.yaml").write_text(
+            "apiVersion: ontogeny/v1\nkind: Ontology\nmetadata:\n  name: replacement\nspec: {}\n",
+            encoding="utf-8",
+        )
+        record = sc.telemetry.record_action
+
+        async def switch_after_commit(*args, **kwargs):
+            await sc.activate_domain(target)
+            await record(*args, **kwargs)
+
+        monkeypatch.setattr(sc.telemetry, "record_action", switch_after_commit)
+        first = await c.post(url, json=payload, headers=_hdr(PRODUCT))
+        assert first.status_code == 200
+        assert first.json()["after"]["mask_cost"] == "__masked__"
+        assert "tapeout" not in sc.compiled.actions
+        async with sc.sessionmaker() as session:
+            assert await session.get(RevisionRow, first.json()["revision_id"]) is not None
+
+        retry = await c.post(url, json=payload, headers=_hdr(PRODUCT))
+        assert retry.status_code == 404
+        assert "after" not in retry.json()
+
+    async def test_action_replay_omits_retired_properties(self, client):
+        c, sc = client
+        assert (await c.post("/api/v1/admin/sync/tapeout-version")).status_code == 200
+        url = "/api/v1/actions/tapeout/execute"
+        payload = {"parameters": {}, "target_id": "TO-A1", "idempotency_key": "retired-property"}
+        first = await c.post(url, json=payload, headers=_hdr(PRODUCT))
+        assert first.status_code == 200
+        expected_after = first.json()["after"]
+        assert expected_after.pop("mask_cost") == "__masked__"
+
+        definition = Path(sc.package_root) / "objects/tapeout-version.yaml"
+        model = yaml.safe_load(definition.read_text(encoding="utf-8"))
+        del model["spec"]["properties"]["mask_cost"]
+        definition.write_text(yaml.safe_dump(model), encoding="utf-8")
+        await sc.publish(str(sc.package_root))
+
+        retry = await c.post(url, json=payload, headers=_hdr(PRODUCT))
+        assert retry.status_code == 200
+        assert retry.json()["revision_id"] == first.json()["revision_id"]
+        assert retry.json()["after"] == expected_after
+
+    async def test_retargeted_action_replay_does_not_record_success(self, client):
+        from ontogeny.telemetry.service import TelemetryActionRow
+
+        c, sc = client
+        assert (await c.post("/api/v1/admin/sync/tapeout-version")).status_code == 200
+        url = "/api/v1/actions/tapeout/execute"
+        payload = {"parameters": {}, "target_id": "TO-A1", "idempotency_key": "retargeted-action"}
+        assert (await c.post(url, json=payload, headers=_hdr(PRODUCT))).status_code == 200
+
+        definition = Path(sc.package_root) / "actions/tapeout.yaml"
+        model = yaml.safe_load(definition.read_text(encoding="utf-8"))
+        model["spec"] = {
+            "target": "design-module",
+            "effects": [{"kind": "modify-target", "set": {"status": "REVISED"}}],
+        }
+        definition.write_text(yaml.safe_dump(model), encoding="utf-8")
+        await sc.publish(str(sc.package_root))
+
+        assert (await c.post(url, json=payload, headers=_hdr(PRODUCT))).status_code == 404
+        async with sc.sessionmaker() as session:
+            outcomes = await session.scalars(
+                select(TelemetryActionRow.outcome).where(TelemetryActionRow.action == "tapeout")
+            )
+            assert outcomes.all() == ["executed"]
+
     async def test_meta(self, client):
         c, _ = client
         r = await c.get("/api/v1/meta/ontology")

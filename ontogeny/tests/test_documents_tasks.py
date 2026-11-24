@@ -245,6 +245,9 @@ async def test_default_document_source_is_created_once(tmp_path):
     assert "document-note" in sc.compiled.objects
     second = await sc.documents.ensure_default_source()
     assert second["created"] is False
+    await sc.documents.upload("documents", _file("hello.md", "# Default source\n"))
+    listed = await sc.documents.list_documents("documents")
+    assert [doc["name"] for doc in listed["documents"]] == ["hello.md"]
 
 
 async def test_reconfigure_confirmed_task_opens_a_new_revision(doc_context):

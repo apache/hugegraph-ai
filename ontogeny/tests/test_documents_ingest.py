@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import errno
 import hashlib
 import os
 import re
@@ -31,6 +32,7 @@ from doc_fixtures import FakeExtractor, add_note, make_context
 from sqlalchemy import select
 
 from ontogeny.action.models import OutboxRow
+from ontogeny.documents.engine import DocumentError
 from ontogeny.documents.models import (
     DocumentRow,
     ExtractAssertionRow,
@@ -304,11 +306,13 @@ async def test_unverified_removal_keeps_evidence_and_allows_ingest(doc_context, 
 
     with monkeypatch.context() as patch:
         patch.setattr(Path, "stat", deny_stat)
-        result = await sc.sync("supplier-note")
-
-    assert (result["documents"], result["archived"]) == ((0 if exact_selector else 2), 0)
-    if not exact_selector:
-        assert "and 1 with unconfirmed removal" in caplog.text
+        if exact_selector:
+            with pytest.raises(DocumentError, match="could not read"):
+                await sc.sync("supplier-note")
+        else:
+            result = await sc.sync("supplier-note")
+            assert (result["documents"], result["archived"]) == (2, 0)
+            assert "and 1 with unconfirmed removal" in caplog.text
     row = next(doc for doc in await _rows(sc, DocumentRow) if doc.path == str(path))
     assert row.status == "active"
     assert await _note(sc, "Acme Components") is not None
@@ -408,10 +412,22 @@ async def test_unverified_new_corpus_does_not_retract_previous_evidence(doc_cont
             patch.setattr(Path, "stat", deny_stat)
         listed = await sc.documents.list_documents("supplier-docs")
         assert {doc["status"] for doc in listed["documents"]} == {"active"}
-        result = await sc.sync("supplier-note")
+        with pytest.raises(DocumentError, match="could not read"):
+            await sc.sync("supplier-note")
+        if directory:
+            # A readable sibling must still ingest after the root changes,
+            # but partial discovery is not proof that old rows can retire.
+            other = new_root / "readable.md"
+            other.write_text("# Readable file\n")
+            sc.compiled.objects["supplier-note"].spec.backing.source.table = "."
+            partial = await sc.sync("supplier-note")
+            assert (partial["documents"], partial["archived"]) == (1, 0)
+            assert partial["scan_error"]
+            other.unlink()
 
-    assert (result["documents"], result["archived"]) == (0, 0)
-    assert len(await _rows(sc, ExtractRunRow)) == initial_runs
+    runs = await _rows(sc, ExtractRunRow)
+    assert len(runs) == initial_runs + (2 if directory else 1)
+    assert sum(run.status == "error" for run in runs) == 1
     assert await _note(sc, "Acme Components") is not None
     assert await _note(sc, "Globex Materials") is not None
 
@@ -419,6 +435,53 @@ async def test_unverified_new_corpus_does_not_retract_previous_evidence(doc_cont
     result = await sc.sync("supplier-note")
     assert (result["documents"], result["archived"]) == (0, 2)
     assert await _rows(sc, ExtractAssertionRow) == []
+
+
+@pytest.mark.parametrize("excluded", [False, True])
+async def test_ingest_continues_past_unreadable_subdirectory(doc_context, monkeypatch, excluded):
+    sc, pkg, _ = doc_context
+    selected = pkg / "data" / "docs" / "supplier-notes"
+    blocked = selected / "private"
+    blocked.mkdir()
+    hidden = selected / "acme-2026-03.md"
+    hidden = hidden.rename(blocked / hidden.name)
+    await sc.sync("supplier-note")
+
+    if excluded:
+        sc.documents.store("supplier-docs").spec.documents.exclude = ["supplier-notes/private/**"]
+    else:
+        # Even a missing-looking entry under an unreadable directory is not
+        # proof that it is safe to retract the historical evidence.
+        hidden.unlink()
+    add_note(pkg, "globex-2026-02.md", "Initech Fasteners", "2026-04-02", "MEDIUM", "Replaced.")
+    scandir = os.scandir
+    attempts = []
+
+    def deny_private(path):
+        if path in (blocked, str(blocked)):
+            attempts.append(path)
+            raise PermissionError(errno.EACCES, "cannot list private directory", str(blocked))
+        return scandir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "scandir", deny_private)
+        result = await sc.sync("supplier-note")
+        preview = await sc.documents.ingest("supplier-docs", dry_run=True)
+
+    assert (result["documents"], result["archived"]) == (2, 1)
+    assert bool(attempts) is (not excluded)
+    run = next(r for r in await _rows(sc, ExtractRunRow) if r.id == result["run_id"])
+    assert run.status == "ok"
+    assert result["scan_error"] == preview["scan_error"] == run.error
+    if excluded:
+        assert run.error is None
+    else:
+        assert "could not read 1 selected file or directory paths" in run.error
+        assert run.error not in result["gaps"]
+        assert run.error not in preview["gaps"]
+    assert await _note(sc, "Acme Components") is not None
+    assert await _note(sc, "Globex Materials") is None
+    assert await _note(sc, "Initech Fasteners") is not None
 
 
 async def test_batch_document_removal_preserves_remaining_evidence(doc_context):
@@ -607,7 +670,6 @@ async def test_legacy_document_id_survives_restart_dry_run_update_and_revert(doc
 
 async def test_duplicate_legacy_and_scoped_ids_fail_without_modifying_references(doc_context):
     from ontogeny.documents import corpus
-    from ontogeny.documents.engine import DocumentError
 
     sc, pkg, _ = doc_context
     path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"

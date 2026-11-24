@@ -79,14 +79,30 @@ def test_directory_selector_rejects_base_outside_corpus(tmp_path):
     ("selector", "expected"),
     [
         ("logical-table", ["note.md"]),
+        ("schema.table", ["note.md"]),
+        ("2026-notes", ["note.md"]),
+        ("field notes", ["note.md"]),
+        ("missing.md", ["note.md"]),
         ("./logical-table", []),
         ("missing/file.md", []),
-        ("missing.md", []),
+        ("./missing.md", []),
     ],
 )
-def test_only_bare_missing_identifier_falls_back_to_corpus(tmp_path, selector, expected):
+def test_unregistered_bare_names_fall_back_and_explicit_paths_do_not(tmp_path, selector, expected):
     (tmp_path / "note.md").write_text("a document")
     assert [doc.rel for doc in scan(tmp_path, DocumentCfg(), selector, store_name="docs")] == expected
+
+
+@pytest.mark.parametrize(("selector", "registered"), [("manual.md", "manual.md"), ("2026 notes", "2026 notes/a.md")])
+def test_deleted_registered_path_remains_literal(tmp_path, selector, registered):
+    assert resolve_selector(tmp_path, selector, [str(tmp_path / registered)]) == selector
+
+
+def test_dangling_bare_link_remains_literal(tmp_path):
+    (tmp_path / "alias.md").symlink_to("removed.md")
+    (tmp_path / "other.md").write_text("must not be selected")
+    assert resolve_selector(tmp_path, "alias.md") == "alias.md"
+    assert scan(tmp_path, DocumentCfg(), "alias.md", store_name="docs") == []
 
 
 def test_unreadable_bare_selector_is_not_treated_as_missing(tmp_path, monkeypatch):

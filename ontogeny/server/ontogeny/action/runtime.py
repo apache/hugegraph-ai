@@ -178,6 +178,23 @@ class ActionRuntime:
             "policy": {"allow": decision.allow, "reason": decision.reason},
         }
 
+    async def find_replay(
+        self, session, action_name: str, principal_id: str, idempotency_key: str
+    ) -> RevisionRow | None:
+        """Return a successful revision for the caller's idempotency scope."""
+        existing = (
+            await session.execute(
+                select(RevisionRow).where(
+                    RevisionRow.idempotency_key == idempotency_key,
+                    RevisionRow.action == action_name,
+                    RevisionRow.principal == principal_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None and existing.outcome != "executed":
+            raise ConflictError(f"idempotency key {idempotency_key!r} belongs to a {existing.outcome} revision")
+        return existing
+
     async def execute(
         self,
         session,
@@ -203,19 +220,9 @@ class ActionRuntime:
                 # The unique index remains the final guard on both databases.
                 scope = json.dumps([action_name, principal_id, idempotency_key], separators=(",", ":"))
                 await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(scope, 0))))
-            existing = (
-                await session.execute(
-                    select(RevisionRow).where(
-                        RevisionRow.idempotency_key == idempotency_key,
-                        RevisionRow.action == action_name,
-                        RevisionRow.principal == principal_id,
-                    )
-                )
-            ).scalar_one_or_none()
+            existing = await self.find_replay(session, action_name, principal_id, idempotency_key)
             if existing is not None:
-                if existing.outcome == "executed":
-                    return existing
-                raise ConflictError(f"idempotency key {idempotency_key!r} belongs to a {existing.outcome} revision")
+                return existing
 
         params = self._bind_parameters(action, parameters)
 

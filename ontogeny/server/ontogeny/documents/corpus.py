@@ -29,8 +29,9 @@ import mimetypes
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, replace
 from fnmatch import fnmatch
+from os import stat_result
 from pathlib import Path
-from stat import S_ISDIR
+from stat import S_ISDIR, S_ISREG
 from typing import Any
 
 from ..core.models import DocumentCfg, StoreResource
@@ -51,10 +52,6 @@ class ScannedDocument:
 
 
 ScanCache = dict[str, tuple[tuple[int, int, int, int, int], ScannedDocument]]
-
-
-class SelectorUnavailableError(Exception):
-    """The selected filesystem path could not be verified."""
 
 
 def resolve_root(store: StoreResource, package_root: str | None) -> Path:
@@ -95,7 +92,7 @@ def _is_glob(selector: str) -> bool:
 
 def resolve_selector(root: Path, selector: str | None, registered_paths: Iterable[str] = ()) -> str | None:
     """Keep legacy logical table names while honoring paths known to the catalog."""
-    if not selector or not selector.replace("-", "_").isidentifier():
+    if not selector or _is_glob(selector) or Path(selector).name != selector:
         return selector
     candidate = root / selector
     try:
@@ -160,34 +157,75 @@ def selector_covers(root: Path, path: Path, selector: str | None) -> bool:
     return False
 
 
-def _selected_paths(root: Path, cfg: DocumentCfg, selector: str | None) -> Iterator[tuple[Path, str]]:
-    glob = selector if selector and _is_glob(selector) else None
+def _excluded_subtree(root: Path, directory: Path, cfg: DocumentCfg) -> bool:
+    if directory == root:
+        return False
+    prefix = directory.relative_to(root).as_posix() + "/"
+    for pattern in cfg.exclude:
+        # fnmatch lets a trailing '*' consume slashes, so a match on the
+        # directory prefix also excludes every file below it.
+        if pattern.endswith("*") and (
+            fnmatch(prefix, pattern) or (pattern.startswith("**/") and fnmatch(prefix, pattern[3:]))
+        ):
+            return True
+    return False
 
-    def fail_walk(error: OSError) -> None:
-        # rglob can silently skip an unreadable directory, but reconciliation
-        # requires a verified inventory before retiring any previous entries.
-        raise error
+
+def _selected_paths(
+    root: Path, cfg: DocumentCfg, selector: str | None, unreadable: set[Path]
+) -> Iterator[tuple[Path, str, stat_result]]:
+    glob = selector if selector and _is_glob(selector) else None
+    glob_prefix = root
+    if glob:
+        # Patterns without a directory component also match basenames.
+        # Only literal components before the first wildcard can prune a walk.
+        for part in glob.split("/")[:-1]:
+            if _is_glob(part):
+                break
+            glob_prefix /= part
+    literal = root
+
+    def can_contain_matches(directory: Path) -> bool:
+        return (directory.is_relative_to(glob_prefix) or glob_prefix.is_relative_to(directory)) and not (
+            _excluded_subtree(root, directory, cfg)
+        )
+
+    def record_walk_error(error: OSError) -> None:
+        failed = Path(error.filename) if error.filename else literal
+        unreadable.add(failed if failed.is_relative_to(root) else literal)
 
     try:
         literal = _literal_path(root, selector) if selector and glob is None else root
-        if literal.is_file():
-            base, paths = literal.parent, [literal]
-        elif literal.is_dir():
-            base = literal
-            paths = sorted(folder / name for folder, _, names in literal.walk(on_error=fail_walk) for name in names)
-        else:
-            # A missing literal file or directory selects nothing.
-            return
-    except OSError as exc:
-        # Unreadable selectors must never widen discovery to the corpus root.
-        raise SelectorUnavailableError from exc
-    for path in paths:
+        mode = literal.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    except OSError:
+        unreadable.add(literal)
+        return
+    if S_ISREG(mode):
+        base, paths = literal.parent, [literal]
+    elif S_ISDIR(mode):
+        base, paths = literal, []
+        if can_contain_matches(literal):
+            for folder, dirs, names in literal.walk(on_error=record_walk_error):
+                dirs[:] = [name for name in dirs if can_contain_matches(folder / name)]
+                paths.extend(folder / name for name in names)
+    else:
+        return
+    for path in sorted(paths):
         if glob is not None and not _glob_matches(root, path, glob):
             continue
         if not _match(path.relative_to(root).as_posix(), cfg):
             continue
-        if path.is_file():
-            yield path, path.relative_to(base).as_posix()
+        try:
+            stat = path.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        except OSError:
+            unreadable.add(path)
+            continue
+        if S_ISREG(stat.st_mode):
+            yield path, path.relative_to(base).as_posix(), stat
 
 
 def _document_ids(rel: str, data: bytes, store_name: str) -> tuple[str, str]:
@@ -225,10 +263,8 @@ def _scanned_document(
 def scan(root: Path, cfg: DocumentCfg, selector: str | None = None, *, store_name: str) -> list[ScannedDocument]:
     root = root.resolve()
     selector = resolve_selector(root, selector)
-    try:
-        return [_scanned_document(root, path, rel, store_name) for path, rel in _selected_paths(root, cfg, selector)]
-    except SelectorUnavailableError:
-        return []
+    scanned, _, _ = scan_incremental(root, cfg, selector, store_name=store_name)
+    return scanned
 
 
 def scan_incremental(
@@ -239,23 +275,27 @@ def scan_incremental(
     store_name: str,
     previous: ScanCache | None = None,
     existing_ids_by_path: dict[str, set[str]] | None = None,
-) -> tuple[list[ScannedDocument], ScanCache]:
-    """Discover selected files, reusing hashes when file identity and metadata match."""
+) -> tuple[list[ScannedDocument], ScanCache, set[Path]]:
+    """Return readable files, reusable hashes, and paths whose discovery failed."""
     root = root.resolve()
     previous = previous or {}
     existing_ids_by_path = existing_ids_by_path or {}
     current: ScanCache = {}
-    for path, rel in _selected_paths(root, cfg, selector):
-        stat = path.stat()
+    unreadable: set[Path] = set()
+    for path, rel, stat in _selected_paths(root, cfg, selector, unreadable):
         signature = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
         key = path.relative_to(root).as_posix()
         cached = previous.get(key)
         if cached is not None and cached[0] == signature:
             item = replace(cached[1], path=path, rel=rel)
         else:
-            item = _scanned_document(root, path, rel, store_name, existing_ids_by_path.get(str(path)))
+            try:
+                item = _scanned_document(root, path, rel, store_name, existing_ids_by_path.get(str(path)))
+            except OSError:
+                unreadable.add(path)
+                continue
         current[key] = (signature, item)
-    return [item for _, item in current.values()], current
+    return [item for _, item in current.values()], current, unreadable
 
 
 def is_text(path: Path) -> bool:

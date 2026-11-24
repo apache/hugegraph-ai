@@ -264,6 +264,23 @@ class TestBuildSemanticIndex(unittest.TestCase):
         }
         self.assertEqual(result, expected_context)
 
+    def test_run_persists_faiss_removals_without_additions(self):
+        self.mock_settings.graph_name = self.temp_dir
+        self.mock_embedding.get_embedding_dim.return_value = 2
+        index = FaissVectorIndex(2)
+        index.add([[1.0, 0.0], [0.0, 1.0]], ["1:keep", "1:remove"])
+        index.save_index_by_name(self.temp_dir, "graph_vids")
+
+        builder = BuildSemanticIndex(self.mock_embedding, FaissVectorIndex)
+        result = builder.run({"vertices": ["1:keep"]})
+
+        self.assertEqual(result["removed_vid_vector_num"], 1)
+        self.assertEqual(result["added_vid_vector_num"], 0)
+        self.mock_embedding.get_texts_embeddings.assert_not_called()
+        reloaded = FaissVectorIndex.from_name(2, self.temp_dir, "graph_vids")
+        self.assertEqual(reloaded.get_all_properties(), ["1:keep"])
+        self.assertEqual(reloaded.search([0.0, 1.0], top_k=1), [])
+
 
 if __name__ == "__main__":
     unittest.main()

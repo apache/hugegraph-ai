@@ -71,9 +71,11 @@ class BuildSemanticIndex:
             added_embeddings = asyncio.run(self._get_embeddings_parallel(vids_to_process))
             log.info("Building vector index for %s vertices...", len(added_vids))
             self.vid_index.add(added_embeddings, added_vids)
+
+        if removed_num or added_vids:
             self.vid_index.save_index_by_name(huge_settings.graph_name, "graph_vids")
         else:
-            log.debug("No update vertices to build vector index.")
+            log.debug("No vertex index changes to save.")
         context.update(
             {
                 "removed_vid_vector_num": removed_num,

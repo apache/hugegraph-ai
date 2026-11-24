@@ -72,11 +72,11 @@ async def env(golden_pkg_path, tmp_path):
 
 
 @pytest_asyncio.fixture()
-async def join_env(tmp_path):
-    """A minimal package for the one link shape chip-lifecycle does not
-    exercise: a MANY_TO_MANY join table whose membership is ontology-owned."""
+async def join_env(tmp_path, request):
+    """Exercise text-backed membership with configurable endpoint types."""
     from pathlib import Path
 
+    src_key, dst_key, join_kind = getattr(request, "param", ("string", "string", "join-table"))
     root = tmp_path / "join-pkg"
     root.mkdir()
     (root / "ontology.yaml").write_text(
@@ -90,14 +90,14 @@ async def join_env(tmp_path):
         encoding="utf-8",
     )
     (root / "objects").mkdir()
-    for name, table in (("container", "containers"), ("item", "items")):
+    for name, table, key_type in (("container", "containers", src_key), ("item", "items", dst_key)):
         (root / "objects" / f"{name}.yaml").write_text(
             "apiVersion: ontogeny/v1\nkind: ObjectType\n"
             f"metadata: {{name: {name}}}\n"
             "spec:\n"
             f"  primaryKey: [{name}_id]\n"
             "  properties:\n"
-            f"    {name}_id: {{type: string, required: true}}\n"
+            f"    {name}_id: {{type: {key_type}, required: true}}\n"
             "    name: {type: string}\n"
             "  backing:\n"
             "    store: mes\n"
@@ -107,19 +107,21 @@ async def join_env(tmp_path):
             encoding="utf-8",
         )
     (root / "links").mkdir()
+    join_table = (
+        "    kind: join-table\n"
+        "    store: mes\n"
+        "    relation: {schema: mes, table: container_items}\n"
+        "    keys:\n"
+        "      source: {container_id: container_id}\n"
+        "      target: {item_id: item_id}\n"
+    )
     (root / "links" / "container-items.yaml").write_text(
         "apiVersion: ontogeny/v1\nkind: LinkType\nmetadata: {name: container-items}\n"
         "spec:\n"
         "  source: container\n"
         "  target: item\n"
         "  cardinality: MANY_TO_MANY\n"
-        "  join:\n"
-        "    kind: join-table\n"
-        "    store: mes\n"
-        "    relation: {schema: mes, table: container_items}\n"
-        "    keys:\n"
-        "      source: {container_id: container_id}\n"
-        "      target: {item_id: item_id}\n",
+        "  join:\n" + (join_table if join_kind == "join-table" else "    kind: extracted\n"),
         encoding="utf-8",
     )
 
@@ -131,8 +133,11 @@ async def join_env(tmp_path):
         CREATE TABLE items (item_id TEXT PRIMARY KEY, name TEXT);
         CREATE TABLE container_items (container_id TEXT, item_id TEXT);
         INSERT INTO containers VALUES ('C-1', 'Crate');
+        INSERT INTO containers VALUES ('C-2', 'Bin');
         INSERT INTO items VALUES ('I-1', 'Bolt');
         INSERT INTO items VALUES ('I-2', 'Nut');
+        INSERT INTO items VALUES ('I-3', 'Washer');
+        INSERT INTO items VALUES ('I-4', 'Screw');
         """
     )
     con.commit()
@@ -152,11 +157,12 @@ async def join_env(tmp_path):
     )
     async with maker() as s:
         await repo.ensure(s)
-        await sync.sync(s, "container")
-        await sync.sync(s, "item")
+        if src_key == dst_key == "string":
+            await sync.sync(s, "container")
+            await sync.sync(s, "item")
         await s.commit()
     query = QueryService(compiled, repo, PolicyEngine(compiled))
-    yield {"maker": maker, "compiled": compiled, "repo": repo, "query": query}
+    yield {"maker": maker, "compiled": compiled, "repo": repo, "query": query, "join_kind": join_kind}
     await engine.dispose()
 
 
@@ -208,6 +214,154 @@ class TestQuery:
             items = await q.links(s, "container", "C-1", "container-items", SUPER)
         assert [i["item_id"] for i in items] == ["I-2"]
 
+    @pytest.mark.parametrize(
+        "join_env", [("integer", "timestamp", "join-table"), ("integer", "timestamp", "extracted")], indirect=True
+    )
+    async def test_text_backed_links_resolve_typed_anchor_aliases(self, join_env):
+        import datetime as dt
+
+        q, repo = join_env["query"], join_env["repo"]
+        now = dt.datetime.now(dt.UTC)
+        canonical = dt.datetime(2026, 1, 1, 12, tzinfo=dt.UTC)
+        legacy_item = dt.datetime(2026, 1, 2, 12, tzinfo=dt.UTC)
+        offset = "2026-01-01T20:00:00+08:00"
+        link = "container-items"
+        async with join_env["maker"]() as s:
+            await repo.action_insert(s, "container", {"container_id": 42}, now)
+            await repo.action_insert(s, "item", {"item_id": canonical}, now)
+            if join_env["join_kind"] == "extracted":
+                await repo.link_assert(s, link, "42", str(canonical), {"doc_id": "document"}, now)
+            else:
+                await repo.link_add(s, link, "42", str(canonical), now)
+
+            assert await repo.link_members_by_ids(s, link, ["0042", "42", "99"], from_source=True) == {
+                "0042": [str(canonical)],
+                "42": [str(canonical)],
+                "99": [],
+            }
+            assert await repo.link_members_by_ids(s, link, [offset], from_source=False) == {offset: ["42"]}
+            assert [item["item_id"] for item in await q.links(s, "container", "0042", link, SUPER)] == [canonical]
+            assert [obj["container_id"] for obj in await q.links(s, "item", offset, link, SUPER)] == [42]
+
+            # Existing raw spellings are still addressable, and a second
+            # spelling of the same edge must not duplicate its related object.
+            await repo.link_add(s, link, "0042", str(canonical), now)
+            await repo.action_insert(s, "item", {"item_id": legacy_item}, now)
+            await repo.link_add(s, link, "0042", str(legacy_item), now)
+            members = await repo.link_members_by_ids(s, link, ["0042"], from_source=True)
+            assert sorted(members["0042"]) == [str(canonical), str(legacy_item)]
+            assert sorted(item["item_id"] for item in await q.links(s, "container", "0042", link, SUPER)) == [
+                canonical,
+                legacy_item,
+            ]
+
+    async def test_text_backed_links_distinguish_string_ids_with_leading_zeros(self, join_env):
+        import datetime as dt
+
+        repo = join_env["repo"]
+        now = dt.datetime.now(dt.UTC)
+        async with join_env["maker"]() as s:
+            await repo.link_add(s, "container-items", "0042", "I-1", now)
+            await repo.link_add(s, "container-items", "42", "I-2", now)
+            assert await repo.link_members_by_ids(s, "container-items", ["0042", "42"], from_source=True) == {
+                "0042": ["I-1"],
+                "42": ["I-2"],
+            }
+
+    async def test_link_expansion_batches_fk_reads(self, env, monkeypatch):
+        """Expand only the anchors on the requested page for a foreign key."""
+        q, repo = env["query"], env["repo"]
+        async with env["maker"]() as s:
+            baseline = await q.query(s, "equipment", SUPER, limit=2)
+            expected = {}
+            for obj in baseline["objects"]:
+                rows = await q.links(s, "equipment", obj["equipment_id"], "step-equipment", SUPER)
+                expected[obj["equipment_id"]] = sorted(r["step_id"] for r in rows)
+
+            calls = []
+
+            async def forbidden(*args, **kwargs):
+                raise AssertionError("list expansion must use scoped membership reads")
+
+            real_members = repo.link_members_by_ids
+
+            async def counting_members(session, link_name, ids, *, from_source):
+                calls.append((list(ids), from_source))
+                return await real_members(session, link_name, ids, from_source=from_source)
+
+            monkeypatch.setattr(repo, "fk_linked_ids", forbidden)
+            monkeypatch.setattr(repo, "fk_link_pairs", forbidden)
+            monkeypatch.setattr(repo, "link_members_by_ids", counting_members)
+            out = await q.query(s, "equipment", SUPER, limit=2, links=["step-equipment"])
+
+        expanded = out["links"]["step-equipment"]
+        assert {pid: sorted(o["step_id"] for o in rows) for pid, rows in expanded.items()} == expected
+        assert calls == [(list(expected), True)]
+
+    async def test_link_expansion_batches_join_reads(self, join_env, monkeypatch):
+        """Bound membership and object reads without changing the page's results."""
+        import datetime as dt
+
+        from sqlalchemy import event
+
+        q, repo = join_env["query"], join_env["repo"]
+        fixed_at = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+        async with join_env["maker"]() as s:
+            await repo.link_add(s, "container-items", "C-1", "I-2", fixed_at)
+            await repo.link_add(s, "container-items", "C-1", "I-1", fixed_at)
+            await repo.link_add(s, "container-items", "C-2", "I-3", fixed_at)
+            # Dangling target: both the per-object and the batched path must
+            # drop it during assembly.
+            await repo.link_add(s, "container-items", "C-2", "I-404", fixed_at)
+            await s.commit()
+
+        async with join_env["maker"]() as s:
+            # Baseline on the same snapshot: per-object link reads.
+            containers = await q.query(s, "container", SUPER)
+            expected = {}
+            for obj in containers["objects"]:
+                rows = await q.links(s, "container", obj["container_id"], "container-items", SUPER)
+                expected[obj["container_id"]] = sorted(r["item_id"] for r in rows)
+
+            calls = []
+            loads = []
+            real_members = repo.link_members_by_ids
+            real_get_many = repo.get_many
+
+            async def counting_members(session, link_name, ids, *, from_source):
+                calls.append((list(ids), from_source))
+                return await real_members(session, link_name, ids, from_source=from_source)
+
+            async def counting_loads(session, object_type, ids):
+                loads.append(len(ids))
+                return await real_get_many(session, object_type, ids)
+
+            monkeypatch.setattr(repo, "link_members_by_ids", counting_members)
+            monkeypatch.setattr(repo, "get_many", counting_loads)
+            monkeypatch.setattr("ontogeny.engine.service._LINKED_OBJECT_BATCH_SIZE", 2)
+            monkeypatch.setattr("ontogeny.stores.repo._LINK_MEMBER_BATCH_SIZE", 1)
+
+            link_table = repo.compiled.link_table("container-items")
+            membership_parameters = []
+
+            def capture_membership(_conn, _cursor, statement, parameters, _context, _executemany):
+                if link_table in statement:
+                    membership_parameters.append(parameters)
+
+            conn = await s.connection()
+            event.listen(conn.sync_connection, "before_cursor_execute", capture_membership)
+            out = await q.query(s, "container", SUPER, links=["container-items"])
+            empty = await q.query(s, "container", SUPER, offset=2, links=["container-items"])
+
+        expanded = out["links"]["container-items"]
+        actual = {cid: sorted(item["item_id"] for item in items) for cid, items in expanded.items()}
+        assert actual == expected
+        assert expected == {"C-1": ["I-1", "I-2"], "C-2": ["I-3"]}
+        assert empty["links"] == {"container-items": {}}
+        assert calls == [(list(expected), True), ([], True)]
+        assert membership_parameters == [("C-1",), ("C-2",)]
+        assert loads == [2, 2]
+
     async def test_aggregate(self, env):
         q = env["query"]
         async with env["maker"]() as s:
@@ -238,6 +392,71 @@ class TestQuery:
             )
         assert [s_["type"] for s_ in out["steps"]] == ["requirement", "design-module", "tapeout-version", "wafer-lot"]
         assert sorted(out["final_ids"]) == ["LOT-2417", "LOT-2418", "LOT-2419"]
+
+    async def test_traverse_batches_fk_reads_per_hop(self, env, monkeypatch):
+        q, repo = env["query"], env["repo"]
+        calls = []
+        real_members = repo.link_members_by_ids
+
+        async def counting_members(session, link_name, ids, *, from_source):
+            calls.append((link_name, list(ids), from_source))
+            return await real_members(session, link_name, ids, from_source=from_source)
+
+        monkeypatch.setattr(repo, "link_members_by_ids", counting_members)
+        async with env["maker"]() as s:
+            out = await q.traverse(
+                s,
+                "equipment",
+                ["EQ-02", "EQ-07"],
+                SUPER,
+                [
+                    {"link": "step-equipment", "direction": "out"},
+                    {"link": "step-equipment", "direction": "in"},
+                ],
+            )
+
+        assert calls == [
+            ("step-equipment", ["EQ-02", "EQ-07"], True),
+            ("step-equipment", out["steps"][1]["ids"], False),
+        ]
+        assert sorted(out["steps"][1]["ids"]) == ["PS-7111", "PS-7112", "PS-7121", "PS-7131", "PS-7132"]
+        assert sorted(out["final_ids"]) == ["EQ-02", "EQ-07"]
+        pairs = {(edge["source"]["id"], edge["target"]["id"]) for edge in out["edges"]}
+        assert ("EQ-02", "PS-7111") in pairs
+        assert ("PS-7132", "EQ-07") in pairs
+        assert ("EQ-02", "PS-7112") not in pairs
+
+    async def test_traverse_join_table_in_both_directions(self, join_env):
+        import datetime as dt
+
+        q, repo = join_env["query"], join_env["repo"]
+        now = dt.datetime.now(dt.UTC)
+        async with join_env["maker"]() as s:
+            await repo.link_add(s, "container-items", "C-1", "I-1", now)
+            await repo.link_add(s, "container-items", "C-1", "I-2", now)
+            await repo.link_add(s, "container-items", "C-2", "I-1", now)
+            await repo.link_add(s, "container-items", "C-2", "I-3", now)
+            await s.commit()
+            out = await q.traverse(
+                s,
+                "container",
+                ["C-1"],
+                SUPER,
+                [
+                    {"link": "container-items", "direction": "out"},
+                    {"link": "container-items", "direction": "in"},
+                ],
+            )
+
+        assert sorted(out["steps"][1]["ids"]) == ["I-1", "I-2"]
+        assert sorted(out["final_ids"]) == ["C-1", "C-2"]
+        assert {(edge["source"]["id"], edge["target"]["id"]) for edge in out["edges"]} == {
+            ("C-1", "I-1"),
+            ("C-1", "I-2"),
+            ("I-1", "C-1"),
+            ("I-1", "C-2"),
+            ("I-2", "C-1"),
+        }
 
 
 class TestSandbox:

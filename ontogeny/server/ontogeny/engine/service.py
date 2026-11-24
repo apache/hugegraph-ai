@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import time
 from graphlib import CycleError, TopologicalSorter
+from itertools import batched
 from typing import Any
 
 from ..core import expr as _expr
@@ -34,6 +35,8 @@ from ..policy.engine import PolicyEngine
 from ..stores.repo import ObjectRepository
 
 log = logging.getLogger(__name__)
+
+_LINKED_OBJECT_BATCH_SIZE = 500
 
 
 def assemble_row(compiled, object_type: str, props: dict) -> dict:
@@ -91,13 +94,21 @@ class QueryService:
         out = assemble_row(self.compiled, object_type, props)
         return self.policy.mask(object_type, out, principal)
 
+    async def _assemble_map(self, session, object_type: str, ids: list[str], principal: dict) -> dict[str, dict]:
+        """Assemble every distinct id once, keyed by string primary key."""
+        obj = self.compiled.objects.get(object_type)
+        if obj is None:
+            raise NotFoundError(f"unknown object type {object_type!r}")
+        pk = obj.spec.primaryKey[0]
+        assembled = {}
+        for batch in batched(dict.fromkeys(ids), _LINKED_OBJECT_BATCH_SIZE):
+            rows = await self.repo.get_many(session, object_type, batch)
+            assembled.update((str(row[pk]), self.assemble(object_type, row, principal)) for row in rows)
+        return assembled
+
     async def _assemble_many(self, session, object_type: str, ids: list[str], principal: dict) -> list[dict]:
-        rows = await self.repo.get_many(session, object_type, ids)
-        by_pk = {}
-        pk = self.compiled.objects[object_type].spec.primaryKey[0]
-        for r in rows:
-            by_pk[str(r.get(pk))] = r
-        return [self.assemble(object_type, by_pk[i], principal) for i in ids if i in by_pk]
+        by_pk = await self._assemble_map(session, object_type, ids, principal)
+        return [by_pk[i] for i in ids if i in by_pk]
 
     # ----------------------------------------------------------------- query
 
@@ -134,19 +145,21 @@ class QueryService:
         }
         if links:
             pk = self.compiled.objects[object_type].spec.primaryKey[0]
+            page_ids = [str(obj[pk]) for obj in objects]
             expanded = {}
             for link_name in links:
-                if link_name not in self.compiled.links:
+                lnk = self.compiled.links.get(link_name)
+                if lnk is None:
                     raise NotFoundError(f"unknown link {link_name!r}")
-                lnk = self.compiled.links[link_name]
-                other = lnk.spec.target if lnk.spec.source == object_type else lnk.spec.source
-                bucket: dict[str, list[dict]] = {}
-                for obj in objects:
-                    ids = await self._linked_ids(
-                        session, link_name, str(obj[pk]), from_source=lnk.spec.source == object_type
-                    )
-                    bucket[str(obj[pk])] = await self._assemble_many(session, other, ids, principal)
-                expanded[link_name] = bucket
+                from_source = lnk.spec.source == object_type
+                other = lnk.spec.target if from_source else lnk.spec.source
+                grouped = await self.repo.link_members_by_ids(session, link_name, page_ids, from_source=from_source)
+                assembled = await self._assemble_map(
+                    session, other, [i for ids in grouped.values() for i in ids], principal
+                )
+                expanded[link_name] = {
+                    pid: [assembled[i] for i in ids if i in assembled] for pid, ids in grouped.items()
+                }
             result["links"] = expanded
         return result
 
@@ -194,13 +207,8 @@ class QueryService:
         join = lnk.spec.join
         if isinstance(join, ForeignKeyJoin):
             return await self.repo.fk_linked_ids(session, link_name, obj_id, from_source=from_source)
-        members = await self.repo.link_members(
-            session,
-            link_name,
-            src_id=obj_id if from_source else None,
-            dst_id=obj_id if not from_source else None,
-        )
-        return [dst if from_source else src for src, dst in members]
+        grouped = await self.repo.link_members_by_ids(session, link_name, [obj_id], from_source=from_source)
+        return grouped[obj_id]
 
     async def links(
         self,
@@ -409,8 +417,9 @@ class QueryService:
                     f"link {link_name!r}: direction {direction!r} contradicts the endpoint side of {current_type!r}"
                 )
             nxt: list[str] = []
+            grouped = await self.repo.link_members_by_ids(session, str(link_name), current_ids, from_source=from_source)
             for oid in current_ids:
-                targets = await self._linked_ids(session, str(link_name), oid, from_source=from_source)
+                targets = grouped[oid]
                 for tid in targets:
                     edges.append(
                         {

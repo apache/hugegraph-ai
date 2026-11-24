@@ -25,6 +25,11 @@ class FetchGraphDataNode(BaseNode):
     fetch_graph_data_op: FetchGraphData
     context: Optional[WkFlowState] = None
     wk_input: Optional[WkFlowInput] = None
+    fetch_all_vids: bool = False
+
+    def __init__(self, fetch_all_vids: bool = False):
+        super().__init__()
+        self.fetch_all_vids = fetch_all_vids
 
     def node_init(self):
         client = get_hg_client()
@@ -32,4 +37,6 @@ class FetchGraphDataNode(BaseNode):
         return super().node_init()
 
     def operator_schedule(self, data_json):
+        if self.fetch_all_vids:
+            return self.fetch_graph_data_op.run(data_json, fetch_all_vids=True)
         return self.fetch_graph_data_op.run(data_json)

@@ -643,7 +643,7 @@ def test_http_excludes_semantic_duplicate_identities_and_keeps_chunk_evidence(cl
         schema["vertexlabels"][0].pop("primary_keys")
         accepted["vertices"][0]["id"] = "a8098c1a-f86e-11da-bd1a-00112444be1f"
         values = ["a8098c1a-f86e-11da-bd1a-00112444be1e", "A8098C1A-F86E-11DA-BD1A-00112444BE1E"]
-        for vertex, value in zip(rejected["vertices"], values):
+        for vertex, value in zip(rejected["vertices"], values, strict=False):
             vertex["id"] = value
         issue_path = "vertices[1].id"
     else:
@@ -652,7 +652,7 @@ def test_http_excludes_semantic_duplicate_identities_and_keeps_chunk_evidence(cl
         schema["propertykeys"].append({"name": "value", "data_type": kind, "cardinality": "SINGLE"})
         accepted["vertices"][0]["properties"]["value"] = 2.0 if kind == "FLOAT" else 1
         values = [1, 1.0] if kind == "FLOAT" else [0, "1970-01-01"]
-        for vertex, value in zip(rejected["vertices"], values):
+        for vertex, value in zip(rejected["vertices"], values, strict=False):
             vertex["properties"]["value"] = value
         issue_path = "vertices[1].properties" + (".value" if kind == "DATE" else "")
     scripts = {

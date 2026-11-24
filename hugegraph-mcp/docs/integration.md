@@ -36,7 +36,7 @@ The environment installs both packages from this checkout. Keep commands relativ
 to the repository root. For Windows setup, see the [README](../README.md#developer-notes);
 the shell and Docker examples in this checklist use POSIX syntax.
 
-The server uses STDIO and does not listen on a network address. The MCP client
+By default (`HUGEGRAPH_MCP_TRANSPORT=stdio`), the server uses STDIO and does not listen on a network address. The MCP client
 must launch the server as its child and hold its stdin/stdout pipes. Run the
 provided client from the repository root using the environment above:
 
@@ -68,7 +68,7 @@ rm -rf -- /tmp/hg-mcp-plan-store
 }
 ```
 
-Require `ok=true`, `data.readonly=false`, `data.toolset="core"`, and `data.mcp_tool_contract_version="2.0"`. Confirm that the MCP client lists all 16 core tools, including `confirm_write_tool`, `get_write_status_tool`, and `reconcile_write_tool`.
+Require `ok=true`, `data.readonly=false`, `data.toolset="core"`, and `data.mcp_tool_contract_version="2.0"`. Confirm that the MCP client lists all 24 core tools, including `confirm_write_tool`, `get_write_status_tool`, `list_write_plans_tool`, `cancel_write_plan_tool`, and `reconcile_write_tool`.
 
 ## 3. Create Schema One Object Per Plan
 

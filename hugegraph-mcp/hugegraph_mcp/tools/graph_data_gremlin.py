@@ -30,7 +30,7 @@ def _g(value: Any) -> str:
         # Groovy/Gremlin map literal uses [...] not {...}
         items = ", ".join(f"{_g(k)}: {_g(v)}" for k, v in sorted(value.items()))
         return f"[{items}]"
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         items = ", ".join(_g(v) for v in value)
         return f"[{items}]"
     return json.dumps(value)

@@ -21,12 +21,12 @@ from typing import Any
 
 from pyhugegraph.client import PyHugeClient
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.hugegraph_client import build_hugegraph_client
 
 
 def _build_client() -> PyHugeClient:
-    return build_hugegraph_client(MCPConfig.from_env(), client_cls=PyHugeClient)
+    return build_hugegraph_client(get_effective_config(), client_cls=PyHugeClient)
 
 
 def _simple_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -69,11 +69,11 @@ def get_live_schema() -> dict[str, Any]:
         "simple_schema": _simple_schema(raw_schema),
     }
 
-    graphspace = MCPConfig.from_env().graphspace
+    graphspace = get_effective_config().graphspace
     if graphspace:
         result["graphspace"] = graphspace
 
-    result["readonly"] = MCPConfig.from_env().is_readonly()
+    result["readonly"] = get_effective_config().is_readonly()
 
     return result
 

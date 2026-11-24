@@ -76,7 +76,7 @@ class FaissVectorIndex(VectorStoreBase):
 
         distances, indices = self.index.search(np.array([query_vector]), top_k)
         results = []
-        for dist, i in zip(distances[0], indices[0]):
+        for dist, i in zip(distances[0], indices[0], strict=False):
             if dist < dis_threshold:
                 results.append(deepcopy(self.properties[i]))
                 log.debug("[✓] Add valid distance %s to results.", dist)
@@ -113,10 +113,12 @@ class FaissVectorIndex(VectorStoreBase):
             os.remove(properties_file)
 
     @staticmethod
-    def from_name(embed_dim: int, *name: str) -> "FaissVectorIndex":
+    def from_name(embed_dim: int, *name: str, read_only: bool = False) -> "FaissVectorIndex":
         index_file = os.path.join(resource_path, *name, INDEX_FILE_NAME)
         properties_file = os.path.join(resource_path, *name, PROPERTIES_FILE_NAME)
         if not os.path.exists(index_file) or not os.path.exists(properties_file):
+            if read_only:
+                raise FileNotFoundError(f"Faiss index '{'/'.join(name)}' does not exist")
             log.warning("No index file found, create a new one.")
             return FaissVectorIndex(embed_dim)
 
@@ -128,6 +130,8 @@ class FaissVectorIndex(VectorStoreBase):
             # when dim same, use old
             vector_index.index = faiss_index
             vector_index.properties = properties
+        elif read_only:
+            raise ValueError(f"Faiss index '{'/'.join(name)}' dimension mismatch: {faiss_index.d} != {embed_dim}")
         else:
             log.warning("dim is different, create a new one.")
         return vector_index

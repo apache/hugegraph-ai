@@ -17,11 +17,14 @@
 
 
 import logging
+import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy
 from typing import Any
 
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
 from urllib3.util.retry import Retry
@@ -29,11 +32,30 @@ from urllib3.util.retry import Retry
 from pyhugegraph.utils.authentication import request_auth
 from pyhugegraph.utils.compat import ServerAdapter
 from pyhugegraph.utils.constants import Constants
+from pyhugegraph.utils.exceptions import ResponseTooLargeError
 from pyhugegraph.utils.huge_config import HGraphConfig, normalize_timeout
 from pyhugegraph.utils.log import log
 from pyhugegraph.utils.util import ResponseValidation, redact_sensitive_data
 
+
+def _tighten_response_socket_timeout(response: requests.Response, effective_deadline: float) -> None:
+    remaining = effective_deadline - time.monotonic()
+    if remaining <= 0:
+        raise requests.exceptions.ReadTimeout("Response exceeded total deadline")
+    try:
+        sock = getattr(getattr(getattr(getattr(response, "raw", None), "_fp", None), "fp", None), "raw", None)
+        sock = getattr(sock, "_sock", None)
+        if sock is not None and hasattr(sock, "settimeout"):
+            existing = sock.gettimeout() if hasattr(sock, "gettimeout") else None
+            target = remaining if existing is None else min(existing, remaining)
+            sock.settimeout(target)
+    except Exception:
+        pass
+
+
 _REQUEST_RETRIES: ContextVar[bool] = ContextVar("hugegraph_request_retries", default=True)
+_REQUEST_MAX_RESPONSE_BYTES: ContextVar[int | None] = ContextVar("hugegraph_request_max_response_bytes", default=None)
+_REQUEST_DEADLINE: ContextVar[float | None] = ContextVar("hugegraph_request_deadline", default=None)
 
 
 class _RetryAdapter(HTTPAdapter):
@@ -167,12 +189,40 @@ class HGraphSession:
             self._session.close()
             self._closed = True
 
+    @contextmanager
+    def request_guard(
+        self,
+        *,
+        max_response_bytes: int | None = None,
+        deadline_seconds: float | None = None,
+        retries: bool | None = None,
+    ):
+        """Apply bounded response size, total deadline, and retry policy to nested requests."""
+        if max_response_bytes is not None and max_response_bytes <= 0:
+            raise ValueError("max_response_bytes must be positive")
+        if deadline_seconds is not None and deadline_seconds <= 0:
+            raise ValueError("deadline_seconds must be positive")
+        tokens: list[tuple[ContextVar[Any], Any]] = []
+        if max_response_bytes is not None:
+            tokens.append((_REQUEST_MAX_RESPONSE_BYTES, _REQUEST_MAX_RESPONSE_BYTES.set(max_response_bytes)))
+        if deadline_seconds is not None:
+            tokens.append((_REQUEST_DEADLINE, _REQUEST_DEADLINE.set(time.monotonic() + deadline_seconds)))
+        if retries is not None:
+            tokens.append((_REQUEST_RETRIES, _REQUEST_RETRIES.set(retries)))
+        try:
+            yield
+        finally:
+            for var, token in reversed(tokens):
+                var.reset(token)
+
     def request(
         self,
         path: str,
         method: str = "GET",
         validator=None,
-        retries: bool = True,
+        retries: bool | None = None,
+        max_response_bytes: int | None = None,
+        deadline_seconds: float | None = None,
         **kwargs: Any,
     ) -> Any:
         if validator is None:
@@ -185,7 +235,41 @@ class HGraphSession:
         headers.update({key: value for key, value in request_headers.items() if value is not None})
         auth = request_auth(headers, self._auth)
         timeout = kwargs.pop("timeout", self._timeout)
-        policy = _REQUEST_RETRIES.set(retries)
+
+        effective_max_bytes = (
+            max_response_bytes if max_response_bytes is not None else _REQUEST_MAX_RESPONSE_BYTES.get()
+        )
+        effective_retries = _REQUEST_RETRIES.get() if retries is None else retries
+        effective_deadline = _REQUEST_DEADLINE.get()
+        if deadline_seconds is not None:
+            if deadline_seconds <= 0:
+                raise ValueError("deadline_seconds must be positive")
+            candidate_deadline = time.monotonic() + deadline_seconds
+            effective_deadline = (
+                candidate_deadline if effective_deadline is None else min(effective_deadline, candidate_deadline)
+            )
+
+        if effective_deadline is not None:
+            remaining = effective_deadline - time.monotonic()
+            if remaining <= 0:
+                raise requests.exceptions.ReadTimeout("Request deadline exceeded before dispatch")
+            if isinstance(timeout, tuple) and len(timeout) == 2:
+                timeout = (min(float(timeout[0]), remaining), min(float(timeout[1]), remaining))
+            elif isinstance(timeout, int | float):
+                timeout = min(float(timeout), remaining)
+            elif timeout is None:
+                timeout = remaining
+
+        if effective_max_bytes is not None:
+            if effective_max_bytes <= 0:
+                raise ValueError("max_response_bytes must be positive")
+            kwargs["stream"] = True
+            kwargs["allow_redirects"] = False
+        elif effective_deadline is not None:
+            kwargs["stream"] = True
+            kwargs["allow_redirects"] = False
+
+        policy = _REQUEST_RETRIES.set(effective_retries)
         try:
             response: requests.Response = getattr(self._session, method.lower())(
                 url,
@@ -194,6 +278,55 @@ class HGraphSession:
                 timeout=timeout,
                 **kwargs,
             )
+            if effective_max_bytes is not None or effective_deadline is not None:
+                try:
+                    if effective_max_bytes is not None:
+                        raw_cl = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+                        if raw_cl is not None:
+                            try:
+                                cl_val = int(raw_cl)
+                            except (TypeError, ValueError):
+                                cl_val = None
+                            if cl_val is not None and cl_val > effective_max_bytes:
+                                raise ResponseTooLargeError(effective_max_bytes, actual_bytes=cl_val)
+                    buf = bytearray()
+                    if effective_deadline is not None:
+                        _tighten_response_socket_timeout(response, effective_deadline)
+                    chunk_limit = min(16384, effective_max_bytes) if effective_max_bytes is not None else 16384
+                    raw_stream = getattr(response, "raw", None)
+                    read1_fn = getattr(raw_stream, "read1", None) if raw_stream is not None else None
+                    if callable(read1_fn) and hasattr(raw_stream, "decode_content"):
+                        while True:
+                            if effective_deadline is not None:
+                                _tighten_response_socket_timeout(response, effective_deadline)
+                            try:
+                                chunk = read1_fn(chunk_limit, decode_content=True)
+                            except urllib3.exceptions.ReadTimeoutError as exc:
+                                raise requests.exceptions.ReadTimeout(exc, response=response) from exc
+                            if effective_deadline is not None and time.monotonic() > effective_deadline:
+                                raise requests.exceptions.ReadTimeout("Response exceeded total deadline")
+                            if not chunk:
+                                break
+                            buf.extend(chunk)
+                            if effective_max_bytes is not None and len(buf) > effective_max_bytes:
+                                raise ResponseTooLargeError(effective_max_bytes, actual_bytes=len(buf))
+                    else:
+                        for chunk in response.iter_content(chunk_size=chunk_limit):
+                            if effective_deadline is not None and time.monotonic() > effective_deadline:
+                                raise requests.exceptions.ReadTimeout("Response exceeded total deadline")
+                            if not chunk:
+                                continue
+                            buf.extend(chunk)
+                            if effective_max_bytes is not None and len(buf) > effective_max_bytes:
+                                raise ResponseTooLargeError(effective_max_bytes, actual_bytes=len(buf))
+                            if effective_deadline is not None:
+                                _tighten_response_socket_timeout(response, effective_deadline)
+                    if effective_deadline is not None and time.monotonic() > effective_deadline:
+                        raise requests.exceptions.ReadTimeout("Response exceeded total deadline")
+                    response._content = bytes(buf)
+                    response._content_consumed = True
+                finally:
+                    response.close()
         finally:
             _REQUEST_RETRIES.reset(policy)
         if log.isEnabledFor(logging.DEBUG):

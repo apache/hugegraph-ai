@@ -10,7 +10,7 @@ for installation, tools, configuration, and the public write contract.
 flowchart LR
     T[Typed MCP tools] --> R[Graph and schema readers]
     T --> P[Planner]
-    P --> S[(SQLite plan store)]
+    P --> S[(SQLite / PostgreSQL plan store)]
     S --> E[Write executor]
     E --> A[Supported backend adapters]
     E --> S
@@ -25,7 +25,8 @@ flowchart LR
   without an executable `plan_id`.
 - **Plan store** persists the approved payload, ordered operations, dependencies,
   attempts, and receipts. Confirmation loads this payload by `plan_id`; caller
-  resubmission cannot change it. SQLite supports one write-capable MCP instance.
+  resubmission cannot change it. SQLite supports one write-capable MCP instance;
+  multi-instance deployments use `PostgresPlanStore` with outbox event relay.
   Legacy consumed confirmations without reliable receipts migrate to an unknown
   outcome rather than being treated as success or rejection.
 - **Executor** validates adapter availability before claiming a plan. Durable
@@ -44,9 +45,9 @@ check; a process-local lock cannot supply that guarantee.
 
 | Operation | Current behavior | Requirement for broader support |
 |---|---|---|
-| Structured graph reads | Available with bounded inputs and item/byte output guards | Backend execution budgets remain separate |
-| Schema inspection | Available; schema responses have no item/byte output guard | Add explicit limits if bounded schema output is required |
-| Schema creation | One property key, vertex label, or edge label per confirmed plan | Additional schema operations need explicit adapters and outcome verification |
+| Structured graph reads | Available with `ReadBudget`, cursor pagination, field projection, and item/byte output guards | Backend execution budgets remain separate |
+| Schema inspection | Available; `inspect_schema_tool` and `hugegraph://.../schema` bound summary/raw payloads and emit SHA-256 fingerprints | Per-label filtering remains available |
+| Schema creation & append | One `create_property_key`, `create_vertex_label`, `create_edge_label`, `append_vertex_label`, or `append_edge_label` per confirmed plan | Additional schema operations (`eliminate`, `drop`, indexes) need explicit adapters and outcome verification |
 | Exact edge deletion | Confirmable using a persisted edge ID | Other backend profiles require verification |
 | Vertex/edge creation and graph import | Preview-only | Atomic create-if-absent and stable edge identity |
 | Property mutation | Preview-only | Backend compare-and-set of expected and desired state |
@@ -61,18 +62,11 @@ test is insufficient to enable that operation. See
 [`backend_capabilities.py`](../hugegraph_mcp/backend_capabilities.py) and
 [`test_real_write_path.py`](../tests/integration/test_real_write_path.py).
 
-Output item/byte checks run after response materialization. For tools that implement these guards, they bound MCP
-output, not server work, network transfer, or parsing memory. Connection, read,
-write, and AI timeouts are configured separately.
+Output item/byte checks and `ReadBudget` (derived from `HUGEGRAPH_READ_TIMEOUT_SECONDS`, `HUGEGRAPH_MCP_MAX_RESULT_ITEMS`, and `HUGEGRAPH_MCP_MAX_RESULT_BYTES`) bound MCP tool output, while `hugegraph-python-client` enforces streaming response byte caps and request deadlines. Connection, read, write, and AI timeouts are configured separately.
 
-VID refresh uses `POST /v1/vid-embeddings/refresh`, whose required target fields
-are checked under the runtime configuration lock before executing the flow.
-The capability GET retains `protocol_version=1` for compatibility, but the POST
-route supplies the validation guarantee even when requests reach different
-replica versions. MCP never falls back to the legacy refresh route. Empty/default
-GraphSpace representations are equivalent only for comparison; configuration and
-index paths are unchanged. Operators must still verify physical-instance identity
-when the MCP graph URL and the AI graph URL differ.
+Large extraction payloads and preview artifacts are persisted atomically under `HUGEGRAPH_MCP_STATE_DIR` via `LocalArtifactStore` (`artifact://{artifact_id}` / `artifact://{artifact_id}/parts/{part_id}`), with owner/tenant isolation and bounded TTL cleanup. In multi-instance deployments using `PostgresPlanStore`, mount a shared read-write volume at `HUGEGRAPH_MCP_STATE_DIR` across all instances so artifacts created on one instance remain accessible from any other instance. Multi-route deployments use `HUGEGRAPH_MCP_GRAPH_ROUTES`, `OAuthBearerVerifier` (JWKS), and optional `HUGEGRAPH_MCP_CONFIRMATION_MODE=elicitation` approval records.
+
+VID refresh uses `POST /v1/vid-embeddings/refresh`, validating expected target fields under the runtime configuration lock before running the flow (never falling back to the legacy unversioned route). Empty/default GraphSpace representations map to `DEFAULT` for target comparison without altering index paths.
 
 ## Durable Outcomes
 
@@ -102,9 +96,8 @@ no public resume tool or automatic replay of `PARTIAL`/`UNKNOWN` writes.
    primitives listed above and prove them with two-client concurrency tests for
    each supported backend. Imports must preserve operation dependencies,
    returned vertex IDs, and explicit partial outcomes.
-3. **Support multiple write instances.** Implement a shared transactional
-   `PlanStore` with the same claim and fencing guarantees before enabling that
-   topology. Define receipt retention without silently discarding unresolved
+3. **Define receipt retention policies.** Add archival or retention policies for
+   resolved `PlanStore` records without silently discarding unresolved
    `UNKNOWN` or `PARTIAL` records.
 4. **Complete protocol migration.** Retire the all-or-nothing legacy
    `plan_hash`/`nonce`/`expires_at` locator after its documented compatibility

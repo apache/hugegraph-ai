@@ -15,6 +15,7 @@
 
 环境变量优先级高于默认值，避免硬编码连接信息。"""
 
+import contextvars
 import logging
 import math
 import os
@@ -22,6 +23,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+
+from hugegraph_mcp.confirmation_policy import DEFAULT_CONFIRMATION_MODE, resolve_confirmation_mode
+from hugegraph_mcp.toolsets import DEFAULT_CORE_PROFILE, resolve_core_profile
 
 TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_VALUES = frozenset({"0", "false", "no", "off"})
@@ -47,8 +51,22 @@ CONFIG_ENV_NAMES = (
     "HUGEGRAPH_MCP_MAX_RESULT_ITEMS",
     "HUGEGRAPH_MCP_MAX_RESULT_BYTES",
     "HUGEGRAPH_MCP_PLAN_STORE",
+    "HUGEGRAPH_MCP_PLAN_STORE_DSN",
     "HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT",
     "HUGEGRAPH_MCP_STATE_DIR",
+    "HUGEGRAPH_MCP_TRANSPORT",
+    "HUGEGRAPH_MCP_HTTP_HOST",
+    "HUGEGRAPH_MCP_HTTP_PORT",
+    "HUGEGRAPH_MCP_HTTP_PATH",
+    "HUGEGRAPH_MCP_DEPLOYMENT",
+    "HUGEGRAPH_MCP_EVENT_BUS",
+    "HUGEGRAPH_MCP_CORE_PROFILE",
+    "HUGEGRAPH_MCP_CONFIRMATION_MODE",
+    "HUGEGRAPH_MCP_GRAPH_ROUTES",
+    "HUGEGRAPH_MCP_OAUTH_ISSUER",
+    "HUGEGRAPH_MCP_OAUTH_AUDIENCE",
+    "HUGEGRAPH_MCP_OAUTH_JWKS_URL",
+    "HUGEGRAPH_MCP_OAUTH_JWKS_JSON",
     "XDG_STATE_HOME",
 )
 _CONFIG_CACHE: tuple[tuple[tuple[str, str | None], ...], "MCPConfig"] | None = None
@@ -72,6 +90,7 @@ _NUMERIC_FIELD_SPECS = {
     "max_result_items": _NumericFieldSpec("integer", 100, 1, 1_000_000),
     "max_result_bytes": _NumericFieldSpec("integer", 1_048_576, 1, 1_073_741_824),
     "write_instance_count": _NumericFieldSpec("integer", 1, 1, 1024),
+    "http_port": _NumericFieldSpec("integer", 8000, 1, 65535),
 }
 
 
@@ -97,8 +116,22 @@ class MCPConfig:
     max_result_items: int = 100
     max_result_bytes: int = 1_048_576
     plan_store_backend: str = "sqlite"
+    plan_store_dsn: str | None = None
     write_instance_count: int = 1
     state_dir: Path = field(default_factory=lambda: Path.home() / ".local" / "state" / "hugegraph-mcp")
+    transport: str = "stdio"
+    http_host: str = "127.0.0.1"
+    http_port: int = 8000
+    http_path: str = "/mcp"
+    deployment_id: str = "default"
+    event_bus_backend: str = "memory"
+    core_profile: str = DEFAULT_CORE_PROFILE
+    confirmation_mode: str = DEFAULT_CONFIRMATION_MODE
+    graph_routes_json: str | None = None
+    oauth_issuer: str | None = None
+    oauth_audience: str | None = None
+    oauth_jwks_url: str | None = None
+    oauth_jwks_json: str | None = None
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
@@ -194,11 +227,25 @@ class MCPConfig:
                 "max_result_bytes",
             ),
             plan_store_backend=(env.get("HUGEGRAPH_MCP_PLAN_STORE", "sqlite").strip().lower() or "invalid"),
+            plan_store_dsn=_optional_non_empty(env.get("HUGEGRAPH_MCP_PLAN_STORE_DSN")),
             write_instance_count=_parse_numeric_field(
                 env.get("HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT"),
                 "write_instance_count",
             ),
             state_dir=_state_dir(env),
+            transport=_parse_transport(env.get("HUGEGRAPH_MCP_TRANSPORT"), warnings),
+            http_host=_non_empty(env.get("HUGEGRAPH_MCP_HTTP_HOST", "127.0.0.1"), "127.0.0.1"),
+            http_port=_parse_numeric_field(env.get("HUGEGRAPH_MCP_HTTP_PORT"), "http_port"),
+            http_path=_normalize_http_path(env.get("HUGEGRAPH_MCP_HTTP_PATH", "/mcp")),
+            deployment_id=_non_empty(env.get("HUGEGRAPH_MCP_DEPLOYMENT", "default"), "default"),
+            event_bus_backend=(env.get("HUGEGRAPH_MCP_EVENT_BUS", "memory").strip().lower() or "memory"),
+            core_profile=resolve_core_profile(env.get("HUGEGRAPH_MCP_CORE_PROFILE")),
+            confirmation_mode=resolve_confirmation_mode(env.get("HUGEGRAPH_MCP_CONFIRMATION_MODE")),
+            graph_routes_json=_optional_non_empty(env.get("HUGEGRAPH_MCP_GRAPH_ROUTES")),
+            oauth_issuer=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_ISSUER")),
+            oauth_audience=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_AUDIENCE")),
+            oauth_jwks_url=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_JWKS_URL")),
+            oauth_jwks_json=_optional_non_empty(env.get("HUGEGRAPH_MCP_OAUTH_JWKS_JSON")),
             warnings=tuple(warnings),
         )
         for warning in config.warnings:
@@ -214,7 +261,28 @@ class MCPConfig:
         return self.readonly
 
     def has_safe_write_store(self) -> bool:
-        return self.plan_store_backend == "sqlite" and self.write_instance_count == 1
+        if self.plan_store_backend == "sqlite":
+            return self.write_instance_count == 1
+        if self.plan_store_backend == "postgres":
+            return bool(self.plan_store_dsn)
+        return False
+
+
+def _parse_transport(value: str | None, warnings: list[str]) -> str:
+    if value is None or not value.strip():
+        return "stdio"
+    normalized = value.strip().lower()
+    if normalized in {"stdio", "http", "streamable-http", "sse"}:
+        return normalized
+    warnings.append(f"Invalid HUGEGRAPH_MCP_TRANSPORT={value!r}; falling back to 'stdio'")
+    return "stdio"
+
+
+def _normalize_http_path(value: str | None) -> str:
+    if value is None or not value.strip():
+        return "/mcp"
+    cleaned = value.strip()
+    return cleaned if cleaned.startswith("/") else f"/{cleaned}"
 
 
 def _parse_graph_path(graph_path: str) -> tuple[str, str]:
@@ -301,14 +369,44 @@ def _environment_snapshot(env: Mapping[str, str]) -> dict[str, str]:
     return snapshot
 
 
+_REQUEST_CONFIG: contextvars.ContextVar[MCPConfig | None] = contextvars.ContextVar(
+    "hugegraph_mcp_request_config",
+    default=None,
+)
+
+
+def set_request_config(cfg: MCPConfig | None) -> contextvars.Token[MCPConfig | None]:
+    """Bind a request-local MCPConfig override for the current execution context."""
+    return _REQUEST_CONFIG.set(cfg)
+
+
+def reset_request_config(token: contextvars.Token[MCPConfig | None]) -> None:
+    """Restore the previous request-local MCPConfig override."""
+    _REQUEST_CONFIG.reset(token)
+
+
+def get_effective_config() -> MCPConfig:
+    """Return the request-local, active runtime, or environment MCPConfig."""
+    request_cfg = _REQUEST_CONFIG.get()
+    if request_cfg is not None:
+        return request_cfg
+
+    from hugegraph_mcp.runtime import get_current_runtime
+
+    rt = get_current_runtime()
+    if rt is not None:
+        return rt.config
+    return MCPConfig.from_env()
+
+
 class RuntimeConfigProxy:
     """Compatibility proxy for code that imports config directly."""
 
     def __getattr__(self, name: str):
-        return getattr(MCPConfig.from_env(), name)
+        return getattr(get_effective_config(), name)
 
     def is_readonly(self) -> bool:
-        return MCPConfig.from_env().is_readonly()
+        return get_effective_config().is_readonly()
 
 
 config = RuntimeConfigProxy()

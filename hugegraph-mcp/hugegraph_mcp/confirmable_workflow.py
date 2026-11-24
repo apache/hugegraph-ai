@@ -16,7 +16,7 @@
 import time
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import get_effective_config
 from hugegraph_mcp.confirmation_store import (
     ConfirmationAlreadyUsedError,
     ConfirmationNotIssuedError,
@@ -176,7 +176,7 @@ def record_write_outcome(
     receipt: dict[str, Any],
 ) -> bool:
     """Persist an execution receipt; return False if durability is unavailable."""
-    persisted_status = PlanStatus(status.value if isinstance(status, (PlanStatus, ApplyStatus)) else status)
+    persisted_status = PlanStatus(status.value if isinstance(status, PlanStatus | ApplyStatus) else status)
     try:
         ConfirmationStore.from_config().record_outcome(
             plan_hash=plan_hash,
@@ -262,7 +262,7 @@ def verify_and_consume_issued_plan(
     if not valid:
         return False, error_type, details, None
 
-    if MCPConfig.from_env().is_readonly():
+    if get_effective_config().is_readonly():
         return (
             False,
             ErrorType.READONLY_VIOLATION,

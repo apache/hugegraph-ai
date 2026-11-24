@@ -61,7 +61,7 @@ def extracted_graph(first, second, endpoint_style):
         edge.update(
             {
                 key: {"label": "person", "properties": vertex["properties"]}
-                for key, vertex in zip(("source", "target"), vertices)
+                for key, vertex in zip(("source", "target"), vertices, strict=False)
             }
         )
     else:
@@ -87,7 +87,7 @@ def test_http_preserves_distinct_composite_keys_and_endpoint_aliases(
     data = response.json()
     assert data["status"] == "succeeded"
     expected = deepcopy(extracted)
-    for vertex, vertex_id in zip(expected["vertices"], ids):
+    for vertex, vertex_id in zip(expected["vertices"], ids, strict=False):
         vertex.update(id=vertex_id, type="vertex")
     expected["edges"][0].update(type="edge", outV=ids[0], outVLabel="person", inV=ids[1], inVLabel="person")
     assert data["result"] == expected

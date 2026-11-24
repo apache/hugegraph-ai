@@ -929,7 +929,7 @@ def test_repaired_semantic_duplicate_stays_blocked_and_keeps_latest_values(schem
 
 @pytest.mark.parametrize("strategy,vertex_id", [("CUSTOMIZE_STRING", "same"), ("CUSTOMIZE_NUMBER", 7)])
 def test_global_raw_id_duplicates_across_labels_remain_invalid(schema, graph, strategy, vertex_id):
-    for definition, vertex in zip(schema["vertexlabels"], graph["vertices"]):
+    for definition, vertex in zip(schema["vertexlabels"], graph["vertices"], strict=False):
         definition["id_strategy"] = strategy
         definition.pop("primary_keys", None)
         vertex["id"] = vertex_id
@@ -952,7 +952,7 @@ def test_uuid_endpoint_uses_the_label_id_type_and_keeps_original_spelling(schema
 def _mixed_id_types(schema, graph):
     vertex_id = "a8098c1a-f86e-11da-bd1a-00112444be1e"
     for definition, strategy, vertex in zip(
-        schema["vertexlabels"], ("CUSTOMIZE_STRING", "CUSTOMIZE_UUID"), graph["vertices"]
+        schema["vertexlabels"], ("CUSTOMIZE_STRING", "CUSTOMIZE_UUID"), graph["vertices"], strict=False
     ):
         definition["id_strategy"] = strategy
         definition.pop("primary_keys", None)

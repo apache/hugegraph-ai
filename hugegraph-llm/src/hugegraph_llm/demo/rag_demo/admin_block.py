@@ -124,26 +124,23 @@ def create_admin_block():
         # Button to submit password
         submit_button = gr.Button("Submit")
 
-        with gr.Row(visible=False) as hidden_row:
-            with gr.Column():
-                # LLM Server log display, refreshes every 1 second
-                gr.Markdown("### LLM Server Log")
-                llm_server_log_output = gr.Code(
-                    label="LLM Server Log (llm-server.log)",
-                    lines=20,
-                    value="",
-                    elem_classes="code-container-edit",
-                    every=60,  # Refresh every 60 second
-                )
-                with gr.Row():
-                    with gr.Column():
-                        # Button to clear LLM Server log, initially hidden
-                        clear_llm_server_button = gr.Button("Clear LLM Server Log", visible=False)
-                    with gr.Column():
-                        # Button to refresh LLM Server log manually
-                        refresh_llm_server_button = gr.Button(
-                            "Refresh LLM Server Log", visible=False, variant="primary"
-                        )
+        with gr.Row(visible=False) as hidden_row, gr.Column():
+            # LLM Server log display, refreshes every 1 second
+            gr.Markdown("### LLM Server Log")
+            llm_server_log_output = gr.Code(
+                label="LLM Server Log (llm-server.log)",
+                lines=20,
+                value="",
+                elem_classes="code-container-edit",
+                every=60,  # Refresh every 60 second
+            )
+            with gr.Row():
+                with gr.Column():
+                    # Button to clear LLM Server log, initially hidden
+                    clear_llm_server_button = gr.Button("Clear LLM Server Log", visible=False)
+                with gr.Column():
+                    # Button to refresh LLM Server log manually
+                    refresh_llm_server_button = gr.Button("Refresh LLM Server Log", visible=False, variant="primary")
 
         # Define what happens when the password is submitted
         submit_button.click(  # pylint: disable=E1101

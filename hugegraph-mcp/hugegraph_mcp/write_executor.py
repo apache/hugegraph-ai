@@ -27,6 +27,10 @@ from hugegraph_mcp.plan_store import (
     PlanTransitionError,
     plan_store_from_config,
 )
+from hugegraph_mcp.target_context import (
+    resolve_target_from_config,
+    target_mismatch_details,
+)
 from hugegraph_mcp.write_plan import (
     ApplyReceipt,
     ApplyStatus,
@@ -80,6 +84,15 @@ class WriteExecutor:
             )
             return self._confirmation_result(plan_id)
 
+        mismatch = target_mismatch_details(resolve_target_from_config(), plan)
+        if mismatch is not None:
+            return envelope_err(
+                ErrorType.WRITE_CONFLICT,
+                "Active HugeGraph target does not match the persisted write plan.",
+                retryable=False,
+                details=mismatch,
+            )
+
         missing = [operation.kind for operation in plan.operations if self.registry.adapter_for(operation.kind) is None]
         if missing:
             return envelope_err(
@@ -112,6 +125,8 @@ class WriteExecutor:
         record = self.store.get_plan_record(plan_id)
         if plan is None or record is None:
             raise PlanTransitionError("resume requires a reconciled RETRYABLE_NOT_APPLIED plan")
+        if int(time.time()) > plan.expires_at:
+            raise PlanTransitionError("plan has expired")
         operation_statuses = {operation["operation_id"]: operation["status"] for operation in record["operations"]}
         reconciled_operations = {
             operation["operation_id"]: operation["reconciled"] for operation in record["operations"]
@@ -291,9 +306,9 @@ register_schema_write_adapters(DEFAULT_WRITE_EXECUTOR_REGISTRY)
 
 def confirm_write(plan_id: str) -> dict:
     try:
-        from hugegraph_mcp.config import MCPConfig
+        from hugegraph_mcp.config import get_effective_config
 
-        cfg = MCPConfig.from_env()
+        cfg = get_effective_config()
         store = plan_store_from_config(cfg)
     except Exception as exc:
         return envelope_err(
@@ -323,3 +338,88 @@ def get_write_status(plan_id: str) -> dict:
         store=store,
         registry=DEFAULT_WRITE_EXECUTOR_REGISTRY,
     ).status(plan_id)
+
+
+def list_write_plans(*, status: str | None = None, limit: int = 20) -> dict:
+    if not isinstance(limit, int) or isinstance(limit, bool) or not (1 <= limit <= 100):
+        return envelope_err(
+            ErrorType.VALIDATION_ERROR,
+            "limit must be an integer between 1 and 100.",
+            details={"reason": "invalid_limit"},
+        )
+    normalized_status: str | None = None
+    if status is not None:
+        if not isinstance(status, str) or not status.strip():
+            return envelope_err(
+                ErrorType.VALIDATION_ERROR,
+                "status must be a non-empty string when provided.",
+                details={"reason": "invalid_status"},
+            )
+        normalized_status = status.strip().upper()
+        valid_statuses = {item.value for item in PlanStatus}
+        if normalized_status not in valid_statuses:
+            return envelope_err(
+                ErrorType.VALIDATION_ERROR,
+                f"Unsupported plan status {status!r}; expected one of {sorted(valid_statuses)}.",
+                details={"reason": "invalid_status", "status": status},
+            )
+    try:
+        store = plan_store_from_config()
+    except Exception as exc:
+        return envelope_err(
+            ErrorType.SERVER_ERROR,
+            "The durable plan store is unavailable.",
+            retryable=False,
+            details={"reason": type(exc).__name__},
+        )
+    plans = store.list_plans(status=normalized_status, limit=limit)
+    return envelope_ok({"plans": plans, "count": len(plans)})
+
+
+def cancel_write_plan(plan_id: str) -> dict:
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        return envelope_err(
+            ErrorType.VALIDATION_ERROR,
+            "plan_id must be a non-empty string.",
+            details={"reason": "invalid_plan_id"},
+        )
+    cleaned_id = plan_id.strip()
+    try:
+        store = plan_store_from_config()
+    except Exception as exc:
+        return envelope_err(
+            ErrorType.SERVER_ERROR,
+            "The durable plan store is unavailable.",
+            retryable=False,
+            details={"reason": type(exc).__name__},
+        )
+    record = store.get_plan_record(cleaned_id)
+    if record is None:
+        return envelope_err(
+            ErrorType.NOT_FOUND,
+            f"Write plan {cleaned_id!r} was not found.",
+            details={"plan_id": cleaned_id},
+        )
+    current_status = str(record.get("status") or "")
+    if current_status != PlanStatus.ISSUED.value:
+        return envelope_err(
+            ErrorType.WRITE_CONFLICT,
+            f"Only ISSUED plans can be cancelled; current status is {current_status}.",
+            details={"plan_id": cleaned_id, "status": current_status},
+        )
+    try:
+        store.transition_plan(
+            cleaned_id,
+            expected=PlanStatus.ISSUED,
+            target=PlanStatus.EXPIRED,
+        )
+    except PlanTransitionError as exc:
+        return envelope_err(
+            ErrorType.WRITE_CONFLICT,
+            f"Write plan {cleaned_id!r} could not be cancelled: {exc}",
+            details={"plan_id": cleaned_id},
+        )
+    from hugegraph_mcp.confirmation_store import ConfirmationStore
+
+    ConfirmationStore.from_config().revoke_by_plan_id(cleaned_id)
+    return envelope_ok({"plan_id": cleaned_id, "status": PlanStatus.EXPIRED.value, "cancelled": True})

@@ -179,6 +179,7 @@ def rag_http_api(
                 for key, value in zip(
                     ["raw_answer", "vector_only", "graph_only", "graph_vector_answer"],
                     result,
+                    strict=False,
                 )
                 if getattr(req, key)
             },

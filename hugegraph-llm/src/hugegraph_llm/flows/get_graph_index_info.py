@@ -51,12 +51,20 @@ class GetGraphIndexInfoFlow(BaseFlow):
         graph_summary_info = pipeline.getGParamWithNoEmpty("wkflow_state").to_json()
 
         try:
+            from hugegraph_llm.operators.index_op.build_semantic_index import (  # pylint: disable=import-outside-toplevel
+                read_vid_index_meta,
+                vid_index_name_parts,
+            )
+
             vector_index_class = get_vector_index_class(index_settings.cur_vector_index)
             embedding = Embeddings().get_embedding()
-            vector_index = vector_index_class.from_name(
-                embedding.get_embedding_dim(), huge_settings.graph_name, "graph_vids"
+            index_parts = vid_index_name_parts(huge_settings.graph_name, huge_settings.graph_space)
+            if vector_index_class.exist(*index_parts):
+                vector_index = vector_index_class.from_name(embedding.get_embedding_dim(), *index_parts, read_only=True)
+                graph_summary_info["vid_index"] = vector_index.get_vector_index_info()
+            graph_summary_info["vid_index_meta"] = read_vid_index_meta(
+                huge_settings.graph_name, huge_settings.graph_space
             )
-            graph_summary_info["vid_index"] = vector_index.get_vector_index_info()
         except Exception:  # pylint: disable=broad-except
             # If vector index doesn't exist or fails to load, just return graph summary
             pass

@@ -41,10 +41,13 @@ class TestBuildSemanticIndex(unittest.TestCase):
         # Create a temporary directory for testing
         self.temp_dir = tempfile.mkdtemp()
 
-        # Mock huge_settings
+        # Mock huge_settings and resource_path
         self.patcher1 = patch("hugegraph_llm.operators.index_op.build_semantic_index.huge_settings")
         self.mock_settings = self.patcher1.start()
         self.mock_settings.graph_name = "test_graph"
+        self.mock_settings.graph_space = None
+        self.patcher_res = patch("hugegraph_llm.operators.index_op.build_semantic_index.resource_path", self.temp_dir)
+        self.patcher_res.start()
 
         # Mock VectorStoreBase and its subclass
         self.mock_vector_store = MagicMock(spec=VectorStoreBase)
@@ -72,6 +75,7 @@ class TestBuildSemanticIndex(unittest.TestCase):
             shutil.rmtree(self.temp_dir)
 
         # Stop the patchers
+        self.patcher_res.stop()
         self.patcher1.stop()
         self.patcher2.stop()
 
@@ -178,12 +182,11 @@ class TestBuildSemanticIndex(unittest.TestCase):
                 result = builder.run(context)
 
             # Check if the context is updated correctly
-            expected_context = {
-                "vertices": ["label1:vertex3", "label2:vertex4"],
-                "removed_vid_vector_num": 0,
-                "added_vid_vector_num": 2,
-            }
-            self.assertEqual(result, expected_context)
+            self.assertEqual(result["vertices"], ["label1:vertex3", "label2:vertex4"])
+            self.assertEqual(result["removed_vid_vector_num"], 0)
+            self.assertEqual(result["added_vid_vector_num"], 2)
+            self.assertEqual(result["index_generation"], 1)
+            self.assertIsNotNone(result["refreshed_at"])
 
             # Verify that add and save_index_by_name were called
             self.mock_vector_store.add.assert_called_once()
@@ -210,19 +213,18 @@ class TestBuildSemanticIndex(unittest.TestCase):
                 result = builder.run(context)
 
             # Check if the context is updated correctly
-            expected_context = {
-                "vertices": ["vertex3", "vertex4"],
-                "removed_vid_vector_num": 0,
-                "added_vid_vector_num": 2,
-            }
-            self.assertEqual(result, expected_context)
+            self.assertEqual(result["vertices"], ["vertex3", "vertex4"])
+            self.assertEqual(result["removed_vid_vector_num"], 0)
+            self.assertEqual(result["added_vid_vector_num"], 2)
+            self.assertEqual(result["index_generation"], 1)
+            self.assertIsNotNone(result["refreshed_at"])
 
     def test_run_with_no_new_vertices(self):
         # Create a builder
         builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
 
         # Create a context with vertices that are already in the index
-        context = {"vertices": ["vertex1", "vertex2"]}
+        context = {"vertices": ["vertex1", "vertex2"], "vid_scan_complete": True}
 
         # Run the builder
         result = builder.run(context)
@@ -232,12 +234,11 @@ class TestBuildSemanticIndex(unittest.TestCase):
         self.mock_vector_store.save_index_by_name.assert_not_called()
 
         # Check if the context is updated correctly
-        expected_context = {
-            "vertices": ["vertex1", "vertex2"],
-            "removed_vid_vector_num": 0,
-            "added_vid_vector_num": 0,
-        }
-        self.assertEqual(result, expected_context)
+        self.assertEqual(result["vertices"], ["vertex1", "vertex2"])
+        self.assertEqual(result["removed_vid_vector_num"], 0)
+        self.assertEqual(result["added_vid_vector_num"], 0)
+        self.assertEqual(result["index_generation"], 1)
+        self.assertIsNotNone(result["refreshed_at"])
 
     def test_run_with_removed_vertices(self):
         # Set up existing vertices that are not in the new context
@@ -248,7 +249,7 @@ class TestBuildSemanticIndex(unittest.TestCase):
         builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
 
         # Create a context with fewer vertices (vertex3 will be removed)
-        context = {"vertices": ["vertex1", "vertex2"]}
+        context = {"vertices": ["vertex1", "vertex2"], "vid_scan_complete": True}
 
         # Run the builder
         result = builder.run(context)
@@ -257,12 +258,102 @@ class TestBuildSemanticIndex(unittest.TestCase):
         self.mock_vector_store.remove.assert_called_once()
 
         # Check if the context is updated correctly
-        expected_context = {
-            "vertices": ["vertex1", "vertex2"],
-            "removed_vid_vector_num": 1,
-            "added_vid_vector_num": 0,
-        }
-        self.assertEqual(result, expected_context)
+        self.assertEqual(result["vertices"], ["vertex1", "vertex2"])
+        self.assertEqual(result["removed_vid_vector_num"], 1)
+        self.assertEqual(result["added_vid_vector_num"], 0)
+        self.assertEqual(result["index_generation"], 1)
+        self.assertIsNotNone(result["refreshed_at"])
+
+    def test_run_skips_deletion_when_vid_scan_unproven(self):
+        self.mock_vector_store.get_all_properties.return_value = ["vertex1", "vertex2", "vertex3"]
+        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
+
+        result = builder.run({"vertices": ["vertex1", "vertex2"]})
+
+        self.mock_vector_store.remove.assert_not_called()
+        self.assertEqual(result["removed_vid_vector_num"], 0)
+        self.assertNotIn("index_generation", result)
+
+    def test_run_skips_deletion_when_vid_scan_incomplete(self):
+        self.mock_vector_store.get_all_properties.return_value = ["vertex1", "vertex2", "vertex3"]
+        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
+
+        result = builder.run(
+            {
+                "vertices": ["vertex1", "vertex2"],
+                "vid_scan_complete": False,
+                "vid_scan_incomplete_reason": "invalid_vertex_id",
+            }
+        )
+
+        self.mock_vector_store.remove.assert_not_called()
+        self.assertEqual(result["removed_vid_vector_num"], 0)
+        self.assertNotIn("index_generation", result)
+
+    def test_run_processes_large_added_vids_in_bounded_windows(self):
+        vertices = [f"person:vid{i}" for i in range(5)]
+        self.mock_embedding.get_embedding_dim.return_value = 1
+        self.mock_embedding.get_texts_embeddings.side_effect = lambda batch: [[float(len(x))] for x in batch]
+        self.mock_schema_manager.schema.get_schema.return_value = {"vertexlabels": [{"id_strategy": "CUSTOMIZE"}]}
+
+        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
+        self.mock_vector_store.get_all_properties.return_value = []
+
+        with patch("hugegraph_llm.operators.index_op.build_semantic_index._EMBED_WINDOW_SIZE", 2):
+            result = builder.run({"vertices": vertices, "vid_scan_complete": True})
+
+        self.assertEqual(result["added_vid_vector_num"], 5)
+        self.assertEqual(self.mock_vector_store.add.call_count, 3)
+        added_chunks = [len(call.args[1]) for call in self.mock_vector_store.add.call_args_list]
+        self.assertEqual(added_chunks, [2, 2, 1])
+        self.mock_vector_store.save_index_by_name.assert_called_once_with("test_graph", "graph_vids")
+
+    def test_run_persists_completed_windows_on_partial_failure(self):
+        from hugegraph_llm.operators.index_op.build_semantic_index import read_vid_index_meta
+
+        vertices = [f"person:vid{i}" for i in range(5)]
+        self.mock_embedding.get_embedding_dim.return_value = 1
+        self.mock_schema_manager.schema.get_schema.return_value = {"vertexlabels": [{"id_strategy": "CUSTOMIZE"}]}
+        call_count = 0
+
+        def embed_with_failure(batch):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("embedding quota exceeded")
+            return [[float(i + 1)] for i in range(len(batch))]
+
+        self.mock_embedding.get_texts_embeddings.side_effect = embed_with_failure
+        with patch("hugegraph_llm.indices.vector_index.faiss_vector_store.resource_path", self.temp_dir):
+            builder = BuildSemanticIndex(self.mock_embedding, FaissVectorIndex)
+            context = {"vertices": vertices, "vid_scan_complete": True}
+            with patch("hugegraph_llm.operators.index_op.build_semantic_index._EMBED_WINDOW_SIZE", 2):
+                with self.assertRaisesRegex(RuntimeError, "embedding quota exceeded"):
+                    builder.run(context)
+
+            loaded_index = FaissVectorIndex.from_name(1, "test_graph", "graph_vids", read_only=True)
+            self.assertEqual(len(loaded_index.get_all_properties()), 2)
+
+        meta = read_vid_index_meta("test_graph", None)
+        self.assertEqual(meta["index_generation"], 1)
+        self.assertEqual(meta["added_vid_vector_num"], 2)
+        self.assertEqual(meta["total_vids"], 2)
+        self.assertEqual(context["added_vid_vector_num"], 2)
+
+    def test_run_does_not_save_or_bump_meta_when_first_window_fails_without_removals(self):
+        from hugegraph_llm.operators.index_op.build_semantic_index import read_vid_index_meta
+
+        self.mock_embedding.get_texts_embeddings.side_effect = RuntimeError("embedding service down")
+        self.mock_vector_store.get_all_properties.return_value = []
+        builder = BuildSemanticIndex(self.mock_embedding, self.mock_vector_store_class)
+
+        with patch("hugegraph_llm.operators.index_op.build_semantic_index._EMBED_WINDOW_SIZE", 2):
+            with self.assertRaisesRegex(RuntimeError, "embedding service down"):
+                builder.run({"vertices": ["vertex1", "vertex2"], "vid_scan_complete": True})
+
+        self.mock_vector_store.save_index_by_name.assert_not_called()
+        meta = read_vid_index_meta("test_graph", None)
+        self.assertEqual(meta["index_generation"], 0)
 
 
 if __name__ == "__main__":

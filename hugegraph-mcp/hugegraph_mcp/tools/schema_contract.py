@@ -133,6 +133,20 @@ SUPPORTED_FIELD_SPECS: dict[str, dict[str, SchemaFieldSpec]] = {
         "index_type": _field("index_type", "indexType", kind="enum"),
         "unique": _field("unique", kind="boolean"),
     },
+    "append_vertex_label": {
+        "type": _field("type", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "name": _field("name", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "properties": _field("properties", kind="list", apply_mode="typed"),
+        "nullable_keys": _field("nullable_keys", "nullableKeys", kind="list", apply_mode="typed"),
+        "user_data": _field("user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"),
+    },
+    "append_edge_label": {
+        "type": _field("type", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "name": _field("name", kind="identity", include_in_summary=False, apply_mode="identity"),
+        "properties": _field("properties", kind="list", apply_mode="typed"),
+        "nullable_keys": _field("nullable_keys", "nullableKeys", kind="list", apply_mode="typed"),
+        "user_data": _field("user_data", "userData", "userdata", kind="mapping", apply_mode="parameter"),
+    },
 }
 
 # Preserve the compact field-set view exposed by the original manage_schema
@@ -146,6 +160,8 @@ OPERATION_KIND = {
     "create_vertex_label": "vertex_label",
     "create_edge_label": "edge_label",
     "create_index_label": "index_label",
+    "append_vertex_label": "vertex_label",
+    "append_edge_label": "edge_label",
 }
 
 SCHEMA_COLLECTIONS = {

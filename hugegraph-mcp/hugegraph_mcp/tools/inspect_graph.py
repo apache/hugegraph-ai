@@ -21,7 +21,7 @@ inspect_graph() 做尽力而为的状态检查：HugeGraph Server 连接、schem
 import time
 from typing import Any
 
-from hugegraph_mcp.config import MCPConfig
+from hugegraph_mcp.config import MCPConfig, get_effective_config
 from hugegraph_mcp.envelope import envelope_ok
 from hugegraph_mcp.gremlin_tools import execute_gremlin_read
 from hugegraph_mcp.hugegraph_ai_client import health_check
@@ -124,7 +124,7 @@ def inspect_graph(
     """
 
     start = time.time()
-    cfg = MCPConfig.from_env()
+    cfg = get_effective_config()
     warnings: list[str] = []
 
     server_status = "available"

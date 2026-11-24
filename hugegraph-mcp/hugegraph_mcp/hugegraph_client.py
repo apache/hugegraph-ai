@@ -27,6 +27,10 @@ def build_hugegraph_client(
     request_timeout_seconds: float | None = None,
 ) -> Any:
     """Build a PyHugeClient while preserving optional graphspace compatibility."""
+    if getattr(cfg, "graph_routes_json", None):
+        from hugegraph_mcp.graph_routes import GraphRouteRegistry
+
+        cfg = GraphRouteRegistry.from_config(cfg).resolve(None).to_config(cfg)
 
     graphspace = cfg.graphspace.strip() if cfg.graphspace else ""
     kwargs = {

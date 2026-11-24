@@ -24,6 +24,7 @@ from pyhugegraph.client import PyHugeClient
 from hugegraph_llm.config import huge_settings, resource_path
 from hugegraph_llm.indices.vector_index.base import VectorStoreBase
 from hugegraph_llm.models.embeddings.base import BaseEmbedding
+from hugegraph_llm.operators.index_op.build_semantic_index import vid_index_name_parts
 from hugegraph_llm.utils.log import log
 
 
@@ -39,10 +40,9 @@ class SemanticIdQuery:
         topk_per_keyword: int = huge_settings.topk_per_keyword,
         vector_dis_threshold: float = huge_settings.vector_dis_threshold,
     ):
-        self.index_dir = str(os.path.join(resource_path, huge_settings.graph_name, "graph_vids"))
-        self.vector_index = vector_index.from_name(
-            embedding.get_embedding_dim(), huge_settings.graph_name, "graph_vids"
-        )
+        index_parts = vid_index_name_parts(huge_settings.graph_name, huge_settings.graph_space)
+        self.index_dir = str(os.path.join(resource_path, *index_parts))
+        self.vector_index = vector_index.from_name(embedding.get_embedding_dim(), *index_parts)
         self.embedding = embedding
         self.by = by
         self.topk_per_query = topk_per_query

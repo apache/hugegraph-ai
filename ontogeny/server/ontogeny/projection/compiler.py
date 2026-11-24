@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..errors import StoreError
+
 _TYPE_MAP = {
     "string": "TEXT",
     "enum": "TEXT",
@@ -37,13 +39,19 @@ _TYPE_MAP = {
 }
 
 
+def property_data_type(dsl_type: str) -> str:
+    return _TYPE_MAP.get(dsl_type, "TEXT")
+
+
 def compile_projection(compiled, projection) -> dict[str, Any]:
     include = projection.spec.include
     propertykeys: dict[str, str] = {}
 
     def need(name: str, dsl_type: str) -> None:
-        if name not in propertykeys:
-            propertykeys[name] = _TYPE_MAP.get(dsl_type, "TEXT")
+        data_type = property_data_type(dsl_type)
+        previous = propertykeys.setdefault(name, data_type)
+        if previous != data_type:
+            raise StoreError(f"projected property {name!r} has incompatible HugeGraph types {previous} and {data_type}")
 
     vertexlabels: list[dict[str, Any]] = []
     for object_type, cfg in include.objects.items():

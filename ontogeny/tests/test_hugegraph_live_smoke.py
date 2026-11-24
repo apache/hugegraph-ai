@@ -48,7 +48,7 @@ async def test_live_lifecycle_schema_vertices_and_edge(golden_pkg):
         requirement_created = module_created = False
         try:
             await client.upsert_vertices(
-                "requirement", "requirement_id", [{"requirement_id": requirement, "name": "Smoke"}]
+                "requirement", "requirement_id", [{"requirement_id": requirement, "title": "Smoke"}]
             )
             requirement_created = True
             await client.upsert_vertices("design-module", "module_id", [{"module_id": module}])
@@ -73,5 +73,37 @@ async def test_live_lifecycle_schema_vertices_and_edge(golden_pkg):
                 await client.delete_vertex("requirement", requirement)
             if module_created:
                 await client.delete_vertex("design-module", module)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.skipif(not os.environ.get("ONTOGENY_TEST_HUGEGRAPH_URL"), reason="requires a disposable HugeGraph server")
+async def test_live_mixed_primary_key_edges_and_archive():
+    token = uuid.uuid4().hex[:10]
+    number, name, relation = (f"smoke_{kind}_{token}" for kind in ("number", "name", "relation"))
+    schema = {
+        "propertykeys": [{"name": number, "data_type": "INT"}, {"name": name, "data_type": "TEXT"}],
+        "vertexlabels": [{"label": p, "primary_keys": [p], "properties": [p]} for p in (number, name)],
+        "edgelabels": [{"name": relation, "source_label": number, "target_label": name}],
+        "indexes": [],
+    }
+    client = HugeGraphClient(os.environ["ONTOGENY_TEST_HUGEGRAPH_URL"], "hugegraph")
+    text_key = f"name:{token}!`>"
+    try:
+        assert await client.dialect() == "1.7"
+        await client.ensure_schema(schema)
+        try:
+            await client.upsert_vertices(number, number, [{number: 64}])
+            await client.upsert_vertices(name, name, [{name: text_key}])
+            await client.upsert_edges(relation, number, name, [("64", text_key)])
+            numeric_id = (await client.get_vertex(number, "64"))["id"]
+            text_id = (await client.get_vertex(name, text_key))["id"]
+            [edge] = await client.sample_edges(relation)
+            assert (edge["outV"], edge["inV"]) == (numeric_id, text_id)
+        finally:
+            await client.delete_vertex(number, "64")
+            await client.delete_vertex(name, text_key)
+        assert await client.get_vertex(number, "64") is None
+        assert await client.get_vertex(name, text_key) is None
     finally:
         await client.aclose()

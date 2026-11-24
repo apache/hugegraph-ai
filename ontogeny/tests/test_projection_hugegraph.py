@@ -25,6 +25,7 @@ from object rows to graph payloads.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -37,7 +38,9 @@ from ontogeny_ext_hugegraph import HugeGraphClient
 
 from ontogeny.action.models import OutboxRow
 from ontogeny.config import Settings
+from ontogeny.core.models import PropertyDef
 from ontogeny.demo import seed_from_package
+from ontogeny.errors import StoreError
 from ontogeny.projection import ProjectionWorker, compile_projection
 from ontogeny.registry import compile_package
 from ontogeny.service import ServiceContext
@@ -63,8 +66,12 @@ LABEL_IDS = {
 def _vertexlabels_response() -> httpx.Response:
     return httpx.Response(
         200,
-        json={"vertexlabels": [{"name": name, "id": lid} for name, lid in LABEL_IDS.items()]},
+        json={"vertexlabels": [{"name": name, "id": lid, "primary_keys": ["key"]} for name, lid in LABEL_IDS.items()]},
     )
+
+
+def _propertykeys_response() -> httpx.Response:
+    return httpx.Response(200, json={"propertykeys": [{"name": "key", "data_type": "TEXT"}]})
 
 
 @pytest.fixture()
@@ -83,6 +90,8 @@ def _recorder(routes: list[tuple[str, str, httpx.Response]]):
                 return response
         if request.method == "GET" and request.url.path == "/graphspaces/DEFAULT/graphs":
             return httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})
+        if request.method == "GET" and request.url.path.endswith("/schema/propertykeys"):
+            return _propertykeys_response()
         return httpx.Response(200, json={})
 
     return handler, calls
@@ -339,6 +348,76 @@ class TestDialectV17:
         assert req.method == "DELETE"
         assert unquote(req.url.path).endswith('/graph/vertices/"6:EQ-99"')
 
+    async def test_mixed_primary_keys_share_server_identity_across_edge_and_vertex_operations(self):
+        text_key = '64:a!>`b"'
+        # HugeGraph 1.7 SplicingIdGenerator escapes ! at the key layer and :
+        # at the ID layer. The > and a plain backtick are unchanged.
+        text_id = '2:64`:a`!>`b"'
+        numeric_id = "1:210"  # HugeGraph LongEncoding.encodeNumber(64)
+        numeric_ids = {n: f"1:21{'0123456789AB'[n - 64]}" for n in range(64, 76)}
+        reads = []
+        writes = []
+        pending_lookups = max_pending_lookups = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal pending_lookups, max_pending_lookups
+            route = request.url.path
+            if route.endswith("/schema/vertexlabels"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "vertexlabels": [
+                            {"name": "numbered", "id": 1, "primary_keys": ["number"]},
+                            {"name": "named", "id": 2, "primary_keys": ["name"]},
+                        ]
+                    },
+                )
+            if route.endswith("/schema/propertykeys"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "propertykeys": [
+                            {"name": "number", "data_type": "INT"},
+                            {"name": "name", "data_type": "TEXT"},
+                        ]
+                    },
+                )
+            if route.endswith("/graph/vertices"):
+                assert request.url.params["label"] == "numbered"
+                key = json.loads(request.url.params["properties"])["number"]
+                assert type(key) is int
+                reads.append(key)
+                pending_lookups += 1
+                max_pending_lookups = max(max_pending_lookups, pending_lookups)
+                await asyncio.sleep(0)
+                pending_lookups -= 1
+                ids = [{"id": numeric_ids[key]}] if key in numeric_ids else []
+                return httpx.Response(200, json={"vertices": ids})
+            if route.endswith("/graph/edges/batch"):
+                writes.extend(json.loads(request.content)["edges"])
+                return httpx.Response(200)
+            vertex_id = json.loads(route.split("/graph/vertices/")[1])
+            assert vertex_id in {numeric_id, text_id}
+            writes.append((request.method, vertex_id))
+            return httpx.Response(200, json={"id": vertex_id})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = HugeGraphClient("http://hg.test", GRAPH, api="1.7", http=http)
+            await client.upsert_edges("related", "numbered", "named", [("64", text_key), ("64", text_key)])
+            assert reads == [64]  # repeated endpoints do not repeat the lookup in a batch
+            assert all(edge["outV"] == numeric_id and edge["inV"] == text_id for edge in writes)
+            assert (await client.get_vertex("numbered", "64"))["id"] == numeric_id
+            await client.delete_vertex("numbered", "64")
+            await client.delete_vertex("named", text_key)
+            await client.delete_vertex("numbered", "999")
+            assert writes[-3:] == [("GET", numeric_id), ("DELETE", numeric_id), ("DELETE", text_id)]
+            reads.clear()
+            batch = [("64", text_key), *((str(key), text_key) for key in numeric_ids)]
+            await client.upsert_edges("related", "numbered", "named", batch)
+            assert sorted(reads) == list(numeric_ids)
+            assert max_pending_lookups == 8
+            assert [edge["outV"] for edge in writes[-len(batch) :]] == [numeric_ids[int(key)] for key, _ in batch]
+
     async def test_counts_reads_the_async_gremlin_job(self, rig):
         async def run():
             handler, calls = _recorder(
@@ -548,6 +627,8 @@ async def sc_with_graph(golden_pkg_path, tmp_path):
             return httpx.Response(200, json={"graphs": ["hugegraph", GRAPH]})
         if path.endswith("/schema/vertexlabels") and method == "GET":
             return _vertexlabels_response()
+        if path.endswith("/schema/propertykeys") and method == "GET":
+            return _propertykeys_response()
         if path.endswith("/schema/edgelabels") and method == "GET":
             return httpx.Response(
                 200,
@@ -662,6 +743,19 @@ class TestLoadVersusBuild:
 
 
 class TestServicePreview:
+    async def test_rebuild_rejects_invalid_schema_before_graph_writes(self, sc_with_graph):
+        sc = sc_with_graph
+        projection = next(iter(sc.compiled.projections.values()))
+        sc.compiled.objects["requirement"].spec.properties["lot_id"] = PropertyDef(type="integer")
+        projection.spec.include.objects["requirement"].properties.append("lot_id")
+        calls = sc._test_graph_calls  # type: ignore[attr-defined]
+        calls.clear()
+
+        with pytest.raises(StoreError, match=r"lot_id.*incompatible HugeGraph types"):
+            await sc.projection_rebuild()
+
+        assert not calls
+
     async def test_rebuild_projects_vertices_and_fk_edges(self, sc_with_graph, principal):
         for object_type in sc_with_graph.compiled.objects:
             await sc_with_graph.sync(object_type)

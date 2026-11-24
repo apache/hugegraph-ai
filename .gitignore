@@ -219,20 +219,14 @@ cython_debug/
 *.zip
 *.tar.gz
 
-# ---- ontogeny module: runtimes & local state ----
-.venv/
+# Ontogeny runtime state
 .ontogeny-*/
 admin-bootstrap-password
-.kina-*/
-ontogeny/.docs/
-__pycache__/
-*.pyc
-.pytest_cache/
+/ontogeny/.docs/
 .ruff_cache/
 node_modules/
-web/dist/
-web/.e2e-port
-*.db
-*.log
-*.pid
+/ontogeny/web/dist/
+/ontogeny/web/.e2e-port
+/ontogeny/**/*.db
+/ontogeny/**/*.pid
 .DS_Store

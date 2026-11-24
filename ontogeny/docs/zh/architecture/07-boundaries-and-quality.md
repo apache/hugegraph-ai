@@ -23,7 +23,7 @@ OWL/RDF 导入未实现（导出在 M4）· changelog 依赖 Kafka 源 · 审批
 | `test_action` | 15 | 五段式/规则/策略/掩码/幂等/409/outbox 白名单/SSE |
 | `test_engine_functions` + `test_graph_explore` + `test_function_ecosystem` | 27 | 装配/派生可见/**DFS 回溯双回归**/沙箱能力与超时/**LLM 预算**/版本锚定/跨对象触发 |
 | `test_agent` + `test_agent_approval` + `test_agent_engine` + `test_agent_eval` | 35 | 插件身份/会话预算/工具目录/审批门/**builtin-llm 引擎循环**/Agent-eval |
-| `test_evolve` + `test_demo` + `test_demo_story` + `test_llm` + `test_domain_import` + `test_chip_lifecycle` + `test_projection*` | 81 | RSI 全环（预算与治理基线拦截）/演示引导与故事/Ollama（含 live 2 项可跳过）/域包导入/芯片生命周期域契约/投影 |
+| `test_evolve` + `test_demo` + `test_llm` + `test_domain_import` + `test_chip_lifecycle` + `test_projection*` | 81 | RSI 全环（预算与治理基线拦截）/演示引导/Ollama（含 live 2 项可跳过）/域包导入/芯片生命周期域契约/投影 |
 | `test_api` + `test_cli` + `test_deploy` | 28 | HTTP 壳 e2e/CLI/CMD 标志与路由存在性/构建上下文一致性 |
 | `test_system_example` | 27 | 系统级示例全链路（含 **示例目录树哈希守护**：测试污染示例即失败） |
 

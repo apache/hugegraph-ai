@@ -84,9 +84,9 @@ header: # `header` section is configurations for source codes license header.
     - '**/poetry.lock'
     - '.github/**/*'
     - 'docker/**/*'
-    - '**/*.cedar'
-    - '**/*.sql'
-    - '**/*.svg'
+    - 'ontogeny/**/*.cedar'
+    - 'ontogeny/**/*.sql'
+    - 'ontogeny/**/*.svg'
     - 'ontogeny/.dockerignore'
     - 'ontogeny/deploy/Dockerfile'
 

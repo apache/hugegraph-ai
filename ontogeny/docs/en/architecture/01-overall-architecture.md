@@ -176,7 +176,7 @@ Between the main path and the supporting layer: **calls / reads & writes · resu
 - **Object tables · system-versioned**: `_rev` optimistic lock · `_valid_from/_valid_to` time travel · composite primary keys · `UTCDateTime` timezone fidelity. Append-only: update = close old version + insert new; expression derivations take no column, function derivations materialize with **version carry-over**; new optional columns are added by automatic ALTER
 - **Sync engine · three strategies**: `snapshot` full & idempotent · `watermark` incremental · `changelog` consuming Debezium (external · Kafka). Four iron laws: atomic idempotent batches · at-least-once · explicit deletion semantics · **bad rows quarantined, never blocking the batch** (bad-row rate = an RSI signal); schema drift → alert & stop writing, mapping changes go through PRs
 - **Registry · compiled snapshots**: publish = validate + persist + compile. content_hash version keys · in-process cache (zero IO on the hot path) · rebuilt from the DB on restart · lineage DAG · **Cedar text persisted with the metadata (a restart used to default-deny — fixed)**
-- **Demo bootstrap · ontogeny.demo + demo_story**: `seed/*.sql` nouns · `demo-story.yaml` verbs · refusals are part of the plot. serve --demo: seed → copy the sqlite-ized package → build UI → sync → replay the story → project → derive
+- **Demo bootstrap**. `ontogeny serve --demo` loads the example package, seeds its SQLite source from `seed/*.sql`, serves the console and syncs its source-backed objects on first start.
 
 ### 07 Compute & governance (functions/ · policy/ · projection/)
 

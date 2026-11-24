@@ -20,7 +20,7 @@
 
 A complete, importable semiconductor lifecycle ontology: **10 object types,
 8 link types, 16 actions, 4 sandboxed functions, 2 policy sets, 2 stores**,
-with seed data, a guided demo story and one detailed FMEA document-intelligence
+with seed data and a detailed FMEA document-intelligence
 case. It is also the test-suite golden package: between its actions it
 exercises every effect kind the runtime implements (modify-target,
 modify-linked, create-object, archive-object, set-link, webhook, emit-event),
@@ -42,7 +42,7 @@ chip-lifecycle/
 ├── data/docs/           # fmea-io-esd-dsg201.md (detailed FMEA)
 ├── tools/               # deterministic module FMEA agent
 ├── seed/01_source.sql   # English seed rows for every source-backed entity
-└── seed/demo-story.yaml # guided demo: the seed rows acted into a living lifecycle
+└── seed/*.sql           # source data loaded by the demo
 ```
 
 ## Alerts and root causes

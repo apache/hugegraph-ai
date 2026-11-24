@@ -64,7 +64,7 @@ export interface MountableObject {
   properties: Array<{ name: string; required?: boolean }>
 }
 
-type SourceKind = 'csv-file' | 'csv-paste' | 'sqlite' | 'postgres' | 'mysql'
+type SourceKind = 'csv-file' | 'csv-paste' | 'sqlite' | 'postgres'
 
 type MountResult = Awaited<ReturnType<typeof apiClient.mountData>>
 
@@ -130,7 +130,7 @@ export function DataMountDialog({
       ? selected.properties.map((p) => ({ column: p.name, prop: p.name }))
       : []
     if (!selected) return { mapped: all, ignored: [] as string[], missingRequired: [] as string[] }
-    if (kind === 'sqlite' || kind === 'postgres' || kind === 'mysql') {
+    if (kind === 'sqlite' || kind === 'postgres') {
       // SQL columns are unknown until sync; identity mapping is the contract
       return { mapped: all, ignored: [] as string[], missingRequired: [] as string[] }
     }
@@ -162,7 +162,7 @@ export function DataMountDialog({
       const binding = Object.fromEntries(mapping.mapped.map((m) => [m.prop, m.column]))
       const body = kind === 'csv-file' || kind === 'csv-paste'
         ? { object: selected.name, source: { kind: 'csv' as const, filename: filename || `${selected.name}.csv`, content: csv }, mapping: binding }
-        : { object: selected.name, source: { kind: kind as 'sqlite' | 'postgres' | 'mysql', dsn, table }, mapping: binding }
+        : { object: selected.name, source: { kind, dsn, table }, mapping: binding }
       const out = await apiClient.mountData(body)
       setResult(out)
       onMounted?.(out)
@@ -179,7 +179,6 @@ export function DataMountDialog({
     { id: 'csv-file', label: t('mount.kind.file') },
     { id: 'csv-paste', label: t('mount.kind.paste') },
     { id: 'sqlite', label: 'SQLite' },
-    { id: 'mysql', label: 'MySQL' },
     { id: 'postgres', label: 'PostgreSQL' },
   ]
 

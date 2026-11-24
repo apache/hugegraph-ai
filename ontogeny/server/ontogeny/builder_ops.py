@@ -283,21 +283,13 @@ def _materialize(
             encoding="utf-8",
         )
 
-    # PolicySet sidecars: spec.source is a FILE reference (policies/<name>.cedar),
-    # not inline text. The builder sends the cedar text inline; materialize it
-    # as the sidecar and rewrite source to the conventional filename -- inline
-    # text would be lost on the next disk load, silently default-denying.
-    for res in parsed:
-        if res.kind == "PolicySet" and not res.spec.source.strip().endswith(".cedar"):
-            pol_dir = pkg_dir / "policies"
-            pol_dir.mkdir(parents=True, exist_ok=True)
-            target = os.path.realpath(os.path.join(pkg_r, "policies", f"{res.metadata.name}.cedar"))
-            if not target.startswith(pkg_r + os.sep):
-                raise DSLValidationError(f"PolicySet name {res.metadata.name!r} escapes the package directory")
-            Path(target).write_text(res.spec.source, encoding="utf-8")
-            res.spec.source = f"{res.metadata.name}.cedar"
-
-    # tracked deletions first (also cleans a renamed resource's old file)
+    # A replacement that keeps a file reference still needs that sidecar.
+    retained_sidecars = {
+        os.path.realpath(pkg_dir / "policies" / res.spec.source)
+        for res in parsed
+        if res.kind == "PolicySet" and res.spec.source.strip().endswith(".cedar")
+    }
+    # Apply tracked deletions before materializing inline policy replacements.
     removed = []
     for entry in deletes or []:
         kind, _, name = entry.partition("/")
@@ -315,8 +307,22 @@ def _materialize(
                 if not sidecar_r.startswith(pkg_r + os.sep):
                     raise DSLValidationError(f"delete entry {entry!r} escapes the package directory")
                 sidecar = Path(sidecar_r)
-                if sidecar.is_file():
+                if sidecar_r not in retained_sidecars and sidecar.is_file():
                     sidecar.unlink()
+
+    # PolicySet sidecars: spec.source is a FILE reference (policies/<name>.cedar),
+    # not inline text. The builder sends the cedar text inline; materialize it
+    # as the sidecar and rewrite source to the conventional filename -- inline
+    # text would be lost on the next disk load, silently default-denying.
+    for res in parsed:
+        if res.kind == "PolicySet" and not res.spec.source.strip().endswith(".cedar"):
+            pol_dir = pkg_dir / "policies"
+            pol_dir.mkdir(parents=True, exist_ok=True)
+            target = os.path.realpath(os.path.join(pkg_r, "policies", f"{res.metadata.name}.cedar"))
+            if not target.startswith(pkg_r + os.sep):
+                raise DSLValidationError(f"PolicySet name {res.metadata.name!r} escapes the package directory")
+            Path(target).write_text(res.spec.source, encoding="utf-8")
+            res.spec.source = f"{res.metadata.name}.cedar"
 
     written = []
     for res in parsed:

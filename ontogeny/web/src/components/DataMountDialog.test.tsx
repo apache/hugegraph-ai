@@ -122,6 +122,8 @@ describe('DataMountDialog', () => {
   it('switches to SQL fields and sends the DSN contract', async () => {
     const m = mockFetch([{ match: '/admin/builder/mount', body: { ...MOUNT_OK, sync: { inserted: 1, updated: 0, noop: 0, quarantined: 0 }, quarantine: [] } }])
     render()
+    expect(screen.getByTestId('mount-kind-postgres')).toBeInTheDocument()
+    expect(screen.queryByTestId('mount-kind-mysql')).not.toBeInTheDocument()
     fireEvent.click(await screen.findByTestId('mount-kind-sqlite'))
     fireEvent.change(screen.getByTestId('mount-dsn'), { target: { value: 'sqlite+aiosqlite:///x.db' } })
     fireEvent.change(screen.getByTestId('mount-table'), { target: { value: 'work_orders' } })

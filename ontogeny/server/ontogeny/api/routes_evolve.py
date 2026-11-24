@@ -22,7 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from ..core.loader import load_package
 from ..evolve.models import EvolveSignalRow, ProposalRow
@@ -220,10 +220,13 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
 
     @evolve_r.post("/proposals/{proposal_id}/eval")
     async def eval_proposal(proposal_id: int, sc: ServiceContext = Depends(get_sc)):
+        evaluable_states = ("proposed", "evaluated")
         async with sc.sessionmaker() as s:
             p = (await s.execute(select(ProposalRow).where(ProposalRow.id == proposal_id))).scalar_one_or_none()
             if p is None:
                 raise HTTPException(404, "proposal not found")
+            if p.status not in evaluable_states:
+                raise HTTPException(409, f"proposal status {p.status!r} cannot be evaluated")
             # B1: the ladder must judge the CANDIDATE, not the live schema --
             # apply the diff to an in-memory copy and let the runner see the
             # candidate's declared columns and (crucially) its action rules
@@ -251,13 +254,21 @@ def register(evolve_r: APIRouter, sc: ServiceContext) -> None:
                     **report,
                 }
                 passed = passed and report["passed"]
-            p.eval_report = {
+            eval_report = {
                 "passed": passed,
                 "candidate_evaluated": candidate is not None,
                 "candidate_error": candidate_error,
                 "suites": reports,
             }
-            p.status = "evaluated"
+            # A concurrently rejected or superseded proposal stays closed.
+            updated = await s.execute(
+                update(ProposalRow)
+                .where(ProposalRow.id == proposal_id, ProposalRow.status.in_(evaluable_states))
+                .values(status="evaluated", eval_report=eval_report)
+                .returning(ProposalRow.id)
+            )
+            if updated.scalar_one_or_none() is None:
+                raise HTTPException(409, "proposal is no longer available for evaluation")
             await s.commit()
         return {"passed": passed, "candidate_evaluated": candidate is not None}
 

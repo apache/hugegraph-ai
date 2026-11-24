@@ -20,6 +20,7 @@ tiered promotion with budget + governance baseline enforcement."""
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import shutil
@@ -1184,6 +1185,52 @@ class TestDirectionAKeepTheReasoning:
             on_live = (await runner.run(s, probe))["passed"]
         assert on_candidate is True
         assert on_live is False
+
+    @pytest.mark.parametrize("status", ["rejected", "superseded", "promoted", "rolled_back", "awaiting_human"])
+    async def test_eval_preserves_settled_proposals(self, client, status):
+        c, sc = client
+        previous_report = {"passed": False, "suites": {}}
+        async with sc.sessionmaker() as s:
+            row = ProposalRow(gap_kind="test", diff=[], rationale="test", status=status, eval_report=previous_report)
+            s.add(row)
+            await s.commit()
+        url = f"/api/v1/evolve/proposals/{row.id}"
+
+        response = await c.post(f"{url}/eval")
+
+        assert response.status_code == 409
+        detail = (await c.get(url)).json()
+        assert detail["status"] == status
+        assert detail["eval_report"] == previous_report
+
+    async def test_eval_preserves_rejection_committed_during_evaluation(self, client, monkeypatch):
+        c, sc = client
+        async with sc.sessionmaker() as s:
+            row = ProposalRow(gap_kind="test", diff=[], rationale="test")
+            s.add(row)
+            await s.commit()
+        url = f"/api/v1/evolve/proposals/{row.id}"
+        entered, resume = asyncio.Event(), asyncio.Event()
+        run = sc.eval_runner.run
+
+        async def pause(*args, **kwargs):
+            entered.set()
+            await resume.wait()
+            return await run(*args, **kwargs)
+
+        monkeypatch.setattr(sc.eval_runner, "run", pause)
+        evaluation = asyncio.create_task(c.post(f"{url}/eval"))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            assert (await c.post(f"{url}/reject", json={"reason": "review rejected"})).status_code == 200
+        finally:
+            resume.set()
+            response = await evaluation
+
+        assert response.status_code == 409
+        detail = (await c.get(url)).json()
+        assert detail["status"] == "rejected"
+        assert detail["eval_report"] is None
 
     async def test_eval_includes_new_candidate_regression_case(self, client):
         c, sc = client

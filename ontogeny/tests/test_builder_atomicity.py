@@ -38,6 +38,24 @@ def _requirement(sc):
     return yaml.safe_load((Path(sc.package_root) / "objects/requirement.yaml").read_text())
 
 
+@pytest.mark.parametrize("inline", [True, False])
+async def test_replacing_policy_preserves_its_sidecar(client, inline):
+    _c, sc = client
+    policies = Path(sc.package_root) / "policies"
+    sidecar = policies / "default.cedar"
+    expected = sidecar.read_text()
+    policy = yaml.safe_load((policies / "default.yaml").read_text())
+    if inline:
+        expected = expected.rstrip() + "\n// Replaced policy.\n"
+        policy["spec"]["source"] = expected
+
+    result = await builder_save(sc, [policy], deletes=["PolicySet/default"])
+
+    assert result["published"] is True
+    assert sidecar.read_text() == expected
+    assert sc.compiled.cedar_texts["default"] == expected
+
+
 async def test_invalid_rename_restores_deletes_sidecars_and_layout(client):
     _c, sc = client
     root = Path(sc.package_root)

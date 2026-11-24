@@ -588,6 +588,26 @@ class TestEndToEnd:
         )  # no dsn/table
         assert r3.status_code == 422
 
+    async def test_mount_rejects_mysql_before_writing_package(self, client):
+        c, sc = client
+        package = Path(sc.package_root)
+        object_path = package / "objects" / "customer.yaml"
+        original = object_path.read_bytes()
+
+        response = await c.post(
+            "/api/v1/admin/builder/mount",
+            json={
+                "object": "customer",
+                "store": "unsupported-mysql",
+                "source": {"kind": "mysql", "dsn": "mysql://example.invalid/demo", "table": "customers"},
+                "mapping": {"customer_id": "customer_id", "name": "name"},
+            },
+        )
+
+        assert not (package / "stores" / "unsupported-mysql.yaml").exists()
+        assert object_path.read_bytes() == original
+        assert response.status_code == 422, response.text
+
     async def test_mount_refuses_source_missing_required_properties(self, client):
         """A CSV lacking a required property would hit NOT NULL mid-insert (a
         raw 500); the mount must refuse with the actual list instead."""

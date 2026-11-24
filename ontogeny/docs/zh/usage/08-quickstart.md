@@ -32,7 +32,7 @@ ONTOGENY_LLM_BASE_URL=http://127.0.0.1:11434 ONTOGENY_LLM_MODEL=qwen3:27b ontoge
 
 **运行看板（登录后首页）** —— 首屏即 Ontogeny 介绍与总体架构图；左侧为全局导航（模型与数据 / 运营与治理），看板数字来自真实编译快照与种子数据，非静态装饰。
 
-默认启用生产鉴权。`ONTOGENY_DEV_AUTH=1` 会允许通过 `X-Ontogeny-Principal` 模拟身份，仅用于本地开发。源码服务默认绑定 `127.0.0.1`，只有显式传入 `--host` 才会改变监听地址。
+未设置 `ONTOGENY_DEV_AUTH` 时，演示模式（包括默认的 Compose 启动方式）会启用 `X-Ontogeny-Principal` 模拟身份。启动任一演示前设置 `ONTOGENY_DEV_AUTH=0` 可关闭身份模拟，受保护的操作随后需要登录会话或 Bearer token。源码服务默认绑定 `127.0.0.1`，显式传入 `--host` 可改变监听地址。
 
 ## 8.3 最小可用包（只需 2 种资源）
 

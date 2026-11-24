@@ -99,7 +99,9 @@ def _emit(payload: dict) -> None:
 
 def main() -> None:
     module_path, func_name = sys.argv[1], sys.argv[2]
-    _mod, fn, err = _load(module_path, func_name)
+    # Import-time diagnostics must also stay off the JSON protocol stream.
+    with contextlib.redirect_stdout(sys.stderr):
+        _mod, fn, err = _load(module_path, func_name)
     if err is not None:
         _emit({"type": "error", "error": err})
         return

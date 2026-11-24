@@ -37,6 +37,7 @@ services:
     environment:
       ONTOGENY_ADMIN_USER: ${ONTOGENY_ADMIN_USER:-admin}
       ONTOGENY_ADMIN_PASSWORD: ${ONTOGENY_ADMIN_PASSWORD:-}
+      ONTOGENY_DEV_AUTH: ${ONTOGENY_DEV_AUTH:-1}
       ONTOGENY_DATA_DIR: /data
       # point the assistant / RSI proposer at any OpenAI-compatible Ollama host
       ONTOGENY_LLM_BASE_URL: ${ONTOGENY_LLM_BASE_URL:-}

@@ -150,6 +150,7 @@ class WkFlowState(GParam):
     call_count: Optional[int] = None
     chunk_results: Optional[List[Dict[str, Any]]] = None
     extraction_status: Optional[str] = None
+    import_summary: Optional[Dict[str, Any]] = None  # partial-import report from Commit2Graph (skipped ids + reasons)
 
     keywords: Optional[List[str]] = None
     vector_result: Optional[Any] = None
@@ -210,6 +211,7 @@ class WkFlowState(GParam):
         self.call_count = None
         self.chunk_results = None
         self.extraction_status = None
+        self.import_summary = None
 
         self.keywords = None
         self.vector_result = None

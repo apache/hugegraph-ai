@@ -123,7 +123,13 @@ class TestCommit2Graph(unittest.TestCase):
         """Test run method with schema."""
         # Setup mocks
         mock_init_schema.return_value = None
-        mock_load_into_graph.return_value = None
+        summary = {
+            "imported_vertices": 1,
+            "imported_edges": 0,
+            "skipped_vertices": [{"id": "person:Bob", "reason": "server rejected the vertex"}],
+            "skipped_edges": [],
+        }
+        mock_load_into_graph.return_value = summary
 
         # Create input data
         data = {"schema": self.schema, "vertices": self.vertices, "edges": self.edges}
@@ -137,8 +143,9 @@ class TestCommit2Graph(unittest.TestCase):
         # Verify that load_into_graph was called
         mock_load_into_graph.assert_called_once_with(self.vertices, self.edges, self.schema)
 
-        # Verify the results
+        # Verify the results, including that the import summary travels back to the flow result
         self.assertEqual(result, data)
+        self.assertEqual(result["import_summary"], summary)
 
     @patch("hugegraph_llm.operators.hugegraph_op.commit_to_hugegraph.Commit2Graph.schema_free_mode")
     def test_run_without_schema(self, mock_schema_free_mode):
@@ -350,6 +357,42 @@ class TestCommit2Graph(unittest.TestCase):
         # Test unsupported data type
         with self.assertRaises(ValueError):
             self.commit2graph._check_property_data_type("UNSUPPORTED", "SINGLE", "value")
+
+    def test_coerce_property_value_lossless_conversions(self):
+        """Values convertible without losing information pass as their declared type."""
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", "67"), (67, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", 67.0), (67, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", 30), (30.0, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", "3.5"), (3.5, True))
+        self.assertEqual(self.commit2graph._coerce_property_value("TEXT", "SINGLE", 30), ("30", True))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "LIST", 5), ([5], True))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SET", ["1", 2]), ([1, 2], True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DATE", "SINGLE", "2024-01-01"), ("2024-01-01", True))
+
+    def test_coerce_property_value_reports_uncoercible_values(self):
+        """Values that cannot be converted losslessly are reported instead of silently dropped."""
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", "abc"), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", True), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "SINGLE", 67.5), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("BOOLEAN", "SINGLE", "true"), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("DATE", "SINGLE", "2024/01/01"), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("INT", "LIST", [1, "abc"]), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("UNSUPPORTED", "SINGLE", "value"), (None, False))
+
+    def test_coerce_property_value_rejects_lossy_double_conversions(self):
+        """Float conversions that change the written value are rejected instead of silently rounded."""
+        # 2**53 + 1 rounds to 2**53 in IEEE-754: the graph must not receive a different value
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", 9007199254740993), (None, False))
+        self.assertEqual(
+            self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", "9007199254740993"), (None, False)
+        )
+        self.assertEqual(self.commit2graph._coerce_property_value("FLOAT", "SINGLE", "9007199254740993"), (None, False))
+        # values far outside DOUBLE range must not crash the import nor become inf
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", 10**400), (None, False))
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", "1e400"), (None, False))
+        # exactly representable values still coerce
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", 2**53), (float(2**53), True))
+        self.assertEqual(self.commit2graph._coerce_property_value("DOUBLE", "SINGLE", "3.50"), (3.5, True))
 
     def test_schema_free_mode(self):
         """Test schema_free_mode method."""

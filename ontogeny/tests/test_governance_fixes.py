@@ -154,6 +154,7 @@ class TestT0FailClosed:
             await c.post(
                 "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
+                headers={"X-Ontogeny-Principal": json.dumps({"id": f"planner-{_ % 2}"})},
             )
         await c.post("/api/v1/evolve/aggregate")
         pid = (await c.post("/api/v1/evolve/diagnose")).json()["proposals"][0]["id"]

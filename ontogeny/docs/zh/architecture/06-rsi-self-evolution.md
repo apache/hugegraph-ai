@@ -47,7 +47,7 @@
 | 信号（kind） | 触发线（168h 窗口） | 大白话 · 它在说什么 | 通道 |
 |---|---|---|---|
 | `empty_query_rate` 查询空结果率 | ≥10% | 某对象类型 ≥10% 的查询返回 0 行——"大家一直查它但查不到"。可能数据未同步，也可能建模与实际不符。 | 信息性（仅呈现） |
-| `unmapped_filter_field` 未建模过滤字段 | 同一字段 ≥5 次 | **最强的进化信号**：过滤字段在源库真实存在但本体未建模（schema 缺口）——直接生成"加可选属性"提案。 | **自动提案**（T0 白名单） |
+| `unmapped_filter_field` 未建模过滤字段 | 同一字段 ≥5 次 | 查询反复使用当前本体未声明的字段。至少两个不同的具名主体使用过该字段，才将其视为疑似本体缺口。 | 证据达标后可生成添加可选属性的提案，否则仅呈现 |
 | `hot_query` 热点查询 | 完全相同的过滤 ≥3 次 | 同一查询被反复执行且**有结果**——高频真实用法。方向不同：不是"哪里坏了"，而是把关键查询**固化为评测用例**（eval-case-synth），让回归考试越来越贴近真实使用。 | 评测资产（用例合成） |
 | `slow_query_p95` 慢查询 | P95 ≥2000ms | 某类型查询 P95 延迟超 2 秒——"越查越慢"。提示需要索引、物化列或投影加速；属于性能信号，不改模型。 | 信息性（仅呈现） |
 | `action_rule_reject` 动作规则拒绝率 | ≥30% 且样本 ≥5 | 某动作的执行频繁被业务规则拦下——"大家总想干、规则总说不"。规则与现实脱节：规则过严，或流程该改。**规则是人类意图，不会自动改**。 | 信息性（仅呈现） |
@@ -56,6 +56,8 @@
 | `approval_reject_rate` 审批拒绝率 | ≥30% 且样本 ≥5 | **治理面信号**：人反复拒绝某个 Agent 插件的写审批——"AI 老提要求、人老说不"。要么插件权限给宽了，要么它该走别的动作。**只呈现给人，绝不自动改策略**。 | 信息性（仅呈现） |
 
 三条设计不变量：① **阈值可调**——每种触发线都可被域自己的 EvolutionPolicy.observability 覆盖（不同域敏感度不同）；② **防重复**——同窗口内相同 (kind + 证据指纹) 只记一条，滚动窗口不会刷屏；③ **信息性 ≠ 可进化**——错误多不代表该改模型，只有**结构性缺口**（缺字段、坏行）进入自动提案通道，其余只呈现给人。
+
+匿名请求计入查询次数，但不增加主体数。支持证据不足两个具名主体时，信号仅供查看，不生成提案。缺少主体计数的历史信号也按此处理。未建模字段的证据保留首次和末次观测时间，只有这两个时间发生变化时不会新增信号。
 
 ## T0–T3 分层晋升（EvolutionPolicy · evolution.yaml，仅人可改）
 
@@ -70,12 +72,12 @@
 
 ## 实际例子：一个字段从"看板报错"到"自动建模"的全过程
 
-场景：车间分析看板持续用 `cost_center`（成本中心）过滤采购订单。该列在源表 `mes.purchase_orders` 里真实存在，但建模时被遗漏——查询 API 对未建模过滤字段抛 `NotFoundError`，看板一直红着。没有人提需求单，循环自己发现了它。
+场景：两名车间人员持续在分析看板上用 `cost_center`（成本中心）过滤采购订单。该列在源表 `mes.purchase_orders` 里存在，但建模时遗漏了它。查询 API 对未建模过滤字段返回 `NotFoundError`，进化循环据此发现一个疑似本体缺口。
 
 ```json
 // 第 1 拍 · 信号——ontogeny evolve signals 的检测器 #2（≥5 次触发）
 {"id": 17, "kind": "unmapped_filter_field",
- "evidence": {"object_type": "purchase-order", "field": "cost_center", "count": 23}}   // → ontogeny_evolve_signal
+ "evidence": {"object_type": "purchase-order", "field": "cost_center", "count": 23, "distinct_principals": 2}}
 ```
 
 ```json
@@ -83,7 +85,7 @@
 {"id": 42, "gap_kind": "add-optional-property", "origin": "heuristic", "status": "proposed",
  "diff": [{"mutation": "add-optional-property", "object": "purchase-order",
            "prop": "cost_center", "type": "string", "column": "cost_center"}],
- "rationale": "filter field 'cost_center' used 23x on 'purchase-order' but is not modeled; add as optional property"}
+ "rationale": "filter field 'cost_center' used 23x across 2 distinct principals on 'purchase-order' but is not modeled; suspected schema gap, add as optional property"}
 // rationale 携带证据计数，无它即丢弃
 ```
 

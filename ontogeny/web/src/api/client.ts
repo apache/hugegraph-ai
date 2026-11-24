@@ -587,7 +587,7 @@ export const apiClient = {
     object: string
     store?: string
     source: { kind: 'csv'; filename?: string; content: string }
-          | { kind: 'sqlite' | 'postgres' | 'mysql'; dsn: string; table: string }
+          | { kind: 'sqlite' | 'postgres'; dsn: string; table: string }
     mapping?: Record<string, string>
   }) =>
     api<{

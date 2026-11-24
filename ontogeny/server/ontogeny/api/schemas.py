@@ -210,7 +210,7 @@ class MountSource(BaseModel):
     pasted text -- the server materializes it into the package's data/ dir);
     SQL sources carry a DSN and table name."""
 
-    kind: Literal["csv", "sqlite", "postgres", "mysql"]
+    kind: Literal["csv", "sqlite", "postgres"]
     filename: str | None = None  # csv only
     content: str | None = None  # csv only: the file text
     dsn: str | None = None  # sqlite/postgres only

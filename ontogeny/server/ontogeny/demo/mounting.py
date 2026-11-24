@@ -79,7 +79,7 @@ async def mount_source(sc, req: MountRequest) -> dict[str, Any]:
         (data_dir / filename).write_text(req.content, encoding="utf-8")
         connection = str(data_dir / filename)
         table = Path(filename).stem
-    elif req.source_kind in ("sqlite", "postgres", "mysql"):
+    elif req.source_kind in ("sqlite", "postgres"):
         if not req.dsn or not req.table:
             raise MountError(f"{req.source_kind} source requires dsn and table")
         connection = req.dsn

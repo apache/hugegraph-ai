@@ -335,7 +335,6 @@ export function ObjectTypeEditor({ resource, update, rename, stores }: EditorPro
                   const connByKind: Record<string, string> = {
                     sqlite: '/absolute/path/to/source.db',
                     postgresql: 'postgresql://user:password@host:5432/dbname',
-                    mysql: 'mysql://user:password@host:3306/dbname',
                     csv: '/absolute/path/to/data.csv',
                   }
                   setBacking({ store_spec: { kind: v, connection: connByKind[v] ?? '' } })
@@ -343,7 +342,6 @@ export function ObjectTypeEditor({ resource, update, rename, stores }: EditorPro
                 options={[
                   { value: 'sqlite', label: 'SQLite (database file)' },
                   { value: 'postgres', label: 'PostgreSQL (DSN)' },
-                  { value: 'mysql', label: 'MySQL (DSN)' },
                   { value: 'csv', label: 'CSV (file path)' },
                 ]}
               />

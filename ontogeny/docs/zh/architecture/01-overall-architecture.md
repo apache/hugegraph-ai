@@ -8,7 +8,7 @@
 
 下图是控制台**首页 Overview**（`/`，`ArchBoard` 组件）的实时架构板——本章内容压缩重绘成三层横向布局。建议阅读时对照此图，下文每一节都在解释图中的一个区域。
 
-![总览架构图](../img/arch-board.png)
+![总览架构图](../../en/img/arch-board.png)
 
 ### 怎么读这张图
 
@@ -176,7 +176,7 @@ CROSS-CUTTING · 贯穿机制：属性级所有权 · 单治理通道 · 真源�
 - **对象表 · 系统版本化**：`_rev` 乐观锁 · `_valid_from/_valid_to` 时间旅行 · 复合主键 · `UTCDateTime` 时区保真。追加式：更新=关旧版+插新版；表达式派生不落列，函数派生物化落列且**版本结转**；新增可选属性自动 ALTER 补列
 - **同步引擎 · 三策略**：`snapshot` 全量幂等 · `watermark` 水位增量 · `changelog` Debezium 消费（外部 · Kafka）。四铁律：原子幂等 · at-least-once · 删除显式 · **坏行进隔离区不阻塞批次**（坏行率 = RSI 信号）；schema 漂移 → 告警停写，mapping 走 PR
 - **注册表 · 编译快照**：publish = 校验+持久化+编译。content_hash 版本键 · 进程缓存（热路径零 IO）· 重启从 DB 重建 · 血缘 DAG · **Cedar 文本随元数据持久化（修复过重启即 default-deny）**
-- **演示引导 · ontogeny.demo + demo_story**：`seed/*.sql` 名词 · `demo-story.yaml` 动词 · 拒绝也是剧情。serve --demo：播种 → 复制 sqlite 化包 → 构建 UI → sync → 重放故事 → 投影 → 派生
+- **演示启动**。`ontogeny serve --demo` 加载示例包，通过 `seed/*.sql` 初始化 SQLite 源库，启动控制台，并在首次运行时同步源数据对象。
 
 ### 07 计算与治理（functions/ · policy/ · projection/）
 

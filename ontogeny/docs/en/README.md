@@ -46,7 +46,7 @@ These chapters are hands-on: start with one command, tour the console page by pa
 | 08 | [Quick start](usage/08-quickstart.md) | One command, first login |
 | 09 | [UI tour](usage/09-ui-tour.md) | Six high-frequency pages |
 | 10 | [Function editor](usage/10-function-editor.md) | Sandboxed Python in the console |
-| 11 | [Manufacturing case](usage/11-manufacturing-case.md) | A full operational loop in 16 steps |
+| 11 | [Chip lifecycle example](usage/11-manufacturing-case.md) | Seeded lifecycle data and FMEA document review |
 | 12 | [Reference](usage/12-reference.md) | CLI · env vars · API endpoints · routes · error codes |
 
 ---

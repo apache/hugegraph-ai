@@ -47,20 +47,8 @@
 | 08 | [快速开始](usage/08-quickstart.md) | 一条命令启动、首次登录 |
 | 09 | [界面导览](usage/09-ui-tour.md) | 六个高频页面截图导览 |
 | 10 | [函数编辑器实战](usage/10-function-editor.md) | 试运行 / 保存并发布 / 空函数引导 |
-| 11 | [案例流程](usage/11-manufacturing-case.md) | 离散制造运营闭环 16 步全链路 |
+| 11 | [芯片生命周期示例](usage/11-manufacturing-case.md) | 种子数据与 FMEA 文档审核 |
 | 12 | [参考手册](usage/12-reference.md) | CLI · 环境变量 · API 核心端点 · 前端路由 · 错误码 |
-
-## 研究课题（RESEARCH TOPICS）
-
-两个以"发一篇会议论文"为目标的最小可发表单元（MPU）：1 个论点、3 个 claim、1 个可公开 benchmark、可复现验收线。
-
-| 论文 | 内容 |
-|---|---|
-| [两个研究课题](research/topics.md) | 课题一：可插拔图推理内核（四条路径 + 评测协议）；课题二：RSI 对象与方法（对比机制 + EvoBench） |
-| [总览与发表策略](research/README.md) | 两篇论文一览、共同评测规则、24 周节奏、Reviewer 三问、投前自评表 |
-| [评估手册](research/evaluation.md) | claim / 论文 / 过程三层评估、指标公式、统计规范、硬门槛、五个 gate 与算例 |
-| [论文 A · 图推理](research/topic-1-graph-reasoning.md) | 可互换后端 · 代价感知规划 · 治理零成本；自建 SwitchBench + SNB / Graphalytics / CypherBench |
-| [论文 B · RSI](research/topic-2-rsi.md) | 以信号解决率为目标 · 反事实归因 · 统计门 · 风险预算；自建 EvoBench + SNB / BIRD |
 
 ---
 

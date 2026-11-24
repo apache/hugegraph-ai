@@ -22,7 +22,7 @@ OWL/RDF import not implemented (export at M4) · changelog depends on a Kafka so
 | `test_action` | 15 | five stages / rules / policy / masks / idempotency / 409 / outbox allowlist / SSE |
 | `test_engine_functions` + `test_graph_explore` + `test_function_ecosystem` | 27 | assembly / derived visibility / **DFS backtracking dual regression** / sandbox capabilities & timeouts / **LLM budget** / version anchoring / cross-object triggers |
 | `test_agent` + `test_agent_approval` + `test_agent_engine` + `test_agent_eval` | 35 | plugin identity / session budgets / tool catalogs / approval gates / **the builtin-llm engine loop** / Agent-eval |
-| `test_evolve` + `test_demo` + `test_demo_story` + `test_llm` + `test_domain_import` + `test_chip_lifecycle` + `test_projection*` | 81 | the full RSI loop (budget & governance baseline blocks) / demo bootstrap & story / Ollama (2 skippable live tests) / domain package import / the chip lifecycle contract / projections |
+| `test_evolve` + `test_demo` + `test_llm` + `test_domain_import` + `test_chip_lifecycle` + `test_projection*` | 81 | the full RSI loop (budget & governance baseline blocks) / demo bootstrap / Ollama (2 skippable live tests) / domain package import / the chip lifecycle contract / projections |
 | `test_api` + `test_cli` + `test_deploy` | 28 | HTTP shell e2e / CLI / CMD flags & route existence / build-context consistency |
 | `test_system_example` | 27 | the system example end-to-end (incl. the **example-tree hash guard**: a test polluting the example fails) |
 

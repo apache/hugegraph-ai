@@ -113,6 +113,9 @@ def register(app: FastAPI, r: APIRouter, sc: ServiceContext) -> None:
                     except TimeoutError:
                         yield ": keepalive\n\n"
                         continue
+                    if event.get("resync_required"):
+                        yield 'event: resync_required\ndata: {"reason": "subscriber_overflow"}\n\n'
+                        return
                     if event.get("object_type") == object_type:
                         yield f"data: {json.dumps(event, default=str)}\n\n"
             finally:

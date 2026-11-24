@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections import Counter, defaultdict
 from pathlib import Path
+from stat import S_ISREG
 from typing import Any
 
 from sqlalchemy import delete, func, select, tuple_
@@ -70,10 +72,19 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _reconciles_path(root: Path, path: Path, selector: str | None, complete_store: bool) -> bool:
+    if not path.is_relative_to(root):
+        # Only a full store scan can retire rows from a previous corpus root.
+        return complete_store
+    return corpus.selector_covers(root, path, selector)
+
+
 class DocumentService:
     def __init__(self, sc) -> None:
         self.sc = sc
         self._locks: dict[str, Any] = {}
+        self._pending_ingests: Counter[str] = Counter()
+        self._scan_cache: dict[str, tuple[tuple[Path, str], corpus.ScanCache]] = {}
         from .tasks import TaskService
 
         self.tasks = TaskService(self)
@@ -120,7 +131,7 @@ class DocumentService:
         if not root:
             raise DocumentError("prompt_file requires ONTOGENY_PACKAGE_ROOT")
         path = (Path(root) / cfg.prompt_file).resolve()
-        if not str(path).startswith(str(Path(root).resolve())):
+        if not path.is_relative_to(Path(root).resolve()):
             raise DocumentError("prompt_file must stay inside the package root")
         if not path.is_file():
             raise DocumentError(f"prompt_file not found: {cfg.prompt_file}")
@@ -224,7 +235,15 @@ spec:
     # ---------------------------------------------------------------- corpus
 
     async def _sync_documents(
-        self, session, store, cfg, scanned: list[corpus.ScannedDocument]
+        self,
+        session,
+        store,
+        root: Path,
+        scanned: list[corpus.ScannedDocument],
+        *,
+        selector: str | None = None,
+        complete_store: bool = False,
+        warn_retained: bool = False,
     ) -> tuple[list[DocumentRow], list[str]]:
         rows = (
             (await session.execute(select(DocumentRow).where(DocumentRow.store == store.metadata.name))).scalars().all()
@@ -278,11 +297,35 @@ spec:
             active.append(new)
             changed.append(new)
         removed: list[str] = []
+        outside_scan = unverified = 0
         for row in rows:
-            if row.status == "active" and str(row.path) not in seen:
-                row.status = "removed"
-                removed.append(row.id)
-                changed.append(row)
+            if row.status != "active" or row.path in seen:
+                continue
+            path = Path(row.path)
+            if not _reconciles_path(root, path, selector, complete_store):
+                if complete_store:
+                    outside_scan += 1
+                continue
+            # A filter or other selection change is not evidence of deletion.
+            try:
+                if path.is_relative_to(root) and S_ISREG(path.stat().st_mode):
+                    outside_scan += 1
+                    continue
+            except (FileNotFoundError, NotADirectoryError):
+                pass
+            except OSError:
+                unverified += 1
+                continue
+            row.status = "removed"
+            removed.append(row.id)
+            changed.append(row)
+        if warn_retained and (outside_scan or unverified):
+            log.warning(
+                "document store %r retained %d active documents outside the scan and %d with unconfirmed removal",
+                store.metadata.name,
+                outside_scan,
+                unverified,
+            )
         return active, removed
 
     # ------------------------------------------------------------- extract
@@ -872,8 +915,14 @@ spec:
     ) -> dict[str, Any]:
         # one extraction at a time per corpus: a double-click must not produce
         # two packets runs racing over the same documents
-        async with self._lock(store_name):
-            return await self._ingest(store_name, objects=objects, dry_run=dry_run, principal=principal)
+        self._pending_ingests[store_name] += 1
+        try:
+            async with self._lock(store_name):
+                return await self._ingest(store_name, objects=objects, dry_run=dry_run, principal=principal)
+        finally:
+            self._pending_ingests[store_name] -= 1
+            if not self._pending_ingests[store_name]:
+                del self._pending_ingests[store_name]
 
     async def _ingest(
         self,
@@ -893,9 +942,9 @@ spec:
             )
         cfg = self._cfg(store)
         root = self._root(store)
-        targets = self.object_types(store_name)
-        if objects is not None:
-            targets = [t for t in targets if t in objects]
+        store_targets = self.object_types(store_name)
+        targets = store_targets if objects is None else [t for t in store_targets if t in objects]
+        complete_store = len(targets) == len(store_targets)
         if not targets:
             raise DocumentError(f"store {store_name!r} has no document-backed object types")
         reference_types = self._reference_types(targets)
@@ -906,7 +955,8 @@ spec:
         # different agent is a different extractor and must not reuse packets
         agent_id = self.sc.settings.doc_agent_url or self.sc.settings.doc_agent_cmd or "unconfigured"
         model = "agent:" + _sha(agent_id)[:16]
-        scanned = await self._scan_documents(store, cfg, root, targets)
+        discovery = await self._scan_documents(store, cfg, root, targets)
+        scanned, selector = discovery if discovery is not None else ([], None)
 
         summary: dict[str, Any] = {
             "store": store_name,
@@ -926,6 +976,9 @@ spec:
 
         if dry_run:
             return await self._preview(store, cfg, targets, schema, scanned, summary)
+        if discovery is None:
+            log.warning("document store %r skipped ingest because its selector could not be verified", store_name)
+            return summary
 
         async with self.sc.sessionmaker() as session:
             run = ExtractRunRow(
@@ -938,7 +991,15 @@ spec:
             )
             session.add(run)
             await session.flush()
-            active, removed = await self._sync_documents(session, store, cfg, scanned)
+            active, removed = await self._sync_documents(
+                session,
+                store,
+                root,
+                scanned,
+                selector=selector,
+                complete_store=complete_store,
+                warn_retained=True,
+            )
             await session.commit()
             run_id = run.id
 
@@ -1115,7 +1176,7 @@ spec:
 
         # a corpus file removed earlier (e.g. by listing the corpus, which
         # marks it removed without extracting) must still be retracted now
-        already_removed = await self._removed_ids(store_name)
+        already_removed = await self._removed_ids(store_name, root, selector, complete_store=complete_store)
         summary["archived"] = await self._cleanup_removed_run(
             store_name, list(dict.fromkeys([*removed, *already_removed])), run_id
         )
@@ -1155,18 +1216,18 @@ spec:
                 run.finished_at = utcnow()
                 await session.commit()
 
-    async def _removed_ids(self, store_name: str) -> list[str]:
+    async def _removed_ids(
+        self, store_name: str, root: Path, selector: str | None, *, complete_store: bool
+    ) -> list[str]:
         async with self.sc.sessionmaker() as session:
             rows = (
-                (
-                    await session.execute(
-                        select(DocumentRow.id).where(DocumentRow.store == store_name, DocumentRow.status == "removed")
+                await session.execute(
+                    select(DocumentRow.id, DocumentRow.path).where(
+                        DocumentRow.store == store_name, DocumentRow.status == "removed"
                     )
                 )
-                .scalars()
-                .all()
-            )
-        return list(rows)
+            ).all()
+        return [doc_id for doc_id, path in rows if _reconciles_path(root, Path(path), selector, complete_store)]
 
     async def _cleanup_removed_run(self, store_name: str, removed: list[str], run_id: int | None = None) -> int:
         if not removed:
@@ -1290,26 +1351,46 @@ spec:
             "extractor": "loaded" if self._extractor() is not None else "missing",
         }
 
-    async def _scan_documents(self, store, cfg, root, targets) -> list[corpus.ScannedDocument]:
+    async def _scan_documents(
+        self, store, cfg, root, targets
+    ) -> tuple[list[corpus.ScannedDocument], str | None] | None:
         from dataclasses import replace
 
         store_name = store.metadata.name
-        scanned = corpus.scan(root, cfg, self._selector(store, targets), store_name=store_name)
+        identity = (root, cfg.model_dump_json())
+        cached = self._scan_cache.get(store_name)
+        previous = cached[1] if cached is not None and cached[0] == identity else None
         async with self.sc.sessionmaker() as session:
-            existing = set(
-                (await session.execute(select(DocumentRow.id).where(DocumentRow.store == store_name))).scalars().all()
+            existing = dict(
+                (await session.execute(select(DocumentRow.id, DocumentRow.path).where(DocumentRow.store == store_name)))
+                .tuples()
+                .all()
             )
+        existing_ids_by_path: dict[str, set[str]] = defaultdict(set)
+        for doc_id, path in existing.items():
+            existing_ids_by_path[path].add(doc_id)
+        selector = corpus.resolve_selector(root, self._selector(store, targets), existing_ids_by_path)
+        try:
+            scanned, current = corpus.scan_incremental(
+                root, cfg, selector, store_name=store_name, previous=previous, existing_ids_by_path=existing_ids_by_path
+            )
+        except corpus.SelectorUnavailableError:
+            return None
+        self._scan_cache[store_name] = (identity, current)
         resolved = []
         for item in scanned:
-            if item.doc_id in existing and item.legacy_id in existing:
+            candidates = [doc_id for doc_id in (item.doc_id, item.legacy_id) if doc_id in existing]
+            candidates.extend(doc_id for doc_id in item.selector_ids if existing.get(doc_id) == str(item.path))
+            if len(candidates) > 1:
                 raise DocumentError(
-                    f"document {item.path} has both legacy and store-scoped records in store {store_name!r}; "
+                    f"document {item.path} has both legacy and store-scoped records or multiple historical IDs "
+                    f"in store {store_name!r}; "
                     "reconcile the duplicate records and their references before scanning"
                 )
-            if item.legacy_id in existing:
-                item = replace(item, doc_id=item.legacy_id)
+            if candidates:
+                item = replace(item, doc_id=candidates[0])
             resolved.append(item)
-        return resolved
+        return resolved, selector
 
     async def scan_corpus(self, store_name: str) -> int:
         """Register files that exist on disk, without extracting anything.
@@ -1317,19 +1398,34 @@ spec:
         The corpus must be visible before the first run -- otherwise the UI
         shows an empty source until someone guesses to press "extract".
         """
-        store = self.store(store_name)
-        cfg = self._cfg(store)
-        root = self._root(store)
-        targets = self.object_types(store_name)
-        scanned = await self._scan_documents(store, cfg, root, targets)
-        async with self.sc.sessionmaker() as session:
-            await self._sync_documents(session, store, cfg, scanned)
-            await session.commit()
-        return len(scanned)
+        async with self._lock(store_name):
+            store = self.store(store_name)
+            cfg = self._cfg(store)
+            root = self._root(store)
+            targets = self.object_types(store_name)
+            discovery = await self._scan_documents(store, cfg, root, targets)
+            if discovery is None:
+                return 0
+            scanned, selector = discovery
+            async with self.sc.sessionmaker() as session:
+                await self._sync_documents(
+                    session,
+                    store,
+                    root,
+                    scanned,
+                    selector=selector,
+                    complete_store=True,
+                )
+                await session.commit()
+            return len(scanned)
 
     async def list_documents(self, store_name: str) -> dict[str, Any]:
         self.store(store_name)
-        await self.scan_corpus(store_name)
+        # Refreshing writes to the catalog. While ingest owns or is waiting
+        # for the store lock, serve the last committed rows without queuing a
+        # refresh behind a potentially slow external extractor.
+        if not self._pending_ingests[store_name]:
+            await self.scan_corpus(store_name)
         async with self.sc.sessionmaker() as session:
             rows = (
                 (

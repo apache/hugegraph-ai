@@ -19,12 +19,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, OperationalError
 
-from ..errors import OOError
+from ..errors import ConflictError, NotFoundError, OOError
 from ..service import ServiceContext
+from ..stores.ddl import SYSTEM_COLUMNS
 from .deps import get_principal, get_sc, require_admin
 from .schemas import (
     ActionBody,
@@ -223,18 +227,46 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         started = time.perf_counter()
         from ..errors import PolicyDeniedError, RuleRejectedError
 
+        runtime = sc.runtime
+        key = body.idempotency_key
         async with sc.sessionmaker() as s:
             try:
-                rev = await sc.runtime.execute(
-                    s,
-                    action_name,
-                    principal,
-                    body.parameters,
-                    body.target_id,
-                    expected_revision=body.expected_revision,
-                    idempotency_key=body.idempotency_key,
-                )
-                await s.commit()
+                try:
+                    rev = await runtime.execute(
+                        s,
+                        action_name,
+                        principal,
+                        body.parameters,
+                        body.target_id,
+                        expected_revision=body.expected_revision,
+                        idempotency_key=key,
+                    )
+                    await s.commit()
+                except (ConflictError, NotFoundError, IntegrityError, OperationalError) as exc:
+                    if not key or action_name not in runtime.compiled.actions or s.get_bind().dialect.name != "sqlite":
+                        raise
+                    busy = isinstance(exc, OperationalError)
+                    if busy and getattr(exc.orig, "sqlite_errorcode", 0) & 0xFF != sqlite3.SQLITE_BUSY:
+                        raise
+                    # Another writer may have won after the initial replay lookup.
+                    # Roll back this transaction, then only read the eventual winner.
+                    # Executing again here could repeat a function's external effects.
+                    attempts = 20 if busy else 1
+                    principal_id = str(principal.get("id", "anonymous"))
+                    for attempt in range(attempts):
+                        await s.rollback()
+                        rev = await runtime.find_replay(s, action_name, principal_id, key)
+                        if rev is not None:
+                            break
+                        if attempt + 1 < attempts:
+                            await asyncio.sleep(0.05)
+                    else:
+                        raise
+                # Serialize with the same deployment snapshot that executed the action.
+                action = runtime.compiled.actions.get(action_name)
+                target = runtime.compiled.objects.get(rev.object_type)
+                if action is None or target is None or action.spec.target != rev.object_type:
+                    raise NotFoundError(f"no active action target for {action_name!r}")
                 await sc.telemetry.record_action(
                     s,
                     action_name,
@@ -242,9 +274,14 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
                     duration_ms=(time.perf_counter() - started) * 1000,
                 )
                 await s.commit()
-                # mask the returned after-state: it is the raw stored row, and
-                # marked properties must not leak through the execute response
-                after = sc.policy.mask(rev.object_type, rev.after or {}, principal) if rev.after else rev.after
+                after = rev.after
+                if after and after != {"archived": True}:
+                    current_props = {
+                        field: value
+                        for field, value in after.items()
+                        if field in target.spec.properties or field in SYSTEM_COLUMNS
+                    }
+                    after = runtime.policy.mask(rev.object_type, current_props, principal)
                 return {
                     "revision_id": rev.id,
                     "outcome": rev.outcome,

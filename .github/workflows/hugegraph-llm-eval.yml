@@ -1,0 +1,127 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements. See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License. You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: HugeGraph-LLM Eval CI
+
+on:
+  workflow_call:
+    inputs:
+      python-versions:
+        type: string
+        required: true
+      primary-python:
+        type: string
+        required: true
+      uv-version:
+        type: string
+        required: true
+      ty-version:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+  SKIP_EXTERNAL_SERVICES: "true"
+  HUGEGRAPH_LLM_EVAL_TEST_INSTALLED: "1"
+
+jobs:
+  tests:
+    name: eval / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-python-env
+        id: python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          uv-version: ${{ inputs.uv-version }}
+          component: eval
+      - name: Build outside the application workspace
+        run: |
+          cp -R "$GITHUB_WORKSPACE/graphrag/eval" "$RUNNER_TEMP/eval-build"
+          cd "$RUNNER_TEMP"
+          uv --no-config build --no-sources "$RUNNER_TEMP/eval-build" --out-dir "$RUNNER_TEMP/eval-dist"
+          cp "$GITHUB_WORKSPACE/pyproject.toml" "$RUNNER_TEMP/eval-dist/workspace-pyproject.toml"
+      - name: Retain eval reproduction bundle
+        if: matrix.python-version == inputs.primary-python
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-reproduction-${{ matrix.python-version }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/eval-dist/
+            ${{ runner.temp }}/eval-build/tests/
+      - name: Verify wheel and sdist isolation
+        env:
+          PYTHONPATH: ""
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          cd "$RUNNER_TEMP"
+          for format in whl tar.gz; do
+            uv --no-config venv "$RUNNER_TEMP/eval-venv-$format"
+            uv --no-config pip install --python "$RUNNER_TEMP/eval-venv-$format/bin/python" \
+              "$RUNNER_TEMP"/eval-dist/*.$format 'pytest>=9.2,<10'
+            "$RUNNER_TEMP/eval-venv-$format/bin/python" -c \
+              'import os; from importlib.metadata import version; assert version("hugegraph-llm-eval") == os.environ["EXPECTED_VERSION"]'
+            "$RUNNER_TEMP/eval-venv-$format/bin/python" -B "$RUNNER_TEMP/eval-build/tests/distribution_smoke.py"
+            "$RUNNER_TEMP/eval-venv-$format/bin/python" -B "$RUNNER_TEMP/eval-build/examples/basic.py"
+            "$RUNNER_TEMP/eval-venv-$format/bin/python" -m pytest \
+              "$RUNNER_TEMP/eval-build/tests/test_isolation.py" -q
+          done
+      - name: Install optional metric extras from the wheel
+        if: matrix.python-version == inputs.primary-python
+        run: |
+          cd "$RUNNER_TEMP"
+          eval_wheels=("$RUNNER_TEMP"/eval-dist/*.whl)
+          uv --no-config pip install --python "$RUNNER_TEMP/eval-venv-whl/bin/python" \
+            "${eval_wheels[0]}[graph,rouge,openai]"
+      - name: Run eval contracts against the installed wheel
+        env:
+          PYTHONPATH: ""
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/eval-venv-whl/bin/python" -m pytest "$RUNNER_TEMP/eval-build/tests" -q --tb=short
+      - name: Run the all-metrics example
+        if: matrix.python-version == inputs.primary-python
+        env:
+          PYTHONPATH: ""
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/eval-venv-whl/bin/python" -B "$RUNNER_TEMP/eval-build/examples/all_metrics.py"
+      - name: Type check eval SDK (advisory)
+        if: matrix.python-version == inputs.primary-python
+        continue-on-error: true
+        env:
+          TY_VERSION: ${{ inputs.ty-version }}
+        run: >-
+          uvx --from "ty>=$TY_VERSION" ty check
+          --python "$RUNNER_TEMP/eval-venv-whl/bin/python"
+          graphrag/eval/src/hugegraph_llm_eval
+      - name: Prune uv cache before upload
+        if: always() && steps.python-env.outcome == 'success'
+        run: uv cache prune --ci

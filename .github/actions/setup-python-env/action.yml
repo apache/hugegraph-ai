@@ -22,7 +22,7 @@ runs:
         path: |
           ~/.cache/uv
           ~/.cache/pip
-        key: ${{ runner.os }}-uv-${{ inputs.uv-version }}-${{ inputs.component }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml', 'hugegraph-python-client/pyproject.toml', 'hugegraph-llm-sdk/pyproject.toml', format('hugegraph-{0}*/pyproject.toml', inputs.component)) }}
+        key: ${{ runner.os }}-uv-${{ inputs.uv-version }}-${{ inputs.component }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml', 'hugegraph-python-client/pyproject.toml', 'hugegraph-llm-sdk/pyproject.toml', 'graphrag/eval/pyproject.toml', format('hugegraph-{0}*/pyproject.toml', inputs.component)) }}
         restore-keys: |
           ${{ runner.os }}-uv-${{ inputs.uv-version }}-${{ inputs.component }}-${{ inputs.python-version }}-
     - name: Install shared uv version

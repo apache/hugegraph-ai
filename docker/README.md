@@ -2,8 +2,8 @@
 
 The image uses Python 3.12. Use `--build-arg PYTHON_VERSION=3.13` or `3.14` to select
 another supported runtime. Build from the repository root so it includes the
-application, Python client, and the [HugeGraph-LLM SDK](../hugegraph-llm-sdk/README.md)
-workspace package:
+application, Python client, and the [HugeGraph-LLM SDK](../hugegraph-llm-sdk/README.md) and
+[HugeGraph-LLM Eval](../graphrag/eval/README.md) workspace packages:
 
 ```bash
 docker build -f docker/Dockerfile.llm -t hugegraph/rag:local .

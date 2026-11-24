@@ -5,6 +5,7 @@ Repository guidance for coding agents. Keep product usage in README files and us
 ## Module ownership
 
 - `hugegraph-llm-sdk/` owns reusable schema design, validation and reviewed graph-extraction contracts. Keep its base installation independent of application and provider dependencies.
+- `graphrag/eval/` owns the standalone evaluation runtime: scoring rules, judge ports and execution semantics. The application owns pipelines, persistence and reports.
 - `hugegraph-llm/` owns GraphRAG, knowledge-graph construction, prompts, model integration, vector indexes, API/UI and application orchestration. Read its local guidance before editing it.
 - `hugegraph-python-client/` owns the HugeGraph Python protocol and public client APIs. Change it only when the client contract itself must change, then verify application callers.
 - `hugegraph-mcp/` owns MCP transport, tool contracts, safety defaults and write confirmation.
@@ -41,6 +42,7 @@ uv run --extra dev ruff format --check .
 uv run --extra dev ruff check .
 uv run --extra dev ty check \
   hugegraph-llm-sdk/src/hugegraph_llm_sdk \
+  graphrag/eval/src/hugegraph_llm_eval \
   hugegraph-llm/src/hugegraph_llm \
   hugegraph-python-client/src/pyhugegraph
 ```

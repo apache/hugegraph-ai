@@ -39,13 +39,14 @@ WORKDIR /home/work/
 # Copy virtual environment and source code
 COPY --from=builder --chown=work:work /home/work/.venv /home/work/.venv
 COPY --from=builder --chown=work:work /home/work/hugegraph-llm-sdk/src /home/work/hugegraph-llm-sdk/src
+COPY --from=builder --chown=work:work /home/work/graphrag/eval/src /home/work/graphrag/eval/src
 COPY --from=builder --chown=work:work /home/work/hugegraph-llm/src /home/work/hugegraph-llm/src
 COPY --from=builder --chown=work:work /home/work/hugegraph-llm/pyproject.toml /home/work/hugegraph-llm/pyproject.toml
 COPY --from=builder --chown=work:work /home/work/hugegraph-python-client/src /home/work/hugegraph-python-client/src
 
 USER work
 ENV PATH="/home/work/.venv/bin:$PATH"
-ENV PYTHONPATH="/home/work/hugegraph-llm-sdk/src:/home/work/hugegraph-llm/src:/home/work/hugegraph-python-client/src"
+ENV PYTHONPATH="/home/work/hugegraph-llm-sdk/src:/home/work/graphrag/eval/src:/home/work/hugegraph-llm/src:/home/work/hugegraph-python-client/src"
 
 WORKDIR /home/work/hugegraph-llm
 VOLUME ["/home/work/hugegraph-llm/src/hugegraph_llm/resources"]

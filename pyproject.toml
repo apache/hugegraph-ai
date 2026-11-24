@@ -80,17 +80,19 @@ packages = [
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "README.md", "LICENSE", "NOTICE"]
+include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "graphrag/*/src", "graphrag/*/pyproject.toml", "graphrag/*/README.md", "graphrag/*/LICENSE", "graphrag/*/NOTICE", "README.md", "LICENSE", "NOTICE"]
 
 [tool.uv.sources]
 hugegraph-llm = { workspace = true }
 hugegraph-llm-sdk = { workspace = true }
+hugegraph-llm-eval = { workspace = true }
 hugegraph-python = { workspace = true }
 vermeer-python-client = { path = "vermeer-python-client", editable = true }
 
 [tool.uv.workspace]
 members = [
     "hugegraph-llm-sdk",
+    "graphrag/eval",
     "hugegraph-llm",
     "hugegraph-python-client"
 ]
@@ -152,10 +154,11 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["T20"]
 "hugegraph-ml/src/hugegraph_ml/examples/**/*.py" = ["T20"]
+"graphrag/eval/examples/**/*.py" = ["T20"]
 "hugegraph-python-client/src/pyhugegraph/structure/*.py" = ["N802"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["hugegraph_llm", "hugegraph_llm_sdk", "hugegraph_mcp", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]
+known-first-party = ["hugegraph_llm", "hugegraph_llm_sdk", "hugegraph_llm_eval", "hugegraph_mcp", "hugegraph_python_client", "hugegraph_ml", "vermeer_python_client"]
 
 [tool.ruff.format]
 quote-style = "double"

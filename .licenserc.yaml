@@ -64,6 +64,7 @@ header: # `header` section is configurations for source codes license header.
     - '**/*.json'
     - '**/*.conf'
     - '**/*.map'
+    - '**/py.typed'
     - 'dist/**/*'
     - '**/*.md'
     - '**/logs/*.log'

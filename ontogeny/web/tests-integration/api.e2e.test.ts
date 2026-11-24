@@ -183,6 +183,7 @@ describe('e2e: real backend', () => {
       await api('/api/v1/objects/field-failure/query', {
         method: 'POST',
         body: { filter: { field: 'lot_id', op: 'eq', value: 'LOT-2417' } },
+        principal: { ...PRODUCT, id: `e2e-product-${i % 2}` },
       })
     }
     const agg = await api('/api/v1/evolve/aggregate', { method: 'POST' })

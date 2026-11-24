@@ -281,6 +281,8 @@ class DecidingProposer:
     ) -> ProposeOutcome:
         from ..llm import extract_json
 
+        if gap.get("kind") == "unmapped_filter_field" and gap.get("informational"):
+            return ProposeOutcome(analysis=gap.get("rationale"))
         if self.client is None:
             self.stats["fallback"] += 1
             return ProposeOutcome(proposal=self.fallback.propose(gap))

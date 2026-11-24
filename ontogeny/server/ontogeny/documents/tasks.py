@@ -287,9 +287,14 @@ class TaskService:
         if files:
             uploaded = await self.docs._upload(store_name, files)
             written = list(uploaded.get("written") or [])
-        await self.docs.scan_corpus(store_name)
-        root = self.docs._root(self.docs.store(store_name)).resolve()
-        paths = {(root / p).resolve() for p in written}
+        _, unreadable = await self.docs._refresh_corpus(store_name)
+        root = self.docs._root(self.docs.store(store_name))
+        paths = {root / path for path in written}
+        blocked_uploads = sorted(
+            str(path.relative_to(root)) for path in paths if any(path.is_relative_to(blocked) for blocked in unreadable)
+        )
+        if blocked_uploads:
+            raise TaskError(f"could not read uploaded documents: {blocked_uploads}")
         wanted_ids = set(doc_ids or [])
         async with self.sc.sessionmaker() as session:
             docs = (await session.execute(select(DocumentRow).where(DocumentRow.store == store_name))).scalars().all()
@@ -346,7 +351,7 @@ class TaskService:
                 await session.flush()
                 tasks.append(self._task_dict(existing, doc))
             await session.commit()
-        return {"tasks": tasks, "written": written, "schema_hash": bundle.hash}
+        return {"tasks": tasks, "written": written, "schema_hash": bundle.hash, "scan_complete": not unreadable}
 
     async def list_tasks(self, store_name: str | None = None, status: str | None = None) -> dict[str, Any]:
         async with self.sc.sessionmaker() as session:

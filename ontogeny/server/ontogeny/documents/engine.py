@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections import Counter, defaultdict
+from collections.abc import Collection
 from pathlib import Path
 from stat import S_ISREG
 from typing import Any
@@ -72,11 +73,15 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _reconciles_path(root: Path, path: Path, selector: str | None, complete_store: bool) -> bool:
+def _reconciles_path(
+    root: Path, path: Path, selector: str | None, complete_store: bool, unreadable: Collection[Path]
+) -> bool:
     if not path.is_relative_to(root):
-        # Only a full store scan can retire rows from a previous corpus root.
-        return complete_store
-    return corpus.selector_covers(root, path, selector)
+        # Only a verified full store scan can retire rows from a previous root.
+        return complete_store and not unreadable
+    return not any(path.is_relative_to(blocked) for blocked in unreadable) and corpus.selector_covers(
+        root, path, selector
+    )
 
 
 class DocumentService:
@@ -244,6 +249,7 @@ spec:
         selector: str | None = None,
         complete_store: bool = False,
         warn_retained: bool = False,
+        unreadable: Collection[Path] = (),
     ) -> tuple[list[DocumentRow], list[str]]:
         rows = (
             (await session.execute(select(DocumentRow).where(DocumentRow.store == store.metadata.name))).scalars().all()
@@ -252,6 +258,7 @@ spec:
         by_id = {r.id: r for r in rows}
         now = utcnow()
         active: list[DocumentRow] = []
+        removed: list[str] = []
         changed: list[DocumentRow] = []
         seen: set[str] = set()
         for item in scanned:
@@ -268,6 +275,7 @@ spec:
                 # same path, new content: the old document is removed, the new
                 # one is a different id (content-addressed)
                 row.status = "removed"
+                removed.append(row.id)
                 changed.append(row)
             # A previously removed version can reappear at the same path.
             # Its content-addressed id is already present, so restore the row
@@ -296,13 +304,12 @@ spec:
             session.add(new)
             active.append(new)
             changed.append(new)
-        removed: list[str] = []
         outside_scan = unverified = 0
         for row in rows:
             if row.status != "active" or row.path in seen:
                 continue
             path = Path(row.path)
-            if not _reconciles_path(root, path, selector, complete_store):
+            if not _reconciles_path(root, path, selector, complete_store, unreadable):
                 if complete_store:
                     outside_scan += 1
                 continue
@@ -955,8 +962,12 @@ spec:
         # different agent is a different extractor and must not reuse packets
         agent_id = self.sc.settings.doc_agent_url or self.sc.settings.doc_agent_cmd or "unconfigured"
         model = "agent:" + _sha(agent_id)[:16]
-        discovery = await self._scan_documents(store, cfg, root, targets)
-        scanned, selector = discovery if discovery is not None else ([], None)
+        scanned, selector, unreadable = await self._scan_documents(store, cfg, root, targets)
+        scan_error = (
+            f"document store {store_name!r} could not read {len(unreadable)} selected file or directory paths"
+            if unreadable
+            else None
+        )
 
         summary: dict[str, Any] = {
             "store": store_name,
@@ -971,14 +982,14 @@ spec:
             "quarantined": 0,
             "archived": 0,
             "gaps": [],
+            "scan_error": scan_error,
             "dry_run": dry_run,
         }
 
         if dry_run:
+            if scan_error and not scanned:
+                raise DocumentError(scan_error)
             return await self._preview(store, cfg, targets, schema, scanned, summary)
-        if discovery is None:
-            log.warning("document store %r skipped ingest because its selector could not be verified", store_name)
-            return summary
 
         async with self.sc.sessionmaker() as session:
             run = ExtractRunRow(
@@ -990,6 +1001,12 @@ spec:
                 n_documents=len(scanned),
             )
             session.add(run)
+            if scan_error and not scanned:
+                run.status = "error"
+                run.error = scan_error
+                run.finished_at = utcnow()
+                await session.commit()
+                raise DocumentError(scan_error)
             await session.flush()
             active, removed = await self._sync_documents(
                 session,
@@ -999,6 +1016,7 @@ spec:
                 selector=selector,
                 complete_store=complete_store,
                 warn_retained=True,
+                unreadable=unreadable,
             )
             await session.commit()
             run_id = run.id
@@ -1018,7 +1036,7 @@ spec:
                 else:
                     to_extract.append(doc)
         options = self._options(cfg)
-        errors: list[str] = []
+        errors = [scan_error] if scan_error else []
         for doc in to_extract:
             try:
                 async with self.sc.sessionmaker() as session:
@@ -1176,7 +1194,9 @@ spec:
 
         # a corpus file removed earlier (e.g. by listing the corpus, which
         # marks it removed without extracting) must still be retracted now
-        already_removed = await self._removed_ids(store_name, root, selector, complete_store=complete_store)
+        already_removed = await self._removed_ids(
+            store_name, root, selector, complete_store=complete_store, unreadable=unreadable
+        )
         summary["archived"] = await self._cleanup_removed_run(
             store_name, list(dict.fromkeys([*removed, *already_removed])), run_id
         )
@@ -1217,7 +1237,7 @@ spec:
                 await session.commit()
 
     async def _removed_ids(
-        self, store_name: str, root: Path, selector: str | None, *, complete_store: bool
+        self, store_name: str, root: Path, selector: str | None, *, complete_store: bool, unreadable: Collection[Path]
     ) -> list[str]:
         async with self.sc.sessionmaker() as session:
             rows = (
@@ -1227,7 +1247,9 @@ spec:
                     )
                 )
             ).all()
-        return [doc_id for doc_id, path in rows if _reconciles_path(root, Path(path), selector, complete_store)]
+        return [
+            doc_id for doc_id, path in rows if _reconciles_path(root, Path(path), selector, complete_store, unreadable)
+        ]
 
     async def _cleanup_removed_run(self, store_name: str, removed: list[str], run_id: int | None = None) -> int:
         if not removed:
@@ -1353,7 +1375,7 @@ spec:
 
     async def _scan_documents(
         self, store, cfg, root, targets
-    ) -> tuple[list[corpus.ScannedDocument], str | None] | None:
+    ) -> tuple[list[corpus.ScannedDocument], str | None, set[Path]]:
         from dataclasses import replace
 
         store_name = store.metadata.name
@@ -1370,12 +1392,9 @@ spec:
         for doc_id, path in existing.items():
             existing_ids_by_path[path].add(doc_id)
         selector = corpus.resolve_selector(root, self._selector(store, targets), existing_ids_by_path)
-        try:
-            scanned, current = corpus.scan_incremental(
-                root, cfg, selector, store_name=store_name, previous=previous, existing_ids_by_path=existing_ids_by_path
-            )
-        except corpus.SelectorUnavailableError:
-            return None
+        scanned, current, unreadable = corpus.scan_incremental(
+            root, cfg, selector, store_name=store_name, previous=previous, existing_ids_by_path=existing_ids_by_path
+        )
         self._scan_cache[store_name] = (identity, current)
         resolved = []
         for item in scanned:
@@ -1390,7 +1409,7 @@ spec:
             if candidates:
                 item = replace(item, doc_id=candidates[0])
             resolved.append(item)
-        return resolved, selector
+        return resolved, selector, unreadable
 
     async def scan_corpus(self, store_name: str) -> int:
         """Register files that exist on disk, without extracting anything.
@@ -1398,15 +1417,18 @@ spec:
         The corpus must be visible before the first run -- otherwise the UI
         shows an empty source until someone guesses to press "extract".
         """
+        count, _ = await self._refresh_corpus(store_name)
+        return count
+
+    async def _refresh_corpus(self, store_name: str) -> tuple[int, set[Path]]:
         async with self._lock(store_name):
             store = self.store(store_name)
             cfg = self._cfg(store)
             root = self._root(store)
             targets = self.object_types(store_name)
-            discovery = await self._scan_documents(store, cfg, root, targets)
-            if discovery is None:
-                return 0
-            scanned, selector = discovery
+            scanned, selector, unreadable = await self._scan_documents(store, cfg, root, targets)
+            if unreadable and not scanned:
+                return 0, unreadable
             async with self.sc.sessionmaker() as session:
                 await self._sync_documents(
                     session,
@@ -1415,17 +1437,20 @@ spec:
                     scanned,
                     selector=selector,
                     complete_store=True,
+                    unreadable=unreadable,
                 )
                 await session.commit()
-            return len(scanned)
+            return len(scanned), unreadable
 
     async def list_documents(self, store_name: str) -> dict[str, Any]:
         self.store(store_name)
         # Refreshing writes to the catalog. While ingest owns or is waiting
         # for the store lock, serve the last committed rows without queuing a
         # refresh behind a potentially slow external extractor.
+        scan_complete = None
         if not self._pending_ingests[store_name]:
-            await self.scan_corpus(store_name)
+            _, unreadable = await self._refresh_corpus(store_name)
+            scan_complete = not unreadable
         async with self.sc.sessionmaker() as session:
             rows = (
                 (
@@ -1440,6 +1465,7 @@ spec:
             )
         return {
             "store": store_name,
+            "scan_complete": scan_complete,
             "documents": [
                 {
                     "id": r.id,

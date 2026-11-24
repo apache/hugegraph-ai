@@ -56,6 +56,14 @@ def sandbox_for(sc, tmp_path, source, *, allowed=None):
     return FunctionSandbox(replace(sc.compiled, package_root=str(tmp_path)), sc.repo, timeout_s=10), fn
 
 
+async def test_import_diagnostics_leave_invoke_and_map_protocol_intact(client, tmp_path):
+    _, sc = client
+    sandbox, fn = sandbox_for(sc, tmp_path, 'print("module loaded")\ndef probe(obj):\n    return obj["value"]\n')
+    async with sc.sessionmaker() as session:
+        assert await sandbox.run(session, fn, {"obj": {"value": 3}}) == 3
+        assert await sandbox.map_rows(session, fn, [{"value": 1}, {"value": 2}]) == [1, 2]
+
+
 async def test_batch_of_one_hundred_kilobyte_values_crosses_default_readline_limit(client, tmp_path, spawned):
     _, sc = client
     sandbox, fn = sandbox_for(sc, tmp_path, 'def probe(obj):\n    return obj["text"]\n')

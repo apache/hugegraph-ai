@@ -31,7 +31,7 @@ A fresh deployment auto-creates an `admin` account; unless `ONTOGENY_ADMIN_PASSW
 
 **Overview (the landing page)** — the first screen is the Ontogeny introduction with the overall architecture board; the left rail is the global navigation (Model & data / Operate & govern); the dashboard numbers come from the real compiled snapshot and seeded data, not static decoration.
 
-Production authentication is enabled by default. `ONTOGENY_DEV_AUTH=1` enables identity simulation through `X-Ontogeny-Principal`; use it only in a local development environment. Source serving binds to `127.0.0.1` unless `--host` is explicitly supplied.
+Demo mode, including the default Compose setup, enables identity simulation through `X-Ontogeny-Principal` when `ONTOGENY_DEV_AUTH` is unset. Set `ONTOGENY_DEV_AUTH=0` before launching either demo to disable identity simulation. Protected operations then require a login session or bearer token. Source serving binds to `127.0.0.1` unless `--host` is explicitly supplied.
 
 ## 8.3 The minimal viable package (only 2 resources)
 

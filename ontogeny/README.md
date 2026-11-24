@@ -60,7 +60,7 @@ ontogeny serve --demo --open   # → http://127.0.0.1:8000/
 ```
 
 > [!NOTE]
-> The API is session/bearer authenticated. The `X-Ontogeny-Principal` dev header is disabled by default; set `ONTOGENY_DEV_AUTH=1` only for development or evaluation. With it disabled, the agent surfaces (REST + `/mcp`) require a signed-in driver and every session records WHO drove it.
+> The API uses session or bearer authentication. Demo mode, including the default Compose setup, enables identity simulation through `X-Ontogeny-Principal` when `ONTOGENY_DEV_AUTH` is unset. Set `ONTOGENY_DEV_AUTH=0` before running `ontogeny serve --demo` or `docker compose up -d` to require signed-in identity on the agent surfaces (REST and `/mcp`). Use identity simulation only for local development or evaluation.
 
 The source demo serves the default `domains/chip-lifecycle` package **in place**: model edits change that working directory. Add `--copy-package` to keep an editable copy under `--data-dir` instead; Docker uses this mode so changes persist on its `/data` volume. `--reseed` replaces copied demo state; in-place model files are retained.
 

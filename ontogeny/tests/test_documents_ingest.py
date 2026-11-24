@@ -28,6 +28,7 @@ import pytest
 from doc_fixtures import FakeExtractor, add_note, make_context
 from sqlalchemy import select
 
+from ontogeny.action.models import OutboxRow
 from ontogeny.documents.models import (
     DocumentRow,
     ExtractAssertionRow,
@@ -92,6 +93,8 @@ async def test_rerun_is_idempotent_and_uses_packet_cache(doc_context):
     extractor = sc.document_extractor
     calls = extractor.calls
     before = await _note(sc, "Acme Components")
+    assertion_count = sum(row.kind == "object" for row in await _rows(sc, ExtractAssertionRow))
+    assert assertion_count > 0
 
     again = await sc.sync("supplier-note")
     assert again["inserted"] == 0
@@ -102,6 +105,9 @@ async def test_rerun_is_idempotent_and_uses_packet_cache(doc_context):
     assert extractor.calls == calls
     after = await _note(sc, "Acme Components")
     assert after["_rev"] == before["_rev"]
+    assertions = [row for row in await _rows(sc, ExtractAssertionRow) if row.kind == "object"]
+    assert len(assertions) == assertion_count
+    assert all(row.run_id == again["run_id"] for row in assertions)
     # the cached rerun still has a per-chunk audit trail for the UI
     detail = await sc.documents.run_detail(again["run_id"])
     assert sum(len(d["chunks"]) for d in detail["documents"]) == 3
@@ -177,6 +183,36 @@ async def test_document_removal_retracts_links_and_archives(doc_context):
     assert await _note(sc, "Acme Components") is None
     # the other note is untouched
     assert await _note(sc, "Globex Materials") is not None
+
+
+async def test_batch_document_removal_preserves_remaining_evidence(doc_context):
+    sc, pkg, _ = doc_context
+    corpus = pkg / "data" / "docs" / "supplier-notes"
+    acme_source = corpus / "acme-2026-03.md"
+    acme_copy = corpus / "acme-copy.md"
+    acme_copy.write_bytes(acme_source.read_bytes())
+    await sc.sync("supplier-note")
+    acme = await _note(sc, "Acme Components")
+    globex = await _note(sc, "Globex Materials")
+    surviving_doc_id = next(d.id for d in await _rows(sc, DocumentRow) if d.path == str(acme_copy))
+
+    acme_source.unlink()
+    (corpus / "globex-2026-02.md").unlink()
+    summary = await sc.sync("supplier-note")
+    assert summary["archived"] == 1
+    assert await _note(sc, "Acme Components") is not None
+    assert await _note(sc, "Globex Materials") is None
+    assert await _link_pairs(sc) == [("SUP-001", acme["note_id"])]
+    assert {a.doc_id for a in await _rows(sc, ExtractAssertionRow) if a.kind == "object"} == {surviving_doc_id}
+
+    acme_copy.unlink()
+    assert (await sc.sync("supplier-note"))["archived"] == 1
+    assert (await sc.sync("supplier-note"))["archived"] == 0
+    assert await _note(sc, "Acme Components") is None
+    assert await _link_pairs(sc) == []
+    assert await _rows(sc, ExtractAssertionRow) == []
+    archives = [e.object_id for e in await _rows(sc, OutboxRow) if e.op == "archive"]
+    assert sorted(archives) == sorted([acme["note_id"], globex["note_id"]])
 
 
 async def test_reupload_removed_document_reuses_its_original_row(doc_context):

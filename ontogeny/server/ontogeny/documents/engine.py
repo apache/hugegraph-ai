@@ -33,7 +33,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, tuple_
 
 from ..action.models import OutboxRow, RevisionRow
 from ..core.models import DocumentCfg, ExtractCfg, ExtractedJoin
@@ -577,20 +577,14 @@ spec:
                 if _valid(value) and (prop in values or current.get(self.compiled.col(prop)) == value)
             }
         )
+        assertion_pairs = set()
+        assertions = []
         for prop, value in supported.items():
             docs = bound.sources.get(prop) or bound.docs or {doc_id}
             for source_doc in docs:
                 ev = evidence.get(prop)
-                await session.execute(
-                    delete(ExtractAssertionRow).where(
-                        ExtractAssertionRow.doc_id == source_doc,
-                        ExtractAssertionRow.kind == "object",
-                        ExtractAssertionRow.object_type == bound.object_type,
-                        ExtractAssertionRow.object_id == bound.object_id,
-                        ExtractAssertionRow.prop == prop,
-                    )
-                )
-                session.add(
+                assertion_pairs.add((source_doc, prop))
+                assertions.append(
                     ExtractAssertionRow(
                         run_id=run_id,
                         doc_id=source_doc,
@@ -604,6 +598,19 @@ spec:
                         created_object=bool(created and (created_by in (None, source_doc))),
                     )
                 )
+        assertion_pairs = list(assertion_pairs)
+        for offset in range(0, len(assertion_pairs), 300):
+            batch = assertion_pairs[offset : offset + 300]
+            await session.execute(
+                delete(ExtractAssertionRow).where(
+                    tuple_(ExtractAssertionRow.doc_id, ExtractAssertionRow.prop).in_(batch),
+                    ExtractAssertionRow.kind == "object",
+                    ExtractAssertionRow.object_type == bound.object_type,
+                    ExtractAssertionRow.object_id == bound.object_id,
+                )
+            )
+        if assertions:
+            session.add_all(assertions)
         return outcome
 
     async def _candidate(
@@ -768,80 +775,73 @@ spec:
             return 0
         ts = utcnow()
         archived = 0
-        for doc_id in removed:
-            links = (
-                (
-                    await session.execute(
-                        select(ExtractAssertionRow).where(
-                            ExtractAssertionRow.doc_id == doc_id, ExtractAssertionRow.kind == "link"
-                        )
-                    )
-                )
+        removed = list(dict.fromkeys(removed))
+        touched: set[tuple[str, str]] = set()
+        for offset in range(0, len(removed), 400):
+            batch = removed[offset : offset + 400]
+            assertions = (
+                (await session.execute(select(ExtractAssertionRow).where(ExtractAssertionRow.doc_id.in_(batch))))
                 .scalars()
                 .all()
             )
-            for row in links:
-                value = row.value or {}
-                await self.sc.repo.link_retract(
-                    session, row.object_type, str(value.get("src")), str(value.get("dst")), doc_id, ts
-                )
-                await session.delete(row)
-            fields = (
-                (
-                    await session.execute(
-                        select(ExtractAssertionRow).where(
-                            ExtractAssertionRow.doc_id == doc_id, ExtractAssertionRow.kind == "object"
-                        )
+            for row in assertions:
+                if row.kind == "link":
+                    value = row.value or {}
+                    await self.sc.repo.link_retract(
+                        session, row.object_type, str(value.get("src")), str(value.get("dst")), row.doc_id, ts
+                    )
+                elif row.kind == "object":
+                    touched.add((row.object_type, row.object_id))
+            await session.execute(delete(ExtractAssertionRow).where(ExtractAssertionRow.doc_id.in_(batch)))
+
+        # Decide after every removed document has been retracted, so surviving
+        # sources protect objects shared by multiple documents.
+        remaining: set[tuple[str, str]] = set()
+        touched_keys = list(touched)
+        for offset in range(0, len(touched_keys), 300):
+            batch = touched_keys[offset : offset + 300]
+            rows = (
+                await session.execute(
+                    select(ExtractAssertionRow.object_type, ExtractAssertionRow.object_id).where(
+                        tuple_(ExtractAssertionRow.object_type, ExtractAssertionRow.object_id).in_(batch)
                     )
                 )
-                .scalars()
-                .all()
-            )
-            touched: set[tuple[str, str]] = set()
-            for row in fields:
-                touched.add((row.object_type, row.object_id))
-                await session.delete(row)
-            for object_type, object_id in touched:
-                remaining = (
-                    (
-                        await session.execute(
-                            select(ExtractAssertionRow).where(
-                                ExtractAssertionRow.object_type == object_type,
-                                ExtractAssertionRow.object_id == object_id,
-                            )
-                        )
+            ).all()
+            remaining.update((row.object_type, row.object_id) for row in rows)
+
+        eligible = list(touched - remaining)
+        acted: set[tuple[str, str]] = set()
+        for offset in range(0, len(eligible), 300):
+            batch = eligible[offset : offset + 300]
+            rows = (
+                await session.execute(
+                    select(RevisionRow.object_type, RevisionRow.object_id).where(
+                        tuple_(RevisionRow.object_type, RevisionRow.object_id).in_(batch),
+                        RevisionRow.action.notin_(("ingest.extract", "ingest.confirm")),
                     )
-                    .scalars()
-                    .all()
                 )
-                if remaining:
-                    continue
-                # no action ever touched it, so an extraction-created object
-                # with no evidence left is exactly what the corpus created
-                acted = (
-                    (
-                        await session.execute(
-                            select(RevisionRow).where(
-                                RevisionRow.object_type == object_type,
-                                RevisionRow.object_id == object_id,
-                                RevisionRow.action.notin_(("ingest.extract", "ingest.confirm")),
-                            )
-                        )
+            ).all()
+            acted.update((row.object_type, row.object_id) for row in rows)
+
+        without_actions = list(set(eligible) - acted)
+        origins: set[tuple[str, str]] = set()
+        for offset in range(0, len(without_actions), 300):
+            batch = without_actions[offset : offset + 300]
+            rows = (
+                await session.execute(
+                    select(ExtractOriginRow.object_type, ExtractOriginRow.object_id).where(
+                        tuple_(ExtractOriginRow.object_type, ExtractOriginRow.object_id).in_(batch)
                     )
-                    .scalars()
-                    .first()
                 )
-                if acted is not None:
-                    continue
-                origin = await session.get(ExtractOriginRow, (object_type, object_id))
-                if origin is None:
-                    # created outside the corpus (SQL, an action, a human):
-                    # removing a document must never archive it
-                    continue
-                current = await self.sc.repo.get(session, object_type, object_id)
-                if current is None:
-                    continue
-                await self.sc.repo.archive(session, object_type, object_id, ts)
+            ).all()
+            origins.update((row.object_type, row.object_id) for row in rows)
+
+        by_type: dict[str, list[str]] = {}
+        for object_type, object_id in origins:
+            by_type.setdefault(object_type, []).append(object_id)
+        for object_type, object_ids in by_type.items():
+            archived_ids = await self.sc.repo.archive_many(session, object_type, object_ids, ts)
+            for object_id in archived_ids:
                 session.add(
                     OutboxRow(
                         object_type=object_type, object_id=object_id, op="archive", payload={"origin": "document"}

@@ -21,14 +21,16 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+from dataclasses import replace
 
 import pytest
 import pytest_asyncio
 import yaml
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from ontogeny.config import Settings
 from ontogeny.core import load_package
+from ontogeny.core.models import PropertyDef
 from ontogeny.db import init_schema, make_engine, make_sessionmaker
 from ontogeny.registry import RegistryService
 from ontogeny.stores import ObjectRepository, SyncEngine
@@ -178,6 +180,47 @@ class TestSync:
             assert [r["lot_id"] for r in lots] == ["LOT-1"]
             assert isinstance(lots[0]["started_at"], dt.datetime)
 
+    async def test_sync_upsert_many_batches_reads_and_preserves_versions(self, env):
+        repo = env["repo"]
+        ts0 = dt.datetime(2026, 9, 18, 8, tzinfo=dt.UTC)
+        first_rows = [({"lot_id": f"BATCH-{i:03d}", "version_id": "TO-A0", "qty_wafers": i}, ts0) for i in range(125)]
+        first_rows.append(({"lot_id": "BATCH-000", "version_id": "TO-A0", "qty_wafers": 777}, ts0))
+        async with env["maker"]() as session:
+            outcomes = await repo.sync_upsert_many(session, "wafer-lot", first_rows)
+            await session.commit()
+        assert outcomes.count("inserted") == 125
+        assert outcomes.count("updated") == 1
+
+        statement_count = 0
+
+        def count_batch_reads(_conn, _cursor, statement, _params, _context, _many):
+            nonlocal statement_count
+            sql = statement.upper()
+            if sql.lstrip().startswith("SELECT") and "ONTOGENY_OBJ_WAFER_LOT" in sql and " IN " in sql:
+                statement_count += 1
+
+        ts1 = ts0 + dt.timedelta(seconds=1)
+        changed_rows = [
+            ({"lot_id": f"BATCH-{i:03d}", "version_id": "TO-A0", "qty_wafers": i + 1}, ts1) for i in range(125)
+        ]
+        async with env["maker"]() as session:
+            bind = session.sync_session.get_bind()
+            event.listen(bind, "before_cursor_execute", count_batch_reads)
+            try:
+                changed = await repo.sync_upsert_many(session, "wafer-lot", changed_rows)
+                await session.commit()
+            finally:
+                event.remove(bind, "before_cursor_execute", count_batch_reads)
+
+        assert changed == ["updated"] * 125
+        assert statement_count == 2
+        async with env["maker"]() as session:
+            historical = await repo.get(session, "wafer-lot", "BATCH-000", at=ts0)
+            current = await repo.get(session, "wafer-lot", "BATCH-000")
+        assert historical["qty_wafers"] == 0
+        assert current["qty_wafers"] == 1
+        assert current["_rev"] == 3
+
     async def test_enum_domain_violation_quarantined(self, env):
         con = sqlite3.connect(env["src"])
         con.execute(
@@ -276,6 +319,47 @@ class TestSync:
 
 
 class TestRepository:
+    async def test_sync_upsert_matches_timestamp_key_across_round_trips(self, env):
+        compiled = env["compiled"]
+        sample = compiled.objects["equipment"].model_copy(deep=True)
+        sample.metadata.name = "timestamp-keyed"
+        sample.spec.primaryKey = ["recorded_at"]
+        sample.spec.properties = {
+            "recorded_at": PropertyDef(type="timestamp", required=True),
+            "value": PropertyDef(type="string", owner="source"),
+        }
+        repo = ObjectRepository(replace(compiled, objects={**compiled.objects, "timestamp-keyed": sample}))
+        key = "2026-11-20T08:00:00"
+        ts = dt.datetime(2026, 11, 21, tzinfo=dt.UTC)
+        async with env["maker"]() as session:
+            await repo.ensure(session)
+            assert (
+                await repo.sync_upsert(session, "timestamp-keyed", {"recorded_at": key, "value": "initial"}, ts)
+                == "inserted"
+            )
+            await session.commit()
+        async with env["maker"]() as session:
+            outcomes = await repo.sync_upsert_many(
+                session,
+                "timestamp-keyed",
+                [
+                    ({"recorded_at": key, "value": "initial"}, ts + dt.timedelta(seconds=1)),
+                    ({"recorded_at": "2026-11-20T16:00:00+08:00", "value": "updated"}, ts + dt.timedelta(seconds=2)),
+                ],
+            )
+            await session.commit()
+            versions = await repo.history(session, "timestamp-keyed", key)
+        assert outcomes == ["noop", "updated"]
+        assert [(row["_rev"], row["value"]) for row in versions] == [(1, "initial"), (2, "updated")]
+        async with env["maker"]() as session:
+            offset_key = "2026-11-20T16:00:00+08:00"
+            archived = await repo.archive_many(
+                session, "timestamp-keyed", [offset_key, key], ts + dt.timedelta(seconds=3)
+            )
+            await session.commit()
+            assert archived == [offset_key]
+            assert await repo.get(session, "timestamp-keyed", key) is None
+
     async def test_versioning_and_history(self, env):
         repo = env["repo"]
         async with env["maker"]() as s:

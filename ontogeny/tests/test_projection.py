@@ -28,7 +28,8 @@ import yaml
 from ontogeny_ext_hugegraph import HugeGraphClient
 
 from ontogeny.action.models import OutboxRow
-from ontogeny.core import load_package
+from ontogeny.core import load_package, validate
+from ontogeny.core.models import PropertyDef
 from ontogeny.errors import StoreError
 from ontogeny.projection import ProjectionWorker, compile_projection
 from ontogeny.registry import compile_package
@@ -75,6 +76,18 @@ class TestCompiler:
         }
         types = {p["name"]: p["data_type"] for p in schema["propertykeys"]}
         assert types["name"] == "TEXT" and types["status"] == "TEXT"
+
+    def test_conflicting_property_type_includes_implicit_primary_keys(self, golden_pkg):
+        prj = golden_pkg.find("Projection", "production-lifecycle-graph")
+        golden_pkg.find("ObjectType", "requirement").spec.properties["lot_id"] = PropertyDef(type="integer")
+        prj.spec.include.objects["requirement"].properties.append("lot_id")
+        report = validate(golden_pkg)
+        errors = [i.message for i in report.issues if i.code == "PROJ-PROPERTY-TYPE"]
+        assert len(errors) == 1
+        assert "requirement.lot_id" in errors[0] and "wafer-lot.lot_id" in errors[0]
+
+        with pytest.raises(StoreError, match=r"lot_id.*incompatible HugeGraph types"):
+            compile_projection(compile_package(golden_pkg), prj)
 
 
 class TestClientAndWorker:

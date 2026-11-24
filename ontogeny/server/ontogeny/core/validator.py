@@ -451,6 +451,7 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
     # would read each other's vertices, and one domain scattered across several
     # graphs has no single answer to "is my graph up to date?" -- so this is an
     # error, not a warning, and the message states the name to use.
+    from ..projection.compiler import property_data_type
     from ..registry.compiled import domain_graph_name
 
     expected_graph = domain_graph_name(pkg.manifest.metadata.name)
@@ -464,21 +465,33 @@ def validate(pkg: OntologyPackage) -> ValidationReport:
                 f"{expected_graph!r} (graph and domain are one-to-one)",
             )
         inc = prj.spec.include
+        property_types: dict[str, tuple[str, str]] = {}
         for obj_name, cfg in inc.objects.items():
             obj = objects.get(obj_name)
             if obj is None:
                 rep.error("PROJ-OBJECT", res_id, f"included object {obj_name!r} does not exist")
                 continue
-            for prop in cfg.properties:
+            for prop in dict.fromkeys((*obj.spec.primaryKey[:1], *cfg.properties)):
                 pdef = obj.spec.properties.get(prop)
                 if pdef is None:
-                    rep.error("PROJ-WHITELIST", res_id, f"{obj_name}.{prop} is not a property")
-                elif pdef.marking:
+                    if prop in cfg.properties:
+                        rep.error("PROJ-WHITELIST", res_id, f"{obj_name}.{prop} is not a property")
+                    continue
+                if pdef.marking and prop in cfg.properties:
                     rep.error(
                         "PROJ-MARKING",
                         res_id,
                         f"{obj_name}.{prop} carries marking {pdef.marking!r}; "
                         "marked properties must not enter the graph",
+                    )
+                data_type = property_data_type(pdef.ptype().kind)
+                first_obj, first_type = property_types.setdefault(prop, (obj_name, data_type))
+                if first_type != data_type:
+                    rep.error(
+                        "PROJ-PROPERTY-TYPE",
+                        res_id,
+                        f"{obj_name}.{prop} projects as {data_type}, "
+                        f"but {first_obj}.{prop} already projects as {first_type}",
                     )
         for lnk in inc.links:
             if lnk not in links:

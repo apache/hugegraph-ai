@@ -1514,11 +1514,11 @@ class ServiceContext:
         if self.projection_worker is None or self.compiled is None:
             raise StoreError("no projection declared")
         prj = next(iter(self.compiled.projections.values()))
+        schema = compile_projection(self.compiled, prj)
         # create-then-wipe-then-fill: the graph may not exist at all (a first
         # build), and every step after this one needs it to.
         await self.projection_client.ensure_graph()
         await self.projection_client.clear()
-        schema = compile_projection(self.compiled, prj)
         await self.projection_client.ensure_schema(schema)
         async with self.sessionmaker() as session:
             return await self.projection_worker.rebuild(self.repo, session)

@@ -36,6 +36,7 @@ Deployment examples use ``hugegraph/hugegraph:latest`` by default.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
 import json
 import logging
@@ -60,6 +61,7 @@ _NOOP_STRATEGY = {"_ignore": "OVERRIDE"}
 _RANGE_TYPES = {"INT", "LONG", "FLOAT", "DOUBLE", "DATE"}
 
 _SCHEMA_EXISTS_MARKERS = ("has existed", "already exist", "existed")
+_EDGE_LOOKUP_CONCURRENCY = 8
 
 
 class HugeGraphClient:
@@ -95,6 +97,8 @@ class HugeGraphClient:
         # the second graph can never open its store (see ensure_graph).
         self._data_dir = data_dir
         self._label_ids: dict[str, int] = {}
+        self._primary_keys: dict[str, list[str]] = {}
+        self._property_types: dict[str, str] | None = None
         self._edge_props: dict[str, list[str]] = {}
         #: Set once the server has refused our credentials. Sticky, so a caller
         #: can label the connection "credentials refused" rather than parse text.
@@ -391,6 +395,8 @@ class HugeGraphClient:
                 tolerate_schema_exists=True,
             )
         self._label_ids = {}
+        self._primary_keys = {}
+        self._property_types = None
 
     async def _ensure_schema_v15(self, schema: dict[str, Any]) -> None:
         """Historical 1.5 payloads (kept as-is: the compose profile pins 1.5.0)."""
@@ -420,16 +426,44 @@ class HugeGraphClient:
             )
 
     async def _label_id(self, label: str) -> int | None:
-        """Vertex label id, needed to build composite PRIMARY_KEY ids."""
+        """Vertex label schema, shared by lookup, archive and edge writes."""
         if not self._label_ids:
             resp = await self._request("GET", self._g("/schema/vertexlabels"))
-            self._label_ids = {v["name"]: int(v["id"]) for v in resp.json().get("vertexlabels", [])}
+            labels = resp.json().get("vertexlabels", [])
+            self._label_ids = {v["name"]: int(v["id"]) for v in labels}
+            self._primary_keys = {v["name"]: v.get("primary_keys", []) for v in labels}
         return self._label_ids.get(label)
 
     async def vertex_id(self, label: str, key: Any) -> str | None:
-        """HugeGraph's stored id for a projected object (``<labelId>:<pk>``)."""
+        """HugeGraph's stored id for a projected object."""
         lid = await self._label_id(label)
-        return None if lid is None else f"{lid}:{key}"
+        if lid is None:
+            return None
+        spec = await self._primary_key(label)
+        if spec is None or spec[1] == "TEXT":
+            return _text_vertex_id(lid, key)
+        pk, data_type = spec
+        # HugeGraph optimizes label + complete primary key to an ID lookup.
+        # Let it serialize typed values using the graph's own encoding.
+        vertices = await self.query_vertices(label, properties={pk: _typed_primary_key(key, data_type)}, limit=1)
+        return str(vertices[0]["id"]) if vertices else None
+
+    async def _primary_key(self, label: str) -> tuple[str, str] | None:
+        keys = self._primary_keys.get(label) or []
+        if not keys:
+            return None
+        if len(keys) != 1:
+            raise StoreError(f"projected label {label!r} must have one HugeGraph primary key")
+        pk = keys[0]
+        if self._property_types is None:
+            resp = await self._request("GET", self._g("/schema/propertykeys"))
+            self._property_types = {
+                prop["name"]: prop["data_type"].upper() for prop in resp.json().get("propertykeys", [])
+            }
+        data_type = self._property_types.get(pk)
+        if data_type is None:
+            raise StoreError(f"HugeGraph primary key {pk!r} for label {label!r} has no data type")
+        return pk, data_type
 
     # ---------------------------------------------------------------- writes
 
@@ -487,11 +521,32 @@ class HugeGraphClient:
         if src_lid is None or dst_lid is None:
             log.warning("skipping %s: unknown endpoint label %r/%r", link_name, src_label, dst_label)
             return
+        labels = {src_label: src_lid, dst_label: dst_lid}
+        typed_labels = {label for label in labels if (spec := await self._primary_key(label)) and spec[1] != "TEXT"}
+        typed_keys = list(
+            dict.fromkeys(
+                (label, key)
+                for source, target in pairs
+                for label, key in ((src_label, source), (dst_label, target))
+                if label in typed_labels
+            )
+        )
+        ids: dict[tuple[str, str], str] = {}
+        for chunk in _chunks(typed_keys, min(self.batch_size, _EDGE_LOOKUP_CONCURRENCY)):
+            resolved = await asyncio.gather(
+                *(self.vertex_id(label, key) for label, key in chunk), return_exceptions=True
+            )
+            for (label, key), full in zip(chunk, resolved, strict=True):
+                if isinstance(full, BaseException):
+                    raise full
+                if full is None:
+                    raise StoreError(f"HugeGraph vertex for projected {label!r} key {key!r} is missing")
+                ids[label, key] = full
         body = [
             {
                 "label": link_name,
-                "outV": f"{src_lid}:{s}",
-                "inV": f"{dst_lid}:{d}",
+                "outV": ids[src_label, s] if src_label in typed_labels else _text_vertex_id(src_lid, s),
+                "inV": ids[dst_label, d] if dst_label in typed_labels else _text_vertex_id(dst_lid, d),
                 "outVLabel": src_label,
                 "inVLabel": dst_label,
                 "properties": {},
@@ -537,7 +592,7 @@ class HugeGraphClient:
             full = await self.vertex_id(label, key)
             if full is None:
                 return None
-            quoted = quote(f'"{full}"', safe="")
+            quoted = quote(json.dumps(full, ensure_ascii=False), safe="")
             resp = await self._request("GET", self._g(f"/graph/vertices/{quoted}"), ok=(200, 404))
             return resp.json() if resp.status_code == 200 else None
         resp = await self._request(
@@ -552,7 +607,7 @@ class HugeGraphClient:
                 return
             # Graphspace APIs parse string IDs only when quoted. Some 1.8
             # servers report a missing vertex as a 400 instead of a 404.
-            quoted = quote(f'"{full}"', safe="")
+            quoted = quote(json.dumps(full, ensure_ascii=False), safe="")
             path = self._g(f"/graph/vertices/{quoted}")
             resp = await self._request("DELETE", path, ok=(200, 204, 404, 400))
             if resp.status_code == 400:
@@ -592,8 +647,6 @@ class HugeGraphClient:
         feature), so ``POST /gremlin`` always fails. The job API binds per task
         and is the supported path.
         """
-        import asyncio
-
         await self.dialect()
         resp = await self._request("POST", self._g("/jobs/gremlin"), json_body={"gremlin": query}, ok=(200, 201, 202))
         task_id = resp.json().get("task_id")
@@ -661,3 +714,27 @@ def _plain(v: Any) -> Any:
     if isinstance(v, _dt.date):
         return v.strftime("%Y-%m-%d")
     return v
+
+
+def _typed_primary_key(key: Any, data_type: str) -> Any:
+    """Recover the property type for object IDs passed through the outbox."""
+    try:
+        if data_type in {"BYTE", "INT", "LONG"}:
+            return int(str(key))
+        if data_type in {"FLOAT", "DOUBLE"}:
+            return float(key)
+        if data_type == "BOOLEAN":
+            return {"true": True, "false": False}[str(key).lower()]
+        if data_type == "DATE":
+            value = str(key)
+            return _dt.date.fromisoformat(value) if len(value) == 10 else _dt.datetime.fromisoformat(value)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise StoreError(f"invalid HugeGraph {data_type} primary key {key!r}") from exc
+    raise StoreError(f"unsupported HugeGraph primary key data type {data_type!r}")
+
+
+def _text_vertex_id(label_id: int, key: Any) -> str:
+    # HugeGraph SplicingIdGenerator escapes '!' within a primary value,
+    # then ':' within each component of the final ID.
+    value = str(key).replace("!", "`!").replace(":", "`:")
+    return f"{label_id}:{value}"

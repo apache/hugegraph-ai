@@ -349,6 +349,10 @@ class EvalRunner:
             report["cases"].append({"name": case.name, "kind": "agent", "ok": ok, **details})
             report["passed"] = report["passed"] and ok
 
+        if not report["cases"]:
+            report["passed"] = False
+            report["error"] = "no executable eval cases"
+
         return report
 
     async def _run_agent_case(self, source_session, case, candidate=None) -> tuple[bool, dict[str, Any]]:

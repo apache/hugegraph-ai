@@ -26,25 +26,52 @@ from ..core.types import PropertyType
 from .models import EvolveSignalRow
 
 INFORMATIONAL = {"empty_query_rate", "action_rule_reject", "agent_tool_error"}
+MIN_UNMAPPED_FIELD_PRINCIPALS = 2
 
 
 def diagnose(signals: list[EvolveSignalRow], compiled) -> list[dict[str, Any]]:
     concrete: list[dict[str, Any]] = []
     informational: list[dict[str, Any]] = []
+    report_only: list[dict[str, Any]] = []
     for sig in signals:
         ev = sig.evidence or {}
         kind = sig.kind
         if kind == "unmapped_filter_field":
+            object_type, field = ev.get("object_type"), ev.get("field")
+            obj = compiled.objects.get(object_type) if compiled is not None and object_type else None
+            if obj is None:
+                continue
+            if not field or field in obj.spec.properties:
+                continue
+            principal_count = int(ev.get("distinct_principals") or 0)
+            if principal_count < MIN_UNMAPPED_FIELD_PRINCIPALS:
+                # Keep weak evidence out of the context sent to the proposer.
+                report_only.append(
+                    {
+                        "kind": kind,
+                        "object": object_type,
+                        "evidence": ev,
+                        "signal_id": sig.id,
+                        "informational": True,
+                        "rationale": (
+                            f"unmapped field {field!r} on {object_type!r} has only {principal_count} distinct "
+                            f"principals; at least {MIN_UNMAPPED_FIELD_PRINCIPALS} are required to suspect a schema gap"
+                        ),
+                    }
+                )
+                continue
             concrete.append(
                 {
                     "kind": "add-optional-property",
-                    "object": ev.get("object_type"),
-                    "prop": ev.get("field"),
+                    "object": object_type,
+                    "prop": field,
                     "type": "string",
                     "signal_id": sig.id,
+                    "evidence": ev,
+                    "diagnosis": "suspected_schema_gap",
                     "rationale": (
-                        f"filter field {ev.get('field')!r} used {ev.get('count')}x on "
-                        f"{ev.get('object_type')!r} but is not modeled; add as optional property"
+                        f"filter field {field!r} used {ev.get('count')}x across {principal_count} distinct principals "
+                        f"on {object_type!r} but is not modeled; suspected schema gap, add as optional property"
                     ),
                 }
             )
@@ -122,11 +149,12 @@ def diagnose(signals: list[EvolveSignalRow], compiled) -> list[dict[str, Any]]:
         related = by_object.get(gap.get("object"))
         if related:
             gap["context"] = related[:5]
-    return [
+    clustered = [
         g
         for g in concrete
         if not (g.get("informational") and not g.get("is_cluster") and g.get("signal_id") in clustered_ids)
     ]
+    return clustered + report_only
 
 
 def _info_gap(sig: EvolveSignalRow, ev: dict[str, Any]) -> dict[str, Any]:

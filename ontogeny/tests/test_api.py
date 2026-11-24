@@ -176,7 +176,7 @@ class TestEndToEnd:
             await c.post(
                 "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
-                headers=_hdr(PRODUCT),
+                headers=_hdr({**PRODUCT, "id": f"u-product-{_ % 2}"}),
             )
         r = await c.post("/api/v1/evolve/aggregate")
         assert any(s["kind"] == "unmapped_filter_field" for s in r.json()["created"])
@@ -212,7 +212,7 @@ class TestEndToEnd:
             await c.post(
                 "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
-                headers=_hdr(PRODUCT),
+                headers=_hdr({**PRODUCT, "id": f"u-product-{_ % 2}"}),
             )
         r1 = await c.post("/api/v1/evolve/aggregate")
         assert any(s["kind"] == "unmapped_filter_field" for s in r1.json()["created"])
@@ -282,7 +282,7 @@ class TestEndToEnd:
             await c.post(
                 "/api/v1/objects/wafer-lot/query",
                 json={"filter": {"field": "shift", "op": "eq", "value": "DAY"}},
-                headers=_hdr(PRODUCT),
+                headers=_hdr({**PRODUCT, "id": f"u-product-{_ % 2}"}),
             )
         await c.post("/api/v1/evolve/aggregate")
 

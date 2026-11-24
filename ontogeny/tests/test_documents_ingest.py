@@ -22,7 +22,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import os
 import re
+from pathlib import Path
 
 import pytest
 from doc_fixtures import FakeExtractor, add_note, make_context
@@ -183,6 +185,240 @@ async def test_document_removal_retracts_links_and_archives(doc_context):
     assert await _note(sc, "Acme Components") is None
     # the other note is untouched
     assert await _note(sc, "Globex Materials") is not None
+
+
+@pytest.mark.parametrize("historical_id", [False, True])
+async def test_per_object_ingest_preserves_shared_store_siblings(tmp_path, historical_id):
+    import yaml
+
+    from ontogeny.documents import corpus
+
+    first_file = "acme-2026-03.md"
+    second_file = "globex-2026-02.md"
+    first_type = "supplier-note"
+    second_type = "second-note"
+    store_name = "supplier-docs"
+
+    def configure(pkg):
+        source = pkg / "objects" / "supplier-note.yaml"
+        spec = yaml.safe_load(source.read_text())
+        spec["spec"]["backing"]["source"]["table"] = f"supplier-notes/{first_file}"
+        source.write_text(yaml.safe_dump(spec))
+        spec["metadata"]["name"] = second_type
+        spec["spec"]["backing"]["source"]["table"] = f"supplier-notes/{second_file}"
+        (source.parent / "second-note.yaml").write_text(yaml.safe_dump(spec))
+
+    class TwoTypeExtractor(FakeExtractor):
+        async def extract(self, request):
+            results = await super().extract(request)
+            if Path(request.docs[0].path).name == second_file:
+                for result in results:
+                    for vertex in result.graph["vertices"]:
+                        if vertex["label"] == first_type:
+                            vertex["label"] = second_type
+                    result.graph["edges"] = []
+            return results
+
+    sc, pkg, _ = await make_context(tmp_path, mutate=configure, extractor=TwoTypeExtractor())
+    source = pkg / "data" / "docs" / "supplier-notes" / first_file
+    try:
+        if historical_id:
+            cfg = sc.documents._cfg(sc.documents.store(store_name))
+            old = corpus.scan(source.parent, cfg, first_file, store_name=store_name)[0]
+            async with sc.sessionmaker() as session:
+                session.add(DocumentRow(id=old.doc_id, store=store_name, path=str(source), status="active"))
+                await session.commit()
+
+        summary = await sc.documents.ingest(store_name)
+        assert summary["inserted"] == 2
+        before = {Path(doc.path).name: doc.id for doc in await _rows(sc, DocumentRow) if doc.status == "active"}
+        if historical_id:
+            assert before[first_file] == old.doc_id
+        sibling = next(a for a in await _rows(sc, ExtractAssertionRow) if a.object_type == second_type)
+        assert sibling.doc_id == before[second_file]
+
+        scoped = await sc.sync(first_type)
+        assert (scoped["documents"], scoped["archived"]) == (1, 0)
+        after = {Path(doc.path).name: doc.id for doc in await _rows(sc, DocumentRow) if doc.status == "active"}
+        assert after == before
+
+        store = sc.documents.store(store_name)
+        old_connection = store.spec.connection
+        new_root = pkg / "new-corpus"
+        (new_root / "supplier-notes").mkdir(parents=True)
+        store.spec.connection = str(new_root)
+        assert (await sc.sync(first_type))["archived"] == 0
+        assert {Path(doc.path).name for doc in await _rows(sc, DocumentRow) if doc.status == "active"} == before.keys()
+        store.spec.connection = old_connection
+
+        source.unlink()
+        source.with_name(second_file).unlink()
+        removed = await sc.sync(first_type)
+        assert (removed["documents"], removed["archived"]) == (0, 1)
+        assert await _note(sc, "Acme Components") is None
+        async with sc.sessionmaker() as session:
+            assert await sc.repo.get(session, second_type, sibling.object_id) is not None
+        assert any(a.doc_id == sibling.doc_id for a in await _rows(sc, ExtractAssertionRow))
+        assert (await sc.sync(first_type))["archived"] == 0
+        assert (await sc.documents.ingest(store_name))["archived"] == 1
+        async with sc.sessionmaker() as session:
+            assert await sc.repo.get(session, second_type, sibling.object_id) is None
+    finally:
+        await sc.engine.dispose()
+
+
+async def test_filter_change_preserves_document_evidence_until_deletion(doc_context, caplog):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    sc.documents.store("supplier-docs").spec.documents.exclude = ["supplier-notes/acme-*.md"]
+
+    await sc.documents.list_documents("supplier-docs")
+    assert "retained 1 active documents outside the scan" not in caplog.text
+    assert (await sc.sync("supplier-note"))["archived"] == 0
+    assert caplog.text.count("retained 1 active documents outside the scan") == 1
+    assert await _note(sc, "Acme Components") is not None
+    row = next(d for d in await _rows(sc, DocumentRow) if d.path.endswith("acme-2026-03.md"))
+    assert row.status == "active"
+    assert any(a.doc_id == row.id for a in await _rows(sc, ExtractAssertionRow))
+
+    (pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md").unlink()
+    assert (await sc.sync("supplier-note"))["archived"] == 1
+    assert await _note(sc, "Acme Components") is None
+    assert await _note(sc, "Globex Materials") is not None
+
+
+@pytest.mark.parametrize("exact_selector", [False, True])
+async def test_unverified_removal_keeps_evidence_and_allows_ingest(doc_context, monkeypatch, caplog, exact_selector):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    sc.documents.store("supplier-docs").spec.documents.exclude = ["supplier-notes/acme-*.md"]
+    if exact_selector:
+        sc.compiled.objects["supplier-note"].spec.backing.source.table = "supplier-notes/acme-2026-03.md"
+    path = pkg / "data" / "docs" / "supplier-notes" / "acme-2026-03.md"
+    stat = Path.stat
+
+    def deny_stat(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("cannot traverse document path")
+        return stat(self, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "stat", deny_stat)
+        result = await sc.sync("supplier-note")
+
+    assert (result["documents"], result["archived"]) == ((0 if exact_selector else 2), 0)
+    if not exact_selector:
+        assert "and 1 with unconfirmed removal" in caplog.text
+    row = next(doc for doc in await _rows(sc, DocumentRow) if doc.path == str(path))
+    assert row.status == "active"
+    assert await _note(sc, "Acme Components") is not None
+
+
+async def test_missing_registered_bare_directory_does_not_expand_to_root(doc_context):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    root = pkg / "data" / "docs"
+    folder = root / "supplier-notes"
+    (root / "outside.md").write_text("# Outside the selected directory\n")
+    for path in folder.iterdir():
+        path.unlink()
+    folder.rmdir()
+
+    first = await sc.sync("supplier-note")
+    assert (first["documents"], first["archived"]) == (0, 2)
+    assert (await sc.sync("supplier-note"))["documents"] == 0
+    assert all(row.status == "removed" for row in await _rows(sc, DocumentRow))
+
+
+async def test_missing_linked_directory_retracts_registered_documents(doc_context):
+    sc, pkg, _ = doc_context
+    root = pkg / "data" / "docs"
+    target = root / "supplier-notes"
+    link = root / "notes-alias"
+    link.symlink_to(target, target_is_directory=True)
+    sc.compiled.objects["supplier-note"].spec.backing.source.table = link.name
+    assert (await sc.sync("supplier-note"))["inserted"] == 2
+
+    for file in target.iterdir():
+        file.unlink()
+    target.rmdir()
+    assert link.is_symlink() and not link.exists()
+
+    result = await sc.sync("supplier-note")
+    assert (result["documents"], result["archived"]) == (0, 2)
+    assert all(doc.status == "removed" for doc in await _rows(sc, DocumentRow))
+    assert await _rows(sc, ExtractAssertionRow) == []
+
+
+@pytest.mark.parametrize("list_first", [False, True])
+async def test_full_store_ingest_retracts_documents_from_old_corpus_root(doc_context, list_first):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    old_docs = await _rows(sc, DocumentRow)
+    assert len(old_docs) == 3
+
+    new_root = pkg / "new-corpus"
+    (new_root / "supplier-notes").mkdir(parents=True)
+    sc.documents.store("supplier-docs").spec.connection = str(new_root)
+    if list_first:
+        await sc.documents.list_documents("supplier-docs")
+        assert all(doc.status == "removed" for doc in await _rows(sc, DocumentRow))
+        assert await _note(sc, "Acme Components") is not None
+
+    assert (await sc.sync("supplier-note"))["archived"] == 2
+    assert all(doc.status == "removed" for doc in await _rows(sc, DocumentRow))
+    assert all(Path(doc.path).is_file() for doc in old_docs)
+    assert await _note(sc, "Acme Components") is None
+    assert await _note(sc, "Globex Materials") is None
+
+
+@pytest.mark.parametrize("directory", [False, True])
+async def test_unverified_new_corpus_does_not_retract_previous_evidence(doc_context, monkeypatch, directory):
+    sc, pkg, _ = doc_context
+    await sc.sync("supplier-note")
+    initial_runs = len(await _rows(sc, ExtractRunRow))
+
+    new_root = pkg / "new-corpus"
+    new_root.mkdir()
+    selected = new_root / ("incoming" if directory else "replacement.md")
+    replacement = selected
+    if directory:
+        selected.mkdir()
+        replacement = selected / "replacement.md"
+    replacement.write_text("# Replacement\n")
+    sc.documents.store("supplier-docs").spec.connection = str(new_root)
+    sc.compiled.objects["supplier-note"].spec.backing.source.table = selected.name
+    stat = Path.stat
+    scandir = os.scandir
+
+    def deny_stat(self, *args, **kwargs):
+        if self == selected:
+            raise PermissionError("cannot verify the new selector")
+        return stat(self, *args, **kwargs)
+
+    def deny_scandir(path):
+        if path in (selected, str(selected)):
+            raise PermissionError("cannot list the new selector")
+        return scandir(path)
+
+    with monkeypatch.context() as patch:
+        if directory:
+            patch.setattr(os, "scandir", deny_scandir)
+        else:
+            patch.setattr(Path, "stat", deny_stat)
+        listed = await sc.documents.list_documents("supplier-docs")
+        assert {doc["status"] for doc in listed["documents"]} == {"active"}
+        result = await sc.sync("supplier-note")
+
+    assert (result["documents"], result["archived"]) == (0, 0)
+    assert len(await _rows(sc, ExtractRunRow)) == initial_runs
+    assert await _note(sc, "Acme Components") is not None
+    assert await _note(sc, "Globex Materials") is not None
+
+    replacement.unlink()
+    result = await sc.sync("supplier-note")
+    assert (result["documents"], result["archived"]) == (0, 2)
+    assert await _rows(sc, ExtractAssertionRow) == []
 
 
 async def test_batch_document_removal_preserves_remaining_evidence(doc_context):
@@ -402,7 +638,7 @@ async def test_document_scan_updates_path_when_corpus_root_changes(doc_context, 
     scanned = [ScannedDocument(old.id, moved, moved.name, old.size, old.media_type)]
     store = sc.documents.store("supplier-docs")
     async with sc.sessionmaker() as session:
-        active, _ = await sc.documents._sync_documents(session, store, sc.documents._cfg(store), scanned)
+        active, _ = await sc.documents._sync_documents(session, store, sc.documents._root(store), scanned)
         await session.commit()
         assert active[0].id == old.id
         assert active[0].path == str(moved)

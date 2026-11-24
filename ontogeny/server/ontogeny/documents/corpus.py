@@ -26,9 +26,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import mimetypes
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, replace
 from fnmatch import fnmatch
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Any
 
 from ..core.models import DocumentCfg, StoreResource
@@ -45,6 +47,14 @@ class ScannedDocument:
     size: int
     media_type: str
     legacy_id: str | None = None
+    selector_ids: tuple[str, ...] = ()
+
+
+ScanCache = dict[str, tuple[tuple[int, int, int, int, int], ScannedDocument]]
+
+
+class SelectorUnavailableError(Exception):
+    """The selected filesystem path could not be verified."""
 
 
 def resolve_root(store: StoreResource, package_root: str | None) -> Path:
@@ -79,43 +89,173 @@ def _match(rel: str, cfg: DocumentCfg) -> bool:
     return any(hit(pat) for pat in cfg.include)
 
 
-def _selector_root(root: Path, selector: str | None) -> Path:
-    """``source.table`` selects a subdirectory (or a glob under the root)."""
-    if not selector:
-        return root
+def _is_glob(selector: str) -> bool:
+    return any(ch in selector for ch in "*?[")
+
+
+def resolve_selector(root: Path, selector: str | None, registered_paths: Iterable[str] = ()) -> str | None:
+    """Keep legacy logical table names while honoring paths known to the catalog."""
+    if not selector or not selector.replace("-", "_").isidentifier():
+        return selector
     candidate = root / selector
-    if candidate.is_dir():
-        return candidate.resolve()
-    if candidate.is_file():
-        return candidate.parent.resolve()
-    return root
+    try:
+        # A dangling link is still an explicit filesystem selector.
+        candidate.lstat()
+    except FileNotFoundError:
+        if not any(Path(path).is_relative_to(candidate) for path in registered_paths):
+            return None
+    except OSError:
+        # An unreadable selector is not known to be missing.
+        pass
+    return selector
+
+
+def _literal_path(root: Path, selector: str) -> Path:
+    candidate = root / selector
+    try:
+        is_dir = S_ISDIR(candidate.stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        is_dir = False
+    # Resolve a symlinked directory or parent while retaining file names.
+    path = candidate.resolve() if is_dir else candidate.parent.resolve() / candidate.name
+    if not path.is_relative_to(root):
+        raise StoreError("document selector escapes the corpus root")
+    return path
+
+
+def _glob_matches(root: Path, path: Path, selector: str) -> bool:
+    return fnmatch(path.relative_to(root).as_posix(), selector) or fnmatch(path.name, selector)
+
+
+def selector_covers(root: Path, path: Path, selector: str | None) -> bool:
+    """Test selector membership even when the document has been removed."""
+    if not path.is_relative_to(root):
+        return False
+    if not selector:
+        return True
+    if _is_glob(selector):
+        return _glob_matches(root, path, selector)
+    try:
+        literal = _literal_path(root, selector)
+        if path.is_relative_to(literal):
+            return True
+        if not literal.is_symlink():
+            return False
+    except OSError:
+        return False
+    # Directory symlinks register the resolved path. After the target is
+    # deleted, limit recovery to its descendants and never follow it outside
+    # the corpus. A file symlink registers the link's own path.
+    try:
+        target = literal.resolve()
+    except (OSError, RuntimeError):
+        return False
+    if target.is_relative_to(root) and target in path.parents:
+        try:
+            target.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            return True
+        except OSError:
+            pass
+    return False
+
+
+def _selected_paths(root: Path, cfg: DocumentCfg, selector: str | None) -> Iterator[tuple[Path, str]]:
+    glob = selector if selector and _is_glob(selector) else None
+
+    def fail_walk(error: OSError) -> None:
+        # rglob can silently skip an unreadable directory, but reconciliation
+        # requires a verified inventory before retiring any previous entries.
+        raise error
+
+    try:
+        literal = _literal_path(root, selector) if selector and glob is None else root
+        if literal.is_file():
+            base, paths = literal.parent, [literal]
+        elif literal.is_dir():
+            base = literal
+            paths = sorted(folder / name for folder, _, names in literal.walk(on_error=fail_walk) for name in names)
+        else:
+            # A missing literal file or directory selects nothing.
+            return
+    except OSError as exc:
+        # Unreadable selectors must never widen discovery to the corpus root.
+        raise SelectorUnavailableError from exc
+    for path in paths:
+        if glob is not None and not _glob_matches(root, path, glob):
+            continue
+        if not _match(path.relative_to(root).as_posix(), cfg):
+            continue
+        if path.is_file():
+            yield path, path.relative_to(base).as_posix()
+
+
+def _document_ids(rel: str, data: bytes, store_name: str) -> tuple[str, str]:
+    digest = hashlib.sha256(rel.encode("utf-8") + b"\0")
+    digest.update(data)
+    legacy_id = digest.hexdigest()
+    doc_id = hashlib.sha256(
+        b"ontogeny-document-v2\0" + store_name.encode("utf-8") + b"\0" + bytes.fromhex(legacy_id)
+    ).hexdigest()
+    return doc_id, legacy_id
+
+
+def _scanned_document(
+    root: Path, path: Path, rel: str, store_name: str, existing_ids: set[str] | None = None
+) -> ScannedDocument:
+    data = path.read_bytes()
+    root_rel = path.relative_to(root)
+    doc_id, legacy_id = _document_ids(root_rel.as_posix(), data, store_name)
+    # Older scans used the path relative to a selected directory. A suffix
+    # is eligible for reuse only if the registry also records this exact path.
+    selector_ids = (
+        tuple(
+            prior_id
+            for offset in range(1, len(root_rel.parts))
+            for prior_id in _document_ids("/".join(root_rel.parts[offset:]), data, store_name)
+            if prior_id in existing_ids
+        )
+        if existing_ids and doc_id not in existing_ids and legacy_id not in existing_ids
+        else ()
+    )
+    media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return ScannedDocument(doc_id, path, rel, len(data), media, legacy_id, selector_ids)
 
 
 def scan(root: Path, cfg: DocumentCfg, selector: str | None = None, *, store_name: str) -> list[ScannedDocument]:
-    base = _selector_root(root, selector)
-    globs = [selector] if selector and any(ch in selector for ch in "*?[") else None
-    out: list[ScannedDocument] = []
-    for path in sorted(base.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(base).as_posix()
-        if globs is not None:
-            if not any(fnmatch(rel, g) or fnmatch(path.name, g) for g in globs):
-                continue
-        elif not _match(rel, cfg):
-            continue
-        data = path.read_bytes()
-        # identity is (path, content): two identical files are two documents,
-        # and a file that moves is a different document (its old row retracts)
-        legacy_id = hashlib.sha256(rel.encode("utf-8") + b"\0" + data).hexdigest()
-        # Domain separation avoids collisions between different stores without
-        # making identity dependent on a deployment's absolute root path.
-        doc_id = hashlib.sha256(
-            b"ontogeny-document-v2\0" + store_name.encode("utf-8") + b"\0" + bytes.fromhex(legacy_id)
-        ).hexdigest()
-        media = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        out.append(ScannedDocument(doc_id, path, rel, len(data), media, legacy_id))
-    return out
+    root = root.resolve()
+    selector = resolve_selector(root, selector)
+    try:
+        return [_scanned_document(root, path, rel, store_name) for path, rel in _selected_paths(root, cfg, selector)]
+    except SelectorUnavailableError:
+        return []
+
+
+def scan_incremental(
+    root: Path,
+    cfg: DocumentCfg,
+    selector: str | None = None,
+    *,
+    store_name: str,
+    previous: ScanCache | None = None,
+    existing_ids_by_path: dict[str, set[str]] | None = None,
+) -> tuple[list[ScannedDocument], ScanCache]:
+    """Discover selected files, reusing hashes when file identity and metadata match."""
+    root = root.resolve()
+    previous = previous or {}
+    existing_ids_by_path = existing_ids_by_path or {}
+    current: ScanCache = {}
+    for path, rel in _selected_paths(root, cfg, selector):
+        stat = path.stat()
+        signature = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        key = path.relative_to(root).as_posix()
+        cached = previous.get(key)
+        if cached is not None and cached[0] == signature:
+            item = replace(cached[1], path=path, rel=rel)
+        else:
+            item = _scanned_document(root, path, rel, store_name, existing_ids_by_path.get(str(path)))
+        current[key] = (signature, item)
+    return [item for _, item in current.values()], current
 
 
 def is_text(path: Path) -> bool:

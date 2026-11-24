@@ -1,0 +1,14 @@
+{
+  "name": "hugegraph-ai-deepwiki-skill",
+  "description": "Repository knowledge assistant for Apache HugeGraph AI.",
+  "owner": {
+    "name": "HugeGraph Community"
+  },
+  "plugins": [
+    {
+      "name": "hugegraph-ai-deepwiki-skill",
+      "source": "./plugins/hugegraph-ai-deepwiki-skill",
+      "description": "Ask repository-grounded questions about Apache HugeGraph AI."
+    }
+  ]
+}

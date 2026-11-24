@@ -41,7 +41,7 @@ from ..action.models import OutboxRow
 from ..core.types import PropertyType
 from ..db import Base
 from ..errors import StoreError, TypeMismatchError
-from .repo import ObjectRepository, utcnow
+from .repo import SYNC_UPSERT_BATCH_SIZE, ObjectRepository, utcnow
 
 
 class SyncStateRow(Base):
@@ -207,6 +207,26 @@ class SyncEngine:
                 watermark_col=watermark_col if strategy == "watermark" else None,
                 after=after,
             )
+            pending_rows: list[tuple[dict[str, Any], str]] = []
+
+            async def flush_pending_rows() -> None:
+                if not pending_rows:
+                    return
+                outcomes = await self.repo.sync_upsert_many(
+                    session, object_type, [(props, started) for props, _ in pending_rows]
+                )
+                for (props, pk), outcome in zip(pending_rows, outcomes, strict=True):
+                    summary[outcome if outcome in summary else "noop"] += 1
+                    session.add(
+                        OutboxRow(
+                            object_type=object_type,
+                            object_id=pk,
+                            op="upsert",
+                            payload={"props": _jsonable(props), "origin": "sync"},
+                        )
+                    )
+                pending_rows.clear()
+
             async for raw in rows:
                 if strategy == "watermark" and watermark_col is not None:
                     wm_val = raw.get(watermark_col)
@@ -269,16 +289,11 @@ class SyncEngine:
                     )
                     summary["quarantined"] += 1
                     continue
-                outcome = await self.repo.sync_upsert(session, object_type, props, started)
-                summary[outcome if outcome in summary else "noop"] += 1
-                session.add(
-                    OutboxRow(
-                        object_type=object_type,
-                        object_id=pk,
-                        op="upsert",
-                        payload={"props": _jsonable(props), "origin": "sync"},
-                    )
-                )
+                pending_rows.append((props, pk))
+                if len(pending_rows) >= SYNC_UPSERT_BATCH_SIZE:
+                    await flush_pending_rows()
+
+            await flush_pending_rows()
 
             # absent-means-archive (snapshot only, unless explicitly disabled)
             deletes = backing.sync.deletes if backing.sync else None

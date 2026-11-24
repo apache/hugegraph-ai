@@ -72,13 +72,33 @@ def register(r: APIRouter, sc: ServiceContext) -> None:
         if sc.engine is not None:
             from sqlalchemy import text
 
-            for _name, info in summary["objects"].items():
+            objects = summary["objects"]
+            if objects:
+                branches = []
+                params = {}
+                for index, (name, info) in enumerate(objects.items()):
+                    table = info["table"]
+                    parameter = f"object_name_{index}"
+                    # CAST gives the parameter a type: a bare bind in a SELECT
+                    # list has no column context, which PostgreSQL refuses to
+                    # infer ("could not determine data type of parameter").
+                    branches.append(
+                        f'SELECT CAST(:{parameter} AS TEXT) AS object_name, COUNT(*) AS row_count FROM "{table}"'
+                    )
+                    params[parameter] = name
                 try:
-                    async with sc.sessionmaker() as s:
-                        row = await s.execute(text(f'SELECT COUNT(*) FROM "{info["table"]}"'))
-                        info["rows"] = int(row.scalar_one())
+                    async with sc.sessionmaker() as session:
+                        rows = (await session.execute(text(" UNION ALL ".join(branches)), params)).all()
+                    for row in rows:
+                        objects[row.object_name]["rows"] = int(row.row_count)
                 except Exception:
-                    info["rows"] = None
+                    for info in objects.values():
+                        try:
+                            async with sc.sessionmaker() as session:
+                                row = await session.execute(text(f'SELECT COUNT(*) FROM "{info["table"]}"'))
+                                info["rows"] = int(row.scalar_one())
+                        except Exception:
+                            info["rows"] = None
         return summary
 
     @r.get("/meta/lineage")

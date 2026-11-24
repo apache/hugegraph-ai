@@ -24,6 +24,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from sqlalchemy import event
+
 # hq product engineer: the role the production policies grant lifecycle planning actions
 PRODUCT = {"id": "u-product", "Role": ["product"], "site": "hq"}
 
@@ -526,3 +528,23 @@ async def test_meta_storage_names_the_physical_target(client):
     assert lot["sync"] == "watermark" and lot["sync_watermark"] == "updated_at"
     # rows is a live count (0 right after ensure_tables, null if never synced)
     assert lot.get("rows") in (None, 0)
+
+
+async def test_meta_storage_counts_all_object_tables_in_one_query(client):
+    c, sc = client
+    count_queries = []
+
+    def record_count_query(_conn, _cursor, statement, _params, _context, _many):
+        sql = statement.upper()
+        if "COUNT(*)" in sql and "ONTOGENY_OBJ_" in sql:
+            count_queries.append(statement)
+
+    bind = sc.engine.sync_engine
+    event.listen(bind, "before_cursor_execute", record_count_query)
+    try:
+        response = await c.get("/api/v1/meta/storage")
+    finally:
+        event.remove(bind, "before_cursor_execute", record_count_query)
+    assert response.status_code == 200
+    assert len(count_queries) == 1
+    assert all(info["rows"] is not None for info in response.json()["objects"].values())

@@ -332,7 +332,7 @@ print(res)
 
 ### Migration guide: RAGPipeline / KgBuilder → Scheduler flows
 
-Why the change: the internal execution engine was refactored to a pipeline-based scheduler (GPipeline + GPipelineManager). The scheduler provides a stable entrypoint while keeping flow implementations modular.
+Use `SchedulerSingleton.get_instance().schedule_flow(...)` in place of `RAGPipeline` and `KgBuilder`. The [scheduler](src/hugegraph_llm/flows/scheduler.py) registers flows and reuses PyCGraph pipelines. Each [flow](src/hugegraph_llm/flows/common.py) assembles nodes and handles workflow inputs and outputs.
 
 If you need help migrating a specific snippet, open a PR or issue and include the old code — we can provide a targeted conversion.
 

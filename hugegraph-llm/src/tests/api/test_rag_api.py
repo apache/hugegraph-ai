@@ -420,3 +420,228 @@ def test_batch_upload_creates_output_directory_on_fresh_volume(tmp_path, monkeyp
     assert count == 1
     assert frame.iloc[0, 0] == "question"
     assert pd.read_excel(root / "demo/questions.xlsx").iloc[0, 0] == "question"
+
+
+@pytest.fixture
+def batch_upload(tmp_path, monkeypatch):
+    import gradio as gr
+    import pandas as pd
+
+    from hugegraph_llm.demo.rag_demo import rag_block
+
+    root = tmp_path / "resources"
+    monkeypatch.setattr(rag_block, "resource_path", str(root))
+    with gr.Blocks() as ui:
+        rag_block.create_rag_block()
+    upload = next(function.fn for function in ui.fns.values() if function.fn.__name__ == "read_file_to_excel")
+    questions = root / "demo" / "questions.xlsx"
+    questions.parent.mkdir(parents=True)
+    pd.DataFrame([["previous question", "expected", "", "", "", ""]]).to_excel(questions, index=False)
+    return upload, questions
+
+
+@pytest.mark.parametrize("extension", [".csv", ".xlsx"])
+def test_batch_upload_saves_all_rows_with_normalized_columns(batch_upload, tmp_path, extension):
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    upload, questions = batch_upload
+    source = tmp_path / f"questions{extension}"
+    frame = pd.DataFrame([[f"question {index}", "expected", "", "", "", ""] for index in range(45)])
+    if extension == ".csv":
+        frame.to_csv(source, index=False)
+    else:
+        frame.to_excel(source, index=False)
+
+    preview, count = upload(SimpleNamespace(name=str(source)))
+
+    assert count == len(preview) == 40
+    saved = pd.read_excel(questions)
+    assert len(saved) == 45
+    assert list(saved.columns) == list(preview.columns)
+    assert list(saved.columns) == [
+        "Question",
+        "Expected Answer",
+        "Basic LLM Answer",
+        "Vector-only Answer",
+        "Graph-only Answer",
+        "Graph-Vector Answer",
+    ]
+    assert saved.iloc[-1, 0] == "question 44"
+    assert list(questions.parent.iterdir()) == [questions]
+
+
+@pytest.mark.parametrize("extension", [".csv", ".xlsx"])
+@pytest.mark.parametrize("column_count", [2, 7])
+def test_batch_upload_rejects_wrong_columns_without_overwriting(batch_upload, tmp_path, extension, column_count):
+    from types import SimpleNamespace
+
+    import gradio as gr
+    import pandas as pd
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / f"invalid{extension}"
+    frame = pd.DataFrame([["new question"] * column_count])
+    if extension == ".csv":
+        frame.to_csv(source, index=False)
+    else:
+        frame.to_excel(source, index=False)
+
+    with pytest.raises(gr.Error, match=f"expected 6 columns, found {column_count}"):
+        upload(SimpleNamespace(name=str(source)))
+
+    assert questions.read_bytes() == before
+    assert list(questions.parent.iterdir()) == [questions]
+
+
+def test_batch_upload_rejects_wrong_columns_before_creating_output(batch_upload, tmp_path):
+    from types import SimpleNamespace
+
+    import gradio as gr
+
+    upload, questions = batch_upload
+    questions.unlink()
+    source = tmp_path / "invalid.csv"
+    source.write_text("Question,Expected Answer\nquestion,expected\n")
+
+    with pytest.raises(gr.Error, match="expected 6 columns, found 2"):
+        upload(SimpleNamespace(name=str(source)))
+
+    assert not questions.exists()
+    assert not list(questions.parent.iterdir())
+
+
+@pytest.mark.parametrize("extension", [".csv", ".xlsx"])
+def test_batch_upload_accepts_empty_six_column_template(batch_upload, tmp_path, extension):
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    upload, questions = batch_upload
+    source = tmp_path / f"empty{extension}"
+    frame = pd.DataFrame(columns=range(6))
+    if extension == ".csv":
+        frame.to_csv(source, index=False)
+    else:
+        frame.to_excel(source, index=False)
+
+    preview, count = upload(SimpleNamespace(name=str(source)))
+
+    saved = pd.read_excel(questions)
+    assert saved.empty
+    assert list(saved.columns) == list(preview.columns)
+    assert count == len(preview) == 1
+
+
+@pytest.mark.parametrize("extension, content", [(".csv", ""), (".xlsx", "not a workbook"), (".txt", "unsupported")])
+def test_batch_upload_rejects_unreadable_or_unsupported_files(batch_upload, tmp_path, extension, content):
+    from types import SimpleNamespace
+
+    import gradio as gr
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / f"invalid{extension}"
+    source.write_text(content)
+
+    with pytest.raises(gr.Error, match="[Tt]emplate"):
+        upload(SimpleNamespace(name=str(source)))
+
+    assert questions.read_bytes() == before
+
+
+@pytest.mark.parametrize("corruption", ["truncated", "renamed_zip", "broken_sheet_xml"])
+def test_batch_upload_rejects_corrupt_workbooks(batch_upload, tmp_path, corruption):
+    from types import SimpleNamespace
+    from zipfile import ZipFile
+
+    import gradio as gr
+    import pandas as pd
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / "corrupt.xlsx"
+    if corruption == "truncated":
+        pd.DataFrame(columns=range(6)).to_excel(source, index=False)
+        # Preserve the ZIP signature but remove the archive's central directory.
+        source.write_bytes(source.read_bytes()[:100])
+    elif corruption == "renamed_zip":
+        with ZipFile(source, "w") as archive:
+            archive.writestr("readme.txt", "This archive is not an Excel workbook.")
+    else:
+        pd.DataFrame(columns=range(6)).to_excel(source, index=False)
+        with ZipFile(source) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        entries["xl/worksheets/sheet1.xml"] = b"<worksheet><sheetData>"
+        with ZipFile(source, "w") as archive:
+            for name, content in entries.items():
+                archive.writestr(name, content)
+
+    with pytest.raises(gr.Error, match="Please upload a valid .xlsx or .csv template"):
+        upload(SimpleNamespace(name=str(source)))
+
+    assert questions.read_bytes() == before
+    assert list(questions.parent.iterdir()) == [questions]
+
+
+def test_batch_upload_reports_reader_dependency_error(batch_upload, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import gradio as gr
+    import pandas as pd
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / "questions.xlsx"
+    pd.DataFrame(columns=range(6)).to_excel(source, index=False)
+    reader_error = ImportError("Import python-calamine failed.")
+
+    def fail_read(*args, **kwargs):
+        raise reader_error
+
+    monkeypatch.setattr(pd, "read_excel", fail_read)
+
+    with pytest.raises(gr.Error, match="Please upload a valid .xlsx or .csv template") as error:
+        upload(SimpleNamespace(name=str(source)))
+
+    assert error.value.__cause__ is reader_error
+    assert questions.read_bytes() == before
+    assert list(questions.parent.iterdir()) == [questions]
+
+
+@pytest.mark.parametrize("failure", ["write", "replace"])
+def test_batch_upload_preserves_previous_file_and_cleans_up_on_save_failure(
+    batch_upload, tmp_path, monkeypatch, failure
+):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from hugegraph_llm.demo.rag_demo import rag_block
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / "questions.csv"
+    source.write_text("Question,Expected Answer,Basic,Vector,Graph,Combined\nnew question,expected,,,,\n")
+
+    def fail_write(self, path, **kwargs):
+        Path(path).write_bytes(b"incomplete workbook")
+        raise OSError("simulated write failure")
+
+    def fail_replace(source_path, target_path):
+        assert pd.read_excel(source_path).iloc[0, 0] == "new question"
+        raise OSError("simulated replacement failure")
+
+    if failure == "write":
+        monkeypatch.setattr(pd.DataFrame, "to_excel", fail_write)
+    else:
+        monkeypatch.setattr(rag_block.os, "replace", fail_replace)
+
+    with pytest.raises(OSError, match="simulated"):
+        upload(SimpleNamespace(name=str(source)))
+
+    assert questions.read_bytes() == before
+    assert list(questions.parent.iterdir()) == [questions]

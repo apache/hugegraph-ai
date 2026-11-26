@@ -18,6 +18,7 @@
 # pylint: disable=E1101
 
 import os
+from tempfile import TemporaryDirectory
 from typing import AsyncGenerator, Literal, Optional, Tuple
 
 import gradio as gr
@@ -324,19 +325,33 @@ def create_rag_block():
     questions_template_path = resource_file("demo", "questions_template.xlsx", root=resource_path)
 
     def read_file_to_excel(file: NamedString, line_count: Optional[int] = None):
-        df = None
         if not file:
             return pd.DataFrame(), 1
-        if file.name.endswith(".xlsx"):
-            df = pd.read_excel(file.name, nrows=line_count) if file else pd.DataFrame()
-        elif file.name.endswith(".csv"):
-            df = pd.read_csv(file.name, nrows=line_count) if file else pd.DataFrame()
-        os.makedirs(os.path.dirname(questions_path), exist_ok=True)
-        df.to_excel(questions_path, index=False)
+        extension = os.path.splitext(file.name)[1].lower()
+        if extension not in {".xlsx", ".csv"}:
+            raise gr.Error("Please upload a .xlsx or .csv file using the downloaded template.")
+        try:
+            if extension == ".xlsx":
+                df = pd.read_excel(file.name, nrows=line_count)
+            else:
+                df = pd.read_csv(file.name, nrows=line_count)
+        except Exception as exc:
+            raise gr.Error("Could not read the question file. Please upload a valid .xlsx or .csv template.") from exc
+        if len(df.columns) != len(tests_df_headers):
+            raise gr.Error(
+                f"Invalid question file: expected {len(tests_df_headers)} columns, found {len(df.columns)}. "
+                "Please use the downloaded template."
+            )
+        df.columns = tests_df_headers
+        output_dir = os.path.dirname(questions_path)
+        os.makedirs(output_dir, exist_ok=True)
+        # Stage on the same filesystem so failed writes leave the previous upload intact.
+        with TemporaryDirectory(prefix=".questions-upload-", dir=output_dir) as temp_dir:
+            staged_path = os.path.join(temp_dir, "questions.xlsx")
+            df.to_excel(staged_path, index=False)
+            os.replace(staged_path, questions_path)
         if df.empty:
             df = pd.DataFrame([[""] * len(tests_df_headers)], columns=tests_df_headers)
-        else:
-            df.columns = tests_df_headers
         # truncate the dataframe if it's too long
         if len(df) > 40:
             return df.head(40), 40

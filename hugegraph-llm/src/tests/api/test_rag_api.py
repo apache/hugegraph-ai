@@ -552,7 +552,7 @@ def test_batch_upload_rejects_unreadable_or_unsupported_files(batch_upload, tmp_
     assert questions.read_bytes() == before
 
 
-@pytest.mark.parametrize("corruption", ["truncated", "renamed_zip"])
+@pytest.mark.parametrize("corruption", ["truncated", "renamed_zip", "broken_sheet_xml"])
 def test_batch_upload_rejects_corrupt_workbooks(batch_upload, tmp_path, corruption):
     from types import SimpleNamespace
     from zipfile import ZipFile
@@ -567,13 +567,46 @@ def test_batch_upload_rejects_corrupt_workbooks(batch_upload, tmp_path, corrupti
         pd.DataFrame(columns=range(6)).to_excel(source, index=False)
         # Preserve the ZIP signature but remove the archive's central directory.
         source.write_bytes(source.read_bytes()[:100])
-    else:
+    elif corruption == "renamed_zip":
         with ZipFile(source, "w") as archive:
             archive.writestr("readme.txt", "This archive is not an Excel workbook.")
+    else:
+        pd.DataFrame(columns=range(6)).to_excel(source, index=False)
+        with ZipFile(source) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        entries["xl/worksheets/sheet1.xml"] = b"<worksheet><sheetData>"
+        with ZipFile(source, "w") as archive:
+            for name, content in entries.items():
+                archive.writestr(name, content)
 
     with pytest.raises(gr.Error, match="Please upload a valid .xlsx or .csv template"):
         upload(SimpleNamespace(name=str(source)))
 
+    assert questions.read_bytes() == before
+    assert list(questions.parent.iterdir()) == [questions]
+
+
+def test_batch_upload_reports_reader_dependency_error(batch_upload, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import gradio as gr
+    import pandas as pd
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / "questions.xlsx"
+    pd.DataFrame(columns=range(6)).to_excel(source, index=False)
+    reader_error = ImportError("Import python-calamine failed.")
+
+    def fail_read(*args, **kwargs):
+        raise reader_error
+
+    monkeypatch.setattr(pd, "read_excel", fail_read)
+
+    with pytest.raises(gr.Error, match="Please upload a valid .xlsx or .csv template") as error:
+        upload(SimpleNamespace(name=str(source)))
+
+    assert error.value.__cause__ is reader_error
     assert questions.read_bytes() == before
     assert list(questions.parent.iterdir()) == [questions]
 

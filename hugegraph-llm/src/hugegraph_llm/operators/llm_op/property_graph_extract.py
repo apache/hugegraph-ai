@@ -69,6 +69,11 @@ def filter_item(schema, items) -> List[Dict[str, Any]]:
     return filtered_items
 
 
+def _has_vertex_id(vertex_id) -> bool:
+    # Keep numeric zero distinct from missing IDs and the boolean False.
+    return bool(vertex_id) or type(vertex_id) is int
+
+
 class PropertyGraphExtract:
     def __init__(self, llm: BaseLLM, example_prompt: str = prompt.extract_graph_prompt) -> None:
         self.llm = llm
@@ -121,14 +126,14 @@ class PropertyGraphExtract:
             canonical_id = self._primary_key_id(vertex_label_map[label], properties)
             original_id = vertex.get("id")
             if canonical_id is None:
-                if original_id:
+                if _has_vertex_id(original_id):
                     vertex_id_map[(label, original_id)] = original_id
                 normalized_vertices.append(vertex)
                 continue
 
             vertex["id"] = canonical_id
             vertex_id_map[(label, canonical_id)] = canonical_id
-            if original_id:
+            if _has_vertex_id(original_id):
                 vertex_id_map[(label, original_id)] = canonical_id
             normalized_vertices.append(vertex)
         return normalized_vertices, vertex_id_map
@@ -136,7 +141,7 @@ class PropertyGraphExtract:
     def _resolve_endpoint(self, edge, endpoint_key, label_key, legacy_key, vertex_label_map, vertex_id_map):
         endpoint = edge.get(endpoint_key)
         label = edge.get(label_key)
-        if endpoint and label:
+        if _has_vertex_id(endpoint) and label:
             return vertex_id_map.get((label, endpoint)), label
 
         legacy_endpoint = edge.get(legacy_key)
@@ -170,7 +175,7 @@ class PropertyGraphExtract:
                 vertex_label_map,
                 vertex_id_map,
             )
-            if not out_v or not in_v:
+            if not _has_vertex_id(out_v) or not _has_vertex_id(in_v):
                 log.warning("Invalid edge endpoints '%s' have been ignored.", edge)
                 continue
             if out_v_label != edge_label.get("source_label") or in_v_label != edge_label.get("target_label"):

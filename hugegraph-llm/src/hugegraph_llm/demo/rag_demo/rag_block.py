@@ -20,6 +20,7 @@
 import os
 from tempfile import TemporaryDirectory
 from typing import AsyncGenerator, Literal, Optional, Tuple
+from zipfile import BadZipFile
 
 import gradio as gr
 import pandas as pd
@@ -335,7 +336,7 @@ def create_rag_block():
                 df = pd.read_excel(file.name, nrows=line_count)
             else:
                 df = pd.read_csv(file.name, nrows=line_count)
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, BadZipFile, KeyError) as exc:
             raise gr.Error("Could not read the question file. Please upload a valid .xlsx or .csv template.") from exc
         if len(df.columns) != len(tests_df_headers):
             raise gr.Error(

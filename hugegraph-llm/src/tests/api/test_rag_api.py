@@ -552,6 +552,32 @@ def test_batch_upload_rejects_unreadable_or_unsupported_files(batch_upload, tmp_
     assert questions.read_bytes() == before
 
 
+@pytest.mark.parametrize("corruption", ["truncated", "renamed_zip"])
+def test_batch_upload_rejects_corrupt_workbooks(batch_upload, tmp_path, corruption):
+    from types import SimpleNamespace
+    from zipfile import ZipFile
+
+    import gradio as gr
+    import pandas as pd
+
+    upload, questions = batch_upload
+    before = questions.read_bytes()
+    source = tmp_path / "corrupt.xlsx"
+    if corruption == "truncated":
+        pd.DataFrame(columns=range(6)).to_excel(source, index=False)
+        # Preserve the ZIP signature but remove the archive's central directory.
+        source.write_bytes(source.read_bytes()[:100])
+    else:
+        with ZipFile(source, "w") as archive:
+            archive.writestr("readme.txt", "This archive is not an Excel workbook.")
+
+    with pytest.raises(gr.Error, match="Please upload a valid .xlsx or .csv template"):
+        upload(SimpleNamespace(name=str(source)))
+
+    assert questions.read_bytes() == before
+    assert list(questions.parent.iterdir()) == [questions]
+
+
 @pytest.mark.parametrize("failure", ["write", "replace"])
 def test_batch_upload_preserves_previous_file_and_cleans_up_on_save_failure(
     batch_upload, tmp_path, monkeypatch, failure

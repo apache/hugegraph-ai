@@ -8,8 +8,8 @@
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
@@ -81,6 +81,11 @@ packages = [
 
 [tool.hatch.build.targets.sdist]
 include = ["*/src", "*/pyproject.toml", "*/README.md", "*/LICENSE", "*/NOTICE", "README.md", "LICENSE", "NOTICE"]
+
+[tool.uv]
+# Keep lock refreshes above the first release that fixes the 2026 local-lock
+# vulnerabilities; the latest virtualenv metadata permits filelock 4.x.
+constraint-dependencies = ["filelock>=4.2.1"]
 
 [tool.uv.sources]
 hugegraph-llm = { workspace = true }

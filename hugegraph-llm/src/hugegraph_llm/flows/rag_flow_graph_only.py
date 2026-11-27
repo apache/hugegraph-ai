@@ -71,6 +71,7 @@ class RAGGraphOnlyFlow(BaseFlow):
         topk_per_keyword: Optional[int] = None,
         is_graph_rag_recall: bool = False,
         is_vector_only: bool = False,
+        include_trace: bool = False,
         **kwargs,
     ):
         prepared_input.query = query
@@ -95,12 +96,14 @@ class RAGGraphOnlyFlow(BaseFlow):
 
         prepared_input.is_graph_rag_recall = is_graph_rag_recall
         prepared_input.is_vector_only = is_vector_only
+        prepared_input.include_trace = include_trace
         prepared_input.data_json = {
             "query": query,
             "vector_search": vector_search,
             "graph_search": graph_search,
             "max_graph_items": max_graph_items or huge_settings.max_graph_items,
             "is_graph_rag_recall": is_graph_rag_recall,
+            "include_trace": include_trace,
         }
 
     def build_flow(self, **kwargs):
@@ -148,6 +151,7 @@ class RAGGraphOnlyFlow(BaseFlow):
                 "graph_only_answer": res.get("graph_only_answer", ""),
                 "graph_vector_answer": res.get("graph_vector_answer", ""),
             }
-            if not res.get("is_graph_rag_recall", False)
+            if not (res.get("is_graph_rag_recall", False) or
+                    res.get("include_trace", False))
             else res
         )

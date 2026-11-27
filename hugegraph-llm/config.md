@@ -102,6 +102,8 @@ llm:
 | `KEYWORD_EXTRACT_TYPE` | Literal["llm", "textrank", "hybrid"]                   | llm    | 关键词提取模型类型：llm/textrank/hybrid         |
 | `WINDOW_SIZE`          | Optional[Integer] | 3 | TextRank 滑窗大小 (范围: 1-10),较大的窗口可以捕获更长距离的词语关系,但会增加计算复杂度 |
 | `HYBRID_LLM_WEIGHTS`   | Optional[Float] | 0.5 | 混合模式中 LLM 结果的权重 (范围: 0.0-1.0),TextRank 权重 = 1 - 该值。推荐 0.5 以平衡两种方法 |
+| `EXTRACT_USE_CHAT`     | Boolean | true | 信息抽取复用 Chat 连接。未显式设置时，只要配置了任一信息抽取专用连接项（如 `EXTRACT_LLM_TYPE`、`OPENAI_EXTRACT_API_BASE`），即视为 false |
+| `TEXT2GQL_USE_CHAT`    | Boolean | true | 文本转 GQL 复用 Chat 连接。未显式设置时，只要配置了任一 Text2GQL 专用连接项（如 `TEXT2GQL_LLM_TYPE`），即视为 false |
 
 ### OpenAI 配置
 
@@ -188,6 +190,7 @@ OpenAI 类型也可连接提供兼容接口的模型服务；服务商必须支�
 | `MILVUS_PORT`    | Integer          | 19530 | Milvus 服务器端口           |
 | `MILVUS_USER`    | String           | ""    | Milvus 用户名              |
 | `MILVUS_PASSWORD`| String           | ""    | Milvus 密码               |
+| `CUR_VECTOR_INDEX` | Literal["Faiss", "Milvus", "Qdrant"] | Faiss | 当前使用的向量库。选 Milvus 或 Qdrant 前需先执行 `uv sync --extra vectordb` |
 
 ### 管理员配置
 
@@ -196,6 +199,7 @@ OpenAI 类型也可连接提供兼容接口的模型服务；服务商必须支�
 | `ENABLE_LOGIN` | Optional[String] | "False" | 是否启用登录（注意：这是字符串类型） |
 | `USER_TOKEN`   | Optional[String] | 4321    | 用户令牌               |
 | `ADMIN_TOKEN`  | Optional[String] | xxxx    | 管理员令牌              |
+| `HUGEGRAPH_LLM_ENABLE_THIN_WRITES` | Boolean | false | 是否允许 Thin API 写入。只有 `true` 会开启，其他值都视为关闭；还需同时启用 `ENABLE_LOGIN` |
 
 ## 配置使用示例
 

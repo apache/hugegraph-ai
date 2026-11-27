@@ -23,7 +23,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from hugegraph_llm.operators.index_op.semantic_id_query import SemanticIdQuery
-from tests.utils.mock import MockEmbedding
+from tests.utils.mock import FakeGremlinEndpoint, MockEmbedding
 
 
 class MockVectorStore:
@@ -156,3 +156,22 @@ class TestSemanticIdQuery(unittest.TestCase):
 
             # Verify search was not called for empty keywords
             query.vector_index.search.assert_not_called()
+
+    @patch("hugegraph_llm.operators.index_op.semantic_id_query.resource_path")
+    @patch("hugegraph_llm.operators.index_op.semantic_id_query.huge_settings")
+    @patch("hugegraph_llm.operators.index_op.semantic_id_query.PyHugeClient", new=MockPyHugeClient)
+    def test_exact_match_escapes_apostrophes_in_vids(self, mock_settings, mock_resource_path):
+        mock_settings.graph_name = "test_graph"
+        mock_settings.topk_per_keyword = 2
+        mock_settings.vector_dis_threshold = 1.5
+
+        with patch("os.path.join", return_value=self.test_dir):
+            query = SemanticIdQuery(self.embedding, self.mock_vector_store_class, by="keywords")
+        endpoint = FakeGremlinEndpoint({"1:O'Brien": {"name": "O'Brien"}, "1:Tom Hanks": {"name": "Tom Hanks"}})
+        query._client._gremlin = endpoint
+        query.vector_index.search.return_value = []
+
+        result_context = query.run({"keywords": ["O'Brien", "Tom Hanks"]})
+
+        self.assertEqual(sorted(result_context["match_vids"]), ["1:O'Brien", "1:Tom Hanks"])
+        self.assertIn("'1:O\\'Brien'", endpoint.scripts[-1])

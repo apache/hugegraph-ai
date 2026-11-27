@@ -228,6 +228,7 @@ Structured reads remain available. `generate_gremlin_tool(execute=false)` additi
 | `HUGEGRAPH_MCP_TIMEOUT_SECONDS` | `30` | Deprecated fallback for AI timeout |
 | `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` | `100` | Post-materialization output item guard; range `1..1000000` |
 | `HUGEGRAPH_MCP_MAX_RESULT_BYTES` | `1048576` | Post-materialization output byte guard; range `1..1073741824` |
+| `HUGEGRAPH_MCP_MAX_REPEAT_TIMES` | `10` | Depth above which `repeat().times(n)` produces a Gremlin cost warning; the warning does not block the query |
 | `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | Durable plan-store backend; only `sqlite` is currently supported |
 | `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` | `1` | Declared count of write-capable MCP instances; SQLite requires exactly one |
 | `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` or `~/.local/state/hugegraph-mcp` | Directory containing the plan, operation, and receipt database |

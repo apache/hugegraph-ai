@@ -140,8 +140,11 @@ def test_public_docs_keep_legacy_locator_all_or_nothing():
 
 
 def _configuration_table_names(path: Path) -> set[str]:
+    # Only the Configuration section counts, so a row in another table cannot stand in for it.
+    section = re.search(r"^## (?:Configuration|配置)[ \t]*\n(.*?)(?=^## |\Z)", _text(path), re.MULTILINE | re.DOTALL)
+    assert section, f"{path.name} has no Configuration section"
     names = set()
-    for first_cell in re.findall(r"^\|([^|\n]*)\|", _text(path), flags=re.MULTILINE):
+    for first_cell in re.findall(r"^\|([^|\n]*)\|", section.group(1), flags=re.MULTILINE):
         names.update(re.findall(r"`(HUGEGRAPH_[A-Z0-9_]+)`", first_cell))
     return names
 

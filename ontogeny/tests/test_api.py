@@ -58,6 +58,9 @@ def _hdr(p):
 class TestEndToEnd:
     async def test_action_replays_after_a_separate_sqlite_writer_times_out(self, client, monkeypatch):
         c, sc = client
+        async with sc.engine.connect() as connection:
+            assert (await connection.exec_driver_sql("PRAGMA busy_timeout")).scalar_one() == 30000
+            assert (await connection.exec_driver_sql("PRAGMA journal_mode")).scalar_one() == "wal"
         assert (await c.post("/api/v1/admin/sync/tapeout-version")).status_code == 200
         other = ServiceContext(sc.settings, str(sc.package_root))
         flushed = asyncio.Event()

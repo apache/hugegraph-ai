@@ -14,7 +14,10 @@
 import re
 from pathlib import Path
 
+from hugegraph_mcp.config import CONFIG_ENV_NAMES
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE_ROOT = PROJECT_ROOT / "hugegraph_mcp"
 README = PROJECT_ROOT / "README.md"
 README_ZH = PROJECT_ROOT / "README.zh-CN.md"
 CHECKLIST = PROJECT_ROOT / "docs" / "integration.md"
@@ -134,3 +137,27 @@ def test_public_docs_keep_legacy_locator_all_or_nothing():
     checklist = _text(CHECKLIST)
     assert "only when all three are supplied together" in checklist
     assert "A partial legacy locator must return `VALIDATION_ERROR`" in checklist
+
+
+def _configuration_table_names(path: Path) -> set[str]:
+    # Only the Configuration section counts, so a row in another table cannot stand in for it.
+    section = re.search(r"^## (?:Configuration|配置)[ \t]*\n(.*?)(?=^## |\Z)", _text(path), re.MULTILINE | re.DOTALL)
+    assert section, f"{path.name} has no Configuration section"
+    names = set()
+    for first_cell in re.findall(r"^\|([^|\n]*)\|", section.group(1), flags=re.MULTILINE):
+        names.update(re.findall(r"`(HUGEGRAPH_[A-Z0-9_]+)`", first_cell))
+    return names
+
+
+def _environment_variables_read_by_source() -> set[str]:
+    names = {name for name in CONFIG_ENV_NAMES if name.startswith("HUGEGRAPH_")}
+    for source in SOURCE_ROOT.rglob("*.py"):
+        names.update(re.findall(r"""os\.(?:getenv|environ\.get)\(\s*["'](HUGEGRAPH_[A-Z0-9_]+)""", _text(source)))
+    return names
+
+
+def test_every_environment_variable_has_a_configuration_row_in_both_readmes():
+    variables = _environment_variables_read_by_source()
+    for readme in (README, README_ZH):
+        missing = sorted(variables - _configuration_table_names(readme))
+        assert not missing, f"{readme.name} configuration table is missing: {missing}"

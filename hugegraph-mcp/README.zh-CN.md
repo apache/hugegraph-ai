@@ -220,7 +220,7 @@ Schema 和图数据 dry-run 在操作数超过 200 或 payload 超过 1 MiB 时�
 | `HUGEGRAPH_MCP_TIMEOUT_SECONDS` | `30` | AI 超时的废弃兼容配置 |
 | `HUGEGRAPH_MCP_MAX_RESULT_ITEMS` | `100` | 响应完整落入内存后的条数保护；范围 `1..1000000` |
 | `HUGEGRAPH_MCP_MAX_RESULT_BYTES` | `1048576` | 响应完整落入内存后的字节保护；范围 `1..1073741824` |
-| `HUGEGRAPH_MCP_MAX_REPEAT_TIMES` | `10` | `repeat().times(n)` 的深度超过该值时给出 Gremlin 成本警告。只对能识别的写法做尽力检查：每个查询只检查第一个 `times(n)`，且 `times` 后要紧跟 `(`（`times (100)` 识别不到）。警告不拦截查询 |
+| `HUGEGRAPH_MCP_MAX_REPEAT_TIMES` | `10` | 查询深度超过该值时给出 Gremlin 成本警告。只对能识别的写法做尽力检查：只读查询里第一个 `times(N)`，`N` 须为整数字面量且 `times` 后紧跟 `(`，也不核对它属于哪个 `repeat()`。后面的 `times(n)` 和 `times (100)` 这类写法不检查。警告不拦截查询 |
 | `HUGEGRAPH_MCP_PLAN_STORE` | `sqlite` | 持久化 plan store；当前仅支持 `sqlite` |
 | `HUGEGRAPH_MCP_WRITE_INSTANCE_COUNT` | `1` | 可写 MCP 实例数；SQLite 要求精确为一 |
 | `HUGEGRAPH_MCP_STATE_DIR` | `$XDG_STATE_HOME/hugegraph-mcp` 或 `~/.local/state/hugegraph-mcp` | plan、operation 与 receipt 数据库目录 |

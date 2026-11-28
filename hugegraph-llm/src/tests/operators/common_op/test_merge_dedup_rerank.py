@@ -324,6 +324,100 @@ class TestMergeDedupRerankRun(BaseMergeDedupRerankTest):
         self.assertEqual(result["vector_result"], [])
         self.assertEqual(result["graph_result"], ["graph1", "graph2", "graph3"])
 
+    @patch("hugegraph_llm.operators.common_op.merge_dedup_rerank.llm_settings")
+    @patch("hugegraph_llm.operators.common_op.merge_dedup_rerank.Rerankers")
+    def test_run_reranker_handles_empty_and_duplicate_results(self, mock_rerankers_class, mock_llm_settings):
+        """Empty inputs, zero top_n, and duplicate-shrunk inputs must not trip reranker validation."""
+        from hugegraph_llm.models.rerankers.cohere import CohereReranker
+
+        mock_llm_settings.reranker_type = "cohere"
+        real_reranker = CohereReranker(api_key="test-key", base_url="https://example.com/rerank", model="test")
+        mock_rerankers_instance = MagicMock()
+        mock_rerankers_instance.get_reranker.return_value = real_reranker
+        mock_rerankers_class.return_value = mock_rerankers_instance
+
+        merger = MergeDedupRerank(
+            self.mock_embedding,
+            topk_return_results=4,
+            graph_ratio=0.5,
+            method="reranker",
+            custom_related_information=" extra",
+        )
+
+        # Missing query, empty vector_result, and duplicate-collapsed graph_result (1 unique < top_n=2)
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"results": [{"index": 0}]}
+            mock_post.return_value = mock_resp
+
+            result = merger.run(
+                {
+                    "vector_search": True,
+                    "graph_search": True,
+                    "vector_result": [],
+                    "graph_result": ["only_one", "only_one"],
+                }
+            )
+
+        self.assertEqual(result["vector_result"], [])
+        self.assertEqual(result["graph_result"], ["only_one"])
+        mock_post.assert_called_once()
+        self.assertEqual(mock_post.call_args.kwargs["json"]["top_n"], 1)
+        self.assertEqual(mock_post.call_args.kwargs["json"]["query"], " extra")
+
+    def test_rerank_with_vertex_degree_missing_or_unindexed_entries(self):
+        """near_neighbor_first handles None knowledge_with_degree and entries absent from vertex_degree_list."""
+        merger = MergeDedupRerank(self.mock_embedding, method="bleu", near_neighbor_first=True)
+        reranked = merger._rerank_with_vertex_degree(
+            self.query,
+            ["unlisted_result", "listed_result"],
+            2,
+            [["v1"]],
+            None,
+        )
+        self.assertEqual(set(reranked), {"unlisted_result", "listed_result"})
+
+        # Entry present in knowledge_with_degree but absent from vertex_degree_list[0], plus duplicate + non-mutation
+        knowledge_map = {"missing_node": ["unknown_v"], "present_node": ["present_v"]}
+        reranked_partial = merger._rerank_with_vertex_degree(
+            self.query,
+            ["missing_node", "present_node", "present_node", "unmapped_node"],
+            3,
+            [["present_v"], ["d2_v"]],
+            knowledge_map,
+        )
+        self.assertEqual(reranked_partial, ["present_node", "missing_node", "unmapped_node"])
+        self.assertEqual(knowledge_map, {"missing_node": ["unknown_v"], "present_node": ["present_v"]})
+
+    @patch("hugegraph_llm.operators.common_op.merge_dedup_rerank.llm_settings")
+    @patch("hugegraph_llm.operators.common_op.merge_dedup_rerank.Rerankers")
+    def test_rerank_with_vertex_degree_reranker_empty_sublist(self, mock_rerankers_class, mock_llm_settings):
+        """Empty depth buckets in vertex_degree_list should not call online reranker with []."""
+        from hugegraph_llm.models.rerankers.cohere import CohereReranker
+
+        mock_llm_settings.reranker_type = "cohere"
+        real_reranker = CohereReranker(api_key="test-key", base_url="https://example.com/rerank", model="test")
+        mock_rerankers_instance = MagicMock()
+        mock_rerankers_instance.get_reranker.return_value = real_reranker
+        mock_rerankers_class.return_value = mock_rerankers_instance
+
+        merger = MergeDedupRerank(self.mock_embedding, method="reranker", near_neighbor_first=True)
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"results": [{"index": 1}, {"index": 0}]}
+            mock_post.return_value = mock_resp
+
+            reranked = merger._rerank_with_vertex_degree(
+                self.query,
+                ["res_a", "res_b"],
+                2,
+                [[], ["v_a", "v_b"]],
+                {"res_a": ["", "v_a"], "res_b": ["", "v_b"]},
+            )
+
+        self.assertEqual(reranked, ["res_b", "res_a"])
+        mock_post.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

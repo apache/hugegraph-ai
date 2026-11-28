@@ -24,6 +24,7 @@ capability checks in the layers that use them.
 
 from __future__ import annotations
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -38,7 +39,22 @@ class Base(DeclarativeBase):
 
 
 def make_engine(dsn: str, *, echo: bool = False) -> AsyncEngine:
-    return create_async_engine(dsn, echo=echo, future=True)
+    connect_args = {"timeout": 30} if dsn.startswith("sqlite") else {}
+    engine = create_async_engine(dsn, echo=echo, future=True, connect_args=connect_args)
+    if engine.dialect.name == "sqlite":
+
+        @event.listens_for(engine.sync_engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _):
+            cursor = dbapi_conn.cursor()
+            try:
+                # Wait for a concurrent writer instead of failing immediately;
+                # WAL also lets readers continue during that writer's transaction.
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.execute("PRAGMA journal_mode=WAL")
+            finally:
+                cursor.close()
+
+    return engine
 
 
 def make_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

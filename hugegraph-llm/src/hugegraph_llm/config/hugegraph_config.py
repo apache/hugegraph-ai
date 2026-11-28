@@ -42,6 +42,14 @@ class HugeGraphConfig(BaseConfig):
             return scheme.lower() + "://" + rest
         return value
 
+    @field_validator("max_element_id_length")
+    @classmethod
+    def validate_max_element_id_length(cls, value: int) -> int:
+        # a nonpositive limit rejects every id (byte length >= 0), silently emptying the graph
+        if value < 1:
+            raise ValueError(f"max_element_id_length must be a positive integer, got {value}")
+        return value
+
     # graph server config
     graph_url: str = "127.0.0.1:8080"
     graph_name: str = "hugegraph"
@@ -54,6 +62,9 @@ class HugeGraphConfig(BaseConfig):
     max_graph_path: int = 10
     max_graph_items: int = 30
     edge_limit_pre_label: int = 8
+
+    # graph element config
+    max_element_id_length: int = 256
 
     # vector config
     vector_dis_threshold: float = 0.9

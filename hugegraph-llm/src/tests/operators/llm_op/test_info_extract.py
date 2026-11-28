@@ -16,9 +16,11 @@
 # under the License.
 
 import unittest
+from unittest.mock import patch
 
 import pytest
 
+from hugegraph_llm.config.hugegraph_config import HugeGraphConfig
 from hugegraph_llm.operators.llm_op.info_extract import (
     InfoExtract,
     extract_triples_by_regex,
@@ -158,3 +160,40 @@ class TestInfoExtract(unittest.TestCase):
                 ]
             },
         )
+
+
+class TestInfoExtractIdLengthLimit(unittest.TestCase):
+    @patch("hugegraph_llm.operators.llm_op.info_extract.huge_settings")
+    def test_length_limit_defaults_to_settings(self, mock_settings):
+        mock_settings.max_element_id_length = 10
+        extractor = InfoExtract(None)
+        self.assertFalse(extractor.valid("x" * 10))
+        self.assertTrue(extractor.valid("x" * 9))
+
+    @patch("hugegraph_llm.operators.llm_op.info_extract.huge_settings")
+    def test_explicit_length_limit_overrides_settings(self, mock_settings):
+        mock_settings.max_element_id_length = 10
+        extractor = InfoExtract(None, max_length=5)
+        self.assertFalse(extractor.valid("x" * 5))
+        self.assertTrue(extractor.valid("x" * 4))
+
+    @patch("hugegraph_llm.operators.llm_op.info_extract.huge_settings")
+    def test_filter_long_id_uses_configured_limit(self, mock_settings):
+        mock_settings.max_element_id_length = 10
+        extractor = InfoExtract(None)
+        graph = {"vertices": [{"id": "short"}, {"id": "x" * 10}], "edges": []}
+        result = extractor._filter_long_id(graph)
+        self.assertEqual([vertex["id"] for vertex in result["vertices"]], ["short"])
+
+    @patch("hugegraph_llm.operators.llm_op.info_extract.huge_settings")
+    def test_explicit_length_limit_must_be_positive(self, mock_settings):
+        mock_settings.max_element_id_length = 10
+        with self.assertRaisesRegex(ValueError, "max_length must be a positive integer"):
+            InfoExtract(None, max_length=0)
+        with self.assertRaisesRegex(ValueError, "max_length must be a positive integer"):
+            InfoExtract(None, max_length=-1)
+
+    def test_settings_reject_nonpositive_length_limit(self):
+        for bad in (0, -1):
+            with self.assertRaisesRegex(ValueError, "max_element_id_length must be a positive integer"):
+                HugeGraphConfig(max_element_id_length=bad)
